@@ -97,3 +97,17 @@ async def test_down_arrow_moves_from_search_into_results():
         await pilot.press("down")
         await pilot.pause()
         assert isinstance(app.focused, DataTable)  # dropped into the list
+
+
+async def test_menu_arrow_navigates_all_items_and_notifies_unimplemented():
+    app = GestApp()
+    async with app.run_test(size=(100, 30)) as pilot:
+        await pilot.pause()
+        lv = app.screen.query_one("#module-list", ListView)
+        assert app.focused is lv  # list is focused, arrows work immediately
+        await pilot.press("down")
+        await pilot.pause()
+        assert lv.index == 1  # moved onto a "coming soon" item (not skipped)
+        await pilot.press("enter")
+        await pilot.pause()
+        assert isinstance(app.screen, MainMenuScreen)  # unimplemented -> stays put

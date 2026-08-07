@@ -50,15 +50,26 @@ class MainMenuScreen(Screen):
                         Label(subtitle, classes="mod-sub"),
                         id=f"mod-{key}",
                     )
-                    item.disabled = not enabled
                     items.append(item)
                 yield ListView(*items, id="module-list")
         yield Footer()
+
+    def on_mount(self) -> None:
+        # Focus the list explicitly so arrow keys work the instant the menu
+        # appears (don't depend on auto-focus timing in a real terminal).
+        self.query_one("#module-list", ListView).focus()
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         key = event.item.id.removeprefix("mod-")
         if key == "software":
             self.app.push_screen(SoftwareScreen())
+        else:
+            title = next((t for k, t, *_ in _MODULES if k == key), key)
+            self.app.notify(
+                f"The {title} module isn't implemented yet.",
+                title="Coming soon",
+                severity="warning",
+            )
 
 
 class SoftwareScreen(Screen):
@@ -84,6 +95,7 @@ class SoftwareScreen(Screen):
 
     def on_mount(self) -> None:
         self.title = "Software Management"
+        self.query_one("#search", Input).focus()
         self.load_installed()
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
