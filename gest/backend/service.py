@@ -51,6 +51,12 @@ _INTROSPECTION = f"""
       <arg type="s" name="line" direction="in"/>
       <arg type="b" name="ok" direction="out"/>
     </method>
+    <method name="SetPackageConfig">
+      <arg type="s" name="kind" direction="in"/>
+      <arg type="s" name="atom" direction="in"/>
+      <arg type="s" name="line" direction="in"/>
+      <arg type="b" name="ok" direction="out"/>
+    </method>
     <signal name="Progress"><arg type="s" name="line"/></signal>
     <signal name="Finished"><arg type="i" name="exit_code"/></signal>
   </interface>
@@ -94,6 +100,9 @@ class SoftwareService:
         elif method == "SetPackageUse":
             atom, line = params.unpack()
             self._set_package_use(atom, line, sender, invocation)
+        elif method == "SetPackageConfig":
+            kind, atom, line = params.unpack()
+            self._set_package_config(kind, atom, line, sender, invocation)
         else:
             invocation.return_error_literal(
                 Gio.dbus_error_quark(),
@@ -145,11 +154,21 @@ class SoftwareService:
 
     _ATOM_RE = re.compile(r"^[a-z0-9][a-z0-9+._-]*/[a-zA-Z0-9+._-]+$")
 
+    _ALLOWED_KINDS = ("use", "accept_keywords", "mask", "unmask")
+
     def _set_package_use(self, atom, line, sender, invocation):
+        self._set_package_config("use", atom, line, sender, invocation)
+
+    def _set_package_config(self, kind, atom, line, sender, invocation):
         if not self._check_authorized(sender, polkit_action("modify-config")):
             invocation.return_error_literal(
                 Gio.dbus_error_quark(), Gio.DBusError.ACCESS_DENIED,
                 "Not authorized to modify Portage configuration")
+            return
+        if kind not in self._ALLOWED_KINDS:
+            invocation.return_error_literal(
+                Gio.dbus_error_quark(), Gio.DBusError.INVALID_ARGS,
+                f"unknown config kind: {kind}")
             return
         if "\n" in atom or "\n" in line or not self._ATOM_RE.match(atom):
             invocation.return_error_literal(
@@ -162,7 +181,7 @@ class SoftwareService:
                 "line does not match atom")
             return
         try:
-            self._write_package_use(atom, line)
+            self._write_package_config(kind, atom, line)
         except OSError as exc:
             invocation.return_error_literal(
                 Gio.dbus_error_quark(), Gio.DBusError.FAILED,
@@ -172,6 +191,12 @@ class SoftwareService:
 
     @staticmethod
     def _write_package_use(atom, line, directory="/etc/portage/package.use"):
+        SoftwareService._write_package_config("use", atom, line, directory)
+
+    @staticmethod
+    def _write_package_config(kind, atom, line, directory=None):
+        if directory is None:
+            directory = f"/etc/portage/package.{kind}"
         os.makedirs(directory, exist_ok=True)
         path = os.path.join(directory, "gest")
         try:

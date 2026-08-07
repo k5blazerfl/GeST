@@ -17,3 +17,14 @@ def test_writer_creates_then_removes(tmp_path):
     assert "cat/one a" in (tmp_path / "gest").read_text()
     SoftwareService._write_package_use("cat/one", "", directory=str(tmp_path))
     assert "cat/one" not in (tmp_path / "gest").read_text()
+
+
+def test_config_writer_handles_generic_kinds(tmp_path):
+    SoftwareService._write_package_config(
+        "accept_keywords", "cat/pkg", "cat/pkg **", directory=str(tmp_path)
+    )
+    assert "cat/pkg **" in (tmp_path / "gest").read_text()
+    SoftwareService._write_package_config(
+        "mask", "cat/pkg", "cat/pkg", directory=str(tmp_path)
+    )
+    assert (tmp_path / "gest").read_text().strip() == "cat/pkg"

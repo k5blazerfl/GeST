@@ -21,6 +21,7 @@ from textual.widgets import (
 from gest import __version__
 from gest.core.software import reader
 from gest.tui.screens.install import InstallScreen
+from gest.tui.screens.keywords import KeywordsScreen
 from gest.tui.screens.useflags import UseFlagScreen
 
 # Modules offered on the main menu. Only "software" is wired up this release;
@@ -81,6 +82,7 @@ class SoftwareScreen(Screen):
         Binding("q", "app.quit", "Quit"),
         Binding("/", "focus_search", "Search"),
         Binding("u", "edit_use", "USE flags"),
+        Binding("k", "edit_keywords", "Keywords"),
     ]
 
     def compose(self) -> ComposeResult:
@@ -139,6 +141,14 @@ class SoftwareScreen(Screen):
         cp = str(table.get_row_at(table.cursor_row)[0])
         self.app.push_screen(UseFlagScreen(cp))
 
+    def action_edit_keywords(self) -> None:
+        # "k" on the highlighted package row opens its keyword/mask editor.
+        table = self.query_one("#results", DataTable)
+        if table.row_count == 0:
+            return
+        cp = str(table.get_row_at(table.cursor_row)[0])
+        self.app.push_screen(KeywordsScreen(cp))
+
     def _set_status(self, text: str) -> None:
         self.query_one("#status", Static).update(text)
 
@@ -165,7 +175,7 @@ class SoftwareScreen(Screen):
         self.app.call_from_thread(
             self._set_status,
             f" {c['installed']} installed · {c['world']} in @world"
-            "   —  ↓/Tab to results · Enter install · u USE flags · / search",
+            "   —  Enter install · u USE flags · k keywords · / search",
         )
 
     @work(thread=True, exclusive=True)
