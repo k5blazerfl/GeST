@@ -64,6 +64,24 @@ TUI tests drive the interface headlessly via Textual's pilot.
 Not required for the read-only TUI. To enable install/remove later, install the
 system data files (as root) — see [`gest/backend/README.md`](gest/backend/README.md).
 
+## Installing system-wide (recommended)
+
+The development flow above runs GeST from the working tree. For a real
+install — where the **root backend loads the installed package from system
+paths**, not your home directory — use the Gentoo ebuild in
+[`packaging/`](packaging/README.md):
+
+```bash
+# register the bundled overlay, then:
+sudo emerge -av app-admin/gest
+sudo rc-service dbus reload
+gest
+```
+
+See [`packaging/README.md`](packaging/README.md) for the full overlay setup.
+The dev `install-backend.sh` remains for hacking on the backend from a
+working tree.
+
 ## Roadmap
 
 - [x] Layered skeleton: core + TUI + IPC contract
