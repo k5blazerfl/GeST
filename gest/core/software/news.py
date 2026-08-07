@@ -13,6 +13,8 @@ from dataclasses import dataclass
 
 Runner = Callable[[list[str]], str]
 _LINE = re.compile(r"\[(\d+)\]\s+(.*?)\s*(\d{4}-\d{2}-\d{2})\s+(.*)")
+# Accepted "mark read" selectors: every item, only-new items, or one number.
+_SELECTOR = re.compile(r"^(all|new|[1-9][0-9]*)$")
 
 
 @dataclass(slots=True)
@@ -50,3 +52,17 @@ def list_news(runner: Runner | None = None) -> list[NewsItem]:
 def read_news(number: int, runner: Runner | None = None) -> str:
     run = runner or _default_runner
     return run(["eselect", "news", "read", str(number)]).strip()
+
+
+def mark_read_argv(selector: str, eselect: str = "eselect") -> list[str]:
+    """Build the ``eselect news read`` argv, validating the selector.
+
+    ``selector`` is ``"all"``, ``"new"``, or a positive item number (as a
+    string). Kept here — pure and dependency-free — so the root backend and the
+    tests share one validated command shape rather than trusting a bus caller.
+    Raises :class:`ValueError` on anything else.
+    """
+    sel = selector.strip()
+    if not _SELECTOR.match(sel):
+        raise ValueError(f"invalid news selector: {selector!r}")
+    return [eselect, "news", "read", sel]

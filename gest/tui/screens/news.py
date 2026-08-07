@@ -9,11 +9,14 @@ from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Header, RichLog, Static
 
 from gest.core.software import news
+from gest.core.software.backend_client import SoftwareBackend
 
 
 class NewsScreen(Screen):
     BINDINGS = [
         Binding("escape", "app.pop_screen", "Back"),
+        Binding("r", "mark_read", "Mark read"),
+        Binding("a", "mark_all_read", "Mark all read"),
         Binding("q", "app.quit", "Quit"),
     ]
 
@@ -23,7 +26,7 @@ class NewsScreen(Screen):
 
     def compose(self) -> ComposeResult:
         yield Header()
-        yield Static("Portage news — Enter to read", id="use-title")
+        yield Static("Portage news — Enter read · r read · a all · Esc back", id="use-title")
         table = DataTable(id="news", cursor_type="row", zebra_stripes=True)
         table.add_columns("#", "", "Date", "Title")
         yield table
@@ -55,6 +58,39 @@ class NewsScreen(Screen):
             )
         if not items:
             self.query_one("#news-body", RichLog).write("No news items.")
+
+    def _current_number(self) -> int | None:
+        table = self.query_one("#news", DataTable)
+        if not self._numbers:
+            return None
+        return self._numbers[table.cursor_row]
+
+    def action_mark_read(self) -> None:
+        number = self._current_number()
+        if number is not None:
+            self._mark(str(number))
+
+    def action_mark_all_read(self) -> None:
+        if self._numbers:
+            self._mark("all")
+
+    @work(exclusive=True)
+    async def _mark(self, selector: str) -> None:
+        backend = SoftwareBackend()
+        try:
+            await backend.connect()
+            ok = await backend.mark_news_read(selector)
+        except Exception as exc:
+            self.app.notify(f"mark read: {exc}", severity="error")
+            await backend.close()
+            return
+        await backend.close()
+        target = "all items" if selector == "all" else f"item {selector}"
+        self.app.notify(
+            f"marked {target} read" if ok else f"could not mark {target} read",
+            severity="information" if ok else "error",
+        )
+        self.load()
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         number = int(event.data_table.get_row(event.row_key)[0])

@@ -30,6 +30,7 @@ gi.require_version("Gio", "2.0")
 from gi.repository import Gio, GLib
 
 from gest.backend.services import ServicesService
+from gest.core.software import news
 from gest.ipc.interface import BUS_NAME, SOFTWARE_IFACE, SOFTWARE_PATH, polkit_action
 
 # D-Bus introspection describing the surface above.
@@ -58,6 +59,10 @@ _INTROSPECTION = f"""
     <method name="Sync">
       <arg type="b" name="started" direction="out"/>
     </method>
+    <method name="MarkNewsRead">
+      <arg type="s" name="selector" direction="in"/>
+      <arg type="b" name="ok" direction="out"/>
+    </method>
     <method name="SetPackageUse">
       <arg type="s" name="atom" direction="in"/>
       <arg type="s" name="line" direction="in"/>
@@ -78,6 +83,7 @@ _INTROSPECTION = f"""
 # emerge invocation flags shared by preview and real merges. --color n keeps the
 # output clean for a TUI; --pretend is added only for the preview.
 _EMERGE = shutil.which("emerge") or "/usr/bin/emerge"
+_ESELECT = shutil.which("eselect") or "/usr/bin/eselect"
 
 # Exit after this many idle seconds so a re-activation picks up new code and
 # the root service doesn't linger. Never exits while a merge is streaming.
@@ -144,6 +150,9 @@ class SoftwareService:
             self._depclean(atom, sender, invocation)
         elif method == "Sync":
             self._sync(sender, invocation)
+        elif method == "MarkNewsRead":
+            (selector,) = params.unpack()
+            self._mark_news_read(selector, sender, invocation)
         elif method == "SetPackageUse":
             atom, line = params.unpack()
             self._set_package_use(atom, line, sender, invocation)
@@ -234,6 +243,39 @@ class SoftwareService:
             return
         invocation.return_value(GLib.Variant("(b)", (True,)))
         self._spawn_streaming([_EMERGE, "--sync", "--color", "n"])
+
+    # -- news mark-read ------------------------------------------------------
+
+    def _mark_news_read(self, selector: str, sender: str, invocation) -> None:
+        """Mark Portage news items read via `eselect news read` (polkit-gated).
+
+        The news read-state under /var/lib/gentoo/news is root/portage-owned, so
+        an unprivileged user often can't persist it — this does it for them.
+        """
+        if not self._check_authorized(sender, polkit_action("news")):
+            invocation.return_error_literal(
+                Gio.dbus_error_quark(), Gio.DBusError.ACCESS_DENIED,
+                "Not authorized to mark news read")
+            return
+        try:
+            argv = news.mark_read_argv(selector, _ESELECT)
+        except ValueError:
+            invocation.return_error_literal(
+                Gio.dbus_error_quark(), Gio.DBusError.INVALID_ARGS,
+                "invalid news selector")
+            return
+        try:
+            proc = Gio.Subprocess.new(
+                argv, Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_MERGE
+            )
+            proc.communicate_utf8(None, None)
+            code = proc.get_exit_status() if proc.get_if_exited() else -1
+        except GLib.Error as exc:  # pragma: no cover - depends on live system
+            invocation.return_error_literal(
+                Gio.dbus_error_quark(), Gio.DBusError.FAILED,
+                f"mark-read failed: {exc.message}")
+            return
+        invocation.return_value(GLib.Variant("(b)", (code == 0,)))
 
     # -- package.use write ---------------------------------------------------
 
