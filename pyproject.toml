@@ -37,3 +37,18 @@ include = ["gest*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "PLW"]
+# subprocess.run without check= is intentional — we inspect returncode.
+# PLW1510: subprocess.run w/o check= is intentional. RUF012: Textual
+# BINDINGS/CSS are class-level lists by convention.
+ignore = ["PLW1510", "RUF012"]
+
+[tool.ruff.lint.per-file-ignores]
+# gi.require_version() must run before importing from gi.repository.
+"gest/backend/*" = ["E402"]

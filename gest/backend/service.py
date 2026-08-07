@@ -17,6 +17,7 @@ from the unprivileged frontend. See ``backend/README.md``.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 import shutil
@@ -26,7 +27,7 @@ import tempfile
 import gi
 
 gi.require_version("Gio", "2.0")
-from gi.repository import Gio, GLib  # noqa: E402
+from gi.repository import Gio, GLib
 
 from gest.backend.services import ServicesService
 from gest.ipc.interface import BUS_NAME, SOFTWARE_IFACE, SOFTWARE_PATH, polkit_action
@@ -165,7 +166,7 @@ class SoftwareService:
                 [_EMERGE, "--pretend", "--verbose", "--color", "n", atom],
                 Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_MERGE,
             )
-            ok, out, _ = proc.communicate_utf8(None, None)
+            _ok, out, _ = proc.communicate_utf8(None, None)
             invocation.return_value(GLib.Variant("(s)", (out or "",)))
         except GLib.Error as exc:  # pragma: no cover - depends on live system
             invocation.return_error_literal(
@@ -304,10 +305,8 @@ class SoftwareService:
             os.chmod(tmp, 0o644)
             os.replace(tmp, path)
         except Exception:
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(tmp)
-            except OSError:
-                pass
             raise
 
     # -- polkit -------------------------------------------------------------

@@ -15,7 +15,7 @@ import subprocess
 import gi
 
 gi.require_version("Gio", "2.0")
-from gi.repository import Gio, GLib  # noqa: E402
+from gi.repository import Gio, GLib
 
 from gest.backend.polkit import check_authorization
 from gest.ipc.interface import SERVICES_IFACE, SERVICES_PATH, SERVICES_POLKIT

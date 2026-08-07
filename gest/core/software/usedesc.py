@@ -16,8 +16,8 @@ import portage
 def _parse(path: str, into: dict[str, str]) -> None:
     try:
         with open(path, encoding="utf-8") as fh:
-            for line in fh:
-                line = line.strip()
+            for raw in fh:
+                line = raw.strip()
                 if not line or line.startswith("#") or " - " not in line:
                     continue
                 key, desc = line.split(" - ", 1)

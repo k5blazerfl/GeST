@@ -5,7 +5,7 @@ from __future__ import annotations
 import gi
 
 gi.require_version("Gio", "2.0")
-from gi.repository import Gio, GLib  # noqa: E402
+from gi.repository import Gio, GLib
 
 
 def check_authorization(conn, sender: str, action_id: str) -> bool:

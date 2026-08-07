@@ -25,7 +25,7 @@ class SoftwareBackend:
         self._bus: MessageBus | None = None
         self._iface = None
 
-    async def connect(self) -> "SoftwareBackend":
+    async def connect(self) -> SoftwareBackend:
         self._bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
         introspection = await self._bus.introspect(BUS_NAME, SOFTWARE_PATH)
         obj = self._bus.get_proxy_object(BUS_NAME, SOFTWARE_PATH, introspection)
@@ -48,9 +48,9 @@ class SoftwareBackend:
         polkit authorized the caller). Raises on access-denied.
         """
         if on_progress is not None:
-            self._iface.on_progress(lambda line: on_progress(line))
+            self._iface.on_progress(on_progress)
         if on_finished is not None:
-            self._iface.on_finished(lambda code: on_finished(code))
+            self._iface.on_finished(on_finished)
         return await self._iface.call_install(atom)
 
     async def set_package_config(self, kind: str, atom: str, line: str) -> bool:
@@ -65,33 +65,33 @@ class SoftwareBackend:
     ) -> bool:
         """Rebuild ``atom`` (emerge --changed-use); streams like install."""
         if on_progress is not None:
-            self._iface.on_progress(lambda line: on_progress(line))
+            self._iface.on_progress(on_progress)
         if on_finished is not None:
-            self._iface.on_finished(lambda code: on_finished(code))
+            self._iface.on_finished(on_finished)
         return await self._iface.call_rebuild(atom)
 
     async def sync(self, on_progress=None, on_finished=None) -> bool:
         """Sync the Portage tree (emerge --sync); streams like install."""
         if on_progress is not None:
-            self._iface.on_progress(lambda line: on_progress(line))
+            self._iface.on_progress(on_progress)
         if on_finished is not None:
-            self._iface.on_finished(lambda code: on_finished(code))
+            self._iface.on_finished(on_finished)
         return await self._iface.call_sync()
 
     async def depclean(self, atom: str = "", on_progress=None, on_finished=None) -> bool:
         """Remove packages via emerge --depclean [atom]; streams like install."""
         if on_progress is not None:
-            self._iface.on_progress(lambda line: on_progress(line))
+            self._iface.on_progress(on_progress)
         if on_finished is not None:
-            self._iface.on_finished(lambda code: on_finished(code))
+            self._iface.on_finished(on_finished)
         return await self._iface.call_depclean(atom)
 
     async def update_world(self, on_progress=None, on_finished=None) -> bool:
         """Update the system (emerge -uDN @world); streams like install."""
         if on_progress is not None:
-            self._iface.on_progress(lambda line: on_progress(line))
+            self._iface.on_progress(on_progress)
         if on_finished is not None:
-            self._iface.on_finished(lambda code: on_finished(code))
+            self._iface.on_finished(on_finished)
         return await self._iface.call_update_world()
 
     async def set_package_use(self, atom: str, line: str) -> bool:

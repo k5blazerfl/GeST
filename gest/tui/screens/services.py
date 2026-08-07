@@ -98,8 +98,8 @@ class ServicesScreen(Screen):
         backend = ServicesBackend()
         try:
             await backend.connect()
-            ok, out = await backend.control(name, action)
-        except Exception as exc:  # noqa: BLE001
+            ok, _out = await backend.control(name, action)
+        except Exception as exc:
             self.app.notify(f"{name}: {exc}", severity="error")
             await backend.close()
             return
@@ -115,8 +115,8 @@ class ServicesScreen(Screen):
         backend = ServicesBackend()
         try:
             await backend.connect()
-            ok, out = await backend.set_enabled(name, enabled)
-        except Exception as exc:  # noqa: BLE001
+            ok, _out = await backend.set_enabled(name, enabled)
+        except Exception as exc:
             self.app.notify(f"{name}: {exc}", severity="error")
             await backend.close()
             return

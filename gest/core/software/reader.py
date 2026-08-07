@@ -37,8 +37,8 @@ def _world_atoms() -> frozenset[str]:
     atoms: set[str] = set()
     try:
         with open(world_file, encoding="utf-8") as fh:
-            for line in fh:
-                line = line.strip()
+            for raw in fh:
+                line = raw.strip()
                 if line and not line.startswith("#"):
                     atoms.add(portage.dep_getkey(line) if "/" in line else line)
     except OSError:

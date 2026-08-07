@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint-build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install tooling
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff build pytest pytest-asyncio
+
+      - name: Lint (ruff)
+        run: ruff check gest/ tests/
+
+      - name: Build the package
+        run: python -m build
+
+      # Only the pure, dependency-light tests run on CI. The reader/TUI tests
+      # need a live Portage DB, PyGObject, and Textual, which aren't available
+      # on a stock Ubuntu runner — those are validated on the Gentoo host.
+      - name: Test (CI-safe subset)
+        run: |
+          pytest tests/test_news.py tests/test_preview.py \
+                 tests/test_services_reader.py -q
+
+      - name: Syntax-check the ebuild
+        run: bash -n packaging/overlay/app-admin/gest/gest-9999.ebuild

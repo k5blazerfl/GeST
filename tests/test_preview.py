@@ -49,7 +49,7 @@ def test_preview_changed_use_adds_flag():
 
     preview_install("cat/pkg", changed_use=True, runner=runner)
     assert "--changed-use" in seen["argv"]
-    assert "cat/pkg" == seen["argv"][-1]  # atom stays last
+    assert seen["argv"][-1] == "cat/pkg"  # atom stays last
 
 
 def test_preview_world_builds_update_argv():
