@@ -106,11 +106,10 @@ async def test_menu_arrow_navigates_all_items_and_notifies_unimplemented():
         await pilot.pause()
         lv = app.screen.query_one("#module-list", ListView)
         assert app.focused is lv  # list is focused, arrows work immediately
-        await pilot.press("down")
-        await pilot.press("down")
-        await pilot.press("down")  # index 3 = Services (a "coming soon" item)
+        for _ in range(4):
+            await pilot.press("down")  # index 4 = Users (still "coming soon")
         await pilot.pause()
-        assert lv.index == 3
+        assert lv.index == 4
         await pilot.press("enter")
         await pilot.pause()
         assert isinstance(app.screen, MainMenuScreen)  # unimplemented -> stays put
