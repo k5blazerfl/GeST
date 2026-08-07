@@ -154,7 +154,7 @@ async def test_rebuild_mode_previews_changed_use_and_calls_rebuild(monkeypatch):
     app = GestApp()
     async with app.run_test(size=(120, 40)) as pilot:
         await pilot.pause()
-        app.push_screen(InstallScreen("app-misc/hello", rebuild=True))
+        app.push_screen(InstallScreen("app-misc/hello", mode="rebuild"))
         await pilot.pause()
         await app.workers.wait_for_complete()  # preview worker
         await pilot.pause()
@@ -191,7 +191,7 @@ async def test_world_mode_previews_and_calls_update_world(monkeypatch):
     app = GestApp()
     async with app.run_test(size=(120, 40)) as pilot:
         await pilot.pause()
-        app.push_screen(InstallScreen("@world", world=True))
+        app.push_screen(InstallScreen("@world", mode="world"))
         await pilot.pause()
         await app.workers.wait_for_complete()  # preview_world
         await pilot.pause()
@@ -202,3 +202,41 @@ async def test_world_mode_previews_and_calls_update_world(monkeypatch):
         await app.workers.wait_for_complete()
         await pilot.pause()
         assert _WorldBackend.updated == [True]
+
+
+async def test_depclean_mode_previews_and_calls_depclean(monkeypatch):
+    canned = PreviewResult("cat/pkg", 0, "Number to remove: 1")
+    seen = {}
+
+    def fake_preview(atom="", **k):
+        seen["atom"] = atom
+        return canned
+
+    class _DepcleanBackend(_FakeBackend):
+        removed: list = []
+
+        async def depclean(self, atom="", on_progress=None, on_finished=None):
+            type(self).removed.append(atom)
+            if on_progress:
+                on_progress(">>> Unmerging")
+            if on_finished:
+                on_finished(0)
+            return True
+
+    _DepcleanBackend.removed = []
+    monkeypatch.setattr("gest.core.software.preview.preview_depclean", fake_preview)
+    monkeypatch.setattr("gest.tui.screens.install.SoftwareBackend", _DepcleanBackend)
+
+    app = GestApp()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        app.push_screen(InstallScreen("cat/pkg", mode="depclean"))
+        await pilot.pause()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert seen["atom"] == "cat/pkg"
+        assert app.screen.query_one("#install", Button).label.plain == "Remove"
+        await pilot.press("i")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert _DepcleanBackend.removed == ["cat/pkg"]

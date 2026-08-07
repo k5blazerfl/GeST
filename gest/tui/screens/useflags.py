@@ -148,4 +148,4 @@ class UseFlagScreen(Screen):
         # Close the loop: hand off to a rebuild preview so the flag change
         # actually takes effect (emerge --changed-use). Esc there skips it.
         self.app.pop_screen()
-        self.app.push_screen(InstallScreen(self.cp, rebuild=True))
+        self.app.push_screen(InstallScreen(self.cp, mode="rebuild"))

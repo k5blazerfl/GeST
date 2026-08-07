@@ -29,6 +29,7 @@ from gest.tui.screens.useflags import UseFlagScreen
 _MODULES = [
     ("software", "Software Management", "Browse, search and install packages (Portage)", True),
     ("update", "System Update", "Update all packages (emerge -uDN @world)", True),
+    ("depclean", "Clean Up Packages", "Remove orphaned packages (emerge --depclean)", True),
     ("services", "Services (OpenRC)", "Start, stop and enable system services", False),
     ("users", "Users & Groups", "Manage user accounts and groups", False),
     ("network", "Network", "Configure interfaces and connections", False),
@@ -67,7 +68,9 @@ class MainMenuScreen(Screen):
         if key == "software":
             self.app.push_screen(SoftwareScreen())
         elif key == "update":
-            self.app.push_screen(InstallScreen("@world", world=True))
+            self.app.push_screen(InstallScreen("@world", mode="world"))
+        elif key == "depclean":
+            self.app.push_screen(InstallScreen("", mode="depclean"))
         else:
             title = next((t for k, t, *_ in _MODULES if k == key), key)
             self.app.notify(
@@ -86,6 +89,7 @@ class SoftwareScreen(Screen):
         Binding("/", "focus_search", "Search"),
         Binding("u", "edit_use", "USE flags"),
         Binding("k", "edit_keywords", "Keywords"),
+        Binding("r", "remove_pkg", "Remove"),
     ]
 
     def compose(self) -> ComposeResult:
@@ -152,6 +156,14 @@ class SoftwareScreen(Screen):
         cp = str(table.get_row_at(table.cursor_row)[0])
         self.app.push_screen(KeywordsScreen(cp))
 
+    def action_remove_pkg(self) -> None:
+        # "r" on the highlighted package previews a safe --depclean removal.
+        table = self.query_one("#results", DataTable)
+        if table.row_count == 0:
+            return
+        cp = str(table.get_row_at(table.cursor_row)[0])
+        self.app.push_screen(InstallScreen(cp, mode="depclean"))
+
     def _set_status(self, text: str) -> None:
         self.query_one("#status", Static).update(text)
 
@@ -178,7 +190,7 @@ class SoftwareScreen(Screen):
         self.app.call_from_thread(
             self._set_status,
             f" {c['installed']} installed · {c['world']} in @world"
-            "   —  Enter install · u USE flags · k keywords · / search",
+            "   —  Enter install · u USE · k keywords · r remove · / search",
         )
 
     @work(thread=True, exclusive=True)

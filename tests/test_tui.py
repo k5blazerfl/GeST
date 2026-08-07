@@ -24,7 +24,7 @@ async def test_menu_opens_software_and_lists_installed():
         await pilot.pause()
         assert isinstance(app.screen, MainMenuScreen)
         menu = app.screen.query_one("#module-list", ListView)
-        assert len(menu.children) == 5  # one row per module + System Update
+        assert len(menu.children) == 6  # modules + System Update + Clean Up
         await _open_software(app, pilot)
         table = app.screen.query_one("#results", DataTable)
         assert table.row_count > 0  # installed packages populated
@@ -107,9 +107,10 @@ async def test_menu_arrow_navigates_all_items_and_notifies_unimplemented():
         lv = app.screen.query_one("#module-list", ListView)
         assert app.focused is lv  # list is focused, arrows work immediately
         await pilot.press("down")
-        await pilot.press("down")  # index 2 = Services (a "coming soon" item)
+        await pilot.press("down")
+        await pilot.press("down")  # index 3 = Services (a "coming soon" item)
         await pilot.pause()
-        assert lv.index == 2
+        assert lv.index == 3
         await pilot.press("enter")
         await pilot.pause()
         assert isinstance(app.screen, MainMenuScreen)  # unimplemented -> stays put
@@ -130,4 +131,24 @@ async def test_menu_system_update_opens_world_screen(monkeypatch):
         await pilot.press("enter")
         await pilot.pause()
         assert isinstance(app.screen, InstallScreen)
-        assert app.screen.world is True
+        assert app.screen.mode == "world"
+
+
+async def test_menu_cleanup_opens_system_depclean(monkeypatch):
+    from gest.core.software.preview import PreviewResult
+    from gest.tui.screens.install import InstallScreen
+
+    monkeypatch.setattr(
+        "gest.core.software.preview.preview_depclean",
+        lambda atom="", **k: PreviewResult(atom or "@world", 0, "Number to remove: 0"),
+    )
+    app = GestApp()
+    async with app.run_test(size=(100, 30)) as pilot:
+        await pilot.pause()
+        await pilot.press("down")  # 1 System Update
+        await pilot.press("down")  # 2 Clean Up Packages
+        await pilot.press("enter")
+        await pilot.pause()
+        assert isinstance(app.screen, InstallScreen)
+        assert app.screen.mode == "depclean"
+        assert app.screen.atom == ""  # system-wide
