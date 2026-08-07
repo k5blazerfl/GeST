@@ -70,12 +70,20 @@ _INTROSPECTION = f"""
 # output clean for a TUI; --pretend is added only for the preview.
 _EMERGE = shutil.which("emerge") or "/usr/bin/emerge"
 
+# Exit after this many idle seconds so a re-activation picks up new code and
+# the root service doesn't linger. Never exits while a merge is streaming.
+_IDLE_TIMEOUT = 120
+_IDLE_CHECK = 30
+
 
 class SoftwareService:
     """Implements the ``org.gentoo.gest.Software`` interface."""
 
-    def __init__(self, connection: Gio.DBusConnection):
+    def __init__(self, connection: Gio.DBusConnection, on_idle=None):
         self._conn = connection
+        self._on_idle = on_idle
+        self._active = 0  # streaming operations in progress
+        self._last_activity = GLib.get_monotonic_time()
         node = Gio.DBusNodeInfo.new_for_xml(_INTROSPECTION)
         self._iface = node.interfaces[0]
         connection.register_object(
@@ -85,12 +93,32 @@ class SoftwareService:
             None,
             None,
         )
+        if on_idle is not None:
+            GLib.timeout_add_seconds(_IDLE_CHECK, self._idle_check)
+
+    # -- idle-exit ----------------------------------------------------------
+
+    def _touch(self) -> None:
+        self._last_activity = GLib.get_monotonic_time()
+
+    @staticmethod
+    def _should_exit(active: int, idle_seconds: float, timeout: float) -> bool:
+        return active == 0 and idle_seconds >= timeout
+
+    def _idle_check(self) -> bool:
+        idle = (GLib.get_monotonic_time() - self._last_activity) / 1_000_000
+        if self._should_exit(self._active, idle, _IDLE_TIMEOUT):
+            if self._on_idle:
+                self._on_idle()
+            return False  # stop polling; the loop is quitting
+        return True
 
     # -- D-Bus dispatch -----------------------------------------------------
 
     def _on_method_call(
         self, conn, sender, path, iface, method, params, invocation
     ):
+        self._touch()
         if method == "InstallPreview":
             (atom,) = params.unpack()
             self._install_preview(atom, invocation)
@@ -277,6 +305,7 @@ class SoftwareService:
         self._conn.emit_signal(None, SOFTWARE_PATH, SOFTWARE_IFACE, signal, variant)
 
     def _spawn_streaming(self, argv: list[str]) -> None:
+        self._active += 1
         proc = Gio.Subprocess.new(
             argv, Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_MERGE
         )
@@ -300,6 +329,8 @@ class SoftwareService:
             p.wait_finish(res)
             code = p.get_exit_status() if p.get_if_exited() else -1
             self._emit("Finished", GLib.Variant("(i)", (code,)))
+            self._active -= 1
+            self._touch()
 
         read_next()
 
@@ -308,7 +339,7 @@ def main() -> int:
     loop = GLib.MainLoop()
 
     def on_bus_acquired(conn, name):
-        SoftwareService(conn)
+        SoftwareService(conn, on_idle=loop.quit)
 
     def on_name_lost(conn, name):
         sys.stderr.write(f"gest-backend: lost/could not acquire name {name}\n")
