@@ -37,6 +37,8 @@ include = ["gest*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+# Import gest straight from the repo root so CI needn't install the package.
+pythonpath = ["."]
 
 [tool.ruff]
 line-length = 100
