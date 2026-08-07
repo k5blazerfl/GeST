@@ -22,6 +22,10 @@ doing anything.
 
 ## Installing the system data files
 
+**Production install:** use the Gentoo ebuild in `packaging/` — it installs
+the backend from system paths (not the working tree). See
+`packaging/README.md`. The steps below are for **development** only.
+
 **Quick install (development):** from the repo root, as root:
 
 ```bash
