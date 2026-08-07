@@ -76,7 +76,9 @@ system data files (as root) — see [`gest/backend/README.md`](gest/backend/READ
 - [x] Keyword acceptance + mask editing (`package.accept_keywords`,
       `package.mask`, `package.unmask`) via a generalized backend config writer
 - [x] `@world` system update (`emerge -uDN @world`) — preview + streamed merge
-- [ ] Unmerge (depclean preview), tree sync, news items
+- [x] Unmerge / cleanup — safe `--depclean` removal (per-package + whole-system)
+      with preview + streamed output
+- [ ] Tree sync (`emerge --sync`), news items
 - [ ] Further modules: Services (OpenRC/systemd), Users & Groups, Network
 - [ ] Qt/KDE frontend over the same `core`
 ```

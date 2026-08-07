@@ -32,18 +32,25 @@ class InstallScreen(Screen):
         Binding("q", "app.quit", "Quit"),
     ]
 
-    def __init__(self, atom: str, rebuild: bool = False, world: bool = False) -> None:
+    _VERBS = {
+        "install": "Install",
+        "rebuild": "Rebuild",
+        "world": "System update",
+        "depclean": "Remove",
+    }
+
+    def __init__(self, atom: str, mode: str = "install") -> None:
         super().__init__()
         self.atom = atom
-        self.rebuild = rebuild
-        self.world = world
-        self._verb = "System update" if world else ("Rebuild" if rebuild else "Install")
+        self.mode = mode
+        self._verb = self._VERBS[mode]
+        self._display = atom or "orphaned packages"
         self._installing = False
         self._done = False
 
     def compose(self) -> ComposeResult:
         yield Header()
-        yield Static(f"{self._verb} preview — {self.atom}", id="install-title")
+        yield Static(f"{self._verb} preview — {self._display}", id="install-title")
         yield Static(" computing emerge plan …", id="install-status")
         yield RichLog(id="log", highlight=False, markup=False, wrap=False)
         with Horizontal(id="install-buttons"):
@@ -67,10 +74,14 @@ class InstallScreen(Screen):
 
     @work(thread=True, exclusive=True)
     def run_preview(self) -> None:
-        if self.world:
+        if self.mode == "world":
             result = preview.preview_world()
+        elif self.mode == "depclean":
+            result = preview.preview_depclean(self.atom)
         else:
-            result = preview.preview_install(self.atom, changed_use=self.rebuild)
+            result = preview.preview_install(
+                self.atom, changed_use=self.mode == "rebuild"
+            )
         self.app.call_from_thread(self._show_preview, result)
 
     def _show_preview(self, result: preview.PreviewResult) -> None:
@@ -83,7 +94,7 @@ class InstallScreen(Screen):
             install.disabled = False
             install.focus()  # Enter now confirms the merge — no mouse needed
         else:
-            self._status(f"cannot install: {result.summary}")
+            self._status(f"cannot proceed: {result.summary}")
 
     # -- actions ------------------------------------------------------------
 
@@ -136,11 +147,14 @@ class InstallScreen(Screen):
             finished.set()
 
         try:
-            if self.world:
+            if self.mode == "world":
                 started = await backend.update_world(on_progress, on_finished)
+            elif self.mode == "depclean":
+                started = await backend.depclean(self.atom, on_progress, on_finished)
+            elif self.mode == "rebuild":
+                started = await backend.rebuild(self.atom, on_progress, on_finished)
             else:
-                call = backend.rebuild if self.rebuild else backend.install
-                started = await call(self.atom, on_progress, on_finished)
+                started = await backend.install(self.atom, on_progress, on_finished)
         except Exception as exc:  # noqa: BLE001 - polkit denial etc.
             log.write(f"[merge rejected] {exc}")
             self._status("not authorized — merge rejected")
@@ -155,7 +169,7 @@ class InstallScreen(Screen):
             self._reset_after_failure()
             return
 
-        log.write(f"— merge started for {self.atom} —")
+        log.write(f"— {self._verb.lower()} started for {self._display} —")
         await finished.wait()
         await backend.close()
         code = result.get("code", -1)

@@ -64,3 +64,19 @@ def test_preview_world_builds_update_argv():
     assert "-uDN" in seen["argv"]
     assert seen["argv"][-1] == "@world"
     assert r.atom == "@world"
+
+
+def test_preview_depclean_argv():
+    seen = {}
+
+    def runner(argv):
+        seen["argv"] = argv
+        return 0, "Number to remove: 3"
+
+    from gest.core.software.preview import preview_depclean
+    preview_depclean("cat/pkg", runner=runner)
+    assert "--depclean" in seen["argv"]
+    assert seen["argv"][-1] == "cat/pkg"
+    # system depclean: no atom argument
+    preview_depclean("", runner=runner)
+    assert seen["argv"][-1] == "--depclean"

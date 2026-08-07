@@ -59,6 +59,16 @@ class PreviewResult:
         return "nothing to do"
 
 
+def preview_depclean(atom: str = "", *, runner: Runner | None = None) -> PreviewResult:
+    """Preview a removal: emerge --pretend --depclean [atom] (safe; keeps deps)."""
+    run = runner or _default_runner
+    argv = [_EMERGE, "--pretend", "--verbose", "--color", "n", "--depclean"]
+    if atom:
+        argv.append(atom)
+    returncode, output = run(argv)
+    return PreviewResult(atom=atom or "@world", returncode=returncode, output=output.strip())
+
+
 def preview_world(*, runner: Runner | None = None) -> PreviewResult:
     """Preview a full system update: emerge --pretend -uDN @world."""
     run = runner or _default_runner

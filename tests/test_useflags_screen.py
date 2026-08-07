@@ -72,5 +72,5 @@ async def test_cycle_apply_confirm_writes_then_offers_rebuild(monkeypatch, tmp_p
 
         # loop closed: we're now on a rebuild preview for the same package
         assert isinstance(app.screen, InstallScreen)
-        assert app.screen.rebuild is True
+        assert app.screen.mode == "rebuild"
         assert app.screen.atom == "www-client/firefox"
