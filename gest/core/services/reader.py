@@ -11,7 +11,7 @@ from __future__ import annotations
 import subprocess
 from collections.abc import Callable
 
-from gest.core.services.model import Service
+from gest.core.services.model import Service, ServiceDetail
 
 Runner = Callable[[list[str]], str]
 
@@ -64,3 +64,55 @@ def list_services(runner: Runner | None = None) -> list[Service]:
         for name in sorted(set(names))
     ]
     return services
+
+
+def _words(text: str) -> list[str]:
+    """Split OpenRC dependency output into a sorted, de-duplicated name list."""
+    return sorted({w for w in text.split() if w})
+
+
+def parse_describe(text: str) -> str:
+    """Pull a one-line description out of `rc-service X describe` output.
+
+    OpenRC prefixes lines with ` * ` (and some scripts lead with `name:`); the
+    first meaningful line is the service's own description.
+    """
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line.startswith("*"):
+            line = line[1:].strip()
+        if not line:
+            continue
+        # Drop a leading "servicename:" label if the script uses one.
+        if ":" in line:
+            head, _, tail = line.partition(":")
+            if head and " " not in head and tail.strip():
+                line = tail.strip()
+        return line
+    return ""
+
+
+def describe_service(
+    name: str,
+    runner: Runner | None = None,
+    *,
+    status: str = "stopped",
+    runlevels: list[str] | None = None,
+) -> ServiceDetail:
+    """Introspect one service via read-only `rc-service` sub-commands.
+
+    `status`/`runlevels` are passed through from an already-loaded Service so we
+    don't re-run `rc-status`; everything else comes from the init script's own
+    dependency metadata.
+    """
+    run = runner or _default_runner
+    return ServiceDetail(
+        name=name,
+        description=parse_describe(run(["rc-service", name, "describe"])),
+        needs=_words(run(["rc-service", name, "ineed"])),
+        uses=_words(run(["rc-service", name, "iuse"])),
+        wants=_words(run(["rc-service", name, "iwant"])),
+        needed_by=_words(run(["rc-service", name, "needsme"])),
+        status=status,
+        runlevels=list(runlevels or []),
+    )

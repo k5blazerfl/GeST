@@ -27,3 +27,34 @@ def test_list_services_with_injected_runner():
     assert by["dbus"].running and by["dbus"].enabled
     assert by["dbus"].runlevels == ["default"]
     assert not by["sshd"].running and not by["sshd"].enabled
+
+
+def test_words_dedupes_and_sorts():
+    assert reader._words("net   sshd net\nlocalmount\n") == ["localmount", "net", "sshd"]
+    assert reader._words("   \n  ") == []
+
+
+def test_parse_describe_strips_markers_and_label():
+    assert reader.parse_describe(" * sshd: OpenSSH server\n * more\n") == "OpenSSH server"
+    assert reader.parse_describe(" * A plain description\n") == "A plain description"
+    assert reader.parse_describe("\n\n") == ""
+
+
+def test_describe_service_with_injected_runner():
+    outputs = {
+        ("rc-service", "sshd", "describe"): " * OpenSSH server\n",
+        ("rc-service", "sshd", "ineed"): "net\n",
+        ("rc-service", "sshd", "iuse"): "logger dns\n",
+        ("rc-service", "sshd", "iwant"): "",
+        ("rc-service", "sshd", "needsme"): "",
+    }
+    d = reader.describe_service(
+        "sshd", lambda argv: outputs[tuple(argv)],
+        status="started", runlevels=["default"],
+    )
+    assert d.name == "sshd"
+    assert d.description == "OpenSSH server"
+    assert d.needs == ["net"]
+    assert d.uses == ["dns", "logger"]
+    assert d.wants == [] and d.needed_by == []
+    assert d.running and d.runlevels == ["default"]
