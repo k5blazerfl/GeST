@@ -1,6 +1,6 @@
 """Headless tests of the install screen: preview gate + streamed merge."""
 
-from textual.widgets import Button, DataTable, ListView
+from textual.widgets import Button, DataTable, OptionList
 
 from gest.core.software.preview import PreviewResult
 from gest.tui.app import GestApp
@@ -35,9 +35,10 @@ class _UnavailableBackend:
 
 async def _open_install_screen(app, pilot):
     await pilot.pause()
-    app.screen.query_one("#module-list", ListView).focus()
+    app.screen.query_one("#cc-categories", OptionList).focus()
     await pilot.pause()
-    await pilot.press("enter")  # open Software Management
+    await pilot.press("enter")  # category Software -> focus its module list
+    await pilot.press("enter")  # module "Software Management" -> launch
     await pilot.pause()
     await app.workers.wait_for_complete()
     await pilot.pause()

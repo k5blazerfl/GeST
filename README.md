@@ -49,8 +49,9 @@ python3 -m venv --system-site-packages .venv
 ./bin/gest            # launch the TUI
 ```
 
-In the TUI: **↑/↓** move, **Enter** opens a module, **/** focuses search,
-**Esc** goes back, **q** quits.
+The main menu is a two-pane **Control Center**: **↑/↓** move within a pane,
+**→**/**Enter** drops from a category into its module list, **Enter** launches a
+module, **Esc**/**←** goes back, **F9**/**q** quits.
 
 ## Tests
 
@@ -88,6 +89,8 @@ working tree.
 ## Roadmap
 
 - [x] Layered skeleton: core + TUI + IPC contract
+- [x] YaST-style two-pane Control Center menu + reusable chrome widgets
+      (function-key footer, bracket buttons)
 - [x] Software module — read path (list / search / info, USE flags, @world)
 - [x] Backend scaffold: D-Bus service, polkit actions, system data files
 - [x] Install flow: `emerge --pretend` preview → confirm → streamed merge
