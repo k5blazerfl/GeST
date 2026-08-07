@@ -47,19 +47,18 @@ class MainMenuScreen(Screen):
 
     def compose(self) -> ComposeResult:
         yield Header()
-        with Center():
-            with Vertical(id="menu-box"):
-                yield Label("Select a module", id="menu-title")
-                items = []
-                for key, title, subtitle, enabled in _MODULES:
-                    label = title if enabled else f"{title}  (coming soon)"
-                    item = ListItem(
-                        Label(label, classes="mod-title"),
-                        Label(subtitle, classes="mod-sub"),
-                        id=f"mod-{key}",
-                    )
-                    items.append(item)
-                yield ListView(*items, id="module-list")
+        with Center(), Vertical(id="menu-box"):
+            yield Label("Select a module", id="menu-title")
+            items = []
+            for key, title, subtitle, enabled in _MODULES:
+                label = title if enabled else f"{title}  (coming soon)"
+                item = ListItem(
+                    Label(label, classes="mod-title"),
+                    Label(subtitle, classes="mod-sub"),
+                    id=f"mod-{key}",
+                )
+                items.append(item)
+            yield ListView(*items, id="module-list")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -122,9 +121,10 @@ class SoftwareScreen(Screen):
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         # Don't let the "/" quick-search binding swallow slashes the user is
         # typing into the search box (package atoms contain "/").
-        if action == "focus_search" and self.focused is self.query_one("#search", Input):
-            return False
-        return True
+        return not (
+            action == "focus_search"
+            and self.focused is self.query_one("#search", Input)
+        )
 
     def on_key(self, event: events.Key) -> None:
         # Down from the search box drops into the results list, so the whole
@@ -244,9 +244,8 @@ def main() -> None:
         sys.stderr.write(
             "gest: no interactive terminal detected — keyboard input will not work.\n"
             "Run it directly in a real terminal (e.g. a Konsole tab):\n"
-            "    cd %s && ./bin/gest\n"
+            "    ./bin/gest\n"
             "Do not launch it through a pipe or with a `!`/non-interactive shell.\n"
-            % "/home/charron/GeST"
         )
         raise SystemExit(1)
     GestApp().run()

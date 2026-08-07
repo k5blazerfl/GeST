@@ -137,7 +137,7 @@ class UseFlagScreen(Screen):
         try:
             await backend.connect()
             await backend.set_package_use(self.cp, line)
-        except Exception as exc:  # noqa: BLE001 - report any failure to the user
+        except Exception as exc:
             self.app.notify(f"Could not write package.use: {exc}", severity="error")
             await backend.close()
             return

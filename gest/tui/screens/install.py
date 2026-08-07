@@ -131,7 +131,7 @@ class InstallScreen(Screen):
         backend = SoftwareBackend()
         try:
             await backend.connect()
-        except Exception as exc:  # noqa: BLE001 - report any connection failure
+        except Exception as exc:
             log.write(f"[backend unavailable] {exc}")
             log.write("The privileged backend isn't installed or running.")
             log.write("See gest/backend/README.md to install the root service.")
@@ -160,7 +160,7 @@ class InstallScreen(Screen):
                 started = await backend.rebuild(self.atom, on_progress, on_finished)
             else:
                 started = await backend.install(self.atom, on_progress, on_finished)
-        except Exception as exc:  # noqa: BLE001 - polkit denial etc.
+        except Exception as exc:
             log.write(f"[merge rejected] {exc}")
             self._status("not authorized — merge rejected")
             await backend.close()

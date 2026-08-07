@@ -139,7 +139,7 @@ class KeywordsScreen(Screen):
             await backend.connect()
             for kind, line in writes:
                 await backend.set_package_config(kind, self.cp, line)
-        except Exception as exc:  # noqa: BLE001 - report any failure
+        except Exception as exc:
             self.app.notify(f"Could not write config: {exc}", severity="error")
             await backend.close()
             return

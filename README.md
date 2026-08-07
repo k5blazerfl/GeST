@@ -1,13 +1,16 @@
 # GeST — Gentoo System Tool
 
+[![CI](https://github.com/k5blazerfl/GeST/actions/workflows/ci.yml/badge.svg)](https://github.com/k5blazerfl/GeST/actions/workflows/ci.yml)
+
 A modular, YaST-style system-administration tool for Gentoo. Where openSUSE has
 YaST2, Gentoo has a pile of excellent-but-disjoint CLIs (`emerge`, `equery`,
 `rc-update`, …). GeST aims to unify them behind one coherent interface —
 starting with a full-screen text UI, with a Qt/KDE frontend planned.
 
-> **Status:** early. The **software (Portage) module** read path and the TUI
-> shell are implemented and tested. The privileged backend is scaffolded (D-Bus
-> + polkit) but not yet wired into the TUI's write actions. See the roadmap.
+> **Status:** usable. The **software (Portage) module** is complete —
+> search, install, USE/keyword/mask editing, `@world` update, depclean, sync,
+> and news — driven through the polkit-gated root backend. An OpenRC
+> **Services module** (start/stop/enable) is in too. See the roadmap.
 
 ## Architecture
 

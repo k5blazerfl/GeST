@@ -13,7 +13,7 @@ class ServicesBackend:
         self._bus: MessageBus | None = None
         self._iface = None
 
-    async def connect(self) -> "ServicesBackend":
+    async def connect(self) -> ServicesBackend:
         self._bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
         introspection = await self._bus.introspect(BUS_NAME, SERVICES_PATH)
         obj = self._bus.get_proxy_object(BUS_NAME, SERVICES_PATH, introspection)

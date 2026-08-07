@@ -17,7 +17,6 @@ import os
 from dataclasses import dataclass
 
 import portage
-from portage.versions import cpv_getversion
 
 from gest.core.software import reader, usedesc
 
@@ -74,8 +73,8 @@ def read_overrides() -> dict[str, dict[str, bool]]:
     result: dict[str, dict[str, bool]] = {}
     try:
         with open(gest_file(), encoding="utf-8") as fh:
-            for line in fh:
-                line = line.strip()
+            for raw in fh:
+                line = raw.strip()
                 if not line or line.startswith("#"):
                     continue
                 parts = line.split()
