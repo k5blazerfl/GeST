@@ -32,19 +32,21 @@ class InstallScreen(Screen):
         Binding("q", "app.quit", "Quit"),
     ]
 
-    def __init__(self, atom: str) -> None:
+    def __init__(self, atom: str, rebuild: bool = False) -> None:
         super().__init__()
         self.atom = atom
+        self.rebuild = rebuild
+        self._verb = "Rebuild" if rebuild else "Install"
         self._installing = False
         self._done = False
 
     def compose(self) -> ComposeResult:
         yield Header()
-        yield Static(f"Install preview — {self.atom}", id="install-title")
+        yield Static(f"{self._verb} preview — {self.atom}", id="install-title")
         yield Static(" computing emerge plan …", id="install-status")
         yield RichLog(id="log", highlight=False, markup=False, wrap=False)
         with Horizontal(id="install-buttons"):
-            yield Button("Install", id="install", variant="success", disabled=True)
+            yield Button(self._verb, id="install", variant="success", disabled=True)
             yield Button("Cancel", id="cancel", variant="default")
         yield Footer()
 
@@ -64,7 +66,7 @@ class InstallScreen(Screen):
 
     @work(thread=True, exclusive=True)
     def run_preview(self) -> None:
-        result = preview.preview_install(self.atom)
+        result = preview.preview_install(self.atom, changed_use=self.rebuild)
         self.app.call_from_thread(self._show_preview, result)
 
     def _show_preview(self, result: preview.PreviewResult) -> None:
@@ -94,7 +96,7 @@ class InstallScreen(Screen):
         self._installing = True
         btn.disabled = True
         self.query_one("#cancel", Button).focus()
-        self._status(f"installing {self.atom} …")
+        self._status(f"{self._verb.lower()}ing {self.atom} …")
         self.run_install()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -129,8 +131,9 @@ class InstallScreen(Screen):
             result["code"] = code
             finished.set()
 
+        call = backend.rebuild if self.rebuild else backend.install
         try:
-            started = await backend.install(self.atom, on_progress, on_finished)
+            started = await call(self.atom, on_progress, on_finished)
         except Exception as exc:  # noqa: BLE001 - polkit denial etc.
             log.write(f"[merge rejected] {exc}")
             self._status("not authorized — merge rejected")

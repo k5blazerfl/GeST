@@ -59,9 +59,18 @@ class PreviewResult:
         return "nothing to do"
 
 
-def preview_install(atom: str, *, runner: Runner | None = None) -> PreviewResult:
-    """Return what merging ``atom`` would do, per ``emerge --pretend``."""
+def preview_install(
+    atom: str, *, changed_use: bool = False, runner: Runner | None = None
+) -> PreviewResult:
+    """Return what merging ``atom`` would do, per ``emerge --pretend``.
+
+    With ``changed_use`` the preview reflects a rebuild triggered by changed
+    USE flags (``--changed-use``) rather than a fresh install.
+    """
     run = runner or _default_runner
-    argv = [_EMERGE, "--pretend", "--verbose", "--color", "n", atom]
+    argv = [_EMERGE, "--pretend", "--verbose", "--color", "n"]
+    if changed_use:
+        argv.append("--changed-use")
+    argv.append(atom)
     returncode, output = run(argv)
     return PreviewResult(atom=atom, returncode=returncode, output=output.strip())

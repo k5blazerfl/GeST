@@ -124,3 +124,45 @@ async def test_install_button_autofocuses_when_plan_resolves(monkeypatch):
         await _open_install_screen(app, pilot)
         assert isinstance(app.focused, Button)
         assert app.focused.id == "install"  # Enter confirms — no mouse needed
+
+
+async def test_rebuild_mode_previews_changed_use_and_calls_rebuild(monkeypatch):
+    canned = PreviewResult(
+        "x/y", 0, "Total: 1 package (1 reinstall), Size of downloads: 0 KiB"
+    )
+    seen = {}
+
+    def fake_preview(atom, changed_use=False, **k):
+        seen["changed_use"] = changed_use
+        return canned
+
+    class _RebuildBackend(_FakeBackend):
+        rebuilt: list = []
+
+        async def rebuild(self, atom, on_progress=None, on_finished=None):
+            type(self).rebuilt.append(atom)
+            if on_progress:
+                on_progress(">>> rebuilding")
+            if on_finished:
+                on_finished(0)
+            return True
+
+    _RebuildBackend.rebuilt = []
+    monkeypatch.setattr("gest.core.software.preview.preview_install", fake_preview)
+    monkeypatch.setattr("gest.tui.screens.install.SoftwareBackend", _RebuildBackend)
+
+    app = GestApp()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        app.push_screen(InstallScreen("app-misc/hello", rebuild=True))
+        await pilot.pause()
+        await app.workers.wait_for_complete()  # preview worker
+        await pilot.pause()
+        assert seen["changed_use"] is True
+        btn = app.screen.query_one("#install", Button)
+        assert btn.label.plain == "Rebuild"
+        assert btn.disabled is False
+        await pilot.press("i")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert _RebuildBackend.rebuilt == ["app-misc/hello"]
