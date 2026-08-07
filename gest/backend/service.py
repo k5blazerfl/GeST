@@ -28,6 +28,7 @@ import gi
 gi.require_version("Gio", "2.0")
 from gi.repository import Gio, GLib  # noqa: E402
 
+from gest.backend.services import ServicesService
 from gest.ipc.interface import BUS_NAME, SOFTWARE_IFACE, SOFTWARE_PATH, polkit_action
 
 # D-Bus introspection describing the surface above.
@@ -365,6 +366,7 @@ def main() -> int:
 
     def on_bus_acquired(conn, name):
         SoftwareService(conn, on_idle=loop.quit)
+        ServicesService(conn)
 
     def on_name_lost(conn, name):
         sys.stderr.write(f"gest-backend: lost/could not acquire name {name}\n")

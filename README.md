@@ -79,6 +79,7 @@ system data files (as root) — see [`gest/backend/README.md`](gest/backend/READ
 - [x] Unmerge / cleanup — safe `--depclean` removal (per-package + whole-system)
       with preview + streamed output
 - [ ] Tree sync (`emerge --sync`), news items
-- [ ] Further modules: Services (OpenRC/systemd), Users & Groups, Network
+- [x] Services module (OpenRC) — list, start/stop/restart, enable/disable
+- [ ] Further modules: Users & Groups, Network; systemd support in Services
 - [ ] Qt/KDE frontend over the same `core`
 ```

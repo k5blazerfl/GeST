@@ -12,6 +12,11 @@ BUS_NAME = "org.gentoo.gest"
 SOFTWARE_PATH = "/org/gentoo/gest/Software"
 SOFTWARE_IFACE = "org.gentoo.gest.Software"
 
+# Object path + interface for the services (OpenRC/systemd) module.
+SERVICES_PATH = "/org/gentoo/gest/Services"
+SERVICES_IFACE = "org.gentoo.gest.Services"
+SERVICES_POLKIT = "org.gentoo.gest.services.manage"
+
 # polkit action id prefix. Concrete actions append the verb, e.g.
 # ``org.gentoo.gest.software.install``.
 POLKIT_PREFIX = "org.gentoo.gest.software"

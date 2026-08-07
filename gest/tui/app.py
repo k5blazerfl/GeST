@@ -22,6 +22,7 @@ from gest import __version__
 from gest.core.software import reader
 from gest.tui.screens.install import InstallScreen
 from gest.tui.screens.keywords import KeywordsScreen
+from gest.tui.screens.services import ServicesScreen
 from gest.tui.screens.useflags import UseFlagScreen
 
 # Modules offered on the main menu. Only "software" is wired up this release;
@@ -30,7 +31,7 @@ _MODULES = [
     ("software", "Software Management", "Browse, search and install packages (Portage)", True),
     ("update", "System Update", "Update all packages (emerge -uDN @world)", True),
     ("depclean", "Clean Up Packages", "Remove orphaned packages (emerge --depclean)", True),
-    ("services", "Services (OpenRC)", "Start, stop and enable system services", False),
+    ("services", "Services (OpenRC)", "Start, stop and enable system services", True),
     ("users", "Users & Groups", "Manage user accounts and groups", False),
     ("network", "Network", "Configure interfaces and connections", False),
 ]
@@ -71,6 +72,8 @@ class MainMenuScreen(Screen):
             self.app.push_screen(InstallScreen("@world", mode="world"))
         elif key == "depclean":
             self.app.push_screen(InstallScreen("", mode="depclean"))
+        elif key == "services":
+            self.app.push_screen(ServicesScreen())
         else:
             title = next((t for k, t, *_ in _MODULES if k == key), key)
             self.app.notify(
