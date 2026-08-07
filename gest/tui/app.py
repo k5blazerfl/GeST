@@ -28,6 +28,7 @@ from gest.tui.screens.useflags import UseFlagScreen
 # the rest are visible-but-disabled placeholders so the roadmap is legible.
 _MODULES = [
     ("software", "Software Management", "Browse, search and install packages (Portage)", True),
+    ("update", "System Update", "Update all packages (emerge -uDN @world)", True),
     ("services", "Services (OpenRC)", "Start, stop and enable system services", False),
     ("users", "Users & Groups", "Manage user accounts and groups", False),
     ("network", "Network", "Configure interfaces and connections", False),
@@ -65,6 +66,8 @@ class MainMenuScreen(Screen):
         key = event.item.id.removeprefix("mod-")
         if key == "software":
             self.app.push_screen(SoftwareScreen())
+        elif key == "update":
+            self.app.push_screen(InstallScreen("@world", world=True))
         else:
             title = next((t for k, t, *_ in _MODULES if k == key), key)
             self.app.notify(

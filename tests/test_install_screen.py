@@ -166,3 +166,39 @@ async def test_rebuild_mode_previews_changed_use_and_calls_rebuild(monkeypatch):
         await app.workers.wait_for_complete()
         await pilot.pause()
         assert _RebuildBackend.rebuilt == ["app-misc/hello"]
+
+
+async def test_world_mode_previews_and_calls_update_world(monkeypatch):
+    canned = PreviewResult("@world", 0, "Total: 12 packages (12 upgrades)")
+
+    class _WorldBackend(_FakeBackend):
+        updated: list = []
+
+        async def update_world(self, on_progress=None, on_finished=None):
+            type(self).updated.append(True)
+            if on_progress:
+                on_progress(">>> updating @world")
+            if on_finished:
+                on_finished(0)
+            return True
+
+    _WorldBackend.updated = []
+    monkeypatch.setattr(
+        "gest.core.software.preview.preview_world", lambda **k: canned
+    )
+    monkeypatch.setattr("gest.tui.screens.install.SoftwareBackend", _WorldBackend)
+
+    app = GestApp()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        app.push_screen(InstallScreen("@world", world=True))
+        await pilot.pause()
+        await app.workers.wait_for_complete()  # preview_world
+        await pilot.pause()
+        btn = app.screen.query_one("#install", Button)
+        assert btn.label.plain == "System update"
+        assert btn.disabled is False
+        await pilot.press("i")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert _WorldBackend.updated == [True]

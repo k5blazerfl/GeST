@@ -46,6 +46,9 @@ _INTROSPECTION = f"""
       <arg type="s" name="atom" direction="in"/>
       <arg type="b" name="started" direction="out"/>
     </method>
+    <method name="UpdateWorld">
+      <arg type="b" name="started" direction="out"/>
+    </method>
     <method name="SetPackageUse">
       <arg type="s" name="atom" direction="in"/>
       <arg type="s" name="line" direction="in"/>
@@ -97,6 +100,8 @@ class SoftwareService:
         elif method == "Rebuild":
             (atom,) = params.unpack()
             self._rebuild(atom, sender, invocation)
+        elif method == "UpdateWorld":
+            self._update_world(sender, invocation)
         elif method == "SetPackageUse":
             atom, line = params.unpack()
             self._set_package_use(atom, line, sender, invocation)
@@ -149,6 +154,16 @@ class SoftwareService:
             return
         invocation.return_value(GLib.Variant("(b)", (True,)))
         self._spawn_streaming([_EMERGE, "--changed-use", "--color", "n", atom])
+
+    def _update_world(self, sender: str, invocation) -> None:
+        """Update the whole system: emerge -uDN @world."""
+        if not self._check_authorized(sender, polkit_action("install")):
+            invocation.return_error_literal(
+                Gio.dbus_error_quark(), Gio.DBusError.ACCESS_DENIED,
+                "Not authorized to update the system")
+            return
+        invocation.return_value(GLib.Variant("(b)", (True,)))
+        self._spawn_streaming([_EMERGE, "-uDN", "--color", "n", "@world"])
 
     # -- package.use write ---------------------------------------------------
 

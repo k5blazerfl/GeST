@@ -50,3 +50,17 @@ def test_preview_changed_use_adds_flag():
     preview_install("cat/pkg", changed_use=True, runner=runner)
     assert "--changed-use" in seen["argv"]
     assert "cat/pkg" == seen["argv"][-1]  # atom stays last
+
+
+def test_preview_world_builds_update_argv():
+    seen = {}
+
+    def runner(argv):
+        seen["argv"] = argv
+        return 0, "Total: 12 packages (12 upgrades)"
+
+    from gest.core.software.preview import preview_world
+    r = preview_world(runner=runner)
+    assert "-uDN" in seen["argv"]
+    assert seen["argv"][-1] == "@world"
+    assert r.atom == "@world"

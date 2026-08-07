@@ -32,11 +32,12 @@ class InstallScreen(Screen):
         Binding("q", "app.quit", "Quit"),
     ]
 
-    def __init__(self, atom: str, rebuild: bool = False) -> None:
+    def __init__(self, atom: str, rebuild: bool = False, world: bool = False) -> None:
         super().__init__()
         self.atom = atom
         self.rebuild = rebuild
-        self._verb = "Rebuild" if rebuild else "Install"
+        self.world = world
+        self._verb = "System update" if world else ("Rebuild" if rebuild else "Install")
         self._installing = False
         self._done = False
 
@@ -66,7 +67,10 @@ class InstallScreen(Screen):
 
     @work(thread=True, exclusive=True)
     def run_preview(self) -> None:
-        result = preview.preview_install(self.atom, changed_use=self.rebuild)
+        if self.world:
+            result = preview.preview_world()
+        else:
+            result = preview.preview_install(self.atom, changed_use=self.rebuild)
         self.app.call_from_thread(self._show_preview, result)
 
     def _show_preview(self, result: preview.PreviewResult) -> None:
@@ -131,9 +135,12 @@ class InstallScreen(Screen):
             result["code"] = code
             finished.set()
 
-        call = backend.rebuild if self.rebuild else backend.install
         try:
-            started = await call(self.atom, on_progress, on_finished)
+            if self.world:
+                started = await backend.update_world(on_progress, on_finished)
+            else:
+                call = backend.rebuild if self.rebuild else backend.install
+                started = await call(self.atom, on_progress, on_finished)
         except Exception as exc:  # noqa: BLE001 - polkit denial etc.
             log.write(f"[merge rejected] {exc}")
             self._status("not authorized — merge rejected")

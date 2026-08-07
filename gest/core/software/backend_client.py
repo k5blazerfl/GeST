@@ -70,6 +70,14 @@ class SoftwareBackend:
             self._iface.on_finished(lambda code: on_finished(code))
         return await self._iface.call_rebuild(atom)
 
+    async def update_world(self, on_progress=None, on_finished=None) -> bool:
+        """Update the system (emerge -uDN @world); streams like install."""
+        if on_progress is not None:
+            self._iface.on_progress(lambda line: on_progress(line))
+        if on_finished is not None:
+            self._iface.on_finished(lambda code: on_finished(code))
+        return await self._iface.call_update_world()
+
     async def set_package_use(self, atom: str, line: str) -> bool:
         """Write ``line`` for ``atom`` into package.use/gest (polkit-gated)."""
         return await self._iface.call_set_package_use(atom, line)
