@@ -80,3 +80,10 @@ def test_preview_depclean_argv():
     # system depclean: no atom argument
     preview_depclean("", runner=runner)
     assert seen["argv"][-1] == "--depclean"
+
+
+def test_preview_sync_is_informational():
+    from gest.core.software.preview import preview_sync
+    r = preview_sync()
+    assert r.ok
+    assert "Synchronize" in r.output

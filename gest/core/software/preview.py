@@ -59,6 +59,19 @@ class PreviewResult:
         return "nothing to do"
 
 
+def preview_sync() -> PreviewResult:
+    """Informational 'preview' for a tree sync (emerge --sync has no --pretend)."""
+    return PreviewResult(
+        atom="@tree",
+        returncode=0,
+        output=(
+            "Synchronize the Portage ebuild tree from the configured mirrors.\n"
+            "This refreshes available package versions; it does not change\n"
+            "installed packages. Press Sync to proceed."
+        ),
+    )
+
+
 def preview_depclean(atom: str = "", *, runner: Runner | None = None) -> PreviewResult:
     """Preview a removal: emerge --pretend --depclean [atom] (safe; keeps deps)."""
     run = runner or _default_runner

@@ -37,6 +37,7 @@ class InstallScreen(Screen):
         "rebuild": "Rebuild",
         "world": "System update",
         "depclean": "Remove",
+        "sync": "Sync",
     }
 
     def __init__(self, atom: str, mode: str = "install") -> None:
@@ -76,6 +77,8 @@ class InstallScreen(Screen):
     def run_preview(self) -> None:
         if self.mode == "world":
             result = preview.preview_world()
+        elif self.mode == "sync":
+            result = preview.preview_sync()
         elif self.mode == "depclean":
             result = preview.preview_depclean(self.atom)
         else:
@@ -149,6 +152,8 @@ class InstallScreen(Screen):
         try:
             if self.mode == "world":
                 started = await backend.update_world(on_progress, on_finished)
+            elif self.mode == "sync":
+                started = await backend.sync(on_progress, on_finished)
             elif self.mode == "depclean":
                 started = await backend.depclean(self.atom, on_progress, on_finished)
             elif self.mode == "rebuild":

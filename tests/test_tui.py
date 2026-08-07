@@ -24,7 +24,7 @@ async def test_menu_opens_software_and_lists_installed():
         await pilot.pause()
         assert isinstance(app.screen, MainMenuScreen)
         menu = app.screen.query_one("#module-list", ListView)
-        assert len(menu.children) == 6  # modules + System Update + Clean Up
+        assert len(menu.children) == 8  # + Sync + News
         await _open_software(app, pilot)
         table = app.screen.query_one("#results", DataTable)
         assert table.row_count > 0  # installed packages populated
@@ -106,10 +106,10 @@ async def test_menu_arrow_navigates_all_items_and_notifies_unimplemented():
         await pilot.pause()
         lv = app.screen.query_one("#module-list", ListView)
         assert app.focused is lv  # list is focused, arrows work immediately
-        for _ in range(4):
-            await pilot.press("down")  # index 4 = Users (still "coming soon")
+        for _ in range(6):
+            await pilot.press("down")  # index 6 = Users (still "coming soon")
         await pilot.pause()
-        assert lv.index == 4
+        assert lv.index == 6
         await pilot.press("enter")
         await pilot.pause()
         assert isinstance(app.screen, MainMenuScreen)  # unimplemented -> stays put

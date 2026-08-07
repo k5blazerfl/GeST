@@ -54,6 +54,9 @@ _INTROSPECTION = f"""
       <arg type="s" name="atom" direction="in"/>
       <arg type="b" name="started" direction="out"/>
     </method>
+    <method name="Sync">
+      <arg type="b" name="started" direction="out"/>
+    </method>
     <method name="SetPackageUse">
       <arg type="s" name="atom" direction="in"/>
       <arg type="s" name="line" direction="in"/>
@@ -138,6 +141,8 @@ class SoftwareService:
         elif method == "Depclean":
             (atom,) = params.unpack()
             self._depclean(atom, sender, invocation)
+        elif method == "Sync":
+            self._sync(sender, invocation)
         elif method == "SetPackageUse":
             atom, line = params.unpack()
             self._set_package_use(atom, line, sender, invocation)
@@ -218,6 +223,16 @@ class SoftwareService:
         if atom:
             argv.append(atom)
         self._spawn_streaming(argv)
+
+    def _sync(self, sender: str, invocation) -> None:
+        """Sync the Portage tree: emerge --sync."""
+        if not self._check_authorized(sender, polkit_action("sync")):
+            invocation.return_error_literal(
+                Gio.dbus_error_quark(), Gio.DBusError.ACCESS_DENIED,
+                "Not authorized to sync the Portage tree")
+            return
+        invocation.return_value(GLib.Variant("(b)", (True,)))
+        self._spawn_streaming([_EMERGE, "--sync", "--color", "n"])
 
     # -- package.use write ---------------------------------------------------
 
