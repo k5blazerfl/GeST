@@ -22,6 +22,16 @@ doing anything.
 
 ## Installing the system data files
 
+**Quick install (development):** from the repo root, as root:
+
+```bash
+sudo ./install-backend.sh        # install (uninstall: sudo ./install-backend.sh -u)
+```
+
+This writes the launcher + all three data files and reloads D-Bus. It is a
+*dev* install: the root service loads `gest` from the working tree, so keep
+the tree trusted. The manual equivalent is below.
+
 These live in [`../../data/`](../../data) and must be placed by root:
 
 ```bash

@@ -69,8 +69,8 @@ system data files (as root) — see [`gest/backend/README.md`](gest/backend/READ
 - [x] Layered skeleton: core + TUI + IPC contract
 - [x] Software module — read path (list / search / info, USE flags, @world)
 - [x] Backend scaffold: D-Bus service, polkit actions, system data files
-- [ ] Wire the backend into the TUI: install with `--pretend` preview → confirm
-      → streamed merge output
+- [x] Install flow: `emerge --pretend` preview → confirm → streamed merge
+      (preview runs as the user; the live merge needs the root backend installed)
 - [ ] USE-flag editing (`package.use`), keywords, masks — the distinctively
       Gentoo surface with no YaST equivalent
 - [ ] `@world` update, unmerge (depclean preview), tree sync, news items

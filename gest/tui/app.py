@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from textual import work
+from textual import events, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Center, Vertical
@@ -20,6 +20,7 @@ from textual.widgets import (
 
 from gest import __version__
 from gest.core.software import reader
+from gest.tui.screens.install import InstallScreen
 
 # Modules offered on the main menu. Only "software" is wired up this release;
 # the rest are visible-but-disabled placeholders so the roadmap is legible.
@@ -49,15 +50,26 @@ class MainMenuScreen(Screen):
                         Label(subtitle, classes="mod-sub"),
                         id=f"mod-{key}",
                     )
-                    item.disabled = not enabled
                     items.append(item)
                 yield ListView(*items, id="module-list")
         yield Footer()
+
+    def on_mount(self) -> None:
+        # Focus the list explicitly so arrow keys work the instant the menu
+        # appears (don't depend on auto-focus timing in a real terminal).
+        self.query_one("#module-list", ListView).focus()
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         key = event.item.id.removeprefix("mod-")
         if key == "software":
             self.app.push_screen(SoftwareScreen())
+        else:
+            title = next((t for k, t, *_ in _MODULES if k == key), key)
+            self.app.notify(
+                f"The {title} module isn't implemented yet.",
+                title="Coming soon",
+                severity="warning",
+            )
 
 
 class SoftwareScreen(Screen):
@@ -83,6 +95,7 @@ class SoftwareScreen(Screen):
 
     def on_mount(self) -> None:
         self.title = "Software Management"
+        self.query_one("#search", Input).focus()
         self.load_installed()
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
@@ -91,6 +104,15 @@ class SoftwareScreen(Screen):
         if action == "focus_search" and self.focused is self.query_one("#search", Input):
             return False
         return True
+
+    def on_key(self, event: events.Key) -> None:
+        # Down from the search box drops into the results list, so the whole
+        # screen is drivable from the keyboard without reaching for Tab.
+        if event.key == "down" and self.focused is self.query_one("#search", Input):
+            table = self.query_one("#results", DataTable)
+            if table.row_count:
+                table.focus()
+                event.stop()
 
     def action_focus_search(self) -> None:
         self.query_one("#search", Input).focus()
@@ -101,6 +123,11 @@ class SoftwareScreen(Screen):
             self.run_search(term)
         else:
             self.load_installed()
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        # Enter (or click) on a package row opens its install preview.
+        row = event.data_table.get_row(event.row_key)
+        self.app.push_screen(InstallScreen(str(row[0])))
 
     def _set_status(self, text: str) -> None:
         self.query_one("#status", Static).update(text)
@@ -127,7 +154,8 @@ class SoftwareScreen(Screen):
         c = reader.counts()
         self.app.call_from_thread(
             self._set_status,
-            f" {c['installed']} installed · {c['world']} in @world",
+            f" {c['installed']} installed · {c['world']} in @world"
+            "   —  ↓ or Tab to results · Enter to install · / to search",
         )
 
     @work(thread=True, exclusive=True)
@@ -161,6 +189,21 @@ class GestApp(App):
 
 
 def main() -> None:
+    import sys
+
+    # A full-screen TUI needs a real interactive terminal. If stdin/stdout
+    # are not a tty (piped, or launched through a non-interactive shell such
+    # as the `!` prefix in another CLI), Textual would render but never
+    # receive keystrokes — looking "dead". Fail loudly with guidance instead.
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        sys.stderr.write(
+            "gest: no interactive terminal detected — keyboard input will not work.\n"
+            "Run it directly in a real terminal (e.g. a Konsole tab):\n"
+            "    cd %s && ./bin/gest\n"
+            "Do not launch it through a pipe or with a `!`/non-interactive shell.\n"
+            % "/home/charron/GeST"
+        )
+        raise SystemExit(1)
     GestApp().run()
 
 

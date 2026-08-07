@@ -75,3 +75,40 @@ async def test_escape_returns_to_menu():
         await pilot.press("escape")
         await pilot.pause()
         assert isinstance(app.screen, MainMenuScreen)
+
+
+async def test_menu_is_keyboard_navigable_without_focus_call():
+    """The menu must be arrow+Enter drivable the instant it appears."""
+    app = GestApp()
+    async with app.run_test(size=(100, 30)) as pilot:
+        await pilot.pause()
+        assert isinstance(app.screen, MainMenuScreen)
+        await pilot.press("down")  # Services
+        await pilot.press("up")    # back to Software (index 0)
+        await pilot.press("enter")
+        await pilot.pause()
+        assert isinstance(app.screen, SoftwareScreen)
+
+
+async def test_down_arrow_moves_from_search_into_results():
+    app = GestApp()
+    async with app.run_test(size=(100, 30)) as pilot:
+        await _open_software(app, pilot)
+        assert isinstance(app.focused, Input)  # search auto-focuses
+        await pilot.press("down")
+        await pilot.pause()
+        assert isinstance(app.focused, DataTable)  # dropped into the list
+
+
+async def test_menu_arrow_navigates_all_items_and_notifies_unimplemented():
+    app = GestApp()
+    async with app.run_test(size=(100, 30)) as pilot:
+        await pilot.pause()
+        lv = app.screen.query_one("#module-list", ListView)
+        assert app.focused is lv  # list is focused, arrows work immediately
+        await pilot.press("down")
+        await pilot.pause()
+        assert lv.index == 1  # moved onto a "coming soon" item (not skipped)
+        await pilot.press("enter")
+        await pilot.pause()
+        assert isinstance(app.screen, MainMenuScreen)  # unimplemented -> stays put
