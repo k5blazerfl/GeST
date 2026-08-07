@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<!--
+  polkit actions for the GeST software module. Install as:
+      /usr/share/polkit-1/actions/org.gentoo.gest.policy
+  auth_admin_keep: prompt for an administrator password, then remember the
+  authorization for a short while (so a batch of installs isn't a prompt each).
+-->
+<policyconfig>
+  <vendor>GeST — Gentoo System Tool</vendor>
+  <vendor_url>https://github.com/</vendor_url>
+
+  <action id="org.gentoo.gest.software.install">
+    <description>Install or upgrade software packages</description>
+    <message>Authentication is required to install software with Portage</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/emerge</annotate>
+  </action>
+
+  <action id="org.gentoo.gest.software.remove">
+    <description>Remove software packages</description>
+    <message>Authentication is required to remove software with Portage</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+
+  <action id="org.gentoo.gest.software.modify-config">
+    <description>Modify Portage configuration (USE flags, keywords, masks)</description>
+    <message>Authentication is required to change Portage configuration</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+
+  <action id="org.gentoo.gest.software.sync">
+    <description>Synchronize the Portage tree</description>
+    <message>Authentication is required to sync the Portage tree</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+</policyconfig>

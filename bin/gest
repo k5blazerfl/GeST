@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Launch the GeST TUI from the working tree using its own venv.
+# The venv must be created with --system-site-packages so that the system
+# Portage Python API is importable (see README).
+set -euo pipefail
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+exec "${here}/.venv/bin/python" -m gest "$@"

@@ -1,0 +1,49 @@
+/* GeST TUI styling — a restrained, YaST-ish blue accent. */
+
+Screen {
+    background: $surface;
+}
+
+#menu-box {
+    width: 70;
+    max-width: 90%;
+    margin-top: 2;
+    border: round $primary;
+    padding: 1 2;
+}
+
+#menu-title {
+    text-style: bold;
+    color: $primary;
+    margin-bottom: 1;
+}
+
+#module-list {
+    height: auto;
+}
+
+#module-list > ListItem {
+    padding: 0 1;
+}
+
+.mod-title {
+    text-style: bold;
+}
+
+.mod-sub {
+    color: $text-muted;
+}
+
+#search {
+    margin: 1 2 0 2;
+}
+
+#status {
+    margin: 0 2;
+    color: $text-muted;
+}
+
+#results {
+    height: 1fr;
+    margin: 1 2;
+}

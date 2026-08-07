@@ -1,0 +1,7 @@
+[D-BUS Service]
+# D-Bus activation for the GeST backend. Install as:
+#     /usr/share/dbus-1/system-services/org.gentoo.gest.service
+# The bus starts this (as root) on first call to org.gentoo.gest.
+Name=org.gentoo.gest
+Exec=/usr/libexec/gest-backend
+User=root

@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gest"
+version = "0.1.0"
+description = "GeST — Gentoo System Tool: a modular, YaST-style system administration tool for Gentoo"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "GPL-2.0-or-later" }
+authors = [{ name = "GeST contributors" }]
+keywords = ["gentoo", "portage", "system-administration", "tui", "yast"]
+
+# The TUI frontend and the async backend client. Two system-provided packages
+# are intentionally NOT listed here because on Gentoo they come from the OS,
+# not PyPI, and the frontend venv must reuse them (--system-site-packages):
+#   * portage      — the Portage Python API (queries)
+#   * PyGObject    — GLib/Gio, used by the root backend service
+dependencies = [
+    "textual>=0.80",
+    "dbus-next>=0.2.3",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-asyncio>=0.23"]
+
+[project.scripts]
+gest = "gest.tui.app:main"
+gest-backend = "gest.backend.service:main"
+
+[tool.setuptools.packages.find]
+include = ["gest*"]
+
+[tool.setuptools.package-data]
+"gest.tui" = ["*.tcss"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
