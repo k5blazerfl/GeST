@@ -101,6 +101,8 @@ working tree.
       with preview + streamed output
 - [x] Tree sync (`emerge --sync`) + Portage news viewer (`eselect news`)
 - [x] Services module (OpenRC) — list, start/stop/restart, enable/disable
+- [x] Service detail view — description + dependency graph (needs / uses /
+      wants / needed-by), read-only, opened with Enter
 - [ ] Further modules: Users & Groups, Network; systemd support in Services
 - [ ] Qt/KDE frontend over the same `core`
 ```

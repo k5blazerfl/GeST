@@ -15,6 +15,7 @@ from textual.widgets import DataTable, Footer, Header, Static
 
 from gest.core.services import reader as services_reader
 from gest.core.services.backend_client import ServicesBackend
+from gest.tui.screens.service_detail import ServiceDetailScreen
 
 
 class ServicesScreen(Screen):
@@ -35,7 +36,10 @@ class ServicesScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Header()
         yield Static("Services (OpenRC)", id="use-title")
-        yield Static(" s start · x stop · r restart · e enable/disable · Esc back", id="use-hint")
+        yield Static(
+            " Enter details · s start · x stop · r restart · e enable/disable · Esc back",
+            id="use-hint",
+        )
         table = DataTable(id="services", cursor_type="row", zebra_stripes=True)
         table.add_columns("Service", "Status", "Runlevels")
         yield table
@@ -68,6 +72,11 @@ class ServicesScreen(Screen):
             )
         if self._order:
             table.move_cursor(row=min(prev, len(self._order) - 1))
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        svc = self._services.get(event.row_key.value)
+        if svc is not None:
+            self.app.push_screen(ServiceDetailScreen(svc))
 
     def _current(self):
         if not self._order:
