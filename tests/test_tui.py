@@ -83,7 +83,8 @@ async def test_menu_is_keyboard_navigable_without_focus_call():
     async with app.run_test(size=(100, 30)) as pilot:
         await pilot.pause()
         assert isinstance(app.screen, MainMenuScreen)
-        await pilot.press("down")
+        await pilot.press("down")  # Services
+        await pilot.press("up")    # back to Software (index 0)
         await pilot.press("enter")
         await pilot.pause()
         assert isinstance(app.screen, SoftwareScreen)
