@@ -42,6 +42,10 @@ _INTROSPECTION = f"""
       <arg type="s" name="atom" direction="in"/>
       <arg type="b" name="started" direction="out"/>
     </method>
+    <method name="Rebuild">
+      <arg type="s" name="atom" direction="in"/>
+      <arg type="b" name="started" direction="out"/>
+    </method>
     <method name="SetPackageUse">
       <arg type="s" name="atom" direction="in"/>
       <arg type="s" name="line" direction="in"/>
@@ -84,6 +88,9 @@ class SoftwareService:
         elif method == "Install":
             (atom,) = params.unpack()
             self._install(atom, sender, invocation)
+        elif method == "Rebuild":
+            (atom,) = params.unpack()
+            self._rebuild(atom, sender, invocation)
         elif method == "SetPackageUse":
             atom, line = params.unpack()
             self._set_package_use(atom, line, sender, invocation)
@@ -123,6 +130,16 @@ class SoftwareService:
         # Authorized: start the merge and stream output asynchronously.
         invocation.return_value(GLib.Variant("(b)", (True,)))
         self._spawn_streaming([_EMERGE, "--color", "n", atom])
+
+    def _rebuild(self, atom: str, sender: str, invocation) -> None:
+        """Rebuild a package to apply changed USE flags (--changed-use)."""
+        if not self._check_authorized(sender, polkit_action("install")):
+            invocation.return_error_literal(
+                Gio.dbus_error_quark(), Gio.DBusError.ACCESS_DENIED,
+                "Not authorized to rebuild packages")
+            return
+        invocation.return_value(GLib.Variant("(b)", (True,)))
+        self._spawn_streaming([_EMERGE, "--changed-use", "--color", "n", atom])
 
     # -- package.use write ---------------------------------------------------
 

@@ -38,3 +38,15 @@ def test_preview_install_uses_injected_runner():
     assert "www-client/firefox" in seen["argv"]
     assert r.ok
     assert r.summary.startswith("Total:")
+
+
+def test_preview_changed_use_adds_flag():
+    seen = {}
+
+    def runner(argv):
+        seen["argv"] = argv
+        return 0, "Total: 1 package (1 reinstall), Size of downloads: 0 KiB"
+
+    preview_install("cat/pkg", changed_use=True, runner=runner)
+    assert "--changed-use" in seen["argv"]
+    assert "cat/pkg" == seen["argv"][-1]  # atom stays last

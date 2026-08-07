@@ -72,7 +72,8 @@ system data files (as root) — see [`gest/backend/README.md`](gest/backend/READ
 - [x] Install flow: `emerge --pretend` preview → confirm → streamed merge
       (preview runs as the user; the live merge needs the root backend installed)
 - [x] USE-flag editing (`package.use`) — tri-state per flag, written via the
-      polkit-gated backend; keywords/masks still to come
+      polkit-gated backend, then applied with a `--changed-use` rebuild;
+      keywords/masks still to come
 - [ ] `@world` update, unmerge (depclean preview), tree sync, news items
 - [ ] Further modules: Services (OpenRC/systemd), Users & Groups, Network
 - [ ] Qt/KDE frontend over the same `core`

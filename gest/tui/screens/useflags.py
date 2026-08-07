@@ -17,6 +17,7 @@ from textual.widgets import Button, DataTable, Footer, Header, Static
 
 from gest.core.software import useflags
 from gest.core.software.backend_client import SoftwareBackend
+from gest.tui.screens.install import InstallScreen
 
 _LABEL = {useflags.DEFAULT: "default", useflags.ON: "+ on", useflags.OFF: "- off"}
 _NEXT = {useflags.DEFAULT: useflags.ON, useflags.ON: useflags.OFF, useflags.OFF: useflags.DEFAULT}
@@ -40,7 +41,7 @@ class ConfirmWriteScreen(ModalScreen[bool]):
             body = self._line if self._line else f"(remove all GeST pins for {self._cp})"
             yield Static(
                 f"Write to /etc/portage/package.use/gest:\n\n  {body}\n\n"
-                "Reinstall the package (changed USE) to apply.",
+                "You'll be offered a rebuild next to apply it.",
                 id="confirm-text",
             )
         with Horizontal(id="confirm-buttons"):
@@ -142,7 +143,9 @@ class UseFlagScreen(Screen):
             return
         await backend.close()
         self.app.notify(
-            f"Wrote package.use for {self.cp}. Reinstall it to apply.",
-            severity="information",
+            f"Wrote package.use for {self.cp}.", severity="information"
         )
+        # Close the loop: hand off to a rebuild preview so the flag change
+        # actually takes effect (emerge --changed-use). Esc there skips it.
         self.app.pop_screen()
+        self.app.push_screen(InstallScreen(self.cp, rebuild=True))
