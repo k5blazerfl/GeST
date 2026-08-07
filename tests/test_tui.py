@@ -75,3 +75,25 @@ async def test_escape_returns_to_menu():
         await pilot.press("escape")
         await pilot.pause()
         assert isinstance(app.screen, MainMenuScreen)
+
+
+async def test_menu_is_keyboard_navigable_without_focus_call():
+    """The menu must be arrow+Enter drivable the instant it appears."""
+    app = GestApp()
+    async with app.run_test(size=(100, 30)) as pilot:
+        await pilot.pause()
+        assert isinstance(app.screen, MainMenuScreen)
+        await pilot.press("down")
+        await pilot.press("enter")
+        await pilot.pause()
+        assert isinstance(app.screen, SoftwareScreen)
+
+
+async def test_down_arrow_moves_from_search_into_results():
+    app = GestApp()
+    async with app.run_test(size=(100, 30)) as pilot:
+        await _open_software(app, pilot)
+        assert isinstance(app.focused, Input)  # search auto-focuses
+        await pilot.press("down")
+        await pilot.pause()
+        assert isinstance(app.focused, DataTable)  # dropped into the list

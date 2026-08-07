@@ -73,7 +73,9 @@ class InstallScreen(Screen):
             log.write(line)
         if result.ok:
             self._status(result.summary)
-            self.query_one("#install", Button).disabled = False
+            install = self.query_one("#install", Button)
+            install.disabled = False
+            install.focus()  # Enter now confirms the merge — no mouse needed
         else:
             self._status(f"cannot install: {result.summary}")
 
@@ -91,6 +93,7 @@ class InstallScreen(Screen):
             return
         self._installing = True
         btn.disabled = True
+        self.query_one("#cancel", Button).focus()
         self._status(f"installing {self.atom} …")
         self.run_install()
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from textual import work
+from textual import events, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Center, Vertical
@@ -93,6 +93,15 @@ class SoftwareScreen(Screen):
             return False
         return True
 
+    def on_key(self, event: events.Key) -> None:
+        # Down from the search box drops into the results list, so the whole
+        # screen is drivable from the keyboard without reaching for Tab.
+        if event.key == "down" and self.focused is self.query_one("#search", Input):
+            table = self.query_one("#results", DataTable)
+            if table.row_count:
+                table.focus()
+                event.stop()
+
     def action_focus_search(self) -> None:
         self.query_one("#search", Input).focus()
 
@@ -134,7 +143,7 @@ class SoftwareScreen(Screen):
         self.app.call_from_thread(
             self._set_status,
             f" {c['installed']} installed · {c['world']} in @world"
-            "   —  Tab to results, Enter to preview/install",
+            "   —  ↓ or Tab to results · Enter to install · / to search",
         )
 
     @work(thread=True, exclusive=True)

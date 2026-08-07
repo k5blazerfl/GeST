@@ -110,3 +110,17 @@ async def test_backend_unavailable_is_reported(monkeypatch):
         assert app.screen._installing is False
         assert app.screen._done is False
         assert app.screen.query_one("#cancel", Button).label.plain == "Back"
+
+
+async def test_install_button_autofocuses_when_plan_resolves(monkeypatch):
+    canned = PreviewResult(
+        "x/y", 0, "Total: 1 package (1 new), Size of downloads: 0 KiB"
+    )
+    monkeypatch.setattr(
+        "gest.core.software.preview.preview_install", lambda atom, **k: canned
+    )
+    app = GestApp()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_install_screen(app, pilot)
+        assert isinstance(app.focused, Button)
+        assert app.focused.id == "install"  # Enter confirms — no mouse needed
