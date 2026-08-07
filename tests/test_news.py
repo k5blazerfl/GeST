@@ -1,5 +1,7 @@
 """Tests for the Portage news reader."""
 
+import pytest
+
 from gest.core.software import news
 
 
@@ -24,3 +26,17 @@ def test_read_news_uses_number():
 
     assert news.read_news(5, runner) == "the news body"
     assert seen["argv"] == ["eselect", "news", "read", "5"]
+
+
+def test_mark_read_argv_valid_selectors():
+    assert news.mark_read_argv("all") == ["eselect", "news", "read", "all"]
+    assert news.mark_read_argv("new") == ["eselect", "news", "read", "new"]
+    assert news.mark_read_argv("7") == ["eselect", "news", "read", "7"]
+    assert news.mark_read_argv(" 7 ") == ["eselect", "news", "read", "7"]
+    assert news.mark_read_argv("3", "/usr/bin/eselect")[0] == "/usr/bin/eselect"
+
+
+def test_mark_read_argv_rejects_bad_selectors():
+    for bad in ("", "0", "-1", "foo", "3; rm -rf /", "all news", "1.2"):
+        with pytest.raises(ValueError):
+            news.mark_read_argv(bad)

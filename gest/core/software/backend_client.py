@@ -94,6 +94,10 @@ class SoftwareBackend:
             self._iface.on_finished(on_finished)
         return await self._iface.call_update_world()
 
+    async def mark_news_read(self, selector: str) -> bool:
+        """Mark Portage news read (polkit-gated). selector: "all"/"new"/number."""
+        return await self._iface.call_mark_news_read(selector)
+
     async def set_package_use(self, atom: str, line: str) -> bool:
         """Write ``line`` for ``atom`` into package.use/gest (polkit-gated)."""
         return await self._iface.call_set_package_use(atom, line)
