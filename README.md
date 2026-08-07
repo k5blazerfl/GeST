@@ -78,7 +78,7 @@ system data files (as root) — see [`gest/backend/README.md`](gest/backend/READ
 - [x] `@world` system update (`emerge -uDN @world`) — preview + streamed merge
 - [x] Unmerge / cleanup — safe `--depclean` removal (per-package + whole-system)
       with preview + streamed output
-- [ ] Tree sync (`emerge --sync`), news items
+- [x] Tree sync (`emerge --sync`) + Portage news viewer (`eselect news`)
 - [x] Services module (OpenRC) — list, start/stop/restart, enable/disable
 - [ ] Further modules: Users & Groups, Network; systemd support in Services
 - [ ] Qt/KDE frontend over the same `core`

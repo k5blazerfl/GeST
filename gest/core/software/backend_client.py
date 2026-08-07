@@ -70,6 +70,14 @@ class SoftwareBackend:
             self._iface.on_finished(lambda code: on_finished(code))
         return await self._iface.call_rebuild(atom)
 
+    async def sync(self, on_progress=None, on_finished=None) -> bool:
+        """Sync the Portage tree (emerge --sync); streams like install."""
+        if on_progress is not None:
+            self._iface.on_progress(lambda line: on_progress(line))
+        if on_finished is not None:
+            self._iface.on_finished(lambda code: on_finished(code))
+        return await self._iface.call_sync()
+
     async def depclean(self, atom: str = "", on_progress=None, on_finished=None) -> bool:
         """Remove packages via emerge --depclean [atom]; streams like install."""
         if on_progress is not None:

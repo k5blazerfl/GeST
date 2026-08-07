@@ -240,3 +240,34 @@ async def test_depclean_mode_previews_and_calls_depclean(monkeypatch):
         await app.workers.wait_for_complete()
         await pilot.pause()
         assert _DepcleanBackend.removed == ["cat/pkg"]
+
+
+async def test_sync_mode_calls_sync(monkeypatch):
+    class _SyncBackend(_FakeBackend):
+        synced: list = []
+
+        async def sync(self, on_progress=None, on_finished=None):
+            type(self).synced.append(True)
+            if on_progress:
+                on_progress(">>> syncing")
+            if on_finished:
+                on_finished(0)
+            return True
+
+    _SyncBackend.synced = []
+    monkeypatch.setattr("gest.tui.screens.install.SoftwareBackend", _SyncBackend)
+
+    app = GestApp()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        app.push_screen(InstallScreen("", mode="sync"))
+        await pilot.pause()
+        await app.workers.wait_for_complete()  # informational preview
+        await pilot.pause()
+        btn = app.screen.query_one("#install", Button)
+        assert btn.label.plain == "Sync"
+        assert btn.disabled is False
+        await pilot.press("i")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert _SyncBackend.synced == [True]
