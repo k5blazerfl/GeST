@@ -47,3 +47,29 @@ Screen {
     height: 1fr;
     margin: 1 2;
 }
+
+#install-title {
+    text-style: bold;
+    color: $primary;
+    margin: 1 2 0 2;
+}
+
+#install-status {
+    margin: 0 2;
+    color: $text-muted;
+}
+
+#log {
+    height: 1fr;
+    margin: 1 2;
+    border: round $panel-lighten-2;
+}
+
+#install-buttons {
+    height: auto;
+    margin: 0 2 1 2;
+}
+
+#install-buttons Button {
+    margin-right: 2;
+}

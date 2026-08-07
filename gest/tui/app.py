@@ -20,6 +20,7 @@ from textual.widgets import (
 
 from gest import __version__
 from gest.core.software import reader
+from gest.tui.screens.install import InstallScreen
 
 # Modules offered on the main menu. Only "software" is wired up this release;
 # the rest are visible-but-disabled placeholders so the roadmap is legible.
@@ -102,6 +103,11 @@ class SoftwareScreen(Screen):
         else:
             self.load_installed()
 
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        # Enter (or click) on a package row opens its install preview.
+        row = event.data_table.get_row(event.row_key)
+        self.app.push_screen(InstallScreen(str(row[0])))
+
     def _set_status(self, text: str) -> None:
         self.query_one("#status", Static).update(text)
 
@@ -127,7 +133,8 @@ class SoftwareScreen(Screen):
         c = reader.counts()
         self.app.call_from_thread(
             self._set_status,
-            f" {c['installed']} installed · {c['world']} in @world",
+            f" {c['installed']} installed · {c['world']} in @world"
+            "   —  Tab to results, Enter to preview/install",
         )
 
     @work(thread=True, exclusive=True)
