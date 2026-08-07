@@ -177,6 +177,21 @@ class GestApp(App):
 
 
 def main() -> None:
+    import sys
+
+    # A full-screen TUI needs a real interactive terminal. If stdin/stdout
+    # are not a tty (piped, or launched through a non-interactive shell such
+    # as the `!` prefix in another CLI), Textual would render but never
+    # receive keystrokes — looking "dead". Fail loudly with guidance instead.
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        sys.stderr.write(
+            "gest: no interactive terminal detected — keyboard input will not work.\n"
+            "Run it directly in a real terminal (e.g. a Konsole tab):\n"
+            "    cd %s && ./bin/gest\n"
+            "Do not launch it through a pipe or with a `!`/non-interactive shell.\n"
+            % "/home/charron/GeST"
+        )
+        raise SystemExit(1)
     GestApp().run()
 
 
