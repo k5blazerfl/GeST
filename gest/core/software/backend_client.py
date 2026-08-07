@@ -53,6 +53,10 @@ class SoftwareBackend:
             self._iface.on_finished(lambda code: on_finished(code))
         return await self._iface.call_install(atom)
 
+    async def set_package_use(self, atom: str, line: str) -> bool:
+        """Write ``line`` for ``atom`` into package.use/gest (polkit-gated)."""
+        return await self._iface.call_set_package_use(atom, line)
+
     async def close(self) -> None:
         if self._bus is not None:
             self._bus.disconnect()

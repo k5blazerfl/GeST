@@ -17,8 +17,11 @@ from the unprivileged frontend. See ``backend/README.md``.
 
 from __future__ import annotations
 
+import os
+import re
 import shutil
 import sys
+import tempfile
 
 import gi
 
@@ -38,6 +41,11 @@ _INTROSPECTION = f"""
     <method name="Install">
       <arg type="s" name="atom" direction="in"/>
       <arg type="b" name="started" direction="out"/>
+    </method>
+    <method name="SetPackageUse">
+      <arg type="s" name="atom" direction="in"/>
+      <arg type="s" name="line" direction="in"/>
+      <arg type="b" name="ok" direction="out"/>
     </method>
     <signal name="Progress"><arg type="s" name="line"/></signal>
     <signal name="Finished"><arg type="i" name="exit_code"/></signal>
@@ -76,6 +84,9 @@ class SoftwareService:
         elif method == "Install":
             (atom,) = params.unpack()
             self._install(atom, sender, invocation)
+        elif method == "SetPackageUse":
+            atom, line = params.unpack()
+            self._set_package_use(atom, line, sender, invocation)
         else:
             invocation.return_error_literal(
                 Gio.dbus_error_quark(),
@@ -112,6 +123,66 @@ class SoftwareService:
         # Authorized: start the merge and stream output asynchronously.
         invocation.return_value(GLib.Variant("(b)", (True,)))
         self._spawn_streaming([_EMERGE, "--color", "n", atom])
+
+    # -- package.use write ---------------------------------------------------
+
+    _ATOM_RE = re.compile(r"^[a-z0-9][a-z0-9+._-]*/[a-zA-Z0-9+._-]+$")
+
+    def _set_package_use(self, atom, line, sender, invocation):
+        if not self._check_authorized(sender, polkit_action("modify-config")):
+            invocation.return_error_literal(
+                Gio.dbus_error_quark(), Gio.DBusError.ACCESS_DENIED,
+                "Not authorized to modify Portage configuration")
+            return
+        if "\n" in atom or "\n" in line or not self._ATOM_RE.match(atom):
+            invocation.return_error_literal(
+                Gio.dbus_error_quark(), Gio.DBusError.INVALID_ARGS,
+                "invalid package atom")
+            return
+        if line and line.split()[0] != atom:
+            invocation.return_error_literal(
+                Gio.dbus_error_quark(), Gio.DBusError.INVALID_ARGS,
+                "line does not match atom")
+            return
+        try:
+            self._write_package_use(atom, line)
+        except OSError as exc:
+            invocation.return_error_literal(
+                Gio.dbus_error_quark(), Gio.DBusError.FAILED,
+                f"write failed: {exc}")
+            return
+        invocation.return_value(GLib.Variant("(b)", (True,)))
+
+    @staticmethod
+    def _write_package_use(atom, line, directory="/etc/portage/package.use"):
+        os.makedirs(directory, exist_ok=True)
+        path = os.path.join(directory, "gest")
+        try:
+            with open(path, encoding="utf-8") as fh:
+                existing = fh.read().splitlines()
+        except OSError:
+            existing = []
+        kept = [
+            ln for ln in existing
+            if not (ln.strip() and not ln.strip().startswith("#")
+                    and ln.split()[0] == atom)
+        ]
+        if line:
+            kept.append(line)
+        text = "\n".join(kept).strip()
+        text = text + "\n" if text else ""
+        fd, tmp = tempfile.mkstemp(dir=directory, prefix=".gest.")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(text)
+            os.chmod(tmp, 0o644)
+            os.replace(tmp, path)
+        except Exception:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
 
     # -- polkit -------------------------------------------------------------
 

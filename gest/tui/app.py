@@ -21,6 +21,7 @@ from textual.widgets import (
 from gest import __version__
 from gest.core.software import reader
 from gest.tui.screens.install import InstallScreen
+from gest.tui.screens.useflags import UseFlagScreen
 
 # Modules offered on the main menu. Only "software" is wired up this release;
 # the rest are visible-but-disabled placeholders so the roadmap is legible.
@@ -79,6 +80,7 @@ class SoftwareScreen(Screen):
         Binding("escape", "app.pop_screen", "Back"),
         Binding("q", "app.quit", "Quit"),
         Binding("/", "focus_search", "Search"),
+        Binding("u", "edit_use", "USE flags"),
     ]
 
     def compose(self) -> ComposeResult:
@@ -129,6 +131,14 @@ class SoftwareScreen(Screen):
         row = event.data_table.get_row(event.row_key)
         self.app.push_screen(InstallScreen(str(row[0])))
 
+    def action_edit_use(self) -> None:
+        # "u" on the highlighted package row opens its USE-flag editor.
+        table = self.query_one("#results", DataTable)
+        if table.row_count == 0:
+            return
+        cp = str(table.get_row_at(table.cursor_row)[0])
+        self.app.push_screen(UseFlagScreen(cp))
+
     def _set_status(self, text: str) -> None:
         self.query_one("#status", Static).update(text)
 
@@ -155,7 +165,7 @@ class SoftwareScreen(Screen):
         self.app.call_from_thread(
             self._set_status,
             f" {c['installed']} installed · {c['world']} in @world"
-            "   —  ↓ or Tab to results · Enter to install · / to search",
+            "   —  ↓/Tab to results · Enter install · u USE flags · / search",
         )
 
     @work(thread=True, exclusive=True)
