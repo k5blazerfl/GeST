@@ -75,7 +75,8 @@ system data files (as root) — see [`gest/backend/README.md`](gest/backend/READ
       polkit-gated backend, then applied with a `--changed-use` rebuild
 - [x] Keyword acceptance + mask editing (`package.accept_keywords`,
       `package.mask`, `package.unmask`) via a generalized backend config writer
-- [ ] `@world` update, unmerge (depclean preview), tree sync, news items
+- [x] `@world` system update (`emerge -uDN @world`) — preview + streamed merge
+- [ ] Unmerge (depclean preview), tree sync, news items
 - [ ] Further modules: Services (OpenRC/systemd), Users & Groups, Network
 - [ ] Qt/KDE frontend over the same `core`
 ```

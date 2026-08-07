@@ -59,6 +59,14 @@ class PreviewResult:
         return "nothing to do"
 
 
+def preview_world(*, runner: Runner | None = None) -> PreviewResult:
+    """Preview a full system update: emerge --pretend -uDN @world."""
+    run = runner or _default_runner
+    argv = [_EMERGE, "--pretend", "--verbose", "--color", "n", "-uDN", "@world"]
+    returncode, output = run(argv)
+    return PreviewResult(atom="@world", returncode=returncode, output=output.strip())
+
+
 def preview_install(
     atom: str, *, changed_use: bool = False, runner: Runner | None = None
 ) -> PreviewResult:
