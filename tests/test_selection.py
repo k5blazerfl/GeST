@@ -29,3 +29,23 @@ def test_clear_and_empty_summary():
     sel.mark_install("x/y")
     sel.clear()
     assert sel.is_empty and sel.summary() == "no changes"
+
+
+def test_remove_marks_and_mixed_summary():
+    sel = Selection()
+    sel.mark_install("app-editors/vim")
+    sel.mark_remove("app-misc/hello")
+    assert sel.install_atoms() == ["app-editors/vim"]
+    assert sel.remove_atoms() == ["app-misc/hello"]
+    assert sel.summary() == "1 to install · 1 to remove"
+
+
+def test_toggle_remove_overrides_install():
+    sel = Selection()
+    sel.toggle_install("x/y")
+    assert sel.mark_of("x/y") == "install"
+    sel.toggle_remove("x/y")  # switch the same package to remove
+    assert sel.mark_of("x/y") == "remove"
+    assert sel.install_atoms() == [] and sel.remove_atoms() == ["x/y"]
+    sel.toggle_remove("x/y")  # toggling remove again clears it
+    assert sel.is_empty

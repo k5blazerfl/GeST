@@ -64,7 +64,7 @@ class SoftwareScreen(Screen):
         Binding("/", "focus_search", "Search"),
         Binding("u", "edit_use", "USE flags"),
         Binding("k", "edit_keywords", "Keywords"),
-        Binding("r", "remove_pkg", "Remove"),
+        Binding("r", "toggle_remove", "Remove mark"),
     ]
 
     def __init__(self) -> None:
@@ -73,6 +73,7 @@ class SoftwareScreen(Screen):
         self._installed: list[bool] = []
         self._base_count: str = ""
         self._selection = Selection()
+        self._pending_removes: list[str] = []
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -125,6 +126,9 @@ class SoftwareScreen(Screen):
         elif event.key == "space" and self.focused is table:
             self.action_toggle_mark()
             event.stop()
+        elif event.key == "r" and self.focused is table:
+            self.action_toggle_remove()
+            event.stop()
 
     def action_focus_search(self) -> None:
         self.query_one("#search", Input).focus()
@@ -133,32 +137,60 @@ class SoftwareScreen(Screen):
         self.app.notify("Help isn't implemented yet.", severity="warning")
 
     def action_accept(self) -> None:
-        atoms = self._selection.install_atoms()
-        if not atoms:
+        installs = self._selection.install_atoms()
+        removes = self._selection.remove_atoms()
+        if not installs and not removes:
             cp = self._current_cp()
-            atoms = [cp] if cp else []
-        if not atoms:
-            self.app.notify("Mark packages with Space, or highlight one.",
+            installs = [cp] if cp else []
+        if not installs and not removes:
+            self.app.notify("Mark packages with Space (install) or r (remove).",
                             severity="warning")
             return
+        # Apply installs first, then removals — each as its own streamed screen.
+        self._pending_removes = removes
+        if installs:
+            self.app.push_screen(
+                InstallScreen("", mode="multi", atoms=installs), self._after_installs
+            )
+        else:
+            self._start_removes()
+
+    def _after_installs(self, _result=None) -> None:
+        if self._pending_removes:
+            self._start_removes()
+        else:
+            self._after_apply()
+
+    def _start_removes(self) -> None:
+        removes, self._pending_removes = self._pending_removes, []
         self.app.push_screen(
-            InstallScreen("", mode="multi", atoms=atoms), self._after_apply
+            InstallScreen("", mode="depclean-multi", atoms=removes), self._after_apply
         )
 
     def _after_apply(self, _result=None) -> None:
         self._selection.clear()
         self.load_installed()
 
-    def action_toggle_mark(self) -> None:
+    def _toggle_current(self, *, remove: bool) -> None:
         table = self.query_one("#results", DataTable)
         if not self._cps or table.cursor_row is None:
             return
         row = table.cursor_row
         if not (0 <= row < len(self._cps)):
             return
-        self._selection.toggle_install(self._cps[row])
+        cp = self._cps[row]
+        if remove:
+            self._selection.toggle_remove(cp)
+        else:
+            self._selection.toggle_install(cp)
         table.update_cell_at(Coordinate(row, 0), self._status_for(row))
         self._render_count()
+
+    def action_toggle_mark(self) -> None:
+        self._toggle_current(remove=False)
+
+    def action_toggle_remove(self) -> None:
+        self._toggle_current(remove=True)
 
     def action_clear_marks(self) -> None:
         if self._selection.is_empty:
@@ -168,9 +200,11 @@ class SoftwareScreen(Screen):
         self._render_count()
 
     def _status_for(self, row: int) -> str:
-        cp = self._cps[row]
-        if self._selection.mark_of(cp) == "install":
-            return "+"
+        mark = self._selection.mark_of(self._cps[row])
+        if mark == "install":
+            return "u" if self._installed[row] else "+"
+        if mark == "remove":
+            return "-"
         return "i" if self._installed[row] else " "
 
     def _repaint_status(self) -> None:
@@ -245,11 +279,6 @@ class SoftwareScreen(Screen):
         cp = self._current_cp()
         if cp is not None:
             self.app.push_screen(KeywordsScreen(cp))
-
-    def action_remove_pkg(self) -> None:
-        cp = self._current_cp()
-        if cp is not None:
-            self.app.push_screen(InstallScreen(cp, mode="depclean"))
 
     # -- rendering ----------------------------------------------------------
 

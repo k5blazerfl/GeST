@@ -95,6 +95,8 @@ working tree.
       filter sidebar + package table + live detail pane
 - [x] Transactional package selection — mark packages with Space, commit
       them together with Accept (one multi-atom emerge)
+- [x] Install / update / remove marks (Space / r) with a two-phase Accept
+      (batched emerge, then batched --depclean)
 - [x] Software module — read path (list / search / info, USE flags, @world)
 - [x] Backend scaffold: D-Bus service, polkit actions, system data files
 - [x] Install flow: `emerge --pretend` preview → confirm → streamed merge

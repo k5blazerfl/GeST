@@ -119,3 +119,14 @@ def preview_install_many(atoms, *, runner: Runner | None = None) -> PreviewResul
     argv = [_EMERGE, "--pretend", "--verbose", "--color", "n", *atoms]
     returncode, output = run(argv)
     return PreviewResult(atom=" ".join(atoms), returncode=returncode, output=output.strip())
+
+
+def preview_depclean_many(atoms, *, runner: Runner | None = None) -> PreviewResult:
+    """Preview removing several atoms at once: emerge --pretend --depclean <atoms>."""
+    atoms = list(atoms)
+    if not atoms:
+        return PreviewResult(atom="", returncode=0, output="nothing selected")
+    run = runner or _default_runner
+    argv = [_EMERGE, "--pretend", "--verbose", "--color", "n", "--depclean", *atoms]
+    returncode, output = run(argv)
+    return PreviewResult(atom=" ".join(atoms), returncode=returncode, output=output.strip())

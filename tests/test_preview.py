@@ -106,3 +106,15 @@ def test_preview_install_many_empty_is_noop():
     from gest.core.software.preview import preview_install_many
     result = preview_install_many([], runner=lambda argv: (99, "should not run"))
     assert result.ok and result.output == "nothing selected"
+
+
+def test_preview_depclean_many_builds_argv():
+    calls = {}
+    def runner(argv):
+        calls["argv"] = argv
+        return 0, "Number to remove: 2"
+    from gest.core.software.preview import preview_depclean_many
+    result = preview_depclean_many(["a/b", "c/d"], runner=runner)
+    assert result.ok
+    assert "--depclean" in calls["argv"]
+    assert calls["argv"][-2:] == ["a/b", "c/d"]

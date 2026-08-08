@@ -60,6 +60,10 @@ _INTROSPECTION = f"""
       <arg type="s" name="atom" direction="in"/>
       <arg type="b" name="started" direction="out"/>
     </method>
+    <method name="DepcleanMulti">
+      <arg type="as" name="atoms" direction="in"/>
+      <arg type="b" name="started" direction="out"/>
+    </method>
     <method name="Sync">
       <arg type="b" name="started" direction="out"/>
     </method>
@@ -155,6 +159,9 @@ class SoftwareService:
         elif method == "Depclean":
             (atom,) = params.unpack()
             self._depclean(atom, sender, invocation)
+        elif method == "DepcleanMulti":
+            (atoms,) = params.unpack()
+            self._depclean_multi(atoms, sender, invocation)
         elif method == "Sync":
             self._sync(sender, invocation)
         elif method == "MarkNewsRead":
@@ -256,6 +263,22 @@ class SoftwareService:
         if atom:
             argv.append(atom)
         self._spawn_streaming(argv)
+
+    def _depclean_multi(self, atoms, sender: str, invocation) -> None:
+        """Remove several packages in one emerge --depclean (safe; keeps deps)."""
+        if not self._check_authorized(sender, polkit_action("remove")):
+            invocation.return_error_literal(
+                Gio.dbus_error_quark(), Gio.DBusError.ACCESS_DENIED,
+                "Not authorized to remove packages")
+            return
+        atoms = list(atoms)
+        if not atoms or any(not self._ATOM_RE.match(a) for a in atoms):
+            invocation.return_error_literal(
+                Gio.dbus_error_quark(), Gio.DBusError.INVALID_ARGS,
+                "invalid or empty package atom list")
+            return
+        invocation.return_value(GLib.Variant("(b)", (True,)))
+        self._spawn_streaming([_EMERGE, "--depclean", "--color", "n", *atoms])
 
     def _sync(self, sender: str, invocation) -> None:
         """Sync the Portage tree: emerge --sync."""
