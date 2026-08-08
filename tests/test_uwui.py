@@ -9,10 +9,12 @@ import asyncio
 import urwid
 
 from gest.uwui.runtime import App, Screen, function_bar
+from gest.uwui.screens.apply import ApplyScreen
 from gest.uwui.screens.menu import MenuScreen
 from gest.uwui.screens.network import NetworkScreen
 from gest.uwui.screens.news import NewsScreen
 from gest.uwui.screens.services import ServiceDetailScreen, ServicesScreen
+from gest.uwui.screens.software import SoftwareScreen
 from gest.uwui.screens.system import HostnameScreen, LocaleScreen, TimezoneScreen
 from gest.uwui.screens.users import UsersScreen
 
@@ -198,3 +200,56 @@ def test_network_list_and_config_modal():
     assert "Configure" in out and "Use DHCP" in out
     app._stack[-1].keypress(_SIZE, "esc")
     assert isinstance(app._stack[-1], NetworkScreen)
+
+
+def _software(app):
+    scr = SoftwareScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: len(scr._cps) > 0, ticks=300)
+    return scr
+
+
+def test_software_loads_marks_and_clears():
+    app = App()
+    scr = _software(app)
+    assert scr._cps  # installed packages
+    scr.keypress(_SIZE, "down")   # search -> checkboxes
+    scr.keypress(_SIZE, "down")   # -> table
+    assert scr._pile.focus_position == scr._TABLE_IDX
+    scr.keypress(_SIZE, " ")      # mark install (installed pkg shows "u")
+    assert len(scr._selection) == 1
+    assert scr._walker[0].base_widget.text[0] in ("+", "u")
+    assert "Accept" in scr._count.text
+    scr.keypress(_SIZE, "c")      # clear
+    assert scr._selection.is_empty
+    assert scr._walker[0].base_widget.text[0] == "i"
+
+
+def test_software_search_narrows():
+    app = App()
+    scr = _software(app)
+    installed = len(scr._cps)
+    scr._pile.focus_position = 0
+    scr._search.set_edit_text("app-editors/vim")
+    scr.keypress(_SIZE, "enter")
+    _pump(app, lambda: 0 < len(scr._cps) < installed, ticks=300)
+    assert any("vim" in cp for cp in scr._cps)
+
+
+def test_software_accept_opens_apply_screen():
+    app = App()
+    scr = _software(app)
+    scr.keypress(_SIZE, "down")
+    scr.keypress(_SIZE, "down")
+    scr.keypress(_SIZE, " ")      # mark one
+    scr.keypress(_SIZE, "f10")    # Accept
+    assert isinstance(app._stack[-1], ApplyScreen)
+
+
+def test_menu_launches_software():
+    app = App()
+    menu = MenuScreen(app)
+    app._stack.append(menu)
+    menu.keypress(_SIZE, "enter")  # Software category -> modules (Software Mgmt first)
+    menu.keypress(_SIZE, "enter")  # launch
+    assert isinstance(app._stack[-1], SoftwareScreen)

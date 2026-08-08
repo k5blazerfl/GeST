@@ -5,9 +5,11 @@ from __future__ import annotations
 import urwid
 
 from gest.uwui.runtime import App, Screen
+from gest.uwui.screens.apply import ApplyScreen, depclean_plan, sync_plan, world_plan
 from gest.uwui.screens.network import NetworkScreen
 from gest.uwui.screens.news import NewsScreen
 from gest.uwui.screens.services import ServicesScreen
+from gest.uwui.screens.software import SoftwareScreen
 from gest.uwui.screens.system import HostnameScreen, LocaleScreen, TimezoneScreen
 from gest.uwui.screens.users import UsersScreen
 
@@ -15,10 +17,10 @@ from gest.uwui.screens.users import UsersScreen
 # only modules ported to urwid so far are launchable.
 CATEGORIES: list[tuple[str, list[tuple[str, str, bool]]]] = [
     ("Software", [
-        ("software", "Software Management", False),
-        ("update", "System Update", False),
-        ("depclean", "Clean Up Packages", False),
-        ("sync", "Sync Portage Tree", False),
+        ("software", "Software Management", True),
+        ("update", "System Update", True),
+        ("depclean", "Clean Up Packages", True),
+        ("sync", "Sync Portage Tree", True),
         ("news", "Portage News", True),
     ]),
     ("System", [
@@ -83,6 +85,14 @@ class MenuScreen(Screen):
     def _launch(self, key: str) -> None:
         if key == "news":
             self.app.push(NewsScreen(self.app))
+        elif key == "software":
+            self.app.push(SoftwareScreen(self.app))
+        elif key == "update":
+            self.app.push(ApplyScreen(self.app, [world_plan()], verb="System update"))
+        elif key == "depclean":
+            self.app.push(ApplyScreen(self.app, [depclean_plan()], verb="Clean up"))
+        elif key == "sync":
+            self.app.push(ApplyScreen(self.app, [sync_plan()], verb="Sync"))
         elif key == "services":
             self.app.push(ServicesScreen(self.app))
         elif key == "hostname":
