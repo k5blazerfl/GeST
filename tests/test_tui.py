@@ -10,6 +10,7 @@ import urwid
 
 from gest.tui.runtime import App, Screen, function_bar
 from gest.tui.screens.apply import ApplyScreen
+from gest.tui.screens.bootloader import BootloaderScreen
 from gest.tui.screens.config import KeywordsScreen, UseFlagScreen
 from gest.tui.screens.eselect import EselectScreen
 from gest.tui.screens.menu import MenuScreen
@@ -312,3 +313,24 @@ def test_menu_launches_eselect():
         menu.keypress(_SIZE, "down")  # hostname/timezone/locale -> eselect (4th)
     menu.keypress(_SIZE, "enter")
     assert isinstance(app._stack[-1], EselectScreen)
+
+
+def test_bootloader_shows_info():
+    app = App()
+    scr = BootloaderScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: "Running kernel" in scr._info.text, ticks=200)
+    assert "Running kernel" in scr._info.text
+    assert "Bootloader" in scr._info.text
+
+
+def test_menu_launches_bootloader():
+    app = App()
+    menu = MenuScreen(app)
+    app._stack.append(menu)
+    menu.keypress(_SIZE, "down")   # System category
+    menu.keypress(_SIZE, "enter")  # focus modules
+    for _ in range(4):
+        menu.keypress(_SIZE, "down")  # hostname/timezone/locale/eselect -> bootloader (5th)
+    menu.keypress(_SIZE, "enter")
+    assert isinstance(app._stack[-1], BootloaderScreen)
