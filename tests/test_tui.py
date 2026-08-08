@@ -8,7 +8,7 @@ import asyncio
 
 import urwid
 
-from gest.tui.runtime import App, Screen, function_bar
+from gest.tui.runtime import App, Screen, function_bar, strip_ansi
 from gest.tui.screens.apply import ApplyScreen
 from gest.tui.screens.bootloader import BootloaderScreen
 from gest.tui.screens.config import KeywordsScreen, UseFlagScreen
@@ -334,3 +334,10 @@ def test_menu_launches_bootloader():
         menu.keypress(_SIZE, "down")  # hostname/timezone/locale/eselect -> bootloader (5th)
     menu.keypress(_SIZE, "enter")
     assert isinstance(app._stack[-1], BootloaderScreen)
+
+
+def test_strip_ansi_removes_colour_codes():
+    assert strip_ansi("\x1b[32m*\x1b[0m done") == "* done"
+    assert strip_ansi("\x1b[1;31mERROR\x1b[0m") == "ERROR"
+    assert strip_ansi("plain text") == "plain text"
+    assert strip_ansi("\x1b]0;title\x07after") == "after"  # OSC title
