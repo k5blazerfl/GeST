@@ -105,3 +105,17 @@ def preview_install(
     argv.append(atom)
     returncode, output = run(argv)
     return PreviewResult(atom=atom, returncode=returncode, output=output.strip())
+
+
+def preview_install_many(atoms, *, runner: Runner | None = None) -> PreviewResult:
+    """Preview merging several atoms at once: emerge --pretend <atoms>.
+
+    This is what the transactional Accept resolves before committing.
+    """
+    atoms = list(atoms)
+    if not atoms:
+        return PreviewResult(atom="", returncode=0, output="nothing selected")
+    run = runner or _default_runner
+    argv = [_EMERGE, "--pretend", "--verbose", "--color", "n", *atoms]
+    returncode, output = run(argv)
+    return PreviewResult(atom=" ".join(atoms), returncode=returncode, output=output.strip())

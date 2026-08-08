@@ -53,6 +53,14 @@ class SoftwareBackend:
             self._iface.on_finished(on_finished)
         return await self._iface.call_install(atom)
 
+    async def install_multi(self, atoms, on_progress=None, on_finished=None) -> bool:
+        """Merge several atoms in one emerge; streams like install."""
+        if on_progress is not None:
+            self._iface.on_progress(on_progress)
+        if on_finished is not None:
+            self._iface.on_finished(on_finished)
+        return await self._iface.call_install_multi(atoms)
+
     async def set_package_config(self, kind: str, atom: str, line: str) -> bool:
         """Write ``line`` for ``atom`` into package.<kind>/gest (polkit-gated)."""
         return await self._iface.call_set_package_config(kind, atom, line)

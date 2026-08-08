@@ -34,18 +34,23 @@ class InstallScreen(Screen):
 
     _VERBS = {
         "install": "Install",
+        "multi": "Apply",
         "rebuild": "Rebuild",
         "world": "System update",
         "depclean": "Remove",
         "sync": "Sync",
     }
 
-    def __init__(self, atom: str, mode: str = "install") -> None:
+    def __init__(self, atom: str, mode: str = "install", atoms=None) -> None:
         super().__init__()
         self.atom = atom
         self.mode = mode
+        self.atoms = list(atoms) if atoms is not None else ([atom] if atom else [])
         self._verb = self._VERBS[mode]
-        self._display = atom or "orphaned packages"
+        if mode == "multi":
+            self._display = f"{len(self.atoms)} package(s)"
+        else:
+            self._display = atom or "orphaned packages"
         self._installing = False
         self._done = False
 
@@ -77,6 +82,8 @@ class InstallScreen(Screen):
     def run_preview(self) -> None:
         if self.mode == "world":
             result = preview.preview_world()
+        elif self.mode == "multi":
+            result = preview.preview_install_many(self.atoms)
         elif self.mode == "sync":
             result = preview.preview_sync()
         elif self.mode == "depclean":
@@ -103,7 +110,7 @@ class InstallScreen(Screen):
 
     def action_back(self) -> None:
         if not self._installing:
-            self.app.pop_screen()
+            self.dismiss()
 
     def action_install(self) -> None:
         if self._installing or self._done:
@@ -152,6 +159,8 @@ class InstallScreen(Screen):
         try:
             if self.mode == "world":
                 started = await backend.update_world(on_progress, on_finished)
+            elif self.mode == "multi":
+                started = await backend.install_multi(self.atoms, on_progress, on_finished)
             elif self.mode == "sync":
                 started = await backend.sync(on_progress, on_finished)
             elif self.mode == "depclean":
