@@ -19,7 +19,8 @@ import gi
 gi.require_version("Gio", "2.0")
 from gi.repository import Gio, GLib
 
-from gest.backend.polkit import check_authorization
+from gest.backend.audit import audit
+from gest.backend.polkit import caller_uid, check_authorization
 from gest.core.system import hostname as hostname_core
 from gest.core.system import locale as locale_core
 from gest.core.system import timezone as timezone_core
@@ -83,7 +84,9 @@ class SystemService:
                 Gio.dbus_error_quark(), Gio.DBusError.UNKNOWN_METHOD,
                 f"No such method {method}")
             return
+        uid = caller_uid(self._conn, sender)
         if not check_authorization(self._conn, sender, SYSTEM_POLKIT):
+            audit(method, uid=uid, result="denied")
             invocation.return_error_literal(
                 Gio.dbus_error_quark(), Gio.DBusError.ACCESS_DENIED,
                 "Not authorized to change system settings")
@@ -98,6 +101,7 @@ class SystemService:
         except OSError as exc:
             invocation.return_value(GLib.Variant("(bs)", (False, f"write failed: {exc}")))
             return
+        audit(method, uid=uid, result="ok" if ok else "failed", detail=value)
         invocation.return_value(GLib.Variant("(bs)", (ok, out)))
 
     def _sethostname(self, name: str) -> tuple[bool, str]:

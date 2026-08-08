@@ -123,5 +123,7 @@ working tree.
 - [x] System category — Hostname, Timezone and Locale editors
       (polkit-gated writes to /etc/conf.d/hostname, /etc/localtime, /etc/env.d)
 - [ ] Further modules: Network; systemd support in Services
+- [x] Backend hardening — every privileged action is audit-logged
+      (authpriv, with caller uid); dispatch/auth round-trips are tested
 - [ ] Qt/KDE frontend over the same `core`
 ```

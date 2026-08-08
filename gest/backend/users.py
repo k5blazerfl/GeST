@@ -17,7 +17,8 @@ import gi
 gi.require_version("Gio", "2.0")
 from gi.repository import Gio, GLib
 
-from gest.backend.polkit import check_authorization
+from gest.backend.audit import audit
+from gest.backend.polkit import caller_uid, check_authorization
 from gest.core.users import commands
 from gest.ipc.interface import USERS_IFACE, USERS_PATH, USERS_POLKIT
 
@@ -117,7 +118,9 @@ class UsersService:
                 f"No such method {method}")
             return
         handler = handlers[method]
+        uid = caller_uid(self._conn, sender)
         if not check_authorization(self._conn, sender, USERS_POLKIT):
+            audit(method, uid=uid, result="denied")
             invocation.return_error_literal(
                 Gio.dbus_error_quark(), Gio.DBusError.ACCESS_DENIED,
                 "Not authorized to manage users and groups")
@@ -134,6 +137,7 @@ class UsersService:
                 Gio.dbus_error_quark(), Gio.DBusError.INVALID_ARGS, str(exc))
             return
         ok, out = _run(argv, stdin)
+        audit(method, uid=uid, result="ok" if ok else "failed")
         invocation.return_value(GLib.Variant("(bs)", (ok, out)))
 
     # each returns the validated argv (raising ValueError on bad input)

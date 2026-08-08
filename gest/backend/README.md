@@ -67,6 +67,17 @@ Then reload D-Bus (`rc-service dbus reload` on OpenRC) so the new policy and
 activation file are picked up. The service auto-starts on the first call and
 exits when D-Bus tells it the name was lost.
 
+
+## Audit logging
+
+Every mutation is written to the system log (`authpriv`, ident `gest-backend`)
+with the caller's uid, the action and the outcome — e.g.
+
+    gest-backend[123]: uid=1000 action=AddUser result=ok
+
+polkit denials are logged too (`result=denied`). This is a record of who changed
+what; view it with your logger (e.g. `logread` / journalctl / /var/log/auth.log).
+
 ## Why GLib/Gio and not dbus-next here
 
 The backend needs the **caller's** bus name to ask polkit about it. GLib's

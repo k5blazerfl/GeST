@@ -17,7 +17,8 @@ import gi
 gi.require_version("Gio", "2.0")
 from gi.repository import Gio, GLib
 
-from gest.backend.polkit import check_authorization
+from gest.backend.audit import audit
+from gest.backend.polkit import caller_uid, check_authorization
 from gest.ipc.interface import SERVICES_IFACE, SERVICES_PATH, SERVICES_POLKIT
 
 _INTROSPECTION = f"""
@@ -97,17 +98,24 @@ class ServicesService:
         return check_authorization(self._conn, sender, SERVICES_POLKIT)
 
     def _control(self, name, action, sender, invocation):
+        uid = caller_uid(self._conn, sender)
         if not self._authorized(sender):
+            audit(f"service.{action}", uid=uid, result="denied", detail=name)
             return self._deny(invocation, "Not authorized to manage services")
         if not _NAME_RE.match(name) or action not in _ACTIONS:
             return self._bad(invocation, "invalid service name or action")
         ok, out = _run(self._control_argv(name, action))
+        audit(f"service.{action}", uid=uid, result="ok" if ok else "failed", detail=name)
         invocation.return_value(GLib.Variant("(bs)", (ok, out)))
 
     def _set_enabled(self, name, enabled, runlevel, sender, invocation):
+        uid = caller_uid(self._conn, sender)
+        action = "service.enable" if enabled else "service.disable"
         if not self._authorized(sender):
+            audit(action, uid=uid, result="denied", detail=name)
             return self._deny(invocation, "Not authorized to manage services")
         if not _NAME_RE.match(name):
             return self._bad(invocation, "invalid service name")
         ok, out = _run(self._enabled_argv(name, enabled, runlevel))
+        audit(action, uid=uid, result="ok" if ok else "failed", detail=name)
         invocation.return_value(GLib.Variant("(bs)", (ok, out)))
