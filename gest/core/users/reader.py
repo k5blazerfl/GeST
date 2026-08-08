@@ -55,3 +55,12 @@ def list_groups(path: str = "/etc/group") -> list[Group]:
             return parse_group(fh.read())
     except OSError:
         return []
+
+
+def member_groups(username: str, groups: list[Group]) -> list[str]:
+    """Supplementary group names that list ``username`` as a member."""
+    return sorted(g.name for g in groups if username in g.members)
+
+
+def groups_for(username: str, path: str = "/etc/group") -> list[str]:
+    return member_groups(username, list_groups(path))

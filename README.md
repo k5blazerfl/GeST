@@ -118,6 +118,8 @@ working tree.
       wants / needed-by), read-only, opened with Enter
 - [x] Users & Groups module — list users/groups; add / edit / delete users,
       add / delete groups (polkit-gated useradd/usermod/userdel/groupadd/groupdel)
+- [x] User passwords (chpasswd via stdin) + group membership (gpasswd);
+      the edit form prefills a user's current supplementary groups
 - [ ] Further modules: Network; systemd support in Services
 - [ ] Qt/KDE frontend over the same `core`
 ```

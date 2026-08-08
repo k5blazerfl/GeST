@@ -3,7 +3,12 @@
 from textual.widgets import DataTable, OptionList
 
 from gest.tui.app import GestApp
-from gest.tui.screens.users import UserFormScreen, UsersScreen
+from gest.tui.screens.users import (
+    MemberFormScreen,
+    PasswordFormScreen,
+    UserFormScreen,
+    UsersScreen,
+)
 
 
 async def _open_users(app, pilot):
@@ -46,3 +51,32 @@ async def test_add_opens_user_form_and_cancels():
         await pilot.press("escape")
         await pilot.pause()
         assert isinstance(app.screen, UsersScreen)
+
+
+async def test_password_modal_opens():
+    app = GestApp()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_users(app, pilot)
+        app.screen.query_one("#users-table", DataTable).focus()
+        await pilot.pause()
+        await pilot.press("p")
+        await pilot.pause()
+        assert isinstance(app.screen, PasswordFormScreen)
+        await pilot.press("escape")
+        await pilot.pause()
+        assert isinstance(app.screen, UsersScreen)
+
+
+async def test_member_modal_opens_in_groups_view():
+    app = GestApp()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_users(app, pilot)
+        await pilot.press("g")  # switch to groups
+        await pilot.pause()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        app.screen.query_one("#users-table", DataTable).focus()
+        await pilot.pause()
+        await pilot.press("m")
+        await pilot.pause()
+        assert isinstance(app.screen, MemberFormScreen)
