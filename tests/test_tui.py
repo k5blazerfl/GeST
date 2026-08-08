@@ -1,17 +1,18 @@
 """Headless TUI tests driven by Textual's pilot."""
 
-from textual.widgets import DataTable, Input, ListView
+from textual.widgets import DataTable, Input, OptionList
 
 from gest.tui.app import GestApp, MainMenuScreen, SoftwareScreen
+from gest.tui.widgets.bracket_button import BracketButton
 
 
 async def _open_software(app, pilot):
     """From a fresh app, open the Software module and wait for the load."""
     await pilot.pause()
-    menu = app.screen.query_one("#module-list", ListView)
-    menu.focus()
+    app.screen.query_one("#cc-categories", OptionList).focus()
     await pilot.pause()
-    await pilot.press("enter")  # select "Software Management"
+    await pilot.press("enter")  # category Software -> focus its module list
+    await pilot.press("enter")  # module "Software Management" -> launch
     await pilot.pause()
     assert isinstance(app.screen, SoftwareScreen)
     await app.workers.wait_for_complete()
@@ -23,8 +24,10 @@ async def test_menu_opens_software_and_lists_installed():
     async with app.run_test(size=(100, 30)) as pilot:
         await pilot.pause()
         assert isinstance(app.screen, MainMenuScreen)
-        menu = app.screen.query_one("#module-list", ListView)
-        assert len(menu.children) == 8  # + Sync + News
+        cats = app.screen.query_one("#cc-categories", OptionList)
+        assert cats.option_count == 4  # Software / Services / Users / Network
+        mods = app.screen.query_one("#cc-modules", OptionList)
+        assert mods.option_count == 5  # the Software category's modules
         await _open_software(app, pilot)
         table = app.screen.query_one("#results", DataTable)
         assert table.row_count > 0  # installed packages populated
@@ -83,9 +86,12 @@ async def test_menu_is_keyboard_navigable_without_focus_call():
     async with app.run_test(size=(100, 30)) as pilot:
         await pilot.pause()
         assert isinstance(app.screen, MainMenuScreen)
-        await pilot.press("down")  # Services
-        await pilot.press("up")    # back to Software (index 0)
-        await pilot.press("enter")
+        cats = app.screen.query_one("#cc-categories", OptionList)
+        assert app.focused is cats  # categories focused, arrows work immediately
+        await pilot.press("down")   # Services
+        await pilot.press("up")     # back to Software (index 0)
+        await pilot.press("enter")  # -> module list
+        await pilot.press("enter")  # Software Management -> launch
         await pilot.pause()
         assert isinstance(app.screen, SoftwareScreen)
 
@@ -104,13 +110,12 @@ async def test_menu_arrow_navigates_all_items_and_notifies_unimplemented():
     app = GestApp()
     async with app.run_test(size=(100, 30)) as pilot:
         await pilot.pause()
-        lv = app.screen.query_one("#module-list", ListView)
-        assert app.focused is lv  # list is focused, arrows work immediately
-        for _ in range(6):
-            await pilot.press("down")  # index 6 = Users (still "coming soon")
-        await pilot.pause()
-        assert lv.index == 6
-        await pilot.press("enter")
+        cats = app.screen.query_one("#cc-categories", OptionList)
+        assert app.focused is cats  # categories focused, arrows work immediately
+        await pilot.press("down")   # Services
+        await pilot.press("down")   # Security and Users
+        await pilot.press("enter")  # -> its module list (Users & Groups)
+        await pilot.press("enter")  # launch an unimplemented module
         await pilot.pause()
         assert isinstance(app.screen, MainMenuScreen)  # unimplemented -> stays put
 
@@ -126,8 +131,9 @@ async def test_menu_system_update_opens_world_screen(monkeypatch):
     app = GestApp()
     async with app.run_test(size=(100, 30)) as pilot:
         await pilot.pause()
-        await pilot.press("down")  # index 1 = System Update
-        await pilot.press("enter")
+        await pilot.press("enter")  # category Software -> module list (idx 0)
+        await pilot.press("down")   # module idx 1 = System Update
+        await pilot.press("enter")  # launch
         await pilot.pause()
         assert isinstance(app.screen, InstallScreen)
         assert app.screen.mode == "world"
@@ -144,10 +150,24 @@ async def test_menu_cleanup_opens_system_depclean(monkeypatch):
     app = GestApp()
     async with app.run_test(size=(100, 30)) as pilot:
         await pilot.pause()
-        await pilot.press("down")  # 1 System Update
-        await pilot.press("down")  # 2 Clean Up Packages
-        await pilot.press("enter")
+        await pilot.press("enter")  # category Software -> module list (idx 0)
+        await pilot.press("down")   # 1 System Update
+        await pilot.press("down")   # 2 Clean Up Packages
+        await pilot.press("enter")  # launch
         await pilot.pause()
         assert isinstance(app.screen, InstallScreen)
         assert app.screen.mode == "depclean"
         assert app.screen.atom == ""  # system-wide
+
+
+async def test_menu_run_button_launches_highlighted():
+    """The [Run] bracket button opens the highlighted module (Software Mgmt)."""
+    app = GestApp()
+    async with app.run_test(size=(100, 30)) as pilot:
+        await pilot.pause()
+        assert isinstance(app.screen, MainMenuScreen)
+        app.screen.query_one("#run", BracketButton).post_message(
+            BracketButton.Pressed(app.screen.query_one("#run", BracketButton))
+        )
+        await pilot.pause()
+        assert isinstance(app.screen, SoftwareScreen)

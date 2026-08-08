@@ -4,34 +4,39 @@ Screen {
     background: $surface;
 }
 
-#menu-box {
-    width: 70;
-    max-width: 90%;
-    margin-top: 2;
-    border: round $primary;
-    padding: 1 2;
-}
-
-#menu-title {
+/* --- Control Center (two-pane main menu) --- */
+#cc-header {
+    text-align: center;
     text-style: bold;
     color: $primary;
-    margin-bottom: 1;
-}
-
-#module-list {
-    height: auto;
-}
-
-#module-list > ListItem {
+    border: round $primary;
+    margin: 1 2 0 2;
     padding: 0 1;
 }
 
-.mod-title {
-    text-style: bold;
+#cc-body {
+    height: 1fr;
+    margin: 1 2;
 }
 
-.mod-sub {
-    color: $text-muted;
+#cc-categories {
+    width: 32;
+    border: round $primary;
+    margin-right: 1;
+}
+
+#cc-modules {
+    width: 1fr;
+    border: round $primary;
+}
+
+#cc-buttons {
+    height: auto;
+    margin: 0 2 1 2;
+}
+
+#cc-spacer {
+    width: 1fr;
 }
 
 #search {

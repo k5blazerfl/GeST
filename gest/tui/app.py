@@ -1,22 +1,21 @@
-"""GeST Textual application: a module menu and the software module screen."""
+"""GeST Textual application: the two-pane Control Center and module screens."""
 
 from __future__ import annotations
 
 from textual import events, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Center, Vertical
+from textual.containers import Horizontal
 from textual.screen import Screen
 from textual.widgets import (
     DataTable,
     Footer,
     Header,
     Input,
-    Label,
-    ListItem,
-    ListView,
+    OptionList,
     Static,
 )
+from textual.widgets.option_list import Option
 
 from gest import __version__
 from gest.core.software import reader
@@ -25,49 +24,131 @@ from gest.tui.screens.keywords import KeywordsScreen
 from gest.tui.screens.news import NewsScreen
 from gest.tui.screens.services import ServicesScreen
 from gest.tui.screens.useflags import UseFlagScreen
+from gest.tui.widgets.bracket_button import BracketButton
+from gest.tui.widgets.function_bar import FunctionBar
 
-# Modules offered on the main menu. Only "software" is wired up this release;
-# the rest are visible-but-disabled placeholders so the roadmap is legible.
-_MODULES = [
-    ("software", "Software Management", "Browse, search and install packages (Portage)", True),
-    ("update", "System Update", "Update all packages (emerge -uDN @world)", True),
-    ("depclean", "Clean Up Packages", "Remove orphaned packages (emerge --depclean)", True),
-    ("sync", "Sync Portage Tree", "Update the ebuild tree (emerge --sync)", True),
-    ("news", "Portage News", "Read Gentoo news items (eselect news)", True),
-    ("services", "Services (OpenRC)", "Start, stop and enable system services", True),
-    ("users", "Users & Groups", "Manage user accounts and groups", False),
-    ("network", "Network", "Configure interfaces and connections", False),
+# The Control Center groups modules under categories (left pane); the right
+# pane lists the highlighted category's modules. ``enabled=False`` entries are
+# visible-but-unimplemented so the roadmap stays legible.
+CATEGORIES: list[tuple[str, list[tuple[str, str, bool]]]] = [
+    ("Software", [
+        ("software", "Software Management", True),
+        ("update", "System Update", True),
+        ("depclean", "Clean Up Packages", True),
+        ("sync", "Sync Portage Tree", True),
+        ("news", "Portage News", True),
+    ]),
+    ("Services", [
+        ("services", "Services (OpenRC)", True),
+    ]),
+    ("Security and Users", [
+        ("users", "Users & Groups", False),
+    ]),
+    ("Network", [
+        ("network", "Network", False),
+    ]),
 ]
 
 
 class MainMenuScreen(Screen):
-    """Landing screen: pick an administration module."""
+    """Landing screen: a YaST-style two-pane Control Center."""
 
-    BINDINGS = [Binding("q", "app.quit", "Quit")]
+    BINDINGS = [
+        Binding("f1", "help", "Help"),
+        Binding("f9", "app.quit", "Quit"),
+        Binding("q", "app.quit", "Quit"),
+    ]
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._cat_index = 0
 
     def compose(self) -> ComposeResult:
         yield Header()
-        with Center(), Vertical(id="menu-box"):
-            yield Label("Select a module", id="menu-title")
-            items = []
-            for key, title, subtitle, enabled in _MODULES:
-                label = title if enabled else f"{title}  (coming soon)"
-                item = ListItem(
-                    Label(label, classes="mod-title"),
-                    Label(subtitle, classes="mod-sub"),
-                    id=f"mod-{key}",
-                )
-                items.append(item)
-            yield ListView(*items, id="module-list")
-        yield Footer()
+        yield Static("GeST Control Center", id="cc-header")
+        with Horizontal(id="cc-body"):
+            yield OptionList(
+                *(Option(name, id=f"cat-{i}") for i, (name, _) in enumerate(CATEGORIES)),
+                id="cc-categories",
+            )
+            yield OptionList(id="cc-modules")
+        with Horizontal(id="cc-buttons"):
+            yield BracketButton("Help", id="help")
+            yield Static(id="cc-spacer")
+            yield BracketButton("Run", id="run")
+            yield BracketButton("Quit", id="quit")
+        yield FunctionBar([("F1", "Help"), ("F9", "Quit")])
 
     def on_mount(self) -> None:
-        # Focus the list explicitly so arrow keys work the instant the menu
-        # appears (don't depend on auto-focus timing in a real terminal).
-        self.query_one("#module-list", ListView).focus()
+        self.title = "GeST"
+        self._populate_modules(0)
+        # Focus the category list so arrows work the instant the menu appears.
+        self.query_one("#cc-categories", OptionList).focus()
 
-    def on_list_view_selected(self, event: ListView.Selected) -> None:
-        key = event.item.id.removeprefix("mod-")
+    # -- population ---------------------------------------------------------
+
+    def _populate_modules(self, cat_index: int) -> None:
+        self._cat_index = cat_index
+        modules = CATEGORIES[cat_index][1]
+        ol = self.query_one("#cc-modules", OptionList)
+        ol.clear_options()
+        for key, title, enabled in modules:
+            label = title if enabled else f"{title}  (coming soon)"
+            ol.add_option(Option(label, id=f"mod-{key}"))
+        if modules:
+            ol.highlighted = 0
+
+    # -- navigation ---------------------------------------------------------
+
+    def on_option_list_option_highlighted(
+        self, event: OptionList.OptionHighlighted
+    ) -> None:
+        if event.option_list.id == "cc-categories":
+            self._populate_modules(event.option_index)
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        if event.option_list.id == "cc-categories":
+            # Enter on a category drops into its module list (YaST behaviour).
+            self.query_one("#cc-modules", OptionList).focus()
+        else:
+            self._launch(event.option.id.removeprefix("mod-"))
+
+    def on_key(self, event: events.Key) -> None:
+        cats = self.query_one("#cc-categories", OptionList)
+        mods = self.query_one("#cc-modules", OptionList)
+        if self.focused is cats and event.key == "right":
+            mods.focus()
+            event.stop()
+        elif self.focused is mods and event.key in ("left", "escape"):
+            cats.focus()
+            event.stop()
+
+    def on_bracket_button_pressed(self, event: BracketButton.Pressed) -> None:
+        if event.button.id == "run":
+            self._run_highlighted()
+        elif event.button.id == "quit":
+            self.app.exit()
+        elif event.button.id == "help":
+            self.action_help()
+
+    def _run_highlighted(self) -> None:
+        ol = self.query_one("#cc-modules", OptionList)
+        if ol.highlighted is None:
+            return
+        opt = ol.get_option_at_index(ol.highlighted)
+        self._launch(opt.id.removeprefix("mod-"))
+
+    # -- launching ----------------------------------------------------------
+
+    @staticmethod
+    def _module_title(key: str) -> str:
+        for _name, modules in CATEGORIES:
+            for k, title, _enabled in modules:
+                if k == key:
+                    return title
+        return key
+
+    def _launch(self, key: str) -> None:
         if key == "software":
             self.app.push_screen(SoftwareScreen())
         elif key == "update":
@@ -81,13 +162,14 @@ class MainMenuScreen(Screen):
         elif key == "news":
             self.app.push_screen(NewsScreen())
         else:
-            title = next((t for k, t, *_ in _MODULES if k == key), key)
             self.app.notify(
-                f"The {title} module isn't implemented yet.",
+                f"The {self._module_title(key)} module isn't implemented yet.",
                 title="Coming soon",
                 severity="warning",
             )
 
+    def action_help(self) -> None:
+        self.app.notify("Help isn't implemented yet.", severity="warning")
 
 class SoftwareScreen(Screen):
     """Portage software module: search available / list installed packages."""
