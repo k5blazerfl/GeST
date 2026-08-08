@@ -78,3 +78,59 @@ Screen {
 #install-buttons Button {
     margin-right: 2;
 }
+
+/* --- Software Management (YaST sw_single-style) --- */
+SoftwareScreen {
+    layers: base overlay;
+}
+
+#sw-body {
+    height: 1fr;
+    margin: 0 1;
+}
+
+#sw-filter {
+    width: 30;
+    border: round $primary;
+    margin-right: 1;
+    padding: 0 1;
+}
+
+#sw-filter .filter-h {
+    text-style: bold;
+    color: $primary;
+    margin-top: 1;
+}
+
+#sw-filter #search {
+    margin-bottom: 1;
+}
+
+#sw-main {
+    width: 1fr;
+}
+
+#sw-count {
+    color: $text-muted;
+    height: 1;
+}
+
+#results {
+    height: 1fr;
+}
+
+#sw-detail-box {
+    height: 10;
+    border: round $primary;
+    padding: 0 1;
+    margin-top: 1;
+}
+
+#sw-buttons {
+    height: auto;
+    margin: 0 1 1 1;
+}
+
+#sw-spacer {
+    width: 1fr;
+}

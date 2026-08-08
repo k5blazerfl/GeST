@@ -2,28 +2,19 @@
 
 from __future__ import annotations
 
-from textual import events, work
+from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.screen import Screen
-from textual.widgets import (
-    DataTable,
-    Footer,
-    Header,
-    Input,
-    OptionList,
-    Static,
-)
+from textual.widgets import Header, OptionList, Static
 from textual.widgets.option_list import Option
 
 from gest import __version__
-from gest.core.software import reader
 from gest.tui.screens.install import InstallScreen
-from gest.tui.screens.keywords import KeywordsScreen
 from gest.tui.screens.news import NewsScreen
 from gest.tui.screens.services import ServicesScreen
-from gest.tui.screens.useflags import UseFlagScreen
+from gest.tui.screens.software import SoftwareScreen
 from gest.tui.widgets.bracket_button import BracketButton
 from gest.tui.widgets.function_bar import FunctionBar
 
@@ -170,139 +161,6 @@ class MainMenuScreen(Screen):
 
     def action_help(self) -> None:
         self.app.notify("Help isn't implemented yet.", severity="warning")
-
-class SoftwareScreen(Screen):
-    """Portage software module: search available / list installed packages."""
-
-    BINDINGS = [
-        Binding("escape", "app.pop_screen", "Back"),
-        Binding("q", "app.quit", "Quit"),
-        Binding("/", "focus_search", "Search"),
-        Binding("u", "edit_use", "USE flags"),
-        Binding("k", "edit_keywords", "Keywords"),
-        Binding("r", "remove_pkg", "Remove"),
-    ]
-
-    def compose(self) -> ComposeResult:
-        yield Header()
-        yield Input(
-            placeholder="Search available packages — leave empty for installed",
-            id="search",
-        )
-        yield Static("", id="status")
-        table = DataTable(id="results", cursor_type="row", zebra_stripes=True)
-        table.add_columns("Package", "Version", "Installed", "Description")
-        yield table
-        yield Footer()
-
-    def on_mount(self) -> None:
-        self.title = "Software Management"
-        self.query_one("#search", Input).focus()
-        self.load_installed()
-
-    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        # Don't let the "/" quick-search binding swallow slashes the user is
-        # typing into the search box (package atoms contain "/").
-        return not (
-            action == "focus_search"
-            and self.focused is self.query_one("#search", Input)
-        )
-
-    def on_key(self, event: events.Key) -> None:
-        # Down from the search box drops into the results list, so the whole
-        # screen is drivable from the keyboard without reaching for Tab.
-        if event.key == "down" and self.focused is self.query_one("#search", Input):
-            table = self.query_one("#results", DataTable)
-            if table.row_count:
-                table.focus()
-                event.stop()
-
-    def action_focus_search(self) -> None:
-        self.query_one("#search", Input).focus()
-
-    def on_input_submitted(self, event: Input.Submitted) -> None:
-        term = event.value.strip()
-        if term:
-            self.run_search(term)
-        else:
-            self.load_installed()
-
-    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
-        # Enter (or click) on a package row opens its install preview.
-        row = event.data_table.get_row(event.row_key)
-        self.app.push_screen(InstallScreen(str(row[0])))
-
-    def action_edit_use(self) -> None:
-        # "u" on the highlighted package row opens its USE-flag editor.
-        table = self.query_one("#results", DataTable)
-        if table.row_count == 0:
-            return
-        cp = str(table.get_row_at(table.cursor_row)[0])
-        self.app.push_screen(UseFlagScreen(cp))
-
-    def action_edit_keywords(self) -> None:
-        # "k" on the highlighted package row opens its keyword/mask editor.
-        table = self.query_one("#results", DataTable)
-        if table.row_count == 0:
-            return
-        cp = str(table.get_row_at(table.cursor_row)[0])
-        self.app.push_screen(KeywordsScreen(cp))
-
-    def action_remove_pkg(self) -> None:
-        # "r" on the highlighted package previews a safe --depclean removal.
-        table = self.query_one("#results", DataTable)
-        if table.row_count == 0:
-            return
-        cp = str(table.get_row_at(table.cursor_row)[0])
-        self.app.push_screen(InstallScreen(cp, mode="depclean"))
-
-    def _set_status(self, text: str) -> None:
-        self.query_one("#status", Static).update(text)
-
-    def _fill(self, rows: list[tuple[str, str, str, str]]) -> None:
-        table = self.query_one("#results", DataTable)
-        table.clear()
-        for row in rows:
-            table.add_row(*row)
-
-    @work(thread=True, exclusive=True)
-    def load_installed(self) -> None:
-        pkgs = reader.list_installed()
-        rows = [
-            (
-                p.cp,
-                p.version,
-                "★ world" if p.world_member else "yes",
-                (p.description or "")[:70],
-            )
-            for p in pkgs
-        ]
-        self.app.call_from_thread(self._fill, rows)
-        c = reader.counts()
-        self.app.call_from_thread(
-            self._set_status,
-            f" {c['installed']} installed · {c['world']} in @world"
-            "   —  Enter install · u USE · k keywords · r remove · / search",
-        )
-
-    @work(thread=True, exclusive=True)
-    def run_search(self, term: str) -> None:
-        self.app.call_from_thread(self._set_status, f" searching for “{term}” …")
-        results = reader.search(term)
-        rows = [
-            (
-                r.cp,
-                r.best_version,
-                r.installed_version or "—",
-                (r.description or "")[:70],
-            )
-            for r in results
-        ]
-        self.app.call_from_thread(self._fill, rows)
-        self.app.call_from_thread(
-            self._set_status, f" {len(results)} match(es) for “{term}”"
-        )
-
 
 class GestApp(App):
     """The GeST application shell."""

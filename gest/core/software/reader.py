@@ -18,7 +18,7 @@ import os
 import portage
 from portage.versions import cpv_getkey, cpv_getversion
 
-from gest.core.software.model import Package, SearchResult, UseFlag
+from gest.core.software.model import Package, PackageDetail, SearchResult, UseFlag
 
 # Portage's trees for the running root. ``portage.db`` is keyed by root ("/").
 _ROOT = portage.root
@@ -28,6 +28,11 @@ _PORTDB = _TREES["porttree"].dbapi  # ebuilds available in repos
 
 # aux_get keys we care about (available in both dbs).
 _INST_KEYS = ("DESCRIPTION", "SLOT", "repository", "IUSE", "USE", "HOMEPAGE")
+# Extra keys for the detail pane (available in both dbs).
+_DETAIL_KEYS = (
+    "DESCRIPTION", "SLOT", "repository", "IUSE", "USE", "HOMEPAGE",
+    "LICENSE", "KEYWORDS",
+)
 
 
 @functools.lru_cache(maxsize=1)
@@ -158,3 +163,31 @@ def counts() -> dict[str, int]:
         "installed": len(_VARDB.cpv_all()),
         "world": len(_world_atoms()),
     }
+
+
+def get_package_detail(cp: str) -> PackageDetail | None:
+    """Metadata for the detail pane: best-available + installed versions.
+
+    Reads from the ebuild tree when an ebuild exists (freshest metadata),
+    otherwise from the installed copy. Returns None if the package is unknown.
+    """
+    cp = portage.dep_getkey(cp) if "/" in cp else cp
+    inst = _VARDB.cp_list(cp)
+    avail = _best_available(cp)
+    if avail:
+        src_db, src_cpv = _PORTDB, avail
+    elif inst:
+        src_db, src_cpv = _VARDB, inst[-1]
+    else:
+        return None
+    desc, slot, _repo, _iuse, _use, homepage, lic, kw = src_db.aux_get(src_cpv, _DETAIL_KEYS)
+    return PackageDetail(
+        cp=cp,
+        available_version=cpv_getversion(avail) if avail else "",
+        installed_version=cpv_getversion(inst[-1]) if inst else "",
+        slot=slot,
+        license=lic,
+        homepage=homepage,
+        description=desc,
+        keywords=kw,
+    )

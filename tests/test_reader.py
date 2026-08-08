@@ -51,3 +51,13 @@ def test_get_package_prefers_installed():
 
 def test_get_package_unknown_is_none():
     assert reader.get_package("no-such-cat/no-such-pkg-xyz") is None
+
+
+def test_get_package_detail_for_installed_package():
+    # portage is always installed on a Gentoo host running these tests.
+    detail = reader.get_package_detail("sys-apps/portage")
+    assert detail is not None
+    assert detail.cp == "sys-apps/portage"
+    assert detail.installed_version  # it is installed
+    assert detail.license            # LICENSE is populated
+    assert reader.get_package_detail("no-such/package-xyz") is None
