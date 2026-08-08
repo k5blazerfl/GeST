@@ -118,6 +118,7 @@ class App:
     """Owns the urwid MainLoop, an asyncio loop, and a screen stack."""
 
     def __init__(self) -> None:
+        urwid.set_encoding("utf-8")  # render UTF-8 regardless of locale detection
         self._stack: list[urwid.Widget] = []
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
