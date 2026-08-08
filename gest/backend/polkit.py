@@ -20,6 +20,17 @@ def authorization_variant(sender: str, action_id: str) -> GLib.Variant:
     )
 
 
+def authorization_is_granted(result: GLib.Variant) -> bool:
+    """Extract is_authorized from a polkit CheckAuthorization reply.
+
+    Newer PyGObject returns the out-args tuple wrapped — ``((bool, bool,
+    a{ss}),)`` — while older versions returned the struct flat. Handle both.
+    """
+    data = result.unpack()
+    inner = data[0] if len(data) == 1 and isinstance(data[0], tuple) else data
+    return bool(inner[0])
+
+
 def check_authorization(conn, sender: str, action_id: str) -> bool:
     """Ask polkit whether ``sender`` (a system-bus name) may do ``action_id``."""
     try:
@@ -39,8 +50,7 @@ def check_authorization(conn, sender: str, action_id: str) -> bool:
             -1,
             None,
         )
-        is_authorized, _challenge, _details = result.unpack()
-        return bool(is_authorized)
+        return authorization_is_granted(result)
     except GLib.Error:
         return False
 
