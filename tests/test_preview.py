@@ -87,3 +87,22 @@ def test_preview_sync_is_informational():
     r = preview_sync()
     assert r.ok
     assert "Synchronize" in r.output
+
+
+def test_preview_install_many_joins_atoms():
+    calls = {}
+    def runner(argv):
+        calls["argv"] = argv
+        return 0, "Total: 2 packages"
+    from gest.core.software.preview import preview_install_many
+    result = preview_install_many(["app-editors/vim", "sys-apps/portage"], runner=runner)
+    assert result.ok
+    assert calls["argv"][-2:] == ["app-editors/vim", "sys-apps/portage"]
+    assert "--pretend" in calls["argv"]
+    assert result.summary == "Total: 2 packages"
+
+
+def test_preview_install_many_empty_is_noop():
+    from gest.core.software.preview import preview_install_many
+    result = preview_install_many([], runner=lambda argv: (99, "should not run"))
+    assert result.ok and result.output == "nothing selected"

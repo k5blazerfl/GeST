@@ -45,6 +45,10 @@ _INTROSPECTION = f"""
       <arg type="s" name="atom" direction="in"/>
       <arg type="b" name="started" direction="out"/>
     </method>
+    <method name="InstallMulti">
+      <arg type="as" name="atoms" direction="in"/>
+      <arg type="b" name="started" direction="out"/>
+    </method>
     <method name="Rebuild">
       <arg type="s" name="atom" direction="in"/>
       <arg type="b" name="started" direction="out"/>
@@ -140,6 +144,9 @@ class SoftwareService:
         elif method == "Install":
             (atom,) = params.unpack()
             self._install(atom, sender, invocation)
+        elif method == "InstallMulti":
+            (atoms,) = params.unpack()
+            self._install_multi(atoms, sender, invocation)
         elif method == "Rebuild":
             (atom,) = params.unpack()
             self._rebuild(atom, sender, invocation)
@@ -195,6 +202,22 @@ class SoftwareService:
         # Authorized: start the merge and stream output asynchronously.
         invocation.return_value(GLib.Variant("(b)", (True,)))
         self._spawn_streaming([_EMERGE, "--color", "n", atom])
+
+    def _install_multi(self, atoms, sender: str, invocation) -> None:
+        """Merge several atoms in one emerge (the transactional Accept)."""
+        if not self._check_authorized(sender, polkit_action("install")):
+            invocation.return_error_literal(
+                Gio.dbus_error_quark(), Gio.DBusError.ACCESS_DENIED,
+                "Not authorized to install packages")
+            return
+        atoms = list(atoms)
+        if not atoms or any(not self._ATOM_RE.match(a) for a in atoms):
+            invocation.return_error_literal(
+                Gio.dbus_error_quark(), Gio.DBusError.INVALID_ARGS,
+                "invalid or empty package atom list")
+            return
+        invocation.return_value(GLib.Variant("(b)", (True,)))
+        self._spawn_streaming([_EMERGE, "--color", "n", *atoms])
 
     def _rebuild(self, atom: str, sender: str, invocation) -> None:
         """Rebuild a package to apply changed USE flags (--changed-use)."""

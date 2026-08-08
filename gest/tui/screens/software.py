@@ -14,11 +14,13 @@ from textual import events, work
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.coordinate import Coordinate
 from textual.screen import Screen
 from textual.widgets import Checkbox, DataTable, Header, Input, Static
 
 from gest.core.software import reader
 from gest.core.software.model import PackageDetail
+from gest.core.software.selection import Selection
 from gest.tui.screens.install import InstallScreen
 from gest.tui.screens.keywords import KeywordsScreen
 from gest.tui.screens.news import NewsScreen
@@ -57,6 +59,8 @@ class SoftwareScreen(Screen):
         Binding("f10", "accept", "Accept"),
         Binding("f1", "help", "Help"),
         Binding("q", "app.quit", "Quit"),
+        Binding("space", "toggle_mark", "Mark"),
+        Binding("c", "clear_marks", "Clear marks"),
         Binding("/", "focus_search", "Search"),
         Binding("u", "edit_use", "USE flags"),
         Binding("k", "edit_keywords", "Keywords"),
@@ -66,6 +70,9 @@ class SoftwareScreen(Screen):
     def __init__(self) -> None:
         super().__init__()
         self._cps: list[str] = []
+        self._installed: list[bool] = []
+        self._base_count: str = ""
+        self._selection = Selection()
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -110,11 +117,14 @@ class SoftwareScreen(Screen):
         )
 
     def on_key(self, event: events.Key) -> None:
+        table = self.query_one("#results", DataTable)
         if event.key == "down" and self.focused is self.query_one("#search", Input):
-            table = self.query_one("#results", DataTable)
             if table.row_count:
                 table.focus()
                 event.stop()
+        elif event.key == "space" and self.focused is table:
+            self.action_toggle_mark()
+            event.stop()
 
     def action_focus_search(self) -> None:
         self.query_one("#search", Input).focus()
@@ -123,9 +133,50 @@ class SoftwareScreen(Screen):
         self.app.notify("Help isn't implemented yet.", severity="warning")
 
     def action_accept(self) -> None:
-        cp = self._current_cp()
-        if cp is not None:
-            self.app.push_screen(InstallScreen(cp))
+        atoms = self._selection.install_atoms()
+        if not atoms:
+            cp = self._current_cp()
+            atoms = [cp] if cp else []
+        if not atoms:
+            self.app.notify("Mark packages with Space, or highlight one.",
+                            severity="warning")
+            return
+        self.app.push_screen(
+            InstallScreen("", mode="multi", atoms=atoms), self._after_apply
+        )
+
+    def _after_apply(self, _result=None) -> None:
+        self._selection.clear()
+        self.load_installed()
+
+    def action_toggle_mark(self) -> None:
+        table = self.query_one("#results", DataTable)
+        if not self._cps or table.cursor_row is None:
+            return
+        row = table.cursor_row
+        if not (0 <= row < len(self._cps)):
+            return
+        self._selection.toggle_install(self._cps[row])
+        table.update_cell_at(Coordinate(row, 0), self._status_for(row))
+        self._render_count()
+
+    def action_clear_marks(self) -> None:
+        if self._selection.is_empty:
+            return
+        self._selection.clear()
+        self._repaint_status()
+        self._render_count()
+
+    def _status_for(self, row: int) -> str:
+        cp = self._cps[row]
+        if self._selection.mark_of(cp) == "install":
+            return "+"
+        return "i" if self._installed[row] else " "
+
+    def _repaint_status(self) -> None:
+        table = self.query_one("#results", DataTable)
+        for row in range(len(self._cps)):
+            table.update_cell_at(Coordinate(row, 0), self._status_for(row))
 
     # -- current selection --------------------------------------------------
 
@@ -203,26 +254,33 @@ class SoftwareScreen(Screen):
     # -- rendering ----------------------------------------------------------
 
     def _set_count(self, text: str) -> None:
+        self._base_count = text
+        self._render_count()
+
+    def _render_count(self) -> None:
+        text = self._base_count
+        if not self._selection.is_empty:
+            text += f"   ·   [b]{self._selection.summary()}[/b] (F10 Accept · c clear)"
         self.query_one("#sw-count", Static).update(text)
 
-    def _fill(self, rows: list[tuple[str, str, str]], cps: list[str]) -> None:
+    def _fill(self, rows: list[tuple[str, str]], cps: list[str],
+              installed: list[bool]) -> None:
         table = self.query_one("#results", DataTable)
         table.clear()
         self._cps = cps
-        for row in rows:
-            table.add_row(*row)
+        self._installed = installed
+        for i, (cp, summary) in enumerate(rows):
+            table.add_row(self._status_for(i), cp, summary)
 
     @work(thread=True, exclusive=True)
     def load_installed(self, world_only: bool = False) -> None:
         pkgs = reader.list_installed()
         if world_only:
             pkgs = [p for p in pkgs if p.world_member]
-        rows = [
-            ("i", p.cp, (p.description or "")[:70])
-            for p in pkgs
-        ]
+        rows = [(p.cp, (p.description or "")[:70]) for p in pkgs]
         cps = [p.cp for p in pkgs]
-        self.app.call_from_thread(self._fill, rows, cps)
+        installed = [True] * len(pkgs)
+        self.app.call_from_thread(self._fill, rows, cps, installed)
         scope = "@world" if world_only else "installed"
         self.app.call_from_thread(self._set_count, f" {len(pkgs)} {scope} package(s)")
 
@@ -230,12 +288,10 @@ class SoftwareScreen(Screen):
     def run_search(self, term: str) -> None:
         self.app.call_from_thread(self._set_count, f" searching for “{term}” …")
         results = reader.search(term)
-        rows = [
-            ("i" if r.installed else " ", r.cp, (r.description or "")[:70])
-            for r in results
-        ]
+        rows = [(r.cp, (r.description or "")[:70]) for r in results]
         cps = [r.cp for r in results]
-        self.app.call_from_thread(self._fill, rows, cps)
+        installed = [r.installed for r in results]
+        self.app.call_from_thread(self._fill, rows, cps, installed)
         self.app.call_from_thread(self._set_count, f" {len(results)} package(s) found")
 
     @work(thread=True, exclusive=True)

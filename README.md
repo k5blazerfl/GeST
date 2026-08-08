@@ -93,7 +93,8 @@ working tree.
       (function-key footer, bracket buttons)
 - [x] Software Management, YaST sw_single-style — dropdown menu bar +
       filter sidebar + package table + live detail pane
-- [ ] Transactional package selection (mark → Accept)
+- [x] Transactional package selection — mark packages with Space, commit
+      them together with Accept (one multi-atom emerge)
 - [x] Software module — read path (list / search / info, USE flags, @world)
 - [x] Backend scaffold: D-Bus service, polkit actions, system data files
 - [x] Install flow: `emerge --pretend` preview → confirm → streamed merge
