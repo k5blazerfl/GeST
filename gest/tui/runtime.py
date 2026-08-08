@@ -29,6 +29,18 @@ PALETTE = [
     ("pane_title", "light cyan,bold", "default"),
 ]
 
+# ANSI SGR foreground colours (normal and bold/bright) mapped to urwid names.
+_FG = {30: "black", 31: "dark red", 32: "dark green", 33: "brown",
+       34: "dark blue", 35: "dark magenta", 36: "dark cyan", 37: "light gray"}
+_FG_BOLD = {30: "dark gray", 31: "light red", 32: "light green", 33: "yellow",
+            34: "light blue", 35: "light magenta", 36: "light cyan", 37: "white"}
+ANSI_PALETTE = (
+    [(f"ansi{c}", col, "") for c, col in _FG.items()]
+    + [(f"ansib{c}", col, "") for c, col in _FG_BOLD.items()]
+    + [("ansib", "white", "")]
+)
+PALETTE.extend(ANSI_PALETTE)
+
 
 # Terminal escape sequences (colour/cursor/OSC) that appear in subprocess
 # output; strip them so they don't render as literal junk in the TUI.
@@ -42,6 +54,62 @@ _ANSI_RE = re.compile(
 def strip_ansi(text: str) -> str:
     """Remove terminal escape sequences from a line of command output."""
     return _ANSI_RE.sub("", text)
+
+
+_SGR_RE = re.compile(r"\x1b\[([0-9;]*)m")
+
+
+def _ansi_attr(bold: bool, fg: int | None) -> str | None:
+    if fg is not None:
+        return f"ansib{fg}" if bold else f"ansi{fg}"
+    return "ansib" if bold else None
+
+
+def ansi_markup(text: str):
+    """Convert a line with ANSI SGR codes into urwid markup (colour segments).
+
+    Returns a plain ``str`` when the line has no colour, else a list of
+    ``(attr, str)`` / ``str`` segments suitable for a Text/SelectableIcon.
+    Non-SGR escapes (cursor, OSC) are stripped from the text.
+    """
+    markup: list = []
+    pos = 0
+    bold = False
+    fg: int | None = None
+
+    def emit(chunk: str) -> None:
+        chunk = strip_ansi(chunk)
+        if not chunk:
+            return
+        attr = _ansi_attr(bold, fg)
+        markup.append((attr, chunk) if attr else chunk)
+
+    for m in _SGR_RE.finditer(text):
+        if m.start() > pos:
+            emit(text[pos:m.start()])
+        for part in (m.group(1).split(";") if m.group(1) else ["0"]):
+            n = int(part or "0")
+            if n == 0:
+                bold, fg = False, None
+            elif n == 1:
+                bold = True
+            elif n == 22:
+                bold = False
+            elif 30 <= n <= 37:
+                fg = n
+            elif n == 39:
+                fg = None
+            elif 90 <= n <= 97:
+                fg, bold = n - 60, True
+        pos = m.end()
+    if pos < len(text):
+        emit(text[pos:])
+
+    if not markup:
+        return ""
+    if len(markup) == 1 and isinstance(markup[0], str):
+        return markup[0]
+    return markup
 
 
 def function_bar(keys: list[tuple[str, str]]) -> urwid.Widget:

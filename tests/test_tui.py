@@ -8,7 +8,7 @@ import asyncio
 
 import urwid
 
-from gest.tui.runtime import App, Screen, function_bar, strip_ansi
+from gest.tui.runtime import App, Screen, ansi_markup, function_bar, strip_ansi
 from gest.tui.screens.apply import ApplyScreen
 from gest.tui.screens.bootloader import BootloaderScreen
 from gest.tui.screens.config import KeywordsScreen, UseFlagScreen
@@ -341,3 +341,11 @@ def test_strip_ansi_removes_colour_codes():
     assert strip_ansi("\x1b[1;31mERROR\x1b[0m") == "ERROR"
     assert strip_ansi("plain text") == "plain text"
     assert strip_ansi("\x1b]0;title\x07after") == "after"  # OSC title
+
+
+def test_ansi_markup_parses_colours():
+    assert ansi_markup("\x1b[32m*\x1b[0m done") == [("ansi32", "*"), " done"]
+    assert ansi_markup("\x1b[1;31mERROR\x1b[0m") == [("ansib31", "ERROR")]
+    assert ansi_markup("\x1b[92mOK\x1b[0m") == [("ansib32", "OK")]  # bright -> bold
+    assert ansi_markup("plain") == "plain"                            # no colour -> str
+    assert ansi_markup("\x1b]0;t\x07\x1b[33m>>>\x1b[0m go") == [("ansi33", ">>>"), " go"]

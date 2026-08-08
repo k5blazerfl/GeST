@@ -118,6 +118,7 @@ working tree.
       wants / needed-by), read-only, opened with Enter
 - [x] eselect module — list eselect modules + targets, switch the selection
 - [x] Bootloader & Kernel — kernel/bootloader info + regenerate GRUB config
+- [x] Colourised streamed command output (ANSI SGR → urwid attributes)
 - [x] Users & Groups module — list users/groups; add / edit / delete users,
       add / delete groups (polkit-gated useradd/usermod/userdel/groupadd/groupdel)
 - [x] User passwords (chpasswd via stdin) + group membership (gpasswd);
