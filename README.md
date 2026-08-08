@@ -138,6 +138,6 @@ working tree.
 - [x] Backend hardening — every privileged action is audit-logged
       (authpriv, with caller uid); dispatch/auth round-trips are tested
 - [~] Frontend migration Textual → urwid (in ::gentoo) — foundation +
-      Control Center + news + services + system + users ported; network + software left
+      Control Center + news + services + system + users + network ported; software left
 - [ ] Qt/KDE frontend over the same `core`
 ```
