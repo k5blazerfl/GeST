@@ -12,4 +12,4 @@ Golden rule: frontends never touch Portage or D-Bus directly. They call
 ``core``; ``core`` is the only thing that speaks to ``backend``.
 """
 
-__version__ = "0.32.1"
+__version__ = "0.32.2"

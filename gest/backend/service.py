@@ -38,6 +38,7 @@ from gest.backend.polkit import (
     authorization_variant,
     caller_uid,
 )
+from gest.backend.repos import ReposService
 from gest.backend.services import ServicesService
 from gest.backend.system import SystemService
 from gest.backend.users import UsersService
@@ -540,6 +541,7 @@ def main() -> int:
         NetworkService(conn)
         EselectService(conn)
         BootloaderService(conn)
+        ReposService(conn)
 
     def on_name_lost(conn, name):
         sys.stderr.write(f"gest-backend: lost/could not acquire name {name}\n")
