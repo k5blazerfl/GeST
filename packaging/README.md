@@ -1,8 +1,13 @@
 # Packaging GeST for Gentoo
 
-A live (`9999`) ebuild that installs GeST system-wide — the **hardened** install:
-the root backend loads the *installed* package from system paths, not a working
-tree (unlike the dev `install-backend.sh`).
+Ebuilds that install GeST system-wide — the **hardened** install: the root
+backend loads the *installed* package from system paths, not a working tree
+(unlike the dev `install-backend.sh`). Two are provided:
+
+- **`gest-0.20.0`** — a released version, fetched from the `v0.20.0` tag
+  tarball (reproducible; `~amd64`). Recommended.
+- **`gest-9999`** — a live ebuild that builds the current `main` (for
+  hacking on the tree).
 
 ## Install via a local overlay
 
@@ -16,9 +21,13 @@ masters = gentoo
 auto-sync = no
 REPO
 
-# 2. unmask the live ebuild and emerge it
-echo "app-admin/gest **" | sudo tee /etc/portage/package.accept_keywords/gest
+# 2. accept the ~amd64 keyword and emerge the released version
+echo "app-admin/gest ~amd64" | sudo tee /etc/portage/package.accept_keywords/gest
 sudo emerge -av app-admin/gest
+
+#    (to track main instead, unmask and emerge the live ebuild:
+#     echo "=app-admin/gest-9999 **" | sudo tee /etc/portage/package.accept_keywords/gest
+#     sudo emerge -av =app-admin/gest-9999 )
 
 # 3. reload D-Bus so it sees the new policy/activation
 sudo rc-service dbus reload
@@ -38,3 +47,12 @@ Then just run `gest`. The backend bus-activates on first privileged action.
 
 `dev-python/dbus-next` may not be in `::gentoo`; if `emerge` can't find it,
 add an overlay that provides it (or it can be pip-installed for development).
+
+## Cutting a new release
+
+1. Bump `__version__` / `pyproject.toml`, merge, then tag: `git tag -a vX.Y.Z && git push origin vX.Y.Z`.
+2. Add `gest-X.Y.Z.ebuild` (copy the latest versioned ebuild) and regenerate
+   the `Manifest` from the tag tarball:
+   `cd packaging/overlay/app-admin/gest && pkgdev manifest`
+   (or compute the `DIST` line by hand from
+   `https://github.com/k5blazerfl/GeST/archive/refs/tags/vX.Y.Z.tar.gz`).
