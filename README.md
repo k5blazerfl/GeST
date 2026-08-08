@@ -122,7 +122,9 @@ working tree.
       the edit form prefills a user's current supplementary groups
 - [x] System category — Hostname, Timezone and Locale editors
       (polkit-gated writes to /etc/conf.d/hostname, /etc/localtime, /etc/env.d)
-- [ ] Further modules: Network; systemd support in Services
+- [x] Network module — list interfaces (ip -j addr) and bring links up/down
+      (polkit-gated ip link); netifrc static/DHCP config is future work
+- [ ] systemd support in Services (out of scope — OpenRC only)
 - [x] Backend hardening — every privileged action is audit-logged
       (authpriv, with caller uid); dispatch/auth round-trips are tested
 - [ ] Qt/KDE frontend over the same `core`
