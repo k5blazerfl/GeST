@@ -37,6 +37,11 @@ ESELECT_PATH = "/org/gentoo/gest/Eselect"
 ESELECT_IFACE = "org.gentoo.gest.Eselect"
 ESELECT_POLKIT = "org.gentoo.gest.eselect.manage"
 
+# Object path + interface for the bootloader & kernel module.
+BOOTLOADER_PATH = "/org/gentoo/gest/Bootloader"
+BOOTLOADER_IFACE = "org.gentoo.gest.Bootloader"
+BOOTLOADER_POLKIT = "org.gentoo.gest.bootloader.manage"
+
 # polkit action id prefix. Concrete actions append the verb, e.g.
 # ``org.gentoo.gest.software.install``.
 POLKIT_PREFIX = "org.gentoo.gest.software"

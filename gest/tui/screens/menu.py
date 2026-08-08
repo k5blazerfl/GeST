@@ -6,6 +6,7 @@ import urwid
 
 from gest.tui.runtime import App, Screen
 from gest.tui.screens.apply import ApplyScreen, depclean_plan, sync_plan, world_plan
+from gest.tui.screens.bootloader import BootloaderScreen
 from gest.tui.screens.eselect import EselectScreen
 from gest.tui.screens.network import NetworkScreen
 from gest.tui.screens.news import NewsScreen
@@ -28,6 +29,7 @@ CATEGORIES: list[tuple[str, list[tuple[str, str, bool]]]] = [
         ("timezone", "Timezone", True),
         ("locale", "Locale", True),
         ("eselect", "eselect (selections)", True),
+        ("bootloader", "Bootloader & Kernel", True),
     ]),
     ("Services", [
         ("services", "Services (OpenRC)", True),
@@ -104,6 +106,8 @@ class MenuScreen(Screen):
             self.app.push(LocaleScreen(self.app))
         elif key == "eselect":
             self.app.push(EselectScreen(self.app))
+        elif key == "bootloader":
+            self.app.push(BootloaderScreen(self.app))
         elif key == "users":
             self.app.push(UsersScreen(self.app))
         elif key == "network":
