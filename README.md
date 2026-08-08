@@ -116,6 +116,7 @@ working tree.
 - [x] Services module (OpenRC) — list, start/stop/restart, enable/disable
 - [x] Service detail view — description + dependency graph (needs / uses /
       wants / needed-by), read-only, opened with Enter
+- [x] make.conf editor — view/edit/add /etc/portage/make.conf variables
 - [x] eselect module — list eselect modules + targets, switch the selection
 - [x] Bootloader & Kernel — kernel/bootloader info + regenerate GRUB config
 - [x] Colourised streamed command output (ANSI SGR → urwid attributes)
