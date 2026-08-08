@@ -120,6 +120,8 @@ working tree.
       add / delete groups (polkit-gated useradd/usermod/userdel/groupadd/groupdel)
 - [x] User passwords (chpasswd via stdin) + group membership (gpasswd);
       the edit form prefills a user's current supplementary groups
+- [x] System category — Hostname, Timezone and Locale editors
+      (polkit-gated writes to /etc/conf.d/hostname, /etc/localtime, /etc/env.d)
 - [ ] Further modules: Network; systemd support in Services
 - [ ] Qt/KDE frontend over the same `core`
 ```

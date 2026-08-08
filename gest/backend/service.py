@@ -30,6 +30,7 @@ gi.require_version("Gio", "2.0")
 from gi.repository import Gio, GLib
 
 from gest.backend.services import ServicesService
+from gest.backend.system import SystemService
 from gest.backend.users import UsersService
 from gest.core.software import news
 from gest.ipc.interface import BUS_NAME, SOFTWARE_IFACE, SOFTWARE_PATH, polkit_action
@@ -471,6 +472,7 @@ def main() -> int:
         SoftwareService(conn, on_idle=loop.quit)
         ServicesService(conn)
         UsersService(conn)
+        SystemService(conn)
 
     def on_name_lost(conn, name):
         sys.stderr.write(f"gest-backend: lost/could not acquire name {name}\n")

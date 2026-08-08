@@ -25,7 +25,7 @@ async def test_menu_opens_software_and_lists_installed():
         await pilot.pause()
         assert isinstance(app.screen, MainMenuScreen)
         cats = app.screen.query_one("#cc-categories", OptionList)
-        assert cats.option_count == 4  # Software / Services / Users / Network
+        assert cats.option_count == 5  # Software / System / Services / Users / Network
         mods = app.screen.query_one("#cc-modules", OptionList)
         assert mods.option_count == 5  # the Software category's modules
         await _open_software(app, pilot)
@@ -112,6 +112,7 @@ async def test_menu_arrow_navigates_all_items_and_notifies_unimplemented():
         await pilot.pause()
         cats = app.screen.query_one("#cc-categories", OptionList)
         assert app.focused is cats  # categories focused, arrows work immediately
+        await pilot.press("down")   # System
         await pilot.press("down")   # Services
         await pilot.press("down")   # Security and Users
         await pilot.press("down")   # Network (still a stub)

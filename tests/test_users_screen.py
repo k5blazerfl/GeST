@@ -15,6 +15,7 @@ async def _open_users(app, pilot):
     await pilot.pause()
     app.screen.query_one("#cc-categories", OptionList).focus()
     await pilot.pause()
+    await pilot.press("down")   # System
     await pilot.press("down")   # Services
     await pilot.press("down")   # Security and Users
     await pilot.press("enter")  # module list

@@ -176,3 +176,33 @@ SoftwareScreen {
 #form .form-buttons BracketButton {
     margin-right: 2;
 }
+
+/* --- System settings screens --- */
+#sys-title {
+    text-style: bold;
+    color: $primary;
+    margin: 1 2 0 2;
+}
+
+#sys-current {
+    color: $text-muted;
+    margin: 0 2 1 2;
+}
+
+#hostname-input, #choice-filter {
+    margin: 0 2;
+}
+
+#choice-list {
+    height: 1fr;
+    margin: 1 2;
+}
+
+#sys-buttons {
+    height: auto;
+    margin: 0 2 1 2;
+}
+
+#sys-buttons BracketButton {
+    margin-right: 2;
+}
