@@ -1,0 +1,261 @@
+"""Software Management — YaST sw_single-style master/detail screen.
+
+Layout: a dropdown menu bar on top; a filter sidebar on the left (search + the
+YaST "Search in" checkboxes); a package table top-right with a live count; and a
+detail pane below it that refreshes as the cursor moves. Actions still work the
+way they did — Enter previews an install, u/k edit config, r removes — and are
+also reachable from the Configuration/Extras menus. (Transactional mark→Accept
+lands in the next slice; for now Accept installs the highlighted package.)
+"""
+
+from __future__ import annotations
+
+from textual import events, work
+from textual.app import ComposeResult
+from textual.binding import Binding
+from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.screen import Screen
+from textual.widgets import Checkbox, DataTable, Header, Input, Static
+
+from gest.core.software import reader
+from gest.core.software.model import PackageDetail
+from gest.tui.screens.install import InstallScreen
+from gest.tui.screens.keywords import KeywordsScreen
+from gest.tui.screens.news import NewsScreen
+from gest.tui.screens.useflags import UseFlagScreen
+from gest.tui.widgets.bracket_button import BracketButton
+from gest.tui.widgets.function_bar import FunctionBar
+from gest.tui.widgets.menu_bar import MenuBar
+
+_MENUS = [
+    ("deps", "Dependencies", [
+        ("autocheck", "Automatic dependency check", False),
+        ("checknow", "Check now", False),
+    ]),
+    ("view", "View", [
+        ("installed", "Installed packages", True),
+        ("world", "@world set only", True),
+    ]),
+    ("config", "Configuration", [
+        ("use", "USE flags…", True),
+        ("keywords", "Keywords / mask…", True),
+    ]),
+    ("extras", "Extras", [
+        ("update", "System update (@world)…", True),
+        ("sync", "Sync Portage tree…", True),
+        ("news", "Portage news…", True),
+    ]),
+]
+
+
+class SoftwareScreen(Screen):
+    """Portage software module: search / list packages with a live detail pane."""
+
+    BINDINGS = [
+        Binding("escape", "app.pop_screen", "Cancel"),
+        Binding("f9", "app.pop_screen", "Cancel"),
+        Binding("f10", "accept", "Accept"),
+        Binding("f1", "help", "Help"),
+        Binding("q", "app.quit", "Quit"),
+        Binding("/", "focus_search", "Search"),
+        Binding("u", "edit_use", "USE flags"),
+        Binding("k", "edit_keywords", "Keywords"),
+        Binding("r", "remove_pkg", "Remove"),
+    ]
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._cps: list[str] = []
+
+    def compose(self) -> ComposeResult:
+        yield Header()
+        yield MenuBar(_MENUS, id="sw-menubar")
+        with Horizontal(id="sw-body"):
+            with Vertical(id="sw-filter"):
+                yield Static("Filter", classes="filter-h")
+                yield Input(placeholder="Search…", id="search")
+                yield Checkbox("Ignore Case", value=True, disabled=True, id="ignore-case")
+                yield Static("Search in", classes="filter-h")
+                yield Checkbox("Name", value=True, disabled=True)
+                yield Checkbox("Summary", value=False, disabled=True)
+                yield Checkbox("Keywords", value=False, disabled=True)
+                yield Checkbox("Description", value=False, disabled=True)
+                yield Checkbox("Provides", value=False, disabled=True)
+                yield Checkbox("Required by", value=False, disabled=True)
+            with Vertical(id="sw-main"):
+                yield Static("", id="sw-count")
+                table = DataTable(id="results", cursor_type="row", zebra_stripes=True)
+                table.add_columns("S", "Package", "Summary")
+                yield table
+                yield VerticalScroll(Static("", id="sw-detail"), id="sw-detail-box")
+        with Horizontal(id="sw-buttons"):
+            yield BracketButton("Help", id="help")
+            yield Static(id="sw-spacer")
+            yield BracketButton("Cancel", id="cancel")
+            yield BracketButton("Accept", id="accept")
+        yield FunctionBar([("F1", "Help"), ("F9", "Cancel"), ("F10", "Accept")])
+
+    def on_mount(self) -> None:
+        self.title = "Software Management"
+        self.query_one("#search", Input).focus()
+        self.load_installed()
+
+    # -- keyboard glue ------------------------------------------------------
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        # Don't let "/" swallow slashes typed into the search box (atoms use /).
+        return not (
+            action == "focus_search"
+            and self.focused is self.query_one("#search", Input)
+        )
+
+    def on_key(self, event: events.Key) -> None:
+        if event.key == "down" and self.focused is self.query_one("#search", Input):
+            table = self.query_one("#results", DataTable)
+            if table.row_count:
+                table.focus()
+                event.stop()
+
+    def action_focus_search(self) -> None:
+        self.query_one("#search", Input).focus()
+
+    def action_help(self) -> None:
+        self.app.notify("Help isn't implemented yet.", severity="warning")
+
+    def action_accept(self) -> None:
+        cp = self._current_cp()
+        if cp is not None:
+            self.app.push_screen(InstallScreen(cp))
+
+    # -- current selection --------------------------------------------------
+
+    def _current_cp(self) -> str | None:
+        table = self.query_one("#results", DataTable)
+        if not self._cps or table.cursor_row is None:
+            return None
+        if 0 <= table.cursor_row < len(self._cps):
+            return self._cps[table.cursor_row]
+        return None
+
+    # -- input / rows -------------------------------------------------------
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        term = event.value.strip()
+        if term:
+            self.run_search(term)
+        else:
+            self.load_installed()
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        cp = self._current_cp()
+        if cp is not None:
+            self.app.push_screen(InstallScreen(cp))
+
+    def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
+        if 0 <= event.cursor_row < len(self._cps):
+            self.show_detail(self._cps[event.cursor_row])
+
+    # -- menu bar -----------------------------------------------------------
+
+    def on_menu_bar_selected(self, event: MenuBar.Selected) -> None:
+        if event.item == "installed":
+            self.load_installed()
+        elif event.item == "world":
+            self.load_installed(world_only=True)
+        elif event.item == "use":
+            self.action_edit_use()
+        elif event.item == "keywords":
+            self.action_edit_keywords()
+        elif event.item == "update":
+            self.app.push_screen(InstallScreen("@world", mode="world"))
+        elif event.item == "sync":
+            self.app.push_screen(InstallScreen("", mode="sync"))
+        elif event.item == "news":
+            self.app.push_screen(NewsScreen())
+        else:
+            self.app.notify("Not implemented yet.", severity="warning")
+
+    def on_bracket_button_pressed(self, event: BracketButton.Pressed) -> None:
+        if event.button.id == "cancel":
+            self.app.pop_screen()
+        elif event.button.id == "accept":
+            self.action_accept()
+        elif event.button.id == "help":
+            self.action_help()
+
+    # -- config actions -----------------------------------------------------
+
+    def action_edit_use(self) -> None:
+        cp = self._current_cp()
+        if cp is not None:
+            self.app.push_screen(UseFlagScreen(cp))
+
+    def action_edit_keywords(self) -> None:
+        cp = self._current_cp()
+        if cp is not None:
+            self.app.push_screen(KeywordsScreen(cp))
+
+    def action_remove_pkg(self) -> None:
+        cp = self._current_cp()
+        if cp is not None:
+            self.app.push_screen(InstallScreen(cp, mode="depclean"))
+
+    # -- rendering ----------------------------------------------------------
+
+    def _set_count(self, text: str) -> None:
+        self.query_one("#sw-count", Static).update(text)
+
+    def _fill(self, rows: list[tuple[str, str, str]], cps: list[str]) -> None:
+        table = self.query_one("#results", DataTable)
+        table.clear()
+        self._cps = cps
+        for row in rows:
+            table.add_row(*row)
+
+    @work(thread=True, exclusive=True)
+    def load_installed(self, world_only: bool = False) -> None:
+        pkgs = reader.list_installed()
+        if world_only:
+            pkgs = [p for p in pkgs if p.world_member]
+        rows = [
+            ("i", p.cp, (p.description or "")[:70])
+            for p in pkgs
+        ]
+        cps = [p.cp for p in pkgs]
+        self.app.call_from_thread(self._fill, rows, cps)
+        scope = "@world" if world_only else "installed"
+        self.app.call_from_thread(self._set_count, f" {len(pkgs)} {scope} package(s)")
+
+    @work(thread=True, exclusive=True)
+    def run_search(self, term: str) -> None:
+        self.app.call_from_thread(self._set_count, f" searching for “{term}” …")
+        results = reader.search(term)
+        rows = [
+            ("i" if r.installed else " ", r.cp, (r.description or "")[:70])
+            for r in results
+        ]
+        cps = [r.cp for r in results]
+        self.app.call_from_thread(self._fill, rows, cps)
+        self.app.call_from_thread(self._set_count, f" {len(results)} package(s) found")
+
+    @work(thread=True, exclusive=True)
+    def show_detail(self, cp: str) -> None:
+        detail = reader.get_package_detail(cp)
+        self.app.call_from_thread(self._render_detail, cp, detail)
+
+    def _render_detail(self, cp: str, detail: PackageDetail | None) -> None:
+        pane = self.query_one("#sw-detail", Static)
+        if detail is None:
+            pane.update(f"[b]{cp}[/b]\n(no metadata)")
+            return
+        installed = detail.installed_version or "—"
+        lines = [
+            f"[b]{detail.cp}[/b] — {detail.description}",
+            "",
+            f"[b]Version:[/b] {detail.available_version or '—'}   "
+            f"[b]Installed:[/b] {installed}   [b]Slot:[/b] {detail.slot}",
+            f"[b]License:[/b] {detail.license or '—'}",
+            f"[b]Homepage:[/b] {detail.homepage or '—'}",
+            f"[b]Keywords:[/b] {detail.keywords or '—'}",
+        ]
+        pane.update("\n".join(lines))

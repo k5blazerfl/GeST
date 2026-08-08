@@ -64,3 +64,25 @@ class SearchResult:
     @property
     def name(self) -> str:
         return self.cp.split("/", 1)[-1]
+
+
+@dataclass(slots=True)
+class PackageDetail:
+    """Richer per-package info for the detail pane (available vs installed)."""
+
+    cp: str
+    available_version: str = ""
+    installed_version: str = ""
+    slot: str = "0"
+    license: str = ""
+    homepage: str = ""
+    description: str = ""
+    keywords: str = ""
+
+    @property
+    def name(self) -> str:
+        return self.cp.split("/", 1)[-1]
+
+    @property
+    def installed(self) -> bool:
+        return bool(self.installed_version)
