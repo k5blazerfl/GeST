@@ -453,12 +453,15 @@ class SoftwareService:
 
         def on_line(src, res):
             try:
-                line, _len = src.read_line_finish_utf8(res)
+                data, _len = src.read_line_finish(res)
             except GLib.Error:
-                line = None
-            if line is None:
+                data = None
+            if data is None:  # EOF
                 proc.wait_async(None, on_done)
                 return
+            # Decode tolerantly: build output can still emit stray non-UTF-8
+            # bytes; replace them rather than truncate the stream.
+            line = bytes(data).decode("utf-8", "replace")
             self._emit("Progress", GLib.Variant("(s)", (line,)))
             read_next()
 
@@ -473,6 +476,11 @@ class SoftwareService:
 
 
 def main() -> int:
+    # D-Bus activation gives us a minimal environment (no LANG/LC_*), so emerge
+    # and the other tools fall back to the C locale and emit non-UTF-8 bytes for
+    # accented/special characters. Force a UTF-8 locale so their output renders
+    # correctly in the TUI.
+    os.environ["LC_ALL"] = "C.UTF-8"
     loop = GLib.MainLoop()
 
     def on_bus_acquired(conn, name):
