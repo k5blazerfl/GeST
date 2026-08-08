@@ -9,6 +9,7 @@ import asyncio
 from gest.uwui.runtime import App, Screen, function_bar
 from gest.uwui.screens.menu import MenuScreen
 from gest.uwui.screens.news import NewsScreen
+from gest.uwui.screens.services import ServiceDetailScreen, ServicesScreen
 
 _SIZE = (100, 30)
 
@@ -69,3 +70,38 @@ def test_screen_status_line():
     app.notify("hello world")
     assert "hello world" in _render(menu)
     assert isinstance(menu, Screen)
+
+
+def _pump(app, cond, ticks=150):
+    async def run():
+        for _ in range(ticks):
+            await asyncio.sleep(0.02)
+            if cond():
+                return
+    app.loop.run_until_complete(run())
+
+
+def test_menu_launches_services():
+    app = App()
+    menu = MenuScreen(app)
+    app._stack.append(menu)
+    menu.keypress(_SIZE, "down")   # System
+    menu.keypress(_SIZE, "down")   # Services
+    menu.keypress(_SIZE, "enter")  # focus modules
+    menu.keypress(_SIZE, "enter")  # launch Services
+    assert isinstance(app._stack[-1], ServicesScreen)
+
+
+def test_services_list_and_detail():
+    app = App()
+    scr = ServicesScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: len(scr._order) > 0)
+    assert scr._order  # the live host has OpenRC services
+    scr.keypress(_SIZE, "enter")   # open detail for the focused service
+    detail = app._stack[-1]
+    assert isinstance(detail, ServiceDetailScreen)
+    _pump(app, lambda: len(detail._walker) > 1)
+    assert "Status:" in _render(detail)
+    detail.keypress(_SIZE, "esc")
+    assert isinstance(app._stack[-1], ServicesScreen)
