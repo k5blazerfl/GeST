@@ -10,6 +10,7 @@ from gest.uwui.runtime import App, Screen, function_bar
 from gest.uwui.screens.menu import MenuScreen
 from gest.uwui.screens.news import NewsScreen
 from gest.uwui.screens.services import ServiceDetailScreen, ServicesScreen
+from gest.uwui.screens.system import HostnameScreen, LocaleScreen, TimezoneScreen
 
 _SIZE = (100, 30)
 
@@ -105,3 +106,39 @@ def test_services_list_and_detail():
     assert "Status:" in _render(detail)
     detail.keypress(_SIZE, "esc")
     assert isinstance(app._stack[-1], ServicesScreen)
+
+
+def test_hostname_screen_prefills_current():
+    app = App()
+    scr = HostnameScreen(app)
+    app._stack.append(scr)
+    assert scr._edit.edit_text  # non-empty current hostname
+
+
+def test_timezone_screen_loads_and_filters():
+    app = App()
+    scr = TimezoneScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: len(scr._all) > 0)
+    total = len(scr._all)
+    assert total > 100
+    scr._filter.set_edit_text("reykjavik")
+    assert 0 < len(scr._visible) < total
+
+
+def test_locale_screen_loads():
+    app = App()
+    scr = LocaleScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: len(scr._all) > 0)
+    assert scr._all
+
+
+def test_menu_launches_hostname():
+    app = App()
+    menu = MenuScreen(app)
+    app._stack.append(menu)
+    menu.keypress(_SIZE, "down")   # System category
+    menu.keypress(_SIZE, "enter")  # focus modules (Hostname first)
+    menu.keypress(_SIZE, "enter")  # launch Hostname
+    assert isinstance(app._stack[-1], HostnameScreen)
