@@ -6,11 +6,14 @@ suite rather than the dependency-light CI subset.
 
 import asyncio
 
+import urwid
+
 from gest.uwui.runtime import App, Screen, function_bar
 from gest.uwui.screens.menu import MenuScreen
 from gest.uwui.screens.news import NewsScreen
 from gest.uwui.screens.services import ServiceDetailScreen, ServicesScreen
 from gest.uwui.screens.system import HostnameScreen, LocaleScreen, TimezoneScreen
+from gest.uwui.screens.users import UsersScreen
 
 _SIZE = (100, 30)
 
@@ -142,3 +145,36 @@ def test_menu_launches_hostname():
     menu.keypress(_SIZE, "enter")  # focus modules (Hostname first)
     menu.keypress(_SIZE, "enter")  # launch Hostname
     assert isinstance(app._stack[-1], HostnameScreen)
+
+
+def test_users_list_and_group_toggle():
+    app = App()
+    scr = UsersScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: len(scr._order) > 0)
+    assert scr._order and scr._view == "users"
+    assert "root" in _render(scr)
+    scr.keypress(_SIZE, "g")
+    _pump(app, lambda: scr._view == "groups" and len(scr._order) > 0)
+    assert "Groups" in _render(scr)
+
+
+def test_users_add_modal_opens_and_cancels():
+    app = App()
+    scr = UsersScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: len(scr._order) > 0)
+    scr.keypress(_SIZE, "a")
+    assert isinstance(app._stack[-1], urwid.Overlay)
+    assert "Add user" in _render(app._stack[-1])
+    app._stack[-1].keypress(_SIZE, "esc")
+    assert isinstance(app._stack[-1], UsersScreen)
+
+
+def test_users_edit_modal_prefills():
+    app = App()
+    scr = UsersScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: len(scr._order) > 0)
+    scr.keypress(_SIZE, "e")
+    assert "Edit user" in _render(app._stack[-1])

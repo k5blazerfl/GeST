@@ -8,6 +8,7 @@ from gest.uwui.runtime import App, Screen
 from gest.uwui.screens.news import NewsScreen
 from gest.uwui.screens.services import ServicesScreen
 from gest.uwui.screens.system import HostnameScreen, LocaleScreen, TimezoneScreen
+from gest.uwui.screens.users import UsersScreen
 
 # Category → [(module_key, label, implemented)]. Mirrors the Textual frontend;
 # only modules ported to urwid so far are launchable.
@@ -28,7 +29,7 @@ CATEGORIES: list[tuple[str, list[tuple[str, str, bool]]]] = [
         ("services", "Services (OpenRC)", True),
     ]),
     ("Security and Users", [
-        ("users", "Users & Groups", False),
+        ("users", "Users & Groups", True),
     ]),
     ("Network", [
         ("network", "Network", False),
@@ -89,6 +90,8 @@ class MenuScreen(Screen):
             self.app.push(TimezoneScreen(self.app))
         elif key == "locale":
             self.app.push(LocaleScreen(self.app))
+        elif key == "users":
+            self.app.push(UsersScreen(self.app))
         else:
             self.app.notify(f"“{key}” isn't ported to the urwid frontend yet.")
 
