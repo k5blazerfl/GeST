@@ -10,6 +10,7 @@ import urwid
 
 from gest.uwui.runtime import App, Screen, function_bar
 from gest.uwui.screens.apply import ApplyScreen
+from gest.uwui.screens.config import KeywordsScreen, UseFlagScreen
 from gest.uwui.screens.menu import MenuScreen
 from gest.uwui.screens.network import NetworkScreen
 from gest.uwui.screens.news import NewsScreen
@@ -253,3 +254,33 @@ def test_menu_launches_software():
     menu.keypress(_SIZE, "enter")  # Software category -> modules (Software Mgmt first)
     menu.keypress(_SIZE, "enter")  # launch
     assert isinstance(app._stack[-1], SoftwareScreen)
+
+
+def test_useflag_editor_loads_and_cycles():
+    app = App()
+    scr = UseFlagScreen(app, "app-editors/vim")
+    app._stack.append(scr)
+    _pump(app, lambda: len(scr._flags) > 0, ticks=300)
+    assert scr._flags
+    first = scr._flags[0]
+    before = scr._states[first]
+    scr.keypress(_SIZE, " ")
+    assert scr._states[first] != before  # tri-state cycle
+
+
+def test_keywords_editor_cycles():
+    app = App()
+    scr = KeywordsScreen(app, "app-editors/vim")
+    app._stack.append(scr)
+    before = scr._kw
+    scr.keypress(_SIZE, " ")   # focus is on the keyword row
+    assert scr._kw != before
+
+
+def test_software_u_opens_use_editor():
+    app = App()
+    scr = _software(app)
+    scr.keypress(_SIZE, "down")
+    scr.keypress(_SIZE, "down")   # focus table
+    scr.keypress(_SIZE, "u")
+    assert isinstance(app._stack[-1], UseFlagScreen)

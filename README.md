@@ -139,6 +139,7 @@ working tree.
       (authpriv, with caller uid); dispatch/auth round-trips are tested
 - [~] Frontend migration Textual → urwid (in ::gentoo) — foundation +
       all modules ported (software = browse/search/transactional Accept);
-      USE/keyword editors + dropdown menu bar remain before flipping default
+      + USE/keyword editors ported; only the (optional) dropdown menu bar
+      remains before flipping the default to urwid
 - [ ] Qt/KDE frontend over the same `core`
 ```
