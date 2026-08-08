@@ -9,6 +9,7 @@ mark set is a dict so remove/update can slot in later without a rewrite.
 from __future__ import annotations
 
 INSTALL = "install"
+REMOVE = "remove"
 
 
 class Selection:
@@ -29,6 +30,15 @@ class Selection:
         else:
             self.mark_install(cp)
 
+    def mark_remove(self, cp: str) -> None:
+        self._marks[cp] = REMOVE
+
+    def toggle_remove(self, cp: str) -> None:
+        if self._marks.get(cp) == REMOVE:
+            self.unmark(cp)
+        else:
+            self.mark_remove(cp)
+
     def mark_of(self, cp: str) -> str | None:
         return self._marks.get(cp)
 
@@ -45,9 +55,18 @@ class Selection:
     def install_atoms(self) -> list[str]:
         return sorted(cp for cp, mark in self._marks.items() if mark == INSTALL)
 
+    def remove_atoms(self) -> list[str]:
+        return sorted(cp for cp, mark in self._marks.items() if mark == REMOVE)
+
     def summary(self) -> str:
-        n = len(self.install_atoms())
-        return f"{n} to install" if n else "no changes"
+        parts = []
+        n_install = len(self.install_atoms())
+        n_remove = len(self.remove_atoms())
+        if n_install:
+            parts.append(f"{n_install} to install")
+        if n_remove:
+            parts.append(f"{n_remove} to remove")
+        return " · ".join(parts) if parts else "no changes"
 
     def __len__(self) -> int:
         return len(self._marks)

@@ -80,7 +80,8 @@ async def test_space_marks_rows_and_accept_opens_multi_apply():
         await pilot.press("space")   # mark row 1
         await pilot.pause()
         assert len(app.screen._selection) == 2
-        assert table.get_row_at(0)[0] == "+"  # status cell shows the mark
+        # installed packages marked for install show "u" (update); "+" for new
+        assert table.get_row_at(0)[0] in ("+", "u")
         count = str(app.screen.query_one("#sw-count", Static).render())
         assert "to install" in count
         app.screen.action_accept()
@@ -104,3 +105,41 @@ async def test_clear_marks_resets_status():
         await pilot.pause()
         assert app.screen._selection.is_empty
         assert table.get_row_at(0)[0] == "i"
+
+
+async def test_r_marks_remove_and_accept_chains_to_depclean():
+    app = GestApp()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_software(app, pilot)
+        table = app.screen.query_one("#results", DataTable)
+        table.focus()
+        await pilot.pause()
+        await pilot.press("r")  # mark row 0 for removal
+        await pilot.pause()
+        assert table.get_row_at(0)[0] == "-"
+        assert app.screen._selection.remove_atoms()
+        # only removes -> Accept goes straight to a depclean-multi apply
+        app.screen.action_accept()
+        await pilot.pause()
+        assert isinstance(app.screen, InstallScreen)
+        assert app.screen.mode == "depclean-multi"
+
+
+async def test_accept_installs_then_chains_removes():
+    app = GestApp()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_software(app, pilot)
+        table = app.screen.query_one("#results", DataTable)
+        table.focus()
+        await pilot.pause()
+        await pilot.press("space")  # install-mark row 0
+        await pilot.press("down")
+        await pilot.press("r")      # remove-mark row 1
+        await pilot.pause()
+        app.screen.action_accept()
+        await pilot.pause()
+        assert app.screen.mode == "multi"          # phase 1: installs
+        app.screen.dismiss()                       # simulate finishing phase 1
+        await pilot.pause()
+        assert isinstance(app.screen, InstallScreen)
+        assert app.screen.mode == "depclean-multi"  # phase 2: removals

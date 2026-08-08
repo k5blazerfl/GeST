@@ -106,6 +106,14 @@ class SoftwareBackend:
         """Mark Portage news read (polkit-gated). selector: "all"/"new"/number."""
         return await self._iface.call_mark_news_read(selector)
 
+    async def depclean_multi(self, atoms, on_progress=None, on_finished=None) -> bool:
+        """Remove several atoms in one emerge --depclean; streams like install."""
+        if on_progress is not None:
+            self._iface.on_progress(on_progress)
+        if on_finished is not None:
+            self._iface.on_finished(on_finished)
+        return await self._iface.call_depclean_multi(atoms)
+
     async def set_package_use(self, atom: str, line: str) -> bool:
         """Write ``line`` for ``atom`` into package.use/gest (polkit-gated)."""
         return await self._iface.call_set_package_use(atom, line)
