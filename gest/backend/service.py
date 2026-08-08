@@ -30,6 +30,7 @@ gi.require_version("Gio", "2.0")
 from gi.repository import Gio, GLib
 
 from gest.backend.audit import audit
+from gest.backend.eselect import EselectService
 from gest.backend.network import NetworkService
 from gest.backend.polkit import caller_uid
 from gest.backend.services import ServicesService
@@ -479,6 +480,7 @@ def main() -> int:
         UsersService(conn)
         SystemService(conn)
         NetworkService(conn)
+        EselectService(conn)
 
     def on_name_lost(conn, name):
         sys.stderr.write(f"gest-backend: lost/could not acquire name {name}\n")
