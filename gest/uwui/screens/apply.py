@@ -42,6 +42,11 @@ def depclean_plan(atom: str = "") -> Plan:
                 lambda b, p, f: b.depclean(atom, p, f))
 
 
+def rebuild_plan(atom: str) -> Plan:
+    return Plan("Rebuild", lambda: preview.preview_install(atom, changed_use=True),
+                lambda b, p, f: b.rebuild(atom, p, f))
+
+
 def install_plan(atoms: list[str]) -> Plan:
     return Plan("Install", lambda: preview.preview_install_many(atoms),
                 lambda b, p, f: b.install_multi(atoms, p, f))

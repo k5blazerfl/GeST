@@ -15,6 +15,7 @@ from gest.core.software.model import PackageDetail
 from gest.core.software.selection import Selection
 from gest.uwui.runtime import App, Screen
 from gest.uwui.screens.apply import ApplyScreen, install_plan, remove_plan
+from gest.uwui.screens.config import KeywordsScreen, UseFlagScreen
 
 
 def _row(text: str) -> urwid.Widget:
@@ -58,7 +59,8 @@ class SoftwareScreen(Screen):
             app, pile, title="Software Management",
             footer_keys=[
                 ("Enter", "Search/Install"), ("Space", "Mark"), ("r", "Remove"),
-                ("c", "Clear"), ("F10", "Accept"), ("Esc", "Back"),
+                ("c", "Clear"), ("u", "USE"), ("k", "Keywords"),
+                ("F10", "Accept"), ("Esc", "Back"),
             ],
         )
         self._pile = pile
@@ -212,6 +214,12 @@ class SoftwareScreen(Screen):
                 self._selection.clear()
                 self._repaint()
                 self._refresh_count()
+            return None
+        if key == "u" and not focus_search and self._cps:
+            self.app.push(UseFlagScreen(self.app, self._cps[self._walker.focus]))
+            return None
+        if key == "k" and not focus_search and self._cps:
+            self.app.push(KeywordsScreen(self.app, self._cps[self._walker.focus]))
             return None
         return key
 
