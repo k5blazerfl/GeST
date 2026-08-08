@@ -5,7 +5,7 @@ from __future__ import annotations
 import urwid
 
 from gest.core.software import news
-from gest.tui.runtime import App, Screen, strip_ansi
+from gest.tui.runtime import App, Screen, ansi_markup
 
 
 def _line(text: str) -> urwid.Widget:
@@ -46,7 +46,7 @@ class NewsScreen(Screen):
 
     async def _read(self, number: int) -> None:
         body = await self.app.run_blocking(news.read_news, number)
-        lines = [strip_ansi(x) for x in body.splitlines()] or ["(empty)"]
+        lines = [ansi_markup(x) for x in body.splitlines()] or ["(empty)"]
         self._content_walker[:] = [_line(line) for line in lines]
         self._content_walker.set_focus(0)
         self.app.refresh()
