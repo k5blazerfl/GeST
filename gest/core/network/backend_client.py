@@ -23,6 +23,9 @@ class NetworkBackend:
     async def set_link(self, iface, up):
         return await self._iface.call_set_link(iface, up)
 
+    async def set_interface_config(self, iface, method, address="", gateway=""):
+        return await self._iface.call_set_interface_config(iface, method, address, gateway)
+
     async def close(self) -> None:
         if self._bus is not None:
             self._bus.disconnect()

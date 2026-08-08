@@ -7,8 +7,11 @@ polkit-gated with org.gentoo.gest.network.manage; every action is audit-logged.
 
 from __future__ import annotations
 
+import contextlib
+import os
 import shutil
 import subprocess
+import tempfile
 
 import gi
 
@@ -17,7 +20,7 @@ from gi.repository import Gio, GLib
 
 from gest.backend.audit import audit
 from gest.backend.polkit import caller_uid, check_authorization
-from gest.core.network import commands
+from gest.core.network import commands, netifrc
 from gest.ipc.interface import NETWORK_IFACE, NETWORK_PATH, NETWORK_POLKIT
 
 _INTROSPECTION = f"""
@@ -26,6 +29,14 @@ _INTROSPECTION = f"""
     <method name="SetLink">
       <arg type="s" name="iface" direction="in"/>
       <arg type="b" name="up" direction="in"/>
+      <arg type="b" name="ok" direction="out"/>
+      <arg type="s" name="output" direction="out"/>
+    </method>
+    <method name="SetInterfaceConfig">
+      <arg type="s" name="iface" direction="in"/>
+      <arg type="s" name="method" direction="in"/>
+      <arg type="s" name="address" direction="in"/>
+      <arg type="s" name="gateway" direction="in"/>
       <arg type="b" name="ok" direction="out"/>
       <arg type="s" name="output" direction="out"/>
     </method>
@@ -42,6 +53,21 @@ def _run(argv: list[str]) -> tuple[bool, str]:
     return proc.returncode == 0, out.strip()
 
 
+def _atomic_write(path: str, text: str) -> None:
+    directory = os.path.dirname(path)
+    os.makedirs(directory, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=directory, prefix=".gest.")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, path)
+    except Exception:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise
+
+
 class NetworkService:
     """Implements the ``org.gentoo.gest.Network`` interface."""
 
@@ -53,26 +79,57 @@ class NetworkService:
         )
 
     def _on_call(self, conn, sender, path, iface, method, params, invocation):
-        if method != "SetLink":
+        if method not in ("SetLink", "SetInterfaceConfig"):
             invocation.return_error_literal(
                 Gio.dbus_error_quark(), Gio.DBusError.UNKNOWN_METHOD,
                 f"No such method {method}")
             return
         uid = caller_uid(self._conn, sender)
         if not check_authorization(self._conn, sender, NETWORK_POLKIT):
-            audit("SetLink", uid=uid, result="denied")
+            audit(method, uid=uid, result="denied")
             invocation.return_error_literal(
                 Gio.dbus_error_quark(), Gio.DBusError.ACCESS_DENIED,
                 "Not authorized to manage network interfaces")
             return
         try:
-            name, up = params.unpack()
-            argv = commands.iplink_argv(name, up, ip=_IP)
+            if method == "SetLink":
+                name, up = params.unpack()
+                ok, out = _run(commands.iplink_argv(name, up, ip=_IP))
+                detail = f"{name} {'up' if up else 'down'}"
+            else:
+                name, cfg_method, address, gateway = params.unpack()
+                ok, out = self._set_interface_config(name, cfg_method, address, gateway)
+                detail = f"{name} {cfg_method}"
         except ValueError as exc:
             invocation.return_error_literal(
                 Gio.dbus_error_quark(), Gio.DBusError.INVALID_ARGS, str(exc))
             return
-        ok, out = _run(argv)
-        audit("SetLink", uid=uid, result="ok" if ok else "failed",
-              detail=f"{name} {'up' if up else 'down'}")
+        except OSError as exc:
+            invocation.return_value(GLib.Variant("(bs)", (False, f"write failed: {exc}")))
+            return
+        audit(method, uid=uid, result="ok" if ok else "failed", detail=detail)
         invocation.return_value(GLib.Variant("(bs)", (ok, out)))
+
+    def _set_interface_config(self, iface, method, address, gateway):
+        if not commands.valid_iface(iface):
+            raise ValueError("invalid interface")
+        if method not in ("dhcp", "static", "none"):
+            raise ValueError("invalid method")
+        if method == "static":
+            if not netifrc.valid_address(address):
+                raise ValueError("invalid IP address (need CIDR, e.g. 192.168.1.5/24)")
+            if not netifrc.valid_gateway(gateway):
+                raise ValueError("invalid gateway address")
+        path = "/etc/conf.d/net"
+        try:
+            with open(path, encoding="utf-8") as fh:
+                text = fh.read()
+        except OSError:
+            text = ""
+        cfg = netifrc.InterfaceConfig(
+            iface, method,
+            address if method == "static" else "",
+            gateway if method == "static" else "",
+        )
+        _atomic_write(path, netifrc.render_conf_net(text, cfg))
+        return True, f"{iface} configured as {method} (restart net.{iface} to apply)"

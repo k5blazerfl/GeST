@@ -7,6 +7,7 @@ import subprocess
 from collections.abc import Callable
 
 from gest.core.network.model import Interface
+from gest.core.network.netifrc import InterfaceConfig, parse_conf_net
 
 Runner = Callable[[list[str]], str]
 
@@ -48,3 +49,13 @@ def _default_runner(argv: list[str]) -> str:
 def list_interfaces(runner: Runner | None = None) -> list[Interface]:
     run = runner or _default_runner
     return parse_ip_json(run(["ip", "-j", "addr"]))
+
+
+def read_interface_config(iface: str, path: str = "/etc/conf.d/net") -> InterfaceConfig:
+    """Current netifrc config for an interface (unprivileged read)."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+    except OSError:
+        text = ""
+    return parse_conf_net(text, iface)
