@@ -102,18 +102,37 @@ def list_installed() -> list[Package]:
     return packages
 
 
-def search(term: str, limit: int = 200) -> list[SearchResult]:
-    """Substring search over available package names (category/package)."""
+def search(
+    term: str, *, fields: tuple[str, ...] = ("name",), limit: int = 200
+) -> list[SearchResult]:
+    """Substring search over packages.
+
+    ``fields`` chooses what to match: ``"name"`` (category/package, cheap) and/or
+    ``"summary"`` (the one-line DESCRIPTION). Summary search must read metadata
+    for every package, so it is the "time-consuming" option — only paid when the
+    caller asks for it, and always run off the UI thread by the frontend.
+    """
     needle = term.strip().lower()
     if not needle:
         return []
+    want_summary = "summary" in fields
     results: list[SearchResult] = []
     for cp in _PORTDB.cp_all():
-        if needle not in cp.lower():
-            continue
+        name_hit = needle in cp.lower()
+        if not name_hit and not want_summary:
+            continue  # name-only search skips the expensive metadata read
         best = _best_available(cp)
         version = cpv_getversion(best) if best else ""
-        desc = _PORTDB.aux_get(best, ["DESCRIPTION"])[0] if best else ""
+        desc = ""
+        if best:
+            try:
+                desc = _PORTDB.aux_get(best, ["DESCRIPTION"])[0]
+            except Exception:
+                # A broken ebuild (e.g. in a third-party overlay) can make
+                # aux_get raise; don't let one bad package sink the whole search.
+                desc = ""
+        if not name_hit and needle not in (desc or "").lower():
+            continue
         inst = _VARDB.cp_list(cp)
         inst_ver = cpv_getversion(inst[-1]) if inst else None
         results.append(SearchResult(cp, version, desc, inst_ver))

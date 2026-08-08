@@ -61,3 +61,13 @@ def test_get_package_detail_for_installed_package():
     assert detail.installed_version  # it is installed
     assert detail.license            # LICENSE is populated
     assert reader.get_package_detail("no-such/package-xyz") is None
+
+
+def test_search_summary_is_superset_of_name():
+    name_only = reader.search("editor", fields=("name",))
+    with_summary = reader.search("editor", fields=("name", "summary"), limit=500)
+    names = {r.cp for r in name_only}
+    both = {r.cp for r in with_summary}
+    # summary search still matches every name hit, plus description-only hits
+    assert names <= both
+    assert len(both) >= len(names)
