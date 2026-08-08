@@ -15,6 +15,7 @@ from gest.tui.screens.install import InstallScreen
 from gest.tui.screens.news import NewsScreen
 from gest.tui.screens.services import ServicesScreen
 from gest.tui.screens.software import SoftwareScreen
+from gest.tui.screens.system import HostnameScreen, LocaleScreen, TimezoneScreen
 from gest.tui.screens.users import UsersScreen
 from gest.tui.widgets.bracket_button import BracketButton
 from gest.tui.widgets.function_bar import FunctionBar
@@ -29,6 +30,11 @@ CATEGORIES: list[tuple[str, list[tuple[str, str, bool]]]] = [
         ("depclean", "Clean Up Packages", True),
         ("sync", "Sync Portage Tree", True),
         ("news", "Portage News", True),
+    ]),
+    ("System", [
+        ("hostname", "Hostname", True),
+        ("timezone", "Timezone", True),
+        ("locale", "Locale", True),
     ]),
     ("Services", [
         ("services", "Services (OpenRC)", True),
@@ -155,6 +161,12 @@ class MainMenuScreen(Screen):
             self.app.push_screen(NewsScreen())
         elif key == "users":
             self.app.push_screen(UsersScreen())
+        elif key == "hostname":
+            self.app.push_screen(HostnameScreen())
+        elif key == "timezone":
+            self.app.push_screen(TimezoneScreen())
+        elif key == "locale":
+            self.app.push_screen(LocaleScreen())
         else:
             self.app.notify(
                 f"The {self._module_title(key)} module isn't implemented yet.",

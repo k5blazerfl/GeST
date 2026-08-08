@@ -22,6 +22,11 @@ USERS_PATH = "/org/gentoo/gest/Users"
 USERS_IFACE = "org.gentoo.gest.Users"
 USERS_POLKIT = "org.gentoo.gest.users.manage"
 
+# Object path + interface for the system-settings module.
+SYSTEM_PATH = "/org/gentoo/gest/System"
+SYSTEM_IFACE = "org.gentoo.gest.System"
+SYSTEM_POLKIT = "org.gentoo.gest.system.configure"
+
 # polkit action id prefix. Concrete actions append the verb, e.g.
 # ``org.gentoo.gest.software.install``.
 POLKIT_PREFIX = "org.gentoo.gest.software"
