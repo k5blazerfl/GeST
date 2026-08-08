@@ -29,6 +29,8 @@ import gi
 gi.require_version("Gio", "2.0")
 from gi.repository import Gio, GLib
 
+from gest.backend.audit import audit
+from gest.backend.polkit import caller_uid
 from gest.backend.services import ServicesService
 from gest.backend.system import SystemService
 from gest.backend.users import UsersService
@@ -425,6 +427,8 @@ class SoftwareService:
                 None,
             )
             is_authorized, _challenge, _details = result.unpack()
+            audit(action_id, uid=caller_uid(self._conn, sender),
+                  result="authorized" if is_authorized else "denied")
             return bool(is_authorized)
         except GLib.Error:  # pragma: no cover - depends on live polkit
             return False

@@ -34,3 +34,28 @@ def check_authorization(conn, sender: str, action_id: str) -> bool:
         return bool(is_authorized)
     except GLib.Error:
         return False
+
+
+def caller_uid(conn, sender: str) -> int | None:
+    """Resolve the uid behind a system-bus sender name (for audit logging)."""
+    try:
+        proxy = Gio.DBusProxy.new_sync(
+            conn,
+            Gio.DBusProxyFlags.NONE,
+            None,
+            "org.freedesktop.DBus",
+            "/org/freedesktop/DBus",
+            "org.freedesktop.DBus",
+            None,
+        )
+        result = proxy.call_sync(
+            "GetConnectionUnixUser",
+            GLib.Variant("(s)", (sender,)),
+            Gio.DBusCallFlags.NONE,
+            -1,
+            None,
+        )
+        (uid,) = result.unpack()
+        return int(uid)
+    except Exception:
+        return None
