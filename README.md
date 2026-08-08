@@ -116,6 +116,7 @@ working tree.
 - [x] Services module (OpenRC) — list, start/stop/restart, enable/disable
 - [x] Service detail view — description + dependency graph (needs / uses /
       wants / needed-by), read-only, opened with Enter
+- [x] eselect module — list eselect modules + targets, switch the selection
 - [x] Users & Groups module — list users/groups; add / edit / delete users,
       add / delete groups (polkit-gated useradd/usermod/userdel/groupadd/groupdel)
 - [x] User passwords (chpasswd via stdin) + group membership (gpasswd);

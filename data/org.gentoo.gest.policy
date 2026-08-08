@@ -73,6 +73,16 @@
     </defaults>
   </action>
 
+  <action id="org.gentoo.gest.eselect.manage">
+    <description>Change eselect selections</description>
+    <message>Authentication is required to change an eselect selection</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+
   <action id="org.gentoo.gest.network.manage">
     <description>Manage network interfaces</description>
     <message>Authentication is required to bring network interfaces up or down</message>

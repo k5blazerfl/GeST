@@ -32,6 +32,11 @@ NETWORK_PATH = "/org/gentoo/gest/Network"
 NETWORK_IFACE = "org.gentoo.gest.Network"
 NETWORK_POLKIT = "org.gentoo.gest.network.manage"
 
+# Object path + interface for the eselect module.
+ESELECT_PATH = "/org/gentoo/gest/Eselect"
+ESELECT_IFACE = "org.gentoo.gest.Eselect"
+ESELECT_POLKIT = "org.gentoo.gest.eselect.manage"
+
 # polkit action id prefix. Concrete actions append the verb, e.g.
 # ``org.gentoo.gest.software.install``.
 POLKIT_PREFIX = "org.gentoo.gest.software"

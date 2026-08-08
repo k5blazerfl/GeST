@@ -11,6 +11,7 @@ import urwid
 from gest.tui.runtime import App, Screen, function_bar
 from gest.tui.screens.apply import ApplyScreen
 from gest.tui.screens.config import KeywordsScreen, UseFlagScreen
+from gest.tui.screens.eselect import EselectScreen
 from gest.tui.screens.menu import MenuScreen
 from gest.tui.screens.network import NetworkScreen
 from gest.tui.screens.news import NewsScreen
@@ -284,3 +285,30 @@ def test_software_u_opens_use_editor():
     scr.keypress(_SIZE, "down")   # focus table
     scr.keypress(_SIZE, "u")
     assert isinstance(app._stack[-1], UseFlagScreen)
+
+
+def test_eselect_lists_modules_and_targets():
+    app = App()
+    scr = EselectScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: len(scr._modules) > 0, ticks=300)
+    assert scr._modules  # eselect modules on the host
+    # move to the kernel module and check its targets load
+    for i, m in enumerate(scr._modules):
+        if m.name == "kernel":
+            scr._mod_walker.set_focus(i)
+            break
+    _pump(app, lambda: scr._current_module == "kernel" and len(scr._targets) > 0, ticks=300)
+    assert any(t.current for t in scr._targets)
+
+
+def test_menu_launches_eselect():
+    app = App()
+    menu = MenuScreen(app)
+    app._stack.append(menu)
+    menu.keypress(_SIZE, "down")   # System category
+    menu.keypress(_SIZE, "enter")  # focus modules
+    for _ in range(3):
+        menu.keypress(_SIZE, "down")  # hostname/timezone/locale -> eselect (4th)
+    menu.keypress(_SIZE, "enter")
+    assert isinstance(app._stack[-1], EselectScreen)
