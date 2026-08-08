@@ -17,6 +17,7 @@ from gest.tui.screens.makeconf import MakeconfScreen
 from gest.tui.screens.menu import MenuScreen
 from gest.tui.screens.network import NetworkScreen
 from gest.tui.screens.news import NewsScreen
+from gest.tui.screens.repos import ReposScreen
 from gest.tui.screens.services import ServiceDetailScreen, ServicesScreen
 from gest.tui.screens.software import SoftwareScreen
 from gest.tui.screens.system import HostnameScreen, LocaleScreen, TimezoneScreen
@@ -396,3 +397,49 @@ def test_software_menu_bar_opens_and_selects():
     drop.keypress(_SIZE, "down")                  # -> Portage news
     drop.keypress(_SIZE, "enter")
     assert isinstance(app._stack[-1], NewsScreen)
+
+
+def test_repos_lists_enabled_and_marks_main():
+    app = App()
+    scr = ReposScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: len(scr._repos) > 0, ticks=200)
+    assert scr._repos                      # this host has repos.conf
+    assert any(r.main for r in scr._repos)  # the main repo is flagged
+    body = _render(scr)
+    assert "\u2605" in body                 # ★ marker on the main repo
+
+
+def test_repos_add_modal_opens_and_cancels():
+    app = App()
+    scr = ReposScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: len(scr._repos) > 0, ticks=200)
+    scr.keypress(_SIZE, "A")
+    assert isinstance(app._stack[-1], urwid.Overlay)   # add modal
+    app._stack[-1].keypress(_SIZE, "esc")
+    assert isinstance(app._stack[-1], ReposScreen)
+
+
+def test_repos_protects_main_repo():
+    app = App()
+    scr = ReposScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: len(scr._repos) > 0, ticks=200)
+    for i, r in enumerate(scr._repos):
+        if r.main:
+            scr._walker.set_focus(i)
+            break
+    scr.keypress(_SIZE, "x")                # remove main -> blocked, no confirm modal
+    assert isinstance(app._stack[-1], ReposScreen)
+
+
+def test_menu_launches_repos():
+    app = App()
+    menu = MenuScreen(app)
+    app._stack.append(menu)
+    menu.keypress(_SIZE, "enter")          # Software category, focus modules
+    for _ in range(5):
+        menu.keypress(_SIZE, "down")       # ...news -> repositories (6th item)
+    menu.keypress(_SIZE, "enter")
+    assert isinstance(app._stack[-1], ReposScreen)

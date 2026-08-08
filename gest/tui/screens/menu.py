@@ -11,6 +11,7 @@ from gest.tui.screens.eselect import EselectScreen
 from gest.tui.screens.makeconf import MakeconfScreen
 from gest.tui.screens.network import NetworkScreen
 from gest.tui.screens.news import NewsScreen
+from gest.tui.screens.repos import ReposScreen
 from gest.tui.screens.services import ServicesScreen
 from gest.tui.screens.software import SoftwareScreen
 from gest.tui.screens.system import HostnameScreen, LocaleScreen, TimezoneScreen
@@ -24,6 +25,7 @@ CATEGORIES: list[tuple[str, list[tuple[str, str, bool]]]] = [
         ("depclean", "Clean Up Packages", True),
         ("sync", "Sync Portage Tree", True),
         ("news", "Portage News", True),
+        ("repositories", "Software Repositories", True),
     ]),
     ("System", [
         ("hostname", "Hostname", True),
@@ -98,6 +100,8 @@ class MenuScreen(Screen):
             self.app.push(ApplyScreen(self.app, [depclean_plan()], verb="Clean up"))
         elif key == "sync":
             self.app.push(ApplyScreen(self.app, [sync_plan()], verb="Sync"))
+        elif key == "repositories":
+            self.app.push(ReposScreen(self.app))
         elif key == "services":
             self.app.push(ServicesScreen(self.app))
         elif key == "hostname":
