@@ -13,18 +13,37 @@ import urwid
 from gest.core.software import reader
 from gest.core.software.model import PackageDetail
 from gest.core.software.selection import Selection
+from gest.tui.menubar import MenuBar
 from gest.tui.runtime import App, Screen
-from gest.tui.screens.apply import ApplyScreen, install_plan, remove_plan
+from gest.tui.screens.apply import (
+    ApplyScreen,
+    install_plan,
+    remove_plan,
+    sync_plan,
+    world_plan,
+)
 from gest.tui.screens.config import KeywordsScreen, UseFlagScreen
+from gest.tui.screens.news import NewsScreen
 
 
 def _row(text: str) -> urwid.Widget:
     return urwid.AttrMap(urwid.SelectableIcon(text, 0), None, focus_map="focus")
 
 
+_MENUS = [
+    ("view", "View", [("installed", "Installed packages", True)]),
+    ("config", "Configuration", [
+        ("use", "USE flags", True), ("keywords", "Keywords / mask", True)]),
+    ("deps", "Dependencies", [("check", "Check marked packages", True)]),
+    ("extras", "Extras", [
+        ("update", "System update", True), ("sync", "Sync tree", True),
+        ("news", "Portage news", True)]),
+]
+
+
 class SoftwareScreen(Screen):
-    _SEARCH_IDX = 0
-    _TABLE_IDX = 3
+    _SEARCH_IDX = 1
+    _TABLE_IDX = 4
 
     def __init__(self, app: App) -> None:
         self._cps: list[str] = []
@@ -48,7 +67,9 @@ class SoftwareScreen(Screen):
         detail_box = urwid.LineBox(
             urwid.Filler(self._detail, valign="top"), title="Detail"
         )
+        self._menubar = MenuBar(app, _MENUS, self._on_menu, top=2)
         pile = urwid.Pile([
+            ("pack", self._menubar),
             ("pack", self._search),
             ("pack", search_in),
             ("pack", self._count),
@@ -60,10 +81,11 @@ class SoftwareScreen(Screen):
             footer_keys=[
                 ("Enter", "Search/Install"), ("Space", "Mark"), ("r", "Remove"),
                 ("c", "Clear"), ("u", "USE"), ("k", "Keywords"),
-                ("F10", "Accept"), ("Esc", "Back"),
+                ("F10", "Accept"), ("↑", "Menu"), ("Esc", "Back"),
             ],
         )
         self._pile = pile
+        self._pile.focus_position = self._SEARCH_IDX  # land on search, not the menu
         urwid.connect_signal(self._walker, "modified", self._on_focus)
         app.run_async(self._load_installed())
 
@@ -181,6 +203,34 @@ class SoftwareScreen(Screen):
     def _after(self) -> None:
         self._selection.clear()
         self.app.run_async(self._load_installed())
+
+    # -- menu bar -----------------------------------------------------------
+
+    def _on_menu(self, menu_id: str, item_id: str) -> None:
+        cp = self._cps[self._walker.focus] if self._cps else None
+        if item_id == "installed":
+            self.app.run_async(self._load_installed())
+        elif item_id == "use" and cp:
+            self.app.push(UseFlagScreen(self.app, cp))
+        elif item_id == "keywords" and cp:
+            self.app.push(KeywordsScreen(self.app, cp))
+        elif item_id == "check":
+            self.app.run_async(self._check_marked())
+        elif item_id == "update":
+            self.app.push(ApplyScreen(self.app, [world_plan()], verb="System update"))
+        elif item_id == "sync":
+            self.app.push(ApplyScreen(self.app, [sync_plan()], verb="Sync"))
+        elif item_id == "news":
+            self.app.push(NewsScreen(self.app))
+
+    async def _check_marked(self) -> None:
+        from gest.core.software import preview
+        atoms = self._selection.install_atoms()
+        if not atoms:
+            self.app.notify("No packages marked for install.")
+            return
+        result = await self.app.run_blocking(lambda: preview.preview_install_many(atoms))
+        self.app.notify(result.summary)
 
     # -- keys ---------------------------------------------------------------
 
