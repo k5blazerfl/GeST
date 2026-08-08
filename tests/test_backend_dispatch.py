@@ -11,6 +11,7 @@ import gi
 gi.require_version("Gio", "2.0")
 from gi.repository import Gio  # noqa: E402
 
+from gest.backend import network as network_mod  # noqa: E402
 from gest.backend import system as system_mod  # noqa: E402
 from gest.backend import users as users_mod  # noqa: E402
 
@@ -91,3 +92,27 @@ def test_sethostname_validates(monkeypatch):
                  _FakeParams(["bad host"]), inv)
     assert inv.value is None
     assert inv.error[0] == Gio.DBusError.INVALID_ARGS
+
+
+def test_setinterfaceconfig_bad_address_invalid_args(monkeypatch):
+    monkeypatch.setattr(network_mod, "check_authorization", lambda *a: True)
+    monkeypatch.setattr(network_mod, "caller_uid", lambda *a: 0)
+    svc = network_mod.NetworkService.__new__(network_mod.NetworkService)
+    svc._conn = None
+    inv = _FakeInvocation()
+    # static with a non-CIDR address must be rejected before any file write
+    svc._on_call(None, ":1.5", "/p", "i", "SetInterfaceConfig",
+                 _FakeParams(["eth0", "static", "not-a-cidr", ""]), inv)
+    assert inv.value is None
+    assert inv.error[0] == Gio.DBusError.INVALID_ARGS
+
+
+def test_setlink_unauthorized_denied(monkeypatch):
+    monkeypatch.setattr(network_mod, "check_authorization", lambda *a: False)
+    monkeypatch.setattr(network_mod, "caller_uid", lambda *a: 1000)
+    svc = network_mod.NetworkService.__new__(network_mod.NetworkService)
+    svc._conn = None
+    inv = _FakeInvocation()
+    svc._on_call(None, ":1.5", "/p", "i", "SetLink", _FakeParams(["eth0", True]), inv)
+    assert inv.value is None
+    assert inv.error[0] == Gio.DBusError.ACCESS_DENIED
