@@ -38,5 +38,6 @@ jobs:
                  tests/test_system_core.py tests/test_audit.py \
                  tests/test_network_core.py -q
 
-      - name: Syntax-check the ebuild
-        run: bash -n packaging/overlay/app-admin/gest/gest-9999.ebuild
+      - name: Syntax-check the ebuilds
+        run: |
+          for e in packaging/overlay/app-admin/gest/*.ebuild; do bash -n "$e"; done
