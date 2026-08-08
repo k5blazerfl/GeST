@@ -53,6 +53,16 @@ The main menu is a two-pane **Control Center**: **↑/↓** move within a pane,
 **→**/**Enter** drops from a category into its module list, **Enter** launches a
 module, **Esc**/**←** goes back, **F9**/**q** quits.
 
+### Frontend migration: Textual → urwid
+
+GeST is migrating its TUI from Textual to **urwid** (which is packaged in
+`::gentoo`; Textual is not). The urwid frontend is being built in parallel under
+`gest/uwui/` and can be launched with `gest-uw` — it currently has the Control
+Center and the Portage news viewer, with the other modules ported over
+subsequent releases. The Textual frontend (`gest`) remains the default until the
+port is complete. The `gest/core`, `gest/ipc`, and `gest/backend` layers are
+frontend-agnostic and unchanged.
+
 ## Tests
 
 ```bash
@@ -127,5 +137,7 @@ working tree.
 - [ ] systemd support in Services (out of scope — OpenRC only)
 - [x] Backend hardening — every privileged action is audit-logged
       (authpriv, with caller uid); dispatch/auth round-trips are tested
+- [~] Frontend migration Textual → urwid (in ::gentoo) — foundation +
+      Control Center + news ported; other modules in progress
 - [ ] Qt/KDE frontend over the same `core`
 ```
