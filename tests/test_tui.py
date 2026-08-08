@@ -233,7 +233,7 @@ def test_software_search_narrows():
     app = App()
     scr = _software(app)
     installed = len(scr._cps)
-    scr._pile.focus_position = 0
+    scr._pile.focus_position = scr._SEARCH_IDX
     scr._search.set_edit_text("app-editors/vim")
     scr.keypress(_SIZE, "enter")
     _pump(app, lambda: 0 < len(scr._cps) < installed, ticks=300)
@@ -375,3 +375,24 @@ def test_menu_launches_makeconf():
         menu.keypress(_SIZE, "down")  # -> makeconf (6th System module)
     menu.keypress(_SIZE, "enter")
     assert isinstance(app._stack[-1], MakeconfScreen)
+
+
+def test_software_menu_bar_opens_and_selects():
+    import urwid
+
+    from gest.tui.screens.news import NewsScreen
+    app = App()
+    scr = _software(app)
+    # focus the menu bar (Up from the search field), open Extras, pick "Portage news"
+    scr._pile.focus_position = scr._SEARCH_IDX
+    scr.keypress(_SIZE, "up")                     # -> menu bar
+    assert scr._pile.focus_position == 0
+    for _ in range(3):
+        scr.keypress(_SIZE, "right")              # View -> Configuration -> Dependencies -> Extras
+    scr.keypress(_SIZE, "enter")                  # open Extras dropdown
+    assert isinstance(app._stack[-1], urwid.Overlay)
+    drop = app._stack[-1]
+    drop.keypress(_SIZE, "down")
+    drop.keypress(_SIZE, "down")                  # -> Portage news
+    drop.keypress(_SIZE, "enter")
+    assert isinstance(app._stack[-1], NewsScreen)

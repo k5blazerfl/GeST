@@ -27,6 +27,11 @@ PALETTE = [
     ("ok", "light green", "default"),
     ("error", "light red", "default"),
     ("pane_title", "light cyan,bold", "default"),
+    ("menubar", "black", "light gray"),
+    ("menu_title", "black", "light gray"),
+    ("menu_focus", "white", "dark blue"),
+    ("menu_drop", "black", "light gray"),
+    ("dim", "dark gray", "default"),
 ]
 
 # ANSI SGR foreground colours (normal and bold/bright) mapped to urwid names.
@@ -232,6 +237,16 @@ class App:
             self._stack[-1],
             align="center", width=width, min_width=24,
             valign="middle", height=("pack" if height is None else height),
+        )
+        self.push(overlay)
+
+    def push_overlay(self, widget: urwid.Widget, *, width, height,
+                     align="center", valign="middle", left=0, top=0) -> None:
+        """Push a positioned overlay (used for menu dropdowns)."""
+        overlay = urwid.Overlay(
+            widget, self._stack[-1],
+            align=align, width=width, valign=valign, height=height,
+            left=left, top=top, min_width=12,
         )
         self.push(overlay)
 
