@@ -33,7 +33,11 @@ from gest.backend.audit import audit
 from gest.backend.bootloader import BootloaderService
 from gest.backend.eselect import EselectService
 from gest.backend.network import NetworkService
-from gest.backend.polkit import authorization_variant, caller_uid
+from gest.backend.polkit import (
+    authorization_is_granted,
+    authorization_variant,
+    caller_uid,
+)
 from gest.backend.services import ServicesService
 from gest.backend.system import SystemService
 from gest.backend.users import UsersService
@@ -425,10 +429,10 @@ class SoftwareService:
                 -1,
                 None,
             )
-            is_authorized, _challenge, _details = result.unpack()
+            is_authorized = authorization_is_granted(result)
             audit(action_id, uid=caller_uid(self._conn, sender),
                   result="authorized" if is_authorized else "denied")
-            return bool(is_authorized)
+            return is_authorized
         except GLib.Error:  # pragma: no cover - depends on live polkit
             return False
 

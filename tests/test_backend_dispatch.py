@@ -124,3 +124,19 @@ def test_authorization_variant_builds():
     from gest.backend.polkit import authorization_variant
     variant = authorization_variant(":1.7", "org.gentoo.gest.software.install")
     assert variant.get_type_string() == "((sa{sv})sa{ss}us)"
+
+
+def test_authorization_is_granted_handles_wrapped_and_flat():
+    import gi
+    gi.require_version("Gio", "2.0")
+    from gi.repository import GLib
+
+    from gest.backend.polkit import authorization_is_granted
+    # newer PyGObject: the out-args tuple is wrapped ((bool, bool, a{ss}),)
+    wrapped = GLib.Variant("((bba{ss}))", ((True, False, {}),))
+    assert authorization_is_granted(wrapped) is True
+    denied = GLib.Variant("((bba{ss}))", ((False, False, {}),))
+    assert authorization_is_granted(denied) is False
+    # older PyGObject: the struct came back flat (bool, bool, a{ss})
+    flat = GLib.Variant("(bba{ss})", (True, False, {}))
+    assert authorization_is_granted(flat) is True
