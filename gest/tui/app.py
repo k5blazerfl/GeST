@@ -12,6 +12,7 @@ from textual.widgets.option_list import Option
 
 from gest import __version__
 from gest.tui.screens.install import InstallScreen
+from gest.tui.screens.network import NetworkScreen
 from gest.tui.screens.news import NewsScreen
 from gest.tui.screens.services import ServicesScreen
 from gest.tui.screens.software import SoftwareScreen
@@ -43,7 +44,7 @@ CATEGORIES: list[tuple[str, list[tuple[str, str, bool]]]] = [
         ("users", "Users & Groups", True),
     ]),
     ("Network", [
-        ("network", "Network", False),
+        ("network", "Network", True),
     ]),
 ]
 
@@ -167,6 +168,8 @@ class MainMenuScreen(Screen):
             self.app.push_screen(TimezoneScreen())
         elif key == "locale":
             self.app.push_screen(LocaleScreen())
+        elif key == "network":
+            self.app.push_screen(NetworkScreen())
         else:
             self.app.notify(
                 f"The {self._module_title(key)} module isn't implemented yet.",

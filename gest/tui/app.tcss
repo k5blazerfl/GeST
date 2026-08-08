@@ -206,3 +206,20 @@ SoftwareScreen {
 #sys-buttons BracketButton {
     margin-right: 2;
 }
+
+/* --- Network --- */
+#net-title {
+    text-style: bold;
+    color: $primary;
+    margin: 1 2 0 2;
+}
+
+#net-hint {
+    color: $text-muted;
+    margin: 0 2 1 2;
+}
+
+#net-table {
+    height: 1fr;
+    margin: 0 2;
+}

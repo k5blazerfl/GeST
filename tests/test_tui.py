@@ -106,7 +106,11 @@ async def test_down_arrow_moves_from_search_into_results():
         assert isinstance(app.focused, DataTable)  # dropped into the list
 
 
-async def test_menu_arrow_navigates_all_items_and_notifies_unimplemented():
+async def test_menu_arrow_navigates_to_last_category_and_launches():
+    # Every module is implemented now; navigating to the last category
+    # (Network) and launching opens its screen rather than a "coming soon".
+    from gest.tui.screens.network import NetworkScreen
+
     app = GestApp()
     async with app.run_test(size=(100, 30)) as pilot:
         await pilot.pause()
@@ -115,11 +119,11 @@ async def test_menu_arrow_navigates_all_items_and_notifies_unimplemented():
         await pilot.press("down")   # System
         await pilot.press("down")   # Services
         await pilot.press("down")   # Security and Users
-        await pilot.press("down")   # Network (still a stub)
+        await pilot.press("down")   # Network
         await pilot.press("enter")  # -> its module list
-        await pilot.press("enter")  # launch an unimplemented module
+        await pilot.press("enter")  # launch Network
         await pilot.pause()
-        assert isinstance(app.screen, MainMenuScreen)  # unimplemented -> stays put
+        assert isinstance(app.screen, NetworkScreen)
 
 
 async def test_menu_system_update_opens_world_screen(monkeypatch):
