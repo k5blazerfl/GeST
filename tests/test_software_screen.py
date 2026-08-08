@@ -1,6 +1,6 @@
 """Headless tests for the YaST-style Software Management screen."""
 
-from textual.widgets import DataTable, OptionList, Static
+from textual.widgets import Checkbox, DataTable, Input, OptionList, Static
 
 from gest.tui.app import GestApp, SoftwareScreen
 from gest.tui.screens.install import InstallScreen
@@ -143,3 +143,27 @@ async def test_accept_installs_then_chains_removes():
         await pilot.pause()
         assert isinstance(app.screen, InstallScreen)
         assert app.screen.mode == "depclean-multi"  # phase 2: removals
+
+
+async def test_summary_checkbox_drives_search_fields(monkeypatch):
+    captured = {}
+    import gest.core.software.reader as reader_mod
+    orig = reader_mod.search
+
+    def fake(term, *, fields=("name",), limit=200):
+        captured["fields"] = fields
+        return orig("sys-apps/portage", fields=("name",))
+
+    monkeypatch.setattr(reader_mod, "search", fake)
+    app = GestApp()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_software(app, pilot)
+        app.screen.query_one("#in-summary", Checkbox).value = True
+        await pilot.pause()
+        search = app.screen.query_one("#search", Input)
+        search.focus()
+        search.value = "vim"
+        await pilot.press("enter")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert captured["fields"] == ("name", "summary")

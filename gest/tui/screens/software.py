@@ -18,7 +18,7 @@ from textual.coordinate import Coordinate
 from textual.screen import Screen
 from textual.widgets import Checkbox, DataTable, Header, Input, Static
 
-from gest.core.software import reader
+from gest.core.software import preview, reader
 from gest.core.software.model import PackageDetail
 from gest.core.software.selection import Selection
 from gest.tui.screens.install import InstallScreen
@@ -31,8 +31,8 @@ from gest.tui.widgets.menu_bar import MenuBar
 
 _MENUS = [
     ("deps", "Dependencies", [
+        ("checknow", "Check marked packages", True),
         ("autocheck", "Automatic dependency check", False),
-        ("checknow", "Check now", False),
     ]),
     ("view", "View", [
         ("installed", "Installed packages", True),
@@ -84,8 +84,8 @@ class SoftwareScreen(Screen):
                 yield Input(placeholder="Search…", id="search")
                 yield Checkbox("Ignore Case", value=True, disabled=True, id="ignore-case")
                 yield Static("Search in", classes="filter-h")
-                yield Checkbox("Name", value=True, disabled=True)
-                yield Checkbox("Summary", value=False, disabled=True)
+                yield Checkbox("Name", value=True, id="in-name")
+                yield Checkbox("Summary (slower)", value=False, id="in-summary")
                 yield Checkbox("Keywords", value=False, disabled=True)
                 yield Checkbox("Description", value=False, disabled=True)
                 yield Checkbox("Provides", value=False, disabled=True)
@@ -227,9 +227,17 @@ class SoftwareScreen(Screen):
     def on_input_submitted(self, event: Input.Submitted) -> None:
         term = event.value.strip()
         if term:
-            self.run_search(term)
+            self.run_search(term, self._search_fields())
         else:
             self.load_installed()
+
+    def _search_fields(self) -> tuple[str, ...]:
+        fields = []
+        if self.query_one("#in-name", Checkbox).value:
+            fields.append("name")
+        if self.query_one("#in-summary", Checkbox).value:
+            fields.append("summary")
+        return tuple(fields) or ("name",)
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         cp = self._current_cp()
@@ -257,6 +265,8 @@ class SoftwareScreen(Screen):
             self.app.push_screen(InstallScreen("", mode="sync"))
         elif event.item == "news":
             self.app.push_screen(NewsScreen())
+        elif event.item == "checknow":
+            self.check_marked()
         else:
             self.app.notify("Not implemented yet.", severity="warning")
 
@@ -281,6 +291,19 @@ class SoftwareScreen(Screen):
             self.app.push_screen(KeywordsScreen(cp))
 
     # -- rendering ----------------------------------------------------------
+
+    @work(thread=True, exclusive=True)
+    def check_marked(self) -> None:
+        atoms = self._selection.install_atoms()
+        if not atoms:
+            self.app.call_from_thread(
+                self.app.notify, "No packages marked for install.",
+                severity="warning")
+            return
+        result = preview.preview_install_many(atoms)
+        self.app.call_from_thread(
+            self.app.notify, result.summary, title="Dependency check",
+            severity="information" if result.ok else "error")
 
     def _set_count(self, text: str) -> None:
         self._base_count = text
@@ -314,9 +337,9 @@ class SoftwareScreen(Screen):
         self.app.call_from_thread(self._set_count, f" {len(pkgs)} {scope} package(s)")
 
     @work(thread=True, exclusive=True)
-    def run_search(self, term: str) -> None:
+    def run_search(self, term: str, fields: tuple[str, ...] = ("name",)) -> None:
         self.app.call_from_thread(self._set_count, f" searching for “{term}” …")
-        results = reader.search(term)
+        results = reader.search(term, fields=fields)
         rows = [(r.cp, (r.description or "")[:70]) for r in results]
         cps = [r.cp for r in results]
         installed = [r.installed for r in results]

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gest"
-version = "0.14.0"
+version = "0.15.0"
 description = "GeST — Gentoo System Tool: a modular, YaST-style system administration tool for Gentoo"
 readme = "README.md"
 requires-python = ">=3.11"
