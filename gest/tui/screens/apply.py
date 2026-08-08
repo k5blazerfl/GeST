@@ -120,9 +120,21 @@ class ApplyScreen(Screen):
         try:
             started = await plan.run(backend, on_progress, on_finished)
         except Exception as exc:
-            self._append([f"[rejected] {exc}"])
+            message = str(exc) or type(exc).__name__
+            denied = "not authorized" in message.lower() or "AccessDenied" in message
+            lines = [f"[rejected] {message}"]
+            if denied:
+                lines.append(
+                    "  → an administrator authentication prompt should appear; "
+                    "complete it (run gest in your desktop session)."
+                )
+            self._append(lines)
             await backend.close()
-            self.app.notify("not authorized — rejected", error=True)
+            self.app.notify(
+                "authentication declined/cancelled — complete the password prompt"
+                if denied else f"failed: {message}",
+                error=True,
+            )
             return None
         if not started:
             self._append(["[backend declined to start]"])

@@ -116,3 +116,11 @@ def test_setlink_unauthorized_denied(monkeypatch):
     svc._on_call(None, ":1.5", "/p", "i", "SetLink", _FakeParams(["eth0", True]), inv)
     assert inv.value is None
     assert inv.error[0] == Gio.DBusError.ACCESS_DENIED
+
+
+def test_authorization_variant_builds():
+    # Regression: embedding a pre-built GLib.Variant subject raised TypeError on
+    # newer PyGObject; the argument must be built with an inline subject tuple.
+    from gest.backend.polkit import authorization_variant
+    variant = authorization_variant(":1.7", "org.gentoo.gest.software.install")
+    assert variant.get_type_string() == "((sa{sv})sa{ss}us)"

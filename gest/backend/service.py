@@ -33,7 +33,7 @@ from gest.backend.audit import audit
 from gest.backend.bootloader import BootloaderService
 from gest.backend.eselect import EselectService
 from gest.backend.network import NetworkService
-from gest.backend.polkit import caller_uid
+from gest.backend.polkit import authorization_variant, caller_uid
 from gest.backend.services import ServicesService
 from gest.backend.system import SystemService
 from gest.backend.users import UsersService
@@ -418,13 +418,9 @@ class SoftwareService:
                 "org.freedesktop.PolicyKit1.Authority",
                 None,
             )
-            subject = GLib.Variant(
-                "(sa{sv})",
-                ("system-bus-name", {"name": GLib.Variant("s", sender)}),
-            )
             result = authority.call_sync(
                 "CheckAuthorization",
-                GLib.Variant("((sa{sv})sa{ss}us)", (subject, action_id, {}, 1, "")),
+                authorization_variant(sender, action_id),
                 Gio.DBusCallFlags.NONE,
                 -1,
                 None,
