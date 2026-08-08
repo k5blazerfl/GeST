@@ -1,198 +1,125 @@
-"""Network module screen: list interfaces and bring them up/down.
+"""Network module in urwid: list interfaces, bring links up/down, edit config.
 
-Reading interface state is unprivileged (`ip -j addr`); toggling a link goes
-through the polkit-gated Network backend (`ip link set`). Static/DHCP config
-editing (netifrc) is intentionally out of scope for now.
+Reads via `ip -j addr` (unprivileged); link toggles and netifrc config go
+through the async NetworkBackend.
 """
 
 from __future__ import annotations
 
-from textual import work
-from textual.app import ComposeResult
-from textual.binding import Binding
-from textual.containers import Horizontal, Vertical
-from textual.screen import ModalScreen, Screen
-from textual.widgets import Checkbox, DataTable, Header, Input, Label, Static
+import urwid
 
 from gest.core.network import netifrc, reader
 from gest.core.network.backend_client import NetworkBackend
 from gest.core.network.model import Interface
-from gest.tui.widgets.bracket_button import BracketButton
-from gest.tui.widgets.function_bar import FunctionBar
+from gest.tui.runtime import App, Modal, Screen
 
 
-class InterfaceConfigScreen(ModalScreen):
-    """Modal to set an interface to DHCP or a static address (netifrc)."""
-
-    BINDINGS = [Binding("escape", "cancel", "Cancel")]
-
-    def __init__(self, iface: str, config: netifrc.InterfaceConfig) -> None:
-        super().__init__()
-        self._iface = iface
-        self._config = config
-
-    def compose(self) -> ComposeResult:
-        static = self._config.method == "static"
-        with Vertical(id="form"):
-            yield Label(f"Configure {self._iface}", classes="form-title")
-            yield Label(f"current: {self._config.method}")
-            yield Checkbox("Use DHCP (uncheck for static)", value=not static, id="f-dhcp")
-            yield Label("Static IP address (CIDR, e.g. 192.168.1.5/24)")
-            yield Input(value=self._config.address if static else "", id="f-address")
-            yield Label("Default gateway (optional)")
-            yield Input(value=self._config.gateway if static else "", id="f-gateway")
-            with Horizontal(classes="form-buttons"):
-                yield BracketButton("Save", id="save")
-                yield BracketButton("Cancel", id="cancel")
-
-    def on_bracket_button_pressed(self, event: BracketButton.Pressed) -> None:
-        if event.button.id != "save":
-            self.dismiss(None)
-            return
-        if self.query_one("#f-dhcp", Checkbox).value:
-            self.dismiss({"method": "dhcp", "address": "", "gateway": ""})
-            return
-        address = self.query_one("#f-address", Input).value.strip()
-        gateway = self.query_one("#f-gateway", Input).value.strip()
-        if not netifrc.valid_address(address):
-            self.app.notify("Enter a valid CIDR address (e.g. 192.168.1.5/24).",
-                            severity="error")
-            return
-        if not netifrc.valid_gateway(gateway):
-            self.app.notify("Invalid gateway address.", severity="error")
-            return
-        self.dismiss({"method": "static", "address": address, "gateway": gateway})
-
-    def action_cancel(self) -> None:
-        self.dismiss(None)
+def _row(text: str) -> urwid.Widget:
+    return urwid.AttrMap(urwid.SelectableIcon(text, 0), None, focus_map="focus")
 
 
 class NetworkScreen(Screen):
-    BINDINGS = [
-        Binding("escape", "app.pop_screen", "Back"),
-        Binding("f9", "app.pop_screen", "Back"),
-        Binding("u", "link_up", "Up"),
-        Binding("d", "link_down", "Down"),
-        Binding("c", "configure", "Configure"),
-        Binding("r", "refresh", "Refresh"),
-        Binding("q", "app.quit", "Quit"),
-    ]
-
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, app: App) -> None:
         self._ifaces: dict[str, Interface] = {}
         self._order: list[str] = []
-
-    def compose(self) -> ComposeResult:
-        yield Header()
-        yield Static("Network interfaces", id="net-title")
-        yield Static(
-            " u up · d down · c configure (DHCP/static) · r refresh · Esc back",
-            id="net-hint",
+        self._walker = urwid.SimpleFocusListWalker([urwid.Text(" loading …")])
+        self._list = urwid.ListBox(self._walker)
+        super().__init__(
+            app, urwid.LineBox(self._list, title="Network interfaces"),
+            title="Network",
+            footer_keys=[
+                ("u", "Up"), ("d", "Down"), ("c", "Configure"),
+                ("r", "Refresh"), ("Esc", "Back"),
+            ],
         )
-        table = DataTable(id="net-table", cursor_type="row", zebra_stripes=True)
-        table.add_columns("Interface", "State", "MAC", "Addresses")
-        yield table
-        yield FunctionBar(
-            [("u", "Up"), ("d", "Down"), ("c", "Config"), ("r", "Refresh"), ("F9", "Back")]
-        )
+        app.run_async(self._load())
 
-    def on_mount(self) -> None:
-        self.title = "Network"
-        self.query_one("#net-table", DataTable).focus()
-        self.load()
-
-    @work(thread=True, exclusive=True)
-    def load(self) -> None:
-        self.app.call_from_thread(self._populate, reader.list_interfaces())
-
-    def _populate(self, ifaces: list[Interface]) -> None:
-        table = self.query_one("#net-table", DataTable)
-        prev = table.cursor_row
-        table.clear()
+    async def _load(self) -> None:
+        ifaces = await self.app.run_blocking(reader.list_interfaces)
         self._ifaces = {i.name: i for i in ifaces}
         self._order = [i.name for i in ifaces]
-        for i in ifaces:
-            state = "● up" if i.up else i.state.lower()
-            table.add_row(i.name, state, i.mac or "—", " ".join(i.addresses) or "—")
+        prev = self._walker.focus if self._walker else 0
+        rows = [
+            _row(f"{i.name:<16} {('● up' if i.up else i.state.lower()):<10} "
+                 f"{i.mac or '—':<18} {' '.join(i.addresses) or '—'}")
+            for i in ifaces
+        ] or [urwid.Text(" (no interfaces)")]
+        self._walker[:] = rows
         if self._order:
-            table.move_cursor(row=min(prev, len(self._order) - 1))
+            self._walker.set_focus(min(prev or 0, len(self._order) - 1))
+        self.app.refresh()
 
     def _current(self) -> str | None:
-        table = self.query_one("#net-table", DataTable)
-        if not self._order or table.cursor_row is None:
+        if not self._order:
             return None
-        if 0 <= table.cursor_row < len(self._order):
-            return self._order[table.cursor_row]
-        return None
+        return self._order[self._walker.focus]
 
-    def action_refresh(self) -> None:
-        self.load()
-
-    def action_configure(self) -> None:
-        name = self._current()
-        if name is None:
-            return
-        if name == "lo":
-            self.app.notify("The loopback interface isn't configurable.",
-                            severity="warning")
-            return
-        config = reader.read_interface_config(name)
-        self.app.push_screen(
-            InterfaceConfigScreen(name, config),
-            lambda data: self._on_config(name, data),
-        )
-
-    def _on_config(self, name: str, data) -> None:
-        if not data:
-            return
-        self._run_config(name, data)
-
-    @work(exclusive=True)
-    async def _run_config(self, name: str, data) -> None:
+    async def _call(self, action, reload: bool = True) -> None:
         backend = NetworkBackend()
         try:
             await backend.connect()
-            ok, out = await backend.set_interface_config(
-                name, data["method"], data["address"], data["gateway"])
+            ok, out = await action(backend)
         except Exception as exc:
-            self.app.notify(f"{name}: {exc}", severity="error")
+            self.app.notify(str(exc), error=True)
             await backend.close()
             return
         await backend.close()
-        self.app.notify(out or ("done" if ok else "failed"),
-                        severity="information" if ok else "error")
+        self.app.notify(out or ("done" if ok else "failed"), error=not ok)
+        if reload:
+            await self._load()
 
-    def action_link_up(self) -> None:
-        self._set_link(True)
-
-    def action_link_down(self) -> None:
-        self._set_link(False)
-
-    def _set_link(self, up: bool) -> None:
+    def handle_key(self, key):
         name = self._current()
+        if key == "esc":
+            self.app.pop()
+            return None
+        if key == "r":
+            self.app.run_async(self._load())
+            return None
         if name is None:
-            return
-        if name == "lo":
-            self.app.notify("The loopback interface can't be toggled.",
-                            severity="warning")
-            return
-        self._run_set_link(name, up)
+            return key
+        if key in ("u", "d"):
+            if name == "lo":
+                self.app.notify("The loopback interface can't be toggled.", error=True)
+            else:
+                self.app.run_async(self._call(lambda b: b.set_link(name, key == "u")))
+            return None
+        if key == "c":
+            self._configure(name)
+            return None
+        return key
 
-    @work(exclusive=True)
-    async def _run_set_link(self, name: str, up: bool) -> None:
-        backend = NetworkBackend()
-        try:
-            await backend.connect()
-            ok, out = await backend.set_link(name, up)
-        except Exception as exc:
-            self.app.notify(f"{name}: {exc}", severity="error")
-            await backend.close()
+    def _configure(self, name: str) -> None:
+        if name == "lo":
+            self.app.notify("The loopback interface isn't configurable.", error=True)
             return
-        await backend.close()
-        verb = "up" if up else "down"
-        self.app.notify(
-            out or f"{name} brought {verb}" if ok else f"{name}: failed to bring {verb}",
-            severity="information" if ok else "error",
+        cfg = reader.read_interface_config(name)
+        dhcp = urwid.CheckBox("Use DHCP (uncheck for static)", state=cfg.method != "static")
+        address = urwid.Edit("Static IP (CIDR): ", cfg.address if cfg.method == "static" else "")
+        gateway = urwid.Edit("Gateway (optional): ", cfg.gateway if cfg.method == "static" else "")
+
+        def save():
+            if dhcp.state:
+                self.app.pop()
+                self.app.run_async(self._call(
+                    lambda b: b.set_interface_config(name, "dhcp"), reload=False))
+                return
+            addr = address.edit_text.strip()
+            gw = gateway.edit_text.strip()
+            if not netifrc.valid_address(addr):
+                self.app.notify("Enter a valid CIDR address (e.g. 192.168.1.5/24).",
+                                error=True)
+                return
+            if not netifrc.valid_gateway(gw):
+                self.app.notify("Invalid gateway address.", error=True)
+                return
+            self.app.pop()
+            self.app.run_async(self._call(
+                lambda b: b.set_interface_config(name, "static", addr, gw), reload=False))
+
+        modal = Modal(
+            self.app, f"Configure {name}",
+            [urwid.Text(f"current: {cfg.method}"), urwid.Divider(), dhcp, address, gateway],
+            [("Save", save), ("Cancel", self.app.pop)],
         )
-        self.load()
+        self.app.push_modal(modal, width=("relative", 70), height=("relative", 55))

@@ -4,17 +4,16 @@ from __future__ import annotations
 
 import urwid
 
-from gest.uwui.runtime import App, Screen
-from gest.uwui.screens.apply import ApplyScreen, depclean_plan, sync_plan, world_plan
-from gest.uwui.screens.network import NetworkScreen
-from gest.uwui.screens.news import NewsScreen
-from gest.uwui.screens.services import ServicesScreen
-from gest.uwui.screens.software import SoftwareScreen
-from gest.uwui.screens.system import HostnameScreen, LocaleScreen, TimezoneScreen
-from gest.uwui.screens.users import UsersScreen
+from gest.tui.runtime import App, Screen
+from gest.tui.screens.apply import ApplyScreen, depclean_plan, sync_plan, world_plan
+from gest.tui.screens.network import NetworkScreen
+from gest.tui.screens.news import NewsScreen
+from gest.tui.screens.services import ServicesScreen
+from gest.tui.screens.software import SoftwareScreen
+from gest.tui.screens.system import HostnameScreen, LocaleScreen, TimezoneScreen
+from gest.tui.screens.users import UsersScreen
 
-# Category → [(module_key, label, implemented)]. Mirrors the Textual frontend;
-# only modules ported to urwid so far are launchable.
+# Category → [(module_key, label, implemented)]. All modules are implemented.
 CATEGORIES: list[tuple[str, list[tuple[str, str, bool]]]] = [
     ("Software", [
         ("software", "Software Management", True),

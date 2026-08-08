@@ -1,5 +1,5 @@
-"""Full-screen Textual frontend — GeST's YaST-text-mode-style interface.
+"""GeST TUI frontend (urwid).
 
-This layer is a thin renderer: it reads from :mod:`gest.core` and displays the
-result. It contains no Portage or D-Bus calls of its own.
+Only this package is framework-specific; it renders the frontend-agnostic
+``gest.core`` modules. Entry point: ``gest`` (``gest.tui.app:main``).
 """

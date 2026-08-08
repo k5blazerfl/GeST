@@ -2,7 +2,7 @@
 
 This is the *only* part of ``core`` that mutates the system, and it does so
 indirectly — every call goes over the system bus to ``gest-backend``. It uses
-dbus-next so it integrates with the frontend's asyncio loop (Textual's).
+dbus-next so it integrates with the frontend's asyncio loop (urwid's).
 
 If the backend is not installed/running, :func:`connect` raises; callers should
 treat that as "privileged operations unavailable" rather than crashing.

@@ -1,402 +1,230 @@
-"""Users & Groups module screen: list, add, modify and delete local accounts.
+"""Users & Groups in urwid: list users/groups + modal add/edit/delete forms.
 
-Reading /etc/passwd + /etc/group is unprivileged; mutations go through the
-polkit-gated Users backend. 'g' toggles between the users and groups views.
+Reads /etc/passwd + /etc/group unprivileged; mutations go through the async
+UsersBackend. 'g' toggles the users/groups view.
 """
 
 from __future__ import annotations
 
-from textual import work
-from textual.app import ComposeResult
-from textual.binding import Binding
-from textual.containers import Horizontal, Vertical
-from textual.screen import ModalScreen, Screen
-from textual.widgets import Checkbox, DataTable, Header, Input, Label, Static
+import urwid
 
 from gest.core.users import reader
 from gest.core.users.backend_client import UsersBackend
 from gest.core.users.model import User
-from gest.tui.widgets.bracket_button import BracketButton
-from gest.tui.widgets.function_bar import FunctionBar
+from gest.tui.runtime import App, Modal, Screen
 
 
-class UserFormScreen(ModalScreen):
-    """Modal add/edit form for a user. Dismisses with a dict, or None."""
-
-    BINDINGS = [Binding("escape", "cancel", "Cancel")]
-
-    def __init__(self, user: User | None = None, current_groups: str = "") -> None:
-        super().__init__()
-        self._user = user
-        self._current_groups = current_groups
-
-    def compose(self) -> ComposeResult:
-        editing = self._user is not None
-        with Vertical(id="form"):
-            yield Label("Edit user" if editing else "Add user", classes="form-title")
-            yield Label("Login name")
-            yield Input(
-                value=self._user.name if editing else "",
-                id="f-name", disabled=editing,
-            )
-            yield Label("Full name")
-            yield Input(value=self._user.gecos.split(",")[0] if editing else "", id="f-comment")
-            yield Label("Login shell")
-            yield Input(value=self._user.shell if editing else "/bin/bash", id="f-shell")
-            yield Label("Extra groups (comma-separated)")
-            yield Input(value=self._current_groups if editing else "", id="f-groups")
-            if not editing:
-                yield Checkbox("System account", value=False, id="f-system")
-            with Horizontal(classes="form-buttons"):
-                yield BracketButton("Save", id="save")
-                yield BracketButton("Cancel", id="cancel")
-
-    def on_bracket_button_pressed(self, event: BracketButton.Pressed) -> None:
-        if event.button.id == "save":
-            self._save()
-        else:
-            self.dismiss(None)
-
-    def action_cancel(self) -> None:
-        self.dismiss(None)
-
-    def _save(self) -> None:
-        data = {
-            "name": self.query_one("#f-name", Input).value.strip(),
-            "comment": self.query_one("#f-comment", Input).value.strip(),
-            "shell": self.query_one("#f-shell", Input).value.strip(),
-            "groups": self.query_one("#f-groups", Input).value.strip(),
-            "editing": self._user is not None,
-        }
-        try:
-            data["system"] = self.query_one("#f-system", Checkbox).value
-        except Exception:
-            data["system"] = False
-        if not data["name"]:
-            self.app.notify("A login name is required.", severity="error")
-            return
-        self.dismiss(data)
-
-
-class ConfirmDeleteScreen(ModalScreen):
-    """Confirm deleting a user (with optional home removal) or a group."""
-
-    BINDINGS = [Binding("escape", "cancel", "Cancel")]
-
-    def __init__(self, message: str, *, offer_remove_home: bool = False) -> None:
-        super().__init__()
-        self._message = message
-        self._offer_remove_home = offer_remove_home
-
-    def compose(self) -> ComposeResult:
-        with Vertical(id="form"):
-            yield Label(self._message, classes="form-title")
-            if self._offer_remove_home:
-                yield Checkbox("Also remove home directory", value=False, id="f-rmhome")
-            with Horizontal(classes="form-buttons"):
-                yield BracketButton("Delete", id="ok")
-                yield BracketButton("Cancel", id="cancel")
-
-    def on_bracket_button_pressed(self, event: BracketButton.Pressed) -> None:
-        if event.button.id == "ok":
-            remove_home = False
-            if self._offer_remove_home:
-                remove_home = self.query_one("#f-rmhome", Checkbox).value
-            self.dismiss({"ok": True, "remove_home": remove_home})
-        else:
-            self.dismiss(None)
-
-    def action_cancel(self) -> None:
-        self.dismiss(None)
-
-
-class PasswordFormScreen(ModalScreen):
-    """Modal to set a user's password (entered twice)."""
-
-    BINDINGS = [Binding("escape", "cancel", "Cancel")]
-
-    def __init__(self, username: str) -> None:
-        super().__init__()
-        self._username = username
-
-    def compose(self) -> ComposeResult:
-        with Vertical(id="form"):
-            yield Label(f"Set password for {self._username}", classes="form-title")
-            yield Label("New password")
-            yield Input(password=True, id="f-pw")
-            yield Label("Confirm password")
-            yield Input(password=True, id="f-pw2")
-            with Horizontal(classes="form-buttons"):
-                yield BracketButton("Save", id="save")
-                yield BracketButton("Cancel", id="cancel")
-
-    def on_bracket_button_pressed(self, event: BracketButton.Pressed) -> None:
-        if event.button.id != "save":
-            self.dismiss(None)
-            return
-        pw = self.query_one("#f-pw", Input).value
-        pw2 = self.query_one("#f-pw2", Input).value
-        if not pw:
-            self.app.notify("Password cannot be empty.", severity="error")
-            return
-        if pw != pw2:
-            self.app.notify("Passwords do not match.", severity="error")
-            return
-        self.dismiss({"password": pw})
-
-    def action_cancel(self) -> None:
-        self.dismiss(None)
-
-
-class MemberFormScreen(ModalScreen):
-    """Modal to add or remove a member of a group."""
-
-    BINDINGS = [Binding("escape", "cancel", "Cancel")]
-
-    def __init__(self, group: str) -> None:
-        super().__init__()
-        self._group = group
-
-    def compose(self) -> ComposeResult:
-        with Vertical(id="form"):
-            yield Label(f"Group “{self._group}” — add or remove a member",
-                        classes="form-title")
-            yield Label("User")
-            yield Input(id="f-user")
-            with Horizontal(classes="form-buttons"):
-                yield BracketButton("Add", id="add")
-                yield BracketButton("Remove", id="remove")
-                yield BracketButton("Cancel", id="cancel")
-
-    def on_bracket_button_pressed(self, event: BracketButton.Pressed) -> None:
-        if event.button.id == "cancel":
-            self.dismiss(None)
-            return
-        user = self.query_one("#f-user", Input).value.strip()
-        if not user:
-            self.app.notify("A user name is required.", severity="error")
-            return
-        self.dismiss({"user": user, "add": event.button.id == "add"})
-
-    def action_cancel(self) -> None:
-        self.dismiss(None)
+def _row(text: str) -> urwid.Widget:
+    return urwid.AttrMap(urwid.SelectableIcon(text, 0), None, focus_map="focus")
 
 
 class UsersScreen(Screen):
-    BINDINGS = [
-        Binding("escape", "app.pop_screen", "Back"),
-        Binding("f9", "app.pop_screen", "Back"),
-        Binding("g", "toggle_view", "Users/Groups"),
-        Binding("a", "add", "Add"),
-        Binding("e", "edit", "Edit"),
-        Binding("d", "delete", "Delete"),
-        Binding("p", "set_password", "Password"),
-        Binding("m", "manage_member", "Member"),
-        Binding("q", "app.quit", "Quit"),
-    ]
-
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, app: App) -> None:
         self._view = "users"
         self._users: dict[str, User] = {}
         self._order: list[str] = []
-
-    def compose(self) -> ComposeResult:
-        yield Header()
-        yield Static("Users", id="users-title")
-        yield Static(
-            " a add · e edit · d delete · p password · m member · g groups · Esc back",
-            id="users-hint",
+        self._walker = urwid.SimpleFocusListWalker([urwid.Text(" loading …")])
+        self._list = urwid.ListBox(self._walker)
+        self._box = urwid.LineBox(self._list, title="Users")
+        super().__init__(
+            app, self._box, title="Users and Groups",
+            footer_keys=[
+                ("Enter/a", "Add"), ("e", "Edit"), ("d", "Delete"),
+                ("p", "Passwd"), ("m", "Member"), ("g", "Groups"), ("Esc", "Back"),
+            ],
         )
-        table = DataTable(id="users-table", cursor_type="row", zebra_stripes=True)
-        yield table
-        yield FunctionBar(
-            [("F1", "Help"), ("p", "Password"), ("g", "Users/Groups"), ("F9", "Back")]
-        )
+        app.run_async(self._load())
 
-    def on_mount(self) -> None:
-        self.title = "Users and Groups"
-        self.query_one("#users-table", DataTable).focus()
-        self.load()
+    # -- loading ------------------------------------------------------------
 
-    # -- view + load --------------------------------------------------------
-
-    def action_toggle_view(self) -> None:
-        self._view = "groups" if self._view == "users" else "users"
-        self.query_one("#users-title", Static).update(
-            "Groups" if self._view == "groups" else "Users"
-        )
-        self.load()
-
-    @work(thread=True, exclusive=True)
-    def load(self) -> None:
+    async def _load(self) -> None:
         if self._view == "users":
-            user_list = reader.list_users()
-            rows = [(u.name, str(u.uid), u.full_name, u.shell) for u in user_list]
-            users = {u.name: u for u in user_list}
-            order = [u.name for u in user_list]
-            self.app.call_from_thread(self._fill_users, rows, users, order)
+            users = await self.app.run_blocking(reader.list_users)
+            self._users = {u.name: u for u in users}
+            self._order = [u.name for u in users]
+            rows = [_row(f"{u.name:<18} {u.uid:<7} {u.full_name:<22} {u.shell}")
+                    for u in users]
+            self._box.set_title("Users")
         else:
-            rows = [
-                (g.name, str(g.gid), ", ".join(g.members))
-                for g in reader.list_groups()
-            ]
-            self.app.call_from_thread(self._fill_groups, rows)
+            groups = await self.app.run_blocking(reader.list_groups)
+            self._order = [g.name for g in groups]
+            rows = [_row(f"{g.name:<20} {g.gid:<7} {', '.join(g.members)}")
+                    for g in groups]
+            self._box.set_title("Groups")
+        self._walker[:] = rows or [urwid.Text(" (empty)")]
+        if self._order:
+            self._walker.set_focus(0)
+        self.app.refresh()
 
-    def _table(self) -> DataTable:
-        return self.query_one("#users-table", DataTable)
-
-    def _fill_users(self, rows, users, order) -> None:
-        self._users = users
-        self._order = order
-        table = self._table()
-        table.clear(columns=True)
-        table.add_columns("Login", "UID", "Full name", "Shell")
-        for row in rows:
-            table.add_row(*row)
-
-    def _fill_groups(self, rows) -> None:
-        self._order = [r[0] for r in rows]
-        table = self._table()
-        table.clear(columns=True)
-        table.add_columns("Group", "GID", "Members")
-        for row in rows:
-            table.add_row(*row)
-
-    def _current_name(self) -> str | None:
-        table = self._table()
-        if not self._order or table.cursor_row is None:
+    def _current(self) -> str | None:
+        if not self._order:
             return None
-        if 0 <= table.cursor_row < len(self._order):
-            return self._order[table.cursor_row]
-        return None
+        return self._order[self._walker.focus]
 
-    # -- actions ------------------------------------------------------------
-
-    def action_add(self) -> None:
-        if self._view == "users":
-            self.app.push_screen(UserFormScreen(), self._on_user_form)
-        else:
-            self.app.push_screen(_GroupFormScreen(), self._on_group_form)
-
-    def action_edit(self) -> None:
-        if self._view != "users":
-            self.app.notify("Editing groups isn't supported yet.", severity="warning")
-            return
-        name = self._current_name()
-        if name and name in self._users:
-            current = ",".join(reader.groups_for(name))
-            self.app.push_screen(
-                UserFormScreen(self._users[name], current), self._on_user_form)
-
-    def action_delete(self) -> None:
-        name = self._current_name()
-        if not name:
-            return
-        if self._view == "users":
-            self.app.push_screen(
-                ConfirmDeleteScreen(f"Delete user “{name}”?", offer_remove_home=True),
-                lambda r: self._on_delete_user(name, r),
-            )
-        else:
-            self.app.push_screen(
-                ConfirmDeleteScreen(f"Delete group “{name}”?"),
-                lambda r: self._on_delete_group(name, r),
-            )
-
-    def action_set_password(self) -> None:
-        if self._view != "users":
-            return
-        name = self._current_name()
-        if name:
-            self.app.push_screen(
-                PasswordFormScreen(name), lambda d: self._on_password(name, d))
-
-    def action_manage_member(self) -> None:
-        if self._view != "groups":
-            self.app.notify("Switch to the groups view (g) to edit members.",
-                            severity="warning")
-            return
-        group = self._current_name()
-        if group:
-            self.app.push_screen(
-                MemberFormScreen(group), lambda d: self._on_member(group, d))
-
-    # -- form callbacks -> backend ------------------------------------------
-
-    def _on_user_form(self, data) -> None:
-        if not data:
-            return
-        if data["editing"]:
-            self._call(lambda b: b.modify_user(
-                data["name"], data["comment"], data["shell"], data["groups"]))
-        else:
-            self._call(lambda b: b.add_user(
-                data["name"], data["comment"], data["shell"], "", data["groups"],
-                data["system"]))
-
-    def _on_group_form(self, data) -> None:
-        if data:
-            self._call(lambda b: b.add_group(data["name"], data["system"]))
-
-    def _on_delete_user(self, name, result) -> None:
-        if result and result.get("ok"):
-            self._call(lambda b: b.delete_user(name, result["remove_home"]))
-
-    def _on_delete_group(self, name, result) -> None:
-        if result and result.get("ok"):
-            self._call(lambda b: b.delete_group(name))
-
-    def _on_password(self, name, data) -> None:
-        if data:
-            self._call(lambda b: b.set_password(name, data["password"]))
-
-    def _on_member(self, group, data) -> None:
-        if data:
-            self._call(lambda b: b.set_group_member(group, data["user"], data["add"]))
-
-    @work(exclusive=True)
     async def _call(self, action) -> None:
         backend = UsersBackend()
         try:
             await backend.connect()
             ok, out = await action(backend)
         except Exception as exc:
-            self.app.notify(f"{exc}", severity="error")
+            self.app.notify(str(exc), error=True)
             await backend.close()
             return
         await backend.close()
-        self.app.notify(
-            out or ("done" if ok else "failed"),
-            severity="information" if ok else "error",
-        )
-        self.load()
+        self.app.notify(out or ("done" if ok else "failed"), error=not ok)
+        await self._load()
 
+    # -- key handling -------------------------------------------------------
 
-class _GroupFormScreen(ModalScreen):
-    """Modal add form for a group."""
-
-    BINDINGS = [Binding("escape", "cancel", "Cancel")]
-
-    def compose(self) -> ComposeResult:
-        with Vertical(id="form"):
-            yield Label("Add group", classes="form-title")
-            yield Label("Group name")
-            yield Input(id="f-name")
-            yield Checkbox("System group", value=False, id="f-system")
-            with Horizontal(classes="form-buttons"):
-                yield BracketButton("Save", id="save")
-                yield BracketButton("Cancel", id="cancel")
-
-    def on_bracket_button_pressed(self, event: BracketButton.Pressed) -> None:
-        if event.button.id == "save":
-            name = self.query_one("#f-name", Input).value.strip()
-            if not name:
-                self.app.notify("A group name is required.", severity="error")
-                return
-            self.dismiss({"name": name, "system": self.query_one("#f-system", Checkbox).value})
+    def handle_key(self, key):
+        if key == "esc":
+            self.app.pop()
+        elif key == "g":
+            self._view = "groups" if self._view == "users" else "users"
+            self.app.run_async(self._load())
+        elif key in ("a", "enter"):
+            self._add()
+        elif key == "e":
+            self._edit()
+        elif key == "d":
+            self._delete()
+        elif key == "p":
+            self._password()
+        elif key == "m":
+            self._member()
         else:
-            self.dismiss(None)
+            return key
+        return None
 
-    def action_cancel(self) -> None:
-        self.dismiss(None)
+    # -- forms --------------------------------------------------------------
+
+    def _add(self) -> None:
+        if self._view == "groups":
+            name = urwid.Edit("Group name: ")
+            system = urwid.CheckBox("System group")
+
+            def save():
+                n = name.edit_text.strip()
+                if not n:
+                    self.app.notify("A group name is required.", error=True)
+                    return
+                self.app.pop()
+                self.app.run_async(self._call(lambda b: b.add_group(n, system.state)))
+
+            self._open("Add group", [name, system], save)
+            return
+        name = urwid.Edit("Login name: ")
+        comment = urwid.Edit("Full name: ")
+        shell = urwid.Edit("Shell: ", "/bin/bash")
+        groups = urwid.Edit("Extra groups: ")
+        system = urwid.CheckBox("System account")
+
+        def save():
+            n = name.edit_text.strip()
+            if not n:
+                self.app.notify("A login name is required.", error=True)
+                return
+            self.app.pop()
+            self.app.run_async(self._call(
+                lambda b: b.add_user(n, comment.edit_text.strip(),
+                                     shell.edit_text.strip(), "",
+                                     groups.edit_text.strip(), system.state)))
+
+        self._open("Add user", [name, comment, shell, groups, system], save)
+
+    def _edit(self) -> None:
+        if self._view != "users":
+            self.app.notify("Editing groups isn't supported.", error=True)
+            return
+        name = self._current()
+        if not name or name not in self._users:
+            return
+        user = self._users[name]
+        current_groups = ",".join(reader.groups_for(name))
+        comment = urwid.Edit("Full name: ", user.full_name)
+        shell = urwid.Edit("Shell: ", user.shell)
+        groups = urwid.Edit("Extra groups: ", current_groups)
+
+        def save():
+            self.app.pop()
+            self.app.run_async(self._call(
+                lambda b: b.modify_user(name, comment.edit_text.strip(),
+                                        shell.edit_text.strip(),
+                                        groups.edit_text.strip())))
+
+        self._open(f"Edit user: {name}", [comment, shell, groups], save)
+
+    def _delete(self) -> None:
+        name = self._current()
+        if not name:
+            return
+        if self._view == "users":
+            rmhome = urwid.CheckBox("Also remove home directory")
+
+            def do():
+                self.app.pop()
+                self.app.run_async(self._call(lambda b: b.delete_user(name, rmhome.state)))
+
+            self._confirm(f"Delete user “{name}”?", [rmhome], do)
+        else:
+            def do():
+                self.app.pop()
+                self.app.run_async(self._call(lambda b: b.delete_group(name)))
+
+            self._confirm(f"Delete group “{name}”?", [], do)
+
+    def _password(self) -> None:
+        if self._view != "users":
+            return
+        name = self._current()
+        if not name:
+            return
+        pw = urwid.Edit("New password: ", mask="*")
+        pw2 = urwid.Edit("Confirm: ", mask="*")
+
+        def save():
+            if not pw.edit_text:
+                self.app.notify("Password cannot be empty.", error=True)
+                return
+            if pw.edit_text != pw2.edit_text:
+                self.app.notify("Passwords do not match.", error=True)
+                return
+            secret = pw.edit_text
+            self.app.pop()
+            self.app.run_async(self._call(lambda b: b.set_password(name, secret)))
+
+        self._open(f"Set password for {name}", [pw, pw2], save)
+
+    def _member(self) -> None:
+        if self._view != "groups":
+            self.app.notify("Switch to the groups view (g) to edit members.", error=True)
+            return
+        group = self._current()
+        if not group:
+            return
+        user = urwid.Edit("User: ")
+
+        def act(add: bool):
+            u = user.edit_text.strip()
+            if not u:
+                self.app.notify("A user name is required.", error=True)
+                return
+            self.app.pop()
+            self.app.run_async(self._call(lambda b: b.set_group_member(group, u, add)))
+
+        modal = Modal(
+            self.app, f"Group “{group}” — add/remove member", [user],
+            [("Add", lambda: act(True)), ("Remove", lambda: act(False)),
+             ("Cancel", self.app.pop)],
+        )
+        self.app.push_modal(modal, width=("relative", 60), height=("relative", 45))
+
+    # -- modal helpers ------------------------------------------------------
+
+    def _open(self, title: str, rows: list, save) -> None:
+        modal = Modal(self.app, title, rows, [("Save", save), ("Cancel", self.app.pop)])
+        self.app.push_modal(modal, width=("relative", 70), height=("relative", 60))
+
+    def _confirm(self, message: str, rows: list, do) -> None:
+        modal = Modal(self.app, message, rows, [("Delete", do), ("Cancel", self.app.pop)])
+        self.app.push_modal(modal, width=("relative", 60), height=("relative", 45))

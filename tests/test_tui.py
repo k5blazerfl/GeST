@@ -1,179 +1,286 @@
-"""Headless TUI tests driven by Textual's pilot."""
+"""Headless tests for the urwid frontend (drive widgets directly).
 
-from textual.widgets import DataTable, Input, OptionList
+These need urwid + a live Portage news source, so they run in the full local
+suite rather than the dependency-light CI subset.
+"""
 
-from gest.tui.app import GestApp, MainMenuScreen, SoftwareScreen
-from gest.tui.widgets.bracket_button import BracketButton
+import asyncio
 
+import urwid
 
-async def _open_software(app, pilot):
-    """From a fresh app, open the Software module and wait for the load."""
-    await pilot.pause()
-    app.screen.query_one("#cc-categories", OptionList).focus()
-    await pilot.pause()
-    await pilot.press("enter")  # category Software -> focus its module list
-    await pilot.press("enter")  # module "Software Management" -> launch
-    await pilot.pause()
-    assert isinstance(app.screen, SoftwareScreen)
-    await app.workers.wait_for_complete()
-    await pilot.pause()
+from gest.tui.runtime import App, Screen, function_bar
+from gest.tui.screens.apply import ApplyScreen
+from gest.tui.screens.config import KeywordsScreen, UseFlagScreen
+from gest.tui.screens.menu import MenuScreen
+from gest.tui.screens.network import NetworkScreen
+from gest.tui.screens.news import NewsScreen
+from gest.tui.screens.services import ServiceDetailScreen, ServicesScreen
+from gest.tui.screens.software import SoftwareScreen
+from gest.tui.screens.system import HostnameScreen, LocaleScreen, TimezoneScreen
+from gest.tui.screens.users import UsersScreen
 
-
-async def test_menu_opens_software_and_lists_installed():
-    app = GestApp()
-    async with app.run_test(size=(100, 30)) as pilot:
-        await pilot.pause()
-        assert isinstance(app.screen, MainMenuScreen)
-        cats = app.screen.query_one("#cc-categories", OptionList)
-        assert cats.option_count == 5  # Software / System / Services / Users / Network
-        mods = app.screen.query_one("#cc-modules", OptionList)
-        assert mods.option_count == 5  # the Software category's modules
-        await _open_software(app, pilot)
-        table = app.screen.query_one("#results", DataTable)
-        assert table.row_count > 0  # installed packages populated
+_SIZE = (100, 30)
 
 
-async def test_software_search_narrows_results():
-    app = GestApp()
-    async with app.run_test(size=(100, 30)) as pilot:
-        await _open_software(app, pilot)
-        installed_count = app.screen.query_one("#results", DataTable).row_count
-
-        # The search box auto-focuses on mount; type an atom (with a slash)
-        # directly and submit.
-        for ch in "sys-apps/portage":
-            await pilot.press(ch)
-        assert app.screen.query_one("#search", Input).value == "sys-apps/portage"
-        await pilot.press("enter")
-        await app.workers.wait_for_complete()
-        await pilot.pause()
-
-        rows = app.screen.query_one("#results", DataTable).row_count
-        assert 0 < rows < installed_count  # a search is a strict narrowing
+def _render(widget) -> str:
+    return "\n".join(row.decode() for row in widget.render(_SIZE, focus=True).text)
 
 
-async def test_slash_binding_focuses_search_and_preserves_slashes():
-    """From the results table, "/" jumps to search; slashes then type literally."""
-    app = GestApp()
-    async with app.run_test(size=(100, 30)) as pilot:
-        await _open_software(app, pilot)
-        # move focus away from the search box onto the table
-        app.screen.query_one("#results", DataTable).focus()
-        await pilot.pause()
-        assert not isinstance(app.focused, Input)
-
-        await pilot.press("/")  # quick-search binding
-        await pilot.pause()
-        assert isinstance(app.focused, Input)
-        for ch in "x11-libs/gtk+":
-            await pilot.press(ch)
-        # the "/" mid-atom must be a literal character, not a re-trigger
-        assert app.screen.query_one("#search", Input).value == "x11-libs/gtk+"
+def test_function_bar_renders_keys():
+    canvas = function_bar([("F1", "Help"), ("F9", "Quit")]).render((100,))
+    text = "\n".join(row.decode() for row in canvas.text)
+    assert "F1" in text and "Help" in text and "F9" in text and "Quit" in text
 
 
-async def test_escape_returns_to_menu():
-    app = GestApp()
-    async with app.run_test(size=(100, 30)) as pilot:
-        await _open_software(app, pilot)
-        await pilot.press("escape")
-        await pilot.pause()
-        assert isinstance(app.screen, MainMenuScreen)
+def test_menu_two_panes_and_category_navigation():
+    app = App()
+    menu = MenuScreen(app)
+    app._stack.append(menu)
+    out = _render(menu)
+    assert "Categories" in out and "Modules" in out
+    assert "Software Management" in out  # Software category's modules by default
+    menu.keypress(_SIZE, "down")         # move to the System category
+    out2 = _render(menu)
+    assert "Hostname" in out2 and "Timezone" in out2
 
 
-async def test_menu_is_keyboard_navigable_without_focus_call():
-    """The menu must be arrow+Enter drivable the instant it appears."""
-    app = GestApp()
-    async with app.run_test(size=(100, 30)) as pilot:
-        await pilot.pause()
-        assert isinstance(app.screen, MainMenuScreen)
-        cats = app.screen.query_one("#cc-categories", OptionList)
-        assert app.focused is cats  # categories focused, arrows work immediately
-        await pilot.press("down")   # Services
-        await pilot.press("up")     # back to Software (index 0)
-        await pilot.press("enter")  # -> module list
-        await pilot.press("enter")  # Software Management -> launch
-        await pilot.pause()
-        assert isinstance(app.screen, SoftwareScreen)
+def test_menu_launches_news():
+    app = App()
+    menu = MenuScreen(app)
+    app._stack.append(menu)
+    menu.keypress(_SIZE, "enter")        # focus the modules pane (Software)
+    for _ in range(4):
+        menu.keypress(_SIZE, "down")     # to "Portage News"
+    menu.keypress(_SIZE, "enter")        # launch
+    assert isinstance(app._stack[-1], NewsScreen)
 
 
-async def test_down_arrow_moves_from_search_into_results():
-    app = GestApp()
-    async with app.run_test(size=(100, 30)) as pilot:
-        await _open_software(app, pilot)
-        assert isinstance(app.focused, Input)  # search auto-focuses
-        await pilot.press("down")
-        await pilot.pause()
-        assert isinstance(app.focused, DataTable)  # dropped into the list
+def test_news_loads_items():
+    app = App()
+    news = NewsScreen(app)
+    app._stack.append(news)
+
+    async def _pump():
+        for _ in range(100):
+            await asyncio.sleep(0.02)
+            if news._numbers:
+                return
+
+    app.loop.run_until_complete(_pump())
+    assert news._numbers  # the live host has Portage news
+    assert "[1]" in _render(news)
 
 
-async def test_menu_arrow_navigates_to_last_category_and_launches():
-    # Every module is implemented now; navigating to the last category
-    # (Network) and launching opens its screen rather than a "coming soon".
-    from gest.tui.screens.network import NetworkScreen
-
-    app = GestApp()
-    async with app.run_test(size=(100, 30)) as pilot:
-        await pilot.pause()
-        cats = app.screen.query_one("#cc-categories", OptionList)
-        assert app.focused is cats  # categories focused, arrows work immediately
-        await pilot.press("down")   # System
-        await pilot.press("down")   # Services
-        await pilot.press("down")   # Security and Users
-        await pilot.press("down")   # Network
-        await pilot.press("enter")  # -> its module list
-        await pilot.press("enter")  # launch Network
-        await pilot.pause()
-        assert isinstance(app.screen, NetworkScreen)
+def test_screen_status_line():
+    app = App()
+    menu = MenuScreen(app)
+    app._stack.append(menu)
+    app.notify("hello world")
+    assert "hello world" in _render(menu)
+    assert isinstance(menu, Screen)
 
 
-async def test_menu_system_update_opens_world_screen(monkeypatch):
-    from gest.core.software.preview import PreviewResult
-    from gest.tui.screens.install import InstallScreen
-
-    monkeypatch.setattr(
-        "gest.core.software.preview.preview_world",
-        lambda **k: PreviewResult("@world", 0, "Total: 0 packages"),
-    )
-    app = GestApp()
-    async with app.run_test(size=(100, 30)) as pilot:
-        await pilot.pause()
-        await pilot.press("enter")  # category Software -> module list (idx 0)
-        await pilot.press("down")   # module idx 1 = System Update
-        await pilot.press("enter")  # launch
-        await pilot.pause()
-        assert isinstance(app.screen, InstallScreen)
-        assert app.screen.mode == "world"
+def _pump(app, cond, ticks=150):
+    async def run():
+        for _ in range(ticks):
+            await asyncio.sleep(0.02)
+            if cond():
+                return
+    app.loop.run_until_complete(run())
 
 
-async def test_menu_cleanup_opens_system_depclean(monkeypatch):
-    from gest.core.software.preview import PreviewResult
-    from gest.tui.screens.install import InstallScreen
-
-    monkeypatch.setattr(
-        "gest.core.software.preview.preview_depclean",
-        lambda atom="", **k: PreviewResult(atom or "@world", 0, "Number to remove: 0"),
-    )
-    app = GestApp()
-    async with app.run_test(size=(100, 30)) as pilot:
-        await pilot.pause()
-        await pilot.press("enter")  # category Software -> module list (idx 0)
-        await pilot.press("down")   # 1 System Update
-        await pilot.press("down")   # 2 Clean Up Packages
-        await pilot.press("enter")  # launch
-        await pilot.pause()
-        assert isinstance(app.screen, InstallScreen)
-        assert app.screen.mode == "depclean"
-        assert app.screen.atom == ""  # system-wide
+def test_menu_launches_services():
+    app = App()
+    menu = MenuScreen(app)
+    app._stack.append(menu)
+    menu.keypress(_SIZE, "down")   # System
+    menu.keypress(_SIZE, "down")   # Services
+    menu.keypress(_SIZE, "enter")  # focus modules
+    menu.keypress(_SIZE, "enter")  # launch Services
+    assert isinstance(app._stack[-1], ServicesScreen)
 
 
-async def test_menu_run_button_launches_highlighted():
-    """The [Run] bracket button opens the highlighted module (Software Mgmt)."""
-    app = GestApp()
-    async with app.run_test(size=(100, 30)) as pilot:
-        await pilot.pause()
-        assert isinstance(app.screen, MainMenuScreen)
-        app.screen.query_one("#run", BracketButton).post_message(
-            BracketButton.Pressed(app.screen.query_one("#run", BracketButton))
-        )
-        await pilot.pause()
-        assert isinstance(app.screen, SoftwareScreen)
+def test_services_list_and_detail():
+    app = App()
+    scr = ServicesScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: len(scr._order) > 0)
+    assert scr._order  # the live host has OpenRC services
+    scr.keypress(_SIZE, "enter")   # open detail for the focused service
+    detail = app._stack[-1]
+    assert isinstance(detail, ServiceDetailScreen)
+    _pump(app, lambda: len(detail._walker) > 1)
+    assert "Status:" in _render(detail)
+    detail.keypress(_SIZE, "esc")
+    assert isinstance(app._stack[-1], ServicesScreen)
+
+
+def test_hostname_screen_prefills_current():
+    app = App()
+    scr = HostnameScreen(app)
+    app._stack.append(scr)
+    assert scr._edit.edit_text  # non-empty current hostname
+
+
+def test_timezone_screen_loads_and_filters():
+    app = App()
+    scr = TimezoneScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: len(scr._all) > 0)
+    total = len(scr._all)
+    assert total > 100
+    scr._filter.set_edit_text("reykjavik")
+    assert 0 < len(scr._visible) < total
+
+
+def test_locale_screen_loads():
+    app = App()
+    scr = LocaleScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: len(scr._all) > 0)
+    assert scr._all
+
+
+def test_menu_launches_hostname():
+    app = App()
+    menu = MenuScreen(app)
+    app._stack.append(menu)
+    menu.keypress(_SIZE, "down")   # System category
+    menu.keypress(_SIZE, "enter")  # focus modules (Hostname first)
+    menu.keypress(_SIZE, "enter")  # launch Hostname
+    assert isinstance(app._stack[-1], HostnameScreen)
+
+
+def test_users_list_and_group_toggle():
+    app = App()
+    scr = UsersScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: len(scr._order) > 0)
+    assert scr._order and scr._view == "users"
+    assert "root" in _render(scr)
+    scr.keypress(_SIZE, "g")
+    _pump(app, lambda: scr._view == "groups" and len(scr._order) > 0)
+    assert "Groups" in _render(scr)
+
+
+def test_users_add_modal_opens_and_cancels():
+    app = App()
+    scr = UsersScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: len(scr._order) > 0)
+    scr.keypress(_SIZE, "a")
+    assert isinstance(app._stack[-1], urwid.Overlay)
+    assert "Add user" in _render(app._stack[-1])
+    app._stack[-1].keypress(_SIZE, "esc")
+    assert isinstance(app._stack[-1], UsersScreen)
+
+
+def test_users_edit_modal_prefills():
+    app = App()
+    scr = UsersScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: len(scr._order) > 0)
+    scr.keypress(_SIZE, "e")
+    assert "Edit user" in _render(app._stack[-1])
+
+
+def test_network_list_and_config_modal():
+    app = App()
+    scr = NetworkScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: len(scr._order) > 0)
+    assert scr._order  # at least loopback
+    # focus a non-loopback interface and open the config modal
+    for i, name in enumerate(scr._order):
+        if name != "lo":
+            scr._walker.set_focus(i)
+            break
+    scr.keypress(_SIZE, "c")
+    assert isinstance(app._stack[-1], urwid.Overlay)
+    out = _render(app._stack[-1])
+    assert "Configure" in out and "Use DHCP" in out
+    app._stack[-1].keypress(_SIZE, "esc")
+    assert isinstance(app._stack[-1], NetworkScreen)
+
+
+def _software(app):
+    scr = SoftwareScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: len(scr._cps) > 0, ticks=300)
+    return scr
+
+
+def test_software_loads_marks_and_clears():
+    app = App()
+    scr = _software(app)
+    assert scr._cps  # installed packages
+    scr.keypress(_SIZE, "down")   # search -> checkboxes
+    scr.keypress(_SIZE, "down")   # -> table
+    assert scr._pile.focus_position == scr._TABLE_IDX
+    scr.keypress(_SIZE, " ")      # mark install (installed pkg shows "u")
+    assert len(scr._selection) == 1
+    assert scr._walker[0].base_widget.text[0] in ("+", "u")
+    assert "Accept" in scr._count.text
+    scr.keypress(_SIZE, "c")      # clear
+    assert scr._selection.is_empty
+    assert scr._walker[0].base_widget.text[0] == "i"
+
+
+def test_software_search_narrows():
+    app = App()
+    scr = _software(app)
+    installed = len(scr._cps)
+    scr._pile.focus_position = 0
+    scr._search.set_edit_text("app-editors/vim")
+    scr.keypress(_SIZE, "enter")
+    _pump(app, lambda: 0 < len(scr._cps) < installed, ticks=300)
+    assert any("vim" in cp for cp in scr._cps)
+
+
+def test_software_accept_opens_apply_screen():
+    app = App()
+    scr = _software(app)
+    scr.keypress(_SIZE, "down")
+    scr.keypress(_SIZE, "down")
+    scr.keypress(_SIZE, " ")      # mark one
+    scr.keypress(_SIZE, "f10")    # Accept
+    assert isinstance(app._stack[-1], ApplyScreen)
+
+
+def test_menu_launches_software():
+    app = App()
+    menu = MenuScreen(app)
+    app._stack.append(menu)
+    menu.keypress(_SIZE, "enter")  # Software category -> modules (Software Mgmt first)
+    menu.keypress(_SIZE, "enter")  # launch
+    assert isinstance(app._stack[-1], SoftwareScreen)
+
+
+def test_useflag_editor_loads_and_cycles():
+    app = App()
+    scr = UseFlagScreen(app, "app-editors/vim")
+    app._stack.append(scr)
+    _pump(app, lambda: len(scr._flags) > 0, ticks=300)
+    assert scr._flags
+    first = scr._flags[0]
+    before = scr._states[first]
+    scr.keypress(_SIZE, " ")
+    assert scr._states[first] != before  # tri-state cycle
+
+
+def test_keywords_editor_cycles():
+    app = App()
+    scr = KeywordsScreen(app, "app-editors/vim")
+    app._stack.append(scr)
+    before = scr._kw
+    scr.keypress(_SIZE, " ")   # focus is on the keyword row
+    assert scr._kw != before
+
+
+def test_software_u_opens_use_editor():
+    app = App()
+    scr = _software(app)
+    scr.keypress(_SIZE, "down")
+    scr.keypress(_SIZE, "down")   # focus table
+    scr.keypress(_SIZE, "u")
+    assert isinstance(app._stack[-1], UseFlagScreen)

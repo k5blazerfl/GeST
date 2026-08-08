@@ -14,7 +14,7 @@ import urwid
 
 from gest.core.software import preview
 from gest.core.software.backend_client import SoftwareBackend
-from gest.uwui.runtime import App, Screen
+from gest.tui.runtime import App, Screen
 
 
 class Plan:

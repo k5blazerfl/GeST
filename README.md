@@ -22,7 +22,7 @@ new renderer, not a rewrite.
  frontends ──► core ──► backend
   (TUI)     (modules)  (root, D-Bus + polkit)
 
- gest/tui/        Textual full-screen frontend (this release)
+ gest/tui/        urwid full-screen frontend (this release)
  gest/core/       frontend-agnostic modules — the real logic
    software/        Portage: model, reader (queries), backend_client (mutations)
  gest/ipc/        the shared D-Bus + polkit contract (names in one place)
@@ -45,23 +45,13 @@ The venv must see the *system* Portage, so create it with system site-packages:
 
 ```bash
 python3 -m venv --system-site-packages .venv
-.venv/bin/pip install textual dbus-next
+.venv/bin/pip install urwid dbus-next
 ./bin/gest            # launch the TUI
 ```
 
 The main menu is a two-pane **Control Center**: **↑/↓** move within a pane,
 **→**/**Enter** drops from a category into its module list, **Enter** launches a
 module, **Esc**/**←** goes back, **F9**/**q** quits.
-
-### Frontend migration: Textual → urwid
-
-GeST is migrating its TUI from Textual to **urwid** (which is packaged in
-`::gentoo`; Textual is not). The urwid frontend is being built in parallel under
-`gest/uwui/` and can be launched with `gest-uw` — it currently has the Control
-Center and the Portage news viewer, with the other modules ported over
-subsequent releases. The Textual frontend (`gest`) remains the default until the
-port is complete. The `gest/core`, `gest/ipc`, and `gest/backend` layers are
-frontend-agnostic and unchanged.
 
 ## Tests
 
@@ -71,7 +61,7 @@ frontend-agnostic and unchanged.
 ```
 
 The reader tests are integration tests against the host's live Portage DB; the
-TUI tests drive the interface headlessly via Textual's pilot.
+TUI tests drive the widgets headlessly (render + keypress).
 
 ## Privileged backend
 
@@ -137,9 +127,7 @@ working tree.
 - [ ] systemd support in Services (out of scope — OpenRC only)
 - [x] Backend hardening — every privileged action is audit-logged
       (authpriv, with caller uid); dispatch/auth round-trips are tested
-- [~] Frontend migration Textual → urwid (in ::gentoo) — foundation +
-      all modules ported (software = browse/search/transactional Accept);
-      + USE/keyword editors ported; only the (optional) dropdown menu bar
-      remains before flipping the default to urwid
+- [x] Frontend on urwid (packaged in ::gentoo) — the whole TUI; Textual
+      removed. The `gest` command runs the urwid frontend.
 - [ ] Qt/KDE frontend over the same `core`
 ```
