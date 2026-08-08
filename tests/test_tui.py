@@ -13,6 +13,7 @@ from gest.tui.screens.apply import ApplyScreen
 from gest.tui.screens.bootloader import BootloaderScreen
 from gest.tui.screens.config import KeywordsScreen, UseFlagScreen
 from gest.tui.screens.eselect import EselectScreen
+from gest.tui.screens.makeconf import MakeconfScreen
 from gest.tui.screens.menu import MenuScreen
 from gest.tui.screens.network import NetworkScreen
 from gest.tui.screens.news import NewsScreen
@@ -349,3 +350,28 @@ def test_ansi_markup_parses_colours():
     assert ansi_markup("\x1b[92mOK\x1b[0m") == [("ansib32", "OK")]  # bright -> bold
     assert ansi_markup("plain") == "plain"                            # no colour -> str
     assert ansi_markup("\x1b]0;t\x07\x1b[33m>>>\x1b[0m go") == [("ansi33", ">>>"), " go"]
+
+
+def test_makeconf_lists_and_opens_edit():
+    import urwid
+    app = App()
+    scr = MakeconfScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: len(scr._vars) > 0, ticks=200)
+    assert scr._vars  # this host has a make.conf
+    scr.keypress(_SIZE, "enter")
+    assert isinstance(app._stack[-1], urwid.Overlay)   # edit modal
+    app._stack[-1].keypress(_SIZE, "esc")
+    assert isinstance(app._stack[-1], MakeconfScreen)
+
+
+def test_menu_launches_makeconf():
+    app = App()
+    menu = MenuScreen(app)
+    app._stack.append(menu)
+    menu.keypress(_SIZE, "down")   # System category
+    menu.keypress(_SIZE, "enter")  # focus modules
+    for _ in range(5):
+        menu.keypress(_SIZE, "down")  # -> makeconf (6th System module)
+    menu.keypress(_SIZE, "enter")
+    assert isinstance(app._stack[-1], MakeconfScreen)
