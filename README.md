@@ -116,6 +116,8 @@ working tree.
 - [x] Services module (OpenRC) — list, start/stop/restart, enable/disable
 - [x] Service detail view — description + dependency graph (needs / uses /
       wants / needed-by), read-only, opened with Enter
-- [ ] Further modules: Users & Groups, Network; systemd support in Services
+- [x] Users & Groups module — list users/groups; add / edit / delete users,
+      add / delete groups (polkit-gated useradd/usermod/userdel/groupadd/groupdel)
+- [ ] Further modules: Network; systemd support in Services
 - [ ] Qt/KDE frontend over the same `core`
 ```

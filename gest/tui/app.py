@@ -15,6 +15,7 @@ from gest.tui.screens.install import InstallScreen
 from gest.tui.screens.news import NewsScreen
 from gest.tui.screens.services import ServicesScreen
 from gest.tui.screens.software import SoftwareScreen
+from gest.tui.screens.users import UsersScreen
 from gest.tui.widgets.bracket_button import BracketButton
 from gest.tui.widgets.function_bar import FunctionBar
 
@@ -33,7 +34,7 @@ CATEGORIES: list[tuple[str, list[tuple[str, str, bool]]]] = [
         ("services", "Services (OpenRC)", True),
     ]),
     ("Security and Users", [
-        ("users", "Users & Groups", False),
+        ("users", "Users & Groups", True),
     ]),
     ("Network", [
         ("network", "Network", False),
@@ -152,6 +153,8 @@ class MainMenuScreen(Screen):
             self.app.push_screen(InstallScreen("", mode="sync"))
         elif key == "news":
             self.app.push_screen(NewsScreen())
+        elif key == "users":
+            self.app.push_screen(UsersScreen())
         else:
             self.app.notify(
                 f"The {self._module_title(key)} module isn't implemented yet.",
