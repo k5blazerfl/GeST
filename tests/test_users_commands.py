@@ -45,3 +45,22 @@ def test_rejects_injection_in_fields():
         c.useradd_argv("alice", comment="a:b")  # colon would corrupt passwd
     with pytest.raises(ValueError):
         c.useradd_argv("alice", groups="wheel,Bad Name")
+
+
+def test_chpasswd_input_feeds_stdin_not_argv():
+    argv, stdin = c.chpasswd_input("alice", "s3cret:with:colons")
+    assert argv == ["chpasswd"]
+    assert stdin == "alice:s3cret:with:colons\n"  # colons ok; whole thing on stdin
+
+
+@pytest.mark.parametrize("pw", ["", "has\nnewline", "cr\rreturn"])
+def test_chpasswd_rejects_bad_passwords(pw):
+    with pytest.raises(ValueError):
+        c.chpasswd_input("alice", pw)
+
+
+def test_gpasswd_argv_add_and_remove():
+    assert c.gpasswd_argv("wheel", "alice", add=True) == ["gpasswd", "-a", "alice", "wheel"]
+    assert c.gpasswd_argv("wheel", "alice", add=False) == ["gpasswd", "-d", "alice", "wheel"]
+    with pytest.raises(ValueError):
+        c.gpasswd_argv("wheel", "Bad User", add=True)

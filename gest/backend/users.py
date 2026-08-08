@@ -59,6 +59,19 @@ _INTROSPECTION = f"""
       <arg type="b" name="ok" direction="out"/>
       <arg type="s" name="output" direction="out"/>
     </method>
+    <method name="SetPassword">
+      <arg type="s" name="name" direction="in"/>
+      <arg type="s" name="password" direction="in"/>
+      <arg type="b" name="ok" direction="out"/>
+      <arg type="s" name="output" direction="out"/>
+    </method>
+    <method name="SetGroupMember">
+      <arg type="s" name="group" direction="in"/>
+      <arg type="s" name="user" direction="in"/>
+      <arg type="b" name="add" direction="in"/>
+      <arg type="b" name="ok" direction="out"/>
+      <arg type="s" name="output" direction="out"/>
+    </method>
   </interface>
 </node>
 """
@@ -68,10 +81,12 @@ _USERMOD = shutil.which("usermod") or "/usr/sbin/usermod"
 _USERDEL = shutil.which("userdel") or "/usr/sbin/userdel"
 _GROUPADD = shutil.which("groupadd") or "/usr/sbin/groupadd"
 _GROUPDEL = shutil.which("groupdel") or "/usr/sbin/groupdel"
+_CHPASSWD = shutil.which("chpasswd") or "/usr/sbin/chpasswd"
+_GPASSWD = shutil.which("gpasswd") or "/usr/bin/gpasswd"
 
 
-def _run(argv: list[str]) -> tuple[bool, str]:
-    proc = subprocess.run(argv, capture_output=True, text=True)
+def _run(argv: list[str], stdin: str | None = None) -> tuple[bool, str]:
+    proc = subprocess.run(argv, input=stdin, capture_output=True, text=True)
     out = proc.stdout + (f"\n{proc.stderr}" if proc.stderr else "")
     return proc.returncode == 0, out.strip()
 
@@ -93,25 +108,32 @@ class UsersService:
             "DeleteUser": self._delete_user,
             "AddGroup": self._add_group,
             "DeleteGroup": self._delete_group,
+            "SetPassword": None,  # handled inline (needs stdin)
+            "SetGroupMember": self._set_group_member,
         }
-        handler = handlers.get(method)
-        if handler is None:
+        if method not in handlers:
             invocation.return_error_literal(
                 Gio.dbus_error_quark(), Gio.DBusError.UNKNOWN_METHOD,
                 f"No such method {method}")
             return
+        handler = handlers[method]
         if not check_authorization(self._conn, sender, USERS_POLKIT):
             invocation.return_error_literal(
                 Gio.dbus_error_quark(), Gio.DBusError.ACCESS_DENIED,
                 "Not authorized to manage users and groups")
             return
+        stdin = None
         try:
-            argv = handler(params.unpack())
+            if method == "SetPassword":
+                name, password = params.unpack()
+                argv, stdin = commands.chpasswd_input(name, password, chpasswd=_CHPASSWD)
+            else:
+                argv = handler(params.unpack())
         except ValueError as exc:
             invocation.return_error_literal(
                 Gio.dbus_error_quark(), Gio.DBusError.INVALID_ARGS, str(exc))
             return
-        ok, out = _run(argv)
+        ok, out = _run(argv, stdin)
         invocation.return_value(GLib.Variant("(bs)", (ok, out)))
 
     # each returns the validated argv (raising ValueError on bad input)
@@ -142,3 +164,8 @@ class UsersService:
     def _delete_group(args):
         (name,) = args
         return commands.groupdel_argv(name, groupdel=_GROUPDEL)
+
+    @staticmethod
+    def _set_group_member(args):
+        group, user, add = args
+        return commands.gpasswd_argv(group, user, add=add, gpasswd=_GPASSWD)

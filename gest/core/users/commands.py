@@ -114,3 +114,27 @@ def groupadd_argv(name: str, *, system: bool = False, groupadd: str = "groupadd"
 def groupdel_argv(name: str, *, groupdel: str = "groupdel") -> list[str]:
     _require_name(name)
     return [groupdel, name]
+
+
+def chpasswd_input(
+    name: str, password: str, *, chpasswd: str = "chpasswd"
+) -> tuple[list[str], str]:
+    """Build (argv, stdin) for setting a password via chpasswd.
+
+    The password is fed on stdin (``name:password``) so it never lands in argv
+    or the process list. A newline would let a caller inject a second entry, so
+    it is rejected; the password must be non-empty.
+    """
+    _require_name(name)
+    if not password:
+        raise ValueError("empty password")
+    if "\n" in password or "\r" in password:
+        raise ValueError("invalid password")
+    return [chpasswd], f"{name}:{password}\n"
+
+
+def gpasswd_argv(group: str, user: str, *, add: bool, gpasswd: str = "gpasswd") -> list[str]:
+    """Add or remove ``user`` from ``group`` via gpasswd -a/-d."""
+    _require_name(group)
+    _require_name(user)
+    return [gpasswd, "-a" if add else "-d", user, group]

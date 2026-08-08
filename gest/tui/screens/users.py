@@ -25,9 +25,10 @@ class UserFormScreen(ModalScreen):
 
     BINDINGS = [Binding("escape", "cancel", "Cancel")]
 
-    def __init__(self, user: User | None = None) -> None:
+    def __init__(self, user: User | None = None, current_groups: str = "") -> None:
         super().__init__()
         self._user = user
+        self._current_groups = current_groups
 
     def compose(self) -> ComposeResult:
         editing = self._user is not None
@@ -43,7 +44,7 @@ class UserFormScreen(ModalScreen):
             yield Label("Login shell")
             yield Input(value=self._user.shell if editing else "/bin/bash", id="f-shell")
             yield Label("Extra groups (comma-separated)")
-            yield Input(id="f-groups")
+            yield Input(value=self._current_groups if editing else "", id="f-groups")
             if not editing:
                 yield Checkbox("System account", value=False, id="f-system")
             with Horizontal(classes="form-buttons"):
@@ -109,6 +110,78 @@ class ConfirmDeleteScreen(ModalScreen):
         self.dismiss(None)
 
 
+class PasswordFormScreen(ModalScreen):
+    """Modal to set a user's password (entered twice)."""
+
+    BINDINGS = [Binding("escape", "cancel", "Cancel")]
+
+    def __init__(self, username: str) -> None:
+        super().__init__()
+        self._username = username
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="form"):
+            yield Label(f"Set password for {self._username}", classes="form-title")
+            yield Label("New password")
+            yield Input(password=True, id="f-pw")
+            yield Label("Confirm password")
+            yield Input(password=True, id="f-pw2")
+            with Horizontal(classes="form-buttons"):
+                yield BracketButton("Save", id="save")
+                yield BracketButton("Cancel", id="cancel")
+
+    def on_bracket_button_pressed(self, event: BracketButton.Pressed) -> None:
+        if event.button.id != "save":
+            self.dismiss(None)
+            return
+        pw = self.query_one("#f-pw", Input).value
+        pw2 = self.query_one("#f-pw2", Input).value
+        if not pw:
+            self.app.notify("Password cannot be empty.", severity="error")
+            return
+        if pw != pw2:
+            self.app.notify("Passwords do not match.", severity="error")
+            return
+        self.dismiss({"password": pw})
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+class MemberFormScreen(ModalScreen):
+    """Modal to add or remove a member of a group."""
+
+    BINDINGS = [Binding("escape", "cancel", "Cancel")]
+
+    def __init__(self, group: str) -> None:
+        super().__init__()
+        self._group = group
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="form"):
+            yield Label(f"Group “{self._group}” — add or remove a member",
+                        classes="form-title")
+            yield Label("User")
+            yield Input(id="f-user")
+            with Horizontal(classes="form-buttons"):
+                yield BracketButton("Add", id="add")
+                yield BracketButton("Remove", id="remove")
+                yield BracketButton("Cancel", id="cancel")
+
+    def on_bracket_button_pressed(self, event: BracketButton.Pressed) -> None:
+        if event.button.id == "cancel":
+            self.dismiss(None)
+            return
+        user = self.query_one("#f-user", Input).value.strip()
+        if not user:
+            self.app.notify("A user name is required.", severity="error")
+            return
+        self.dismiss({"user": user, "add": event.button.id == "add"})
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
 class UsersScreen(Screen):
     BINDINGS = [
         Binding("escape", "app.pop_screen", "Back"),
@@ -117,6 +190,8 @@ class UsersScreen(Screen):
         Binding("a", "add", "Add"),
         Binding("e", "edit", "Edit"),
         Binding("d", "delete", "Delete"),
+        Binding("p", "set_password", "Password"),
+        Binding("m", "manage_member", "Member"),
         Binding("q", "app.quit", "Quit"),
     ]
 
@@ -129,10 +204,15 @@ class UsersScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Header()
         yield Static("Users", id="users-title")
-        yield Static(" a add · e edit · d delete · g groups · Esc back", id="users-hint")
+        yield Static(
+            " a add · e edit · d delete · p password · m member · g groups · Esc back",
+            id="users-hint",
+        )
         table = DataTable(id="users-table", cursor_type="row", zebra_stripes=True)
         yield table
-        yield FunctionBar([("F1", "Help"), ("g", "Users/Groups"), ("F9", "Back")])
+        yield FunctionBar(
+            [("F1", "Help"), ("p", "Password"), ("g", "Users/Groups"), ("F9", "Back")]
+        )
 
     def on_mount(self) -> None:
         self.title = "Users and Groups"
@@ -205,7 +285,9 @@ class UsersScreen(Screen):
             return
         name = self._current_name()
         if name and name in self._users:
-            self.app.push_screen(UserFormScreen(self._users[name]), self._on_user_form)
+            current = ",".join(reader.groups_for(name))
+            self.app.push_screen(
+                UserFormScreen(self._users[name], current), self._on_user_form)
 
     def action_delete(self) -> None:
         name = self._current_name()
@@ -221,6 +303,24 @@ class UsersScreen(Screen):
                 ConfirmDeleteScreen(f"Delete group “{name}”?"),
                 lambda r: self._on_delete_group(name, r),
             )
+
+    def action_set_password(self) -> None:
+        if self._view != "users":
+            return
+        name = self._current_name()
+        if name:
+            self.app.push_screen(
+                PasswordFormScreen(name), lambda d: self._on_password(name, d))
+
+    def action_manage_member(self) -> None:
+        if self._view != "groups":
+            self.app.notify("Switch to the groups view (g) to edit members.",
+                            severity="warning")
+            return
+        group = self._current_name()
+        if group:
+            self.app.push_screen(
+                MemberFormScreen(group), lambda d: self._on_member(group, d))
 
     # -- form callbacks -> backend ------------------------------------------
 
@@ -246,6 +346,14 @@ class UsersScreen(Screen):
     def _on_delete_group(self, name, result) -> None:
         if result and result.get("ok"):
             self._call(lambda b: b.delete_group(name))
+
+    def _on_password(self, name, data) -> None:
+        if data:
+            self._call(lambda b: b.set_password(name, data["password"]))
+
+    def _on_member(self, group, data) -> None:
+        if data:
+            self._call(lambda b: b.set_group_member(group, data["user"], data["add"]))
 
     @work(exclusive=True)
     async def _call(self, action) -> None:

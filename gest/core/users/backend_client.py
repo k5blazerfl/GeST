@@ -35,6 +35,12 @@ class UsersBackend:
     async def delete_group(self, name):
         return await self._iface.call_delete_group(name)
 
+    async def set_password(self, name, password):
+        return await self._iface.call_set_password(name, password)
+
+    async def set_group_member(self, group, user, add):
+        return await self._iface.call_set_group_member(group, user, add)
+
     async def close(self) -> None:
         if self._bus is not None:
             self._bus.disconnect()

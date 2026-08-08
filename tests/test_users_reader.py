@@ -26,3 +26,14 @@ def test_parse_group():
     assert by["wheel"].gid == 10 and by["wheel"].members == ["root", "alice"]
     assert by["users"].members == []
     assert "bad" not in by
+
+
+def test_member_groups():
+    from gest.core.users.model import Group
+    groups = [
+        Group("wheel", 10, ["root", "alice"]),
+        Group("users", 100, ["alice"]),
+        Group("cdrom", 19, []),
+    ]
+    assert reader.member_groups("alice", groups) == ["users", "wheel"]
+    assert reader.member_groups("nobody", groups) == []
