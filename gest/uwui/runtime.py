@@ -78,6 +78,34 @@ class Screen(urwid.WidgetWrap):
         return key
 
 
+class Modal(urwid.WidgetWrap):
+    """A form modal: title, body rows, and a centered row of buttons.
+
+    ``buttons`` is ``[(label, callback), …]``; Esc cancels (pops the overlay).
+    """
+
+    def __init__(self, app: App, title: str, rows: list, buttons: list):
+        self.app = app
+        button_widgets = [
+            urwid.AttrMap(urwid.Button(label, on_press=lambda _b, cb=cb: cb()),
+                          None, focus_map="focus")
+            for label, cb in buttons
+        ]
+        grid = urwid.GridFlow(button_widgets, cell_width=16, h_sep=2, v_sep=1,
+                              align="center")
+        pile = urwid.Pile(
+            [urwid.Text(("title", title)), urwid.Divider(), *rows,
+             urwid.Divider(), grid]
+        )
+        super().__init__(urwid.Filler(pile, valign="top"))
+
+    def keypress(self, size, key):
+        key = super().keypress(size, key)
+        if key == "esc":
+            self.app.pop()
+            return None
+        return key
+
 def _as_screen(widget) -> Screen | None:
     if isinstance(widget, Screen):
         return widget

@@ -5,6 +5,7 @@ from __future__ import annotations
 import urwid
 
 from gest.uwui.runtime import App, Screen
+from gest.uwui.screens.network import NetworkScreen
 from gest.uwui.screens.news import NewsScreen
 from gest.uwui.screens.services import ServicesScreen
 from gest.uwui.screens.system import HostnameScreen, LocaleScreen, TimezoneScreen
@@ -32,7 +33,7 @@ CATEGORIES: list[tuple[str, list[tuple[str, str, bool]]]] = [
         ("users", "Users & Groups", True),
     ]),
     ("Network", [
-        ("network", "Network", False),
+        ("network", "Network", True),
     ]),
 ]
 
@@ -92,6 +93,8 @@ class MenuScreen(Screen):
             self.app.push(LocaleScreen(self.app))
         elif key == "users":
             self.app.push(UsersScreen(self.app))
+        elif key == "network":
+            self.app.push(NetworkScreen(self.app))
         else:
             self.app.notify(f"“{key}” isn't ported to the urwid frontend yet.")
 

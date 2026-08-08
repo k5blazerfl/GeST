@@ -11,40 +11,11 @@ import urwid
 from gest.core.users import reader
 from gest.core.users.backend_client import UsersBackend
 from gest.core.users.model import User
-from gest.uwui.runtime import App, Screen
+from gest.uwui.runtime import App, Modal, Screen
 
 
 def _row(text: str) -> urwid.Widget:
     return urwid.AttrMap(urwid.SelectableIcon(text, 0), None, focus_map="focus")
-
-
-class Modal(urwid.WidgetWrap):
-    """A form modal: title, body rows, and a centered row of buttons.
-
-    ``buttons`` is ``[(label, callback), …]``; Esc cancels (pops the overlay).
-    """
-
-    def __init__(self, app: App, title: str, rows: list, buttons: list):
-        self.app = app
-        button_widgets = [
-            urwid.AttrMap(urwid.Button(label, on_press=lambda _b, cb=cb: cb()),
-                          None, focus_map="focus")
-            for label, cb in buttons
-        ]
-        grid = urwid.GridFlow(button_widgets, cell_width=16, h_sep=2, v_sep=1,
-                              align="center")
-        pile = urwid.Pile(
-            [urwid.Text(("title", title)), urwid.Divider(), *rows,
-             urwid.Divider(), grid]
-        )
-        super().__init__(urwid.Filler(pile, valign="top"))
-
-    def keypress(self, size, key):
-        key = super().keypress(size, key)
-        if key == "esc":
-            self.app.pop()
-            return None
-        return key
 
 
 class UsersScreen(Screen):

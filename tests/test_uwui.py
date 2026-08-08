@@ -10,6 +10,7 @@ import urwid
 
 from gest.uwui.runtime import App, Screen, function_bar
 from gest.uwui.screens.menu import MenuScreen
+from gest.uwui.screens.network import NetworkScreen
 from gest.uwui.screens.news import NewsScreen
 from gest.uwui.screens.services import ServiceDetailScreen, ServicesScreen
 from gest.uwui.screens.system import HostnameScreen, LocaleScreen, TimezoneScreen
@@ -178,3 +179,22 @@ def test_users_edit_modal_prefills():
     _pump(app, lambda: len(scr._order) > 0)
     scr.keypress(_SIZE, "e")
     assert "Edit user" in _render(app._stack[-1])
+
+
+def test_network_list_and_config_modal():
+    app = App()
+    scr = NetworkScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: len(scr._order) > 0)
+    assert scr._order  # at least loopback
+    # focus a non-loopback interface and open the config modal
+    for i, name in enumerate(scr._order):
+        if name != "lo":
+            scr._walker.set_focus(i)
+            break
+    scr.keypress(_SIZE, "c")
+    assert isinstance(app._stack[-1], urwid.Overlay)
+    out = _render(app._stack[-1])
+    assert "Configure" in out and "Use DHCP" in out
+    app._stack[-1].keypress(_SIZE, "esc")
+    assert isinstance(app._stack[-1], NetworkScreen)
