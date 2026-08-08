@@ -14,7 +14,7 @@ import urwid
 
 from gest.core.software import preview
 from gest.core.software.backend_client import SoftwareBackend
-from gest.tui.runtime import App, Screen
+from gest.tui.runtime import App, Screen, strip_ansi
 
 
 class Plan:
@@ -78,7 +78,7 @@ class ApplyScreen(Screen):
 
     def _append(self, lines: list[str]) -> None:
         for line in lines:
-            self._walker.append(urwid.SelectableIcon(line, 0))
+            self._walker.append(urwid.SelectableIcon(strip_ansi(line), 0))
         self._walker.set_focus(len(self._walker) - 1)
         self.app.refresh()
 

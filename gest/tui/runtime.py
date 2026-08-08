@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import re
 from collections.abc import Awaitable, Callable
 
 import urwid
@@ -27,6 +28,20 @@ PALETTE = [
     ("error", "light red", "default"),
     ("pane_title", "light cyan,bold", "default"),
 ]
+
+
+# Terminal escape sequences (colour/cursor/OSC) that appear in subprocess
+# output; strip them so they don't render as literal junk in the TUI.
+_ANSI_RE = re.compile(
+    r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"   # OSC (title, …) — match before 2-char
+    r"|\x1b\[[0-9;?]*[ -/]*[@-~]"          # CSI (colour, cursor, …)
+    r"|\x1b[@-Z\\-_]"                       # other two-char escapes
+)
+
+
+def strip_ansi(text: str) -> str:
+    """Remove terminal escape sequences from a line of command output."""
+    return _ANSI_RE.sub("", text)
 
 
 def function_bar(keys: list[tuple[str, str]]) -> urwid.Widget:
