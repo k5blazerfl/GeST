@@ -114,7 +114,8 @@ async def test_menu_arrow_navigates_all_items_and_notifies_unimplemented():
         assert app.focused is cats  # categories focused, arrows work immediately
         await pilot.press("down")   # Services
         await pilot.press("down")   # Security and Users
-        await pilot.press("enter")  # -> its module list (Users & Groups)
+        await pilot.press("down")   # Network (still a stub)
+        await pilot.press("enter")  # -> its module list
         await pilot.press("enter")  # launch an unimplemented module
         await pilot.pause()
         assert isinstance(app.screen, MainMenuScreen)  # unimplemented -> stays put

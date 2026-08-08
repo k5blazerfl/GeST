@@ -134,3 +134,45 @@ SoftwareScreen {
 #sw-spacer {
     width: 1fr;
 }
+
+/* --- Users & Groups --- */
+#users-title {
+    text-style: bold;
+    color: $primary;
+    margin: 1 2 0 2;
+}
+
+#users-hint {
+    color: $text-muted;
+    margin: 0 2 1 2;
+}
+
+#users-table {
+    height: 1fr;
+    margin: 0 2;
+}
+
+/* modal add/edit/confirm forms */
+#form {
+    width: 60;
+    max-width: 90%;
+    height: auto;
+    padding: 1 2;
+    border: round $primary;
+    background: $surface;
+}
+
+#form .form-title {
+    text-style: bold;
+    color: $primary;
+    margin-bottom: 1;
+}
+
+#form .form-buttons {
+    height: auto;
+    margin-top: 1;
+}
+
+#form .form-buttons BracketButton {
+    margin-right: 2;
+}

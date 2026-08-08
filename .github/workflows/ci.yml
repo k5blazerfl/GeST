@@ -33,7 +33,8 @@ jobs:
       - name: Test (CI-safe subset)
         run: |
           pytest tests/test_news.py tests/test_preview.py \
-                 tests/test_services_reader.py tests/test_selection.py -q
+                 tests/test_services_reader.py tests/test_selection.py \
+                 tests/test_users_reader.py tests/test_users_commands.py -q
 
       - name: Syntax-check the ebuild
         run: bash -n packaging/overlay/app-admin/gest/gest-9999.ebuild
