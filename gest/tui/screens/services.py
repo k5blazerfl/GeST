@@ -1,138 +1,149 @@
-"""Services module screen (OpenRC): list services, start/stop/restart, enable.
+"""Services module (OpenRC) in urwid: list + start/stop/restart/enable + detail.
 
-Keyboard: s start · x stop · r restart · e toggle enable · Esc back. Actions go
-through the privileged backend (polkit action services.manage) and the list
-refreshes afterward.
+Reads are unprivileged (rc-service/rc-update/rc-status); mutations go through the
+async ServicesBackend over D-Bus — this is the first ported module that proves
+the async mutation path on urwid's asyncio loop.
 """
 
 from __future__ import annotations
 
-from textual import work
-from textual.app import ComposeResult
-from textual.binding import Binding
-from textual.screen import Screen
-from textual.widgets import DataTable, Footer, Header, Static
+import urwid
 
-from gest.core.services import reader as services_reader
+from gest.core.services import reader
 from gest.core.services.backend_client import ServicesBackend
-from gest.tui.screens.service_detail import ServiceDetailScreen
+from gest.core.services.model import Service
+from gest.tui.runtime import App, Screen
+
+
+def _row(text: str) -> urwid.Widget:
+    return urwid.AttrMap(urwid.SelectableIcon(text, 0), None, focus_map="focus")
 
 
 class ServicesScreen(Screen):
-    BINDINGS = [
-        Binding("escape", "app.pop_screen", "Back"),
-        Binding("s", "start", "Start"),
-        Binding("x", "stop", "Stop"),
-        Binding("r", "restart", "Restart"),
-        Binding("e", "toggle_enable", "Enable/Disable"),
-        Binding("q", "app.quit", "Quit"),
-    ]
-
-    def __init__(self) -> None:
-        super().__init__()
-        self._services: dict = {}
+    def __init__(self, app: App) -> None:
+        self._services: dict[str, Service] = {}
         self._order: list[str] = []
-
-    def compose(self) -> ComposeResult:
-        yield Header()
-        yield Static("Services (OpenRC)", id="use-title")
-        yield Static(
-            " Enter details · s start · x stop · r restart · e enable/disable · Esc back",
-            id="use-hint",
+        self._walker = urwid.SimpleFocusListWalker([urwid.Text(" loading …")])
+        self._list = urwid.ListBox(self._walker)
+        super().__init__(
+            app, urwid.LineBox(self._list, title="Services (OpenRC)"),
+            title="Services",
+            footer_keys=[
+                ("Enter", "Detail"), ("s", "Start"), ("x", "Stop"),
+                ("r", "Restart"), ("e", "Enable"), ("Esc", "Back"),
+            ],
         )
-        table = DataTable(id="services", cursor_type="row", zebra_stripes=True)
-        table.add_columns("Service", "Status", "Runlevels")
-        yield table
-        yield Footer()
+        app.run_async(self._load())
 
-    def on_mount(self) -> None:
-        self.title = "Services"
-        self.query_one("#services", DataTable).focus()
-        self.load()
-
-    @work(thread=True, exclusive=True)
-    def load(self) -> None:
-        services = services_reader.list_services()
-        self.app.call_from_thread(self._populate, services)
-
-    def _populate(self, services: list) -> None:
-        table = self.query_one("#services", DataTable)
-        prev = table.cursor_row
-        table.clear()
-        self._services = {}
-        self._order = []
-        for svc in services:
-            self._services[svc.name] = svc
-            self._order.append(svc.name)
-            table.add_row(
-                svc.name,
-                "● started" if svc.running else svc.status,
-                " ".join(svc.runlevels) or "—",
-                key=svc.name,
-            )
+    async def _load(self) -> None:
+        services = await self.app.run_blocking(reader.list_services)
+        self._services = {s.name: s for s in services}
+        self._order = [s.name for s in services]
+        rows = [
+            _row(f"{s.name:<26} {('● started' if s.running else s.status):<12} "
+                 f"{' '.join(s.runlevels) or '—'}")
+            for s in services
+        ] or [urwid.Text(" (no services)")]
+        prev = self._walker.focus if self._walker else 0
+        self._walker[:] = rows
         if self._order:
-            table.move_cursor(row=min(prev, len(self._order) - 1))
+            self._walker.set_focus(min(prev or 0, len(self._order) - 1))
+        self.app.refresh()
 
-    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
-        svc = self._services.get(event.row_key.value)
-        if svc is not None:
-            self.app.push_screen(ServiceDetailScreen(svc))
-
-    def _current(self):
+    def _current(self) -> Service | None:
         if not self._order:
             return None
-        return self._services[self._order[self.query_one("#services", DataTable).cursor_row]]
+        return self._services[self._order[self._walker.focus]]
 
-    def action_start(self) -> None:
-        self._control("start")
-
-    def action_stop(self) -> None:
-        self._control("stop")
-
-    def action_restart(self) -> None:
-        self._control("restart")
-
-    def action_toggle_enable(self) -> None:
-        svc = self._current()
-        if svc is not None:
-            self._set_enabled(svc.name, not svc.enabled)
-
-    def _control(self, action: str) -> None:
-        svc = self._current()
-        if svc is not None:
-            self._run_control(svc.name, action)
-
-    @work(exclusive=True)
-    async def _run_control(self, name: str, action: str) -> None:
+    async def _control(self, name: str, action: str) -> None:
         backend = ServicesBackend()
         try:
             await backend.connect()
             ok, _out = await backend.control(name, action)
         except Exception as exc:
-            self.app.notify(f"{name}: {exc}", severity="error")
+            self.app.notify(f"{name}: {exc}", error=True)
             await backend.close()
             return
         await backend.close()
-        self.app.notify(
-            f"{name}: {action} {'ok' if ok else 'failed'}",
-            severity="information" if ok else "error",
-        )
-        self.load()
+        self.app.notify(f"{name}: {action} {'ok' if ok else 'failed'}", error=not ok)
+        await self._load()
 
-    @work(exclusive=True)
     async def _set_enabled(self, name: str, enabled: bool) -> None:
         backend = ServicesBackend()
         try:
             await backend.connect()
             ok, _out = await backend.set_enabled(name, enabled)
         except Exception as exc:
-            self.app.notify(f"{name}: {exc}", severity="error")
+            self.app.notify(f"{name}: {exc}", error=True)
             await backend.close()
             return
         await backend.close()
         verb = "enabled" if enabled else "disabled"
-        self.app.notify(
-            f"{name}: {verb} {'ok' if ok else 'failed'}",
-            severity="information" if ok else "error",
+        self.app.notify(f"{name}: {verb} {'ok' if ok else 'failed'}", error=not ok)
+        await self._load()
+
+    def handle_key(self, key):
+        svc = self._current()
+        if key == "esc":
+            self.app.pop()
+            return None
+        if svc is None:
+            return key
+        if key == "enter":
+            self.app.push(ServiceDetailScreen(self.app, svc))
+        elif key == "s":
+            self.app.run_async(self._control(svc.name, "start"))
+        elif key == "x":
+            self.app.run_async(self._control(svc.name, "stop"))
+        elif key == "r":
+            self.app.run_async(self._control(svc.name, "restart"))
+        elif key == "e":
+            self.app.run_async(self._set_enabled(svc.name, not svc.enabled))
+        else:
+            return key
+        return None
+
+
+class ServiceDetailScreen(Screen):
+    def __init__(self, app: App, service: Service) -> None:
+        self._svc = service
+        self._walker = urwid.SimpleFocusListWalker([urwid.Text(" reading …")])
+        body = urwid.ListBox(self._walker)
+        super().__init__(
+            app, urwid.LineBox(body, title=service.name),
+            title=f"Service · {service.name}",
+            footer_keys=[("Esc", "Back")],
         )
-        self.load()
+        app.run_async(self._load())
+
+    async def _load(self) -> None:
+        detail = await self.app.run_blocking(
+            lambda: reader.describe_service(
+                self._svc.name, status=self._svc.status, runlevels=self._svc.runlevels
+            )
+        )
+        lines = [
+            f"Status:    {'● started' if detail.running else detail.status}",
+            f"Runlevels: {' '.join(detail.runlevels) or '—'}",
+        ]
+        if detail.description:
+            lines += ["", detail.description]
+
+        def block(label: str, items: list[str]) -> None:
+            lines.append("")
+            lines.append(f"{label}:")
+            lines.extend(f"  • {name}" for name in items) if items else lines.append("  —")
+
+        block("Needs", detail.needs)
+        block("Uses", detail.uses)
+        block("Wants", detail.wants)
+        block("Needed by", detail.needed_by)
+        self._walker[:] = [urwid.SelectableIcon(line, 0) for line in lines]
+        self._walker.set_focus(0)
+        self.app.refresh()
+
+    def handle_key(self, key):
+        if key == "esc":
+            self.app.pop()
+            return None
+        return key

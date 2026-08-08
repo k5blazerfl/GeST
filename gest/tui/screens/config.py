@@ -12,8 +12,8 @@ import urwid
 from gest.core.software import pkgconfig as pc
 from gest.core.software import useflags
 from gest.core.software.backend_client import SoftwareBackend
-from gest.uwui.runtime import App, Screen
-from gest.uwui.screens.apply import ApplyScreen, rebuild_plan
+from gest.tui.runtime import App, Screen
+from gest.tui.screens.apply import ApplyScreen, rebuild_plan
 
 _USE_NEXT = {useflags.DEFAULT: useflags.ON, useflags.ON: useflags.OFF,
              useflags.OFF: useflags.DEFAULT}

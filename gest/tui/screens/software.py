@@ -1,369 +1,228 @@
-"""Software Management — YaST sw_single-style master/detail screen.
+"""Software Management (urwid): search / list, live detail, transactional marks.
 
-Layout: a dropdown menu bar on top; a filter sidebar on the left (search + the
-YaST "Search in" checkboxes); a package table top-right with a live count; and a
-detail pane below it that refreshes as the cursor moves. Actions still work the
-way they did — Enter previews an install, u/k edit config, r removes — and are
-also reachable from the Configuration/Extras menus. (Transactional mark→Accept
-lands in the next slice; for now Accept installs the highlighted package.)
+Mark packages (Space install/update, r remove), then Accept applies them —
+installs first, then a depclean pass — through the streaming ApplyScreen. USE /
+keyword editing and the dropdown menu bar are follow-ups; the core browse +
+transactional flow lives here.
 """
 
 from __future__ import annotations
 
-from textual import events, work
-from textual.app import ComposeResult
-from textual.binding import Binding
-from textual.containers import Horizontal, Vertical, VerticalScroll
-from textual.coordinate import Coordinate
-from textual.screen import Screen
-from textual.widgets import Checkbox, DataTable, Header, Input, Static
+import urwid
 
-from gest.core.software import preview, reader
+from gest.core.software import reader
 from gest.core.software.model import PackageDetail
 from gest.core.software.selection import Selection
-from gest.tui.screens.install import InstallScreen
-from gest.tui.screens.keywords import KeywordsScreen
-from gest.tui.screens.news import NewsScreen
-from gest.tui.screens.useflags import UseFlagScreen
-from gest.tui.widgets.bracket_button import BracketButton
-from gest.tui.widgets.function_bar import FunctionBar
-from gest.tui.widgets.menu_bar import MenuBar
+from gest.tui.runtime import App, Screen
+from gest.tui.screens.apply import ApplyScreen, install_plan, remove_plan
+from gest.tui.screens.config import KeywordsScreen, UseFlagScreen
 
-_MENUS = [
-    ("deps", "Dependencies", [
-        ("checknow", "Check marked packages", True),
-        ("autocheck", "Automatic dependency check", False),
-    ]),
-    ("view", "View", [
-        ("installed", "Installed packages", True),
-        ("world", "@world set only", True),
-    ]),
-    ("config", "Configuration", [
-        ("use", "USE flags…", True),
-        ("keywords", "Keywords / mask…", True),
-    ]),
-    ("extras", "Extras", [
-        ("update", "System update (@world)…", True),
-        ("sync", "Sync Portage tree…", True),
-        ("news", "Portage news…", True),
-    ]),
-]
+
+def _row(text: str) -> urwid.Widget:
+    return urwid.AttrMap(urwid.SelectableIcon(text, 0), None, focus_map="focus")
 
 
 class SoftwareScreen(Screen):
-    """Portage software module: search / list packages with a live detail pane."""
+    _SEARCH_IDX = 0
+    _TABLE_IDX = 3
 
-    BINDINGS = [
-        Binding("escape", "app.pop_screen", "Cancel"),
-        Binding("f9", "app.pop_screen", "Cancel"),
-        Binding("f10", "accept", "Accept"),
-        Binding("f1", "help", "Help"),
-        Binding("q", "app.quit", "Quit"),
-        Binding("space", "toggle_mark", "Mark"),
-        Binding("c", "clear_marks", "Clear marks"),
-        Binding("/", "focus_search", "Search"),
-        Binding("u", "edit_use", "USE flags"),
-        Binding("k", "edit_keywords", "Keywords"),
-        Binding("r", "toggle_remove", "Remove mark"),
-    ]
-
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, app: App) -> None:
         self._cps: list[str] = []
         self._installed: list[bool] = []
-        self._base_count: str = ""
+        self._summaries: list[str] = []
         self._selection = Selection()
-        self._pending_removes: list[str] = []
 
-    def compose(self) -> ComposeResult:
-        yield Header()
-        yield MenuBar(_MENUS, id="sw-menubar")
-        with Horizontal(id="sw-body"):
-            with Vertical(id="sw-filter"):
-                yield Static("Filter", classes="filter-h")
-                yield Input(placeholder="Search…", id="search")
-                yield Checkbox("Ignore Case", value=True, disabled=True, id="ignore-case")
-                yield Static("Search in", classes="filter-h")
-                yield Checkbox("Name", value=True, id="in-name")
-                yield Checkbox("Summary (slower)", value=False, id="in-summary")
-                yield Checkbox("Keywords", value=False, disabled=True)
-                yield Checkbox("Description", value=False, disabled=True)
-                yield Checkbox("Provides", value=False, disabled=True)
-                yield Checkbox("Required by", value=False, disabled=True)
-            with Vertical(id="sw-main"):
-                yield Static("", id="sw-count")
-                table = DataTable(id="results", cursor_type="row", zebra_stripes=True)
-                table.add_columns("S", "Package", "Summary")
-                yield table
-                yield VerticalScroll(Static("", id="sw-detail"), id="sw-detail-box")
-        with Horizontal(id="sw-buttons"):
-            yield BracketButton("Help", id="help")
-            yield Static(id="sw-spacer")
-            yield BracketButton("Cancel", id="cancel")
-            yield BracketButton("Accept", id="accept")
-        yield FunctionBar([("F1", "Help"), ("F9", "Cancel"), ("F10", "Accept")])
+        self._search = urwid.Edit("Search: ")
+        self._name_cb = urwid.CheckBox("Name", state=True)
+        self._summary_cb = urwid.CheckBox("Summary")
+        search_in = urwid.Columns([
+            ("pack", urwid.Text("Search in: ")),
+            ("pack", self._name_cb),
+            ("pack", urwid.Text("  ")),
+            ("pack", self._summary_cb),
+        ])
+        self._count = urwid.Text(" loading …")
+        self._walker = urwid.SimpleFocusListWalker([urwid.Text(" loading …")])
+        self._table = urwid.ListBox(self._walker)
+        self._detail = urwid.Text("")
+        detail_box = urwid.LineBox(
+            urwid.Filler(self._detail, valign="top"), title="Detail"
+        )
+        pile = urwid.Pile([
+            ("pack", self._search),
+            ("pack", search_in),
+            ("pack", self._count),
+            ("weight", 3, urwid.LineBox(self._table, title="Packages")),
+            ("weight", 2, detail_box),
+        ])
+        super().__init__(
+            app, pile, title="Software Management",
+            footer_keys=[
+                ("Enter", "Search/Install"), ("Space", "Mark"), ("r", "Remove"),
+                ("c", "Clear"), ("u", "USE"), ("k", "Keywords"),
+                ("F10", "Accept"), ("Esc", "Back"),
+            ],
+        )
+        self._pile = pile
+        urwid.connect_signal(self._walker, "modified", self._on_focus)
+        app.run_async(self._load_installed())
 
-    def on_mount(self) -> None:
-        self.title = "Software Management"
-        self.query_one("#search", Input).focus()
-        self.load_installed()
+    # -- loading ------------------------------------------------------------
 
-    # -- keyboard glue ------------------------------------------------------
+    async def _load_installed(self) -> None:
+        pkgs = await self.app.run_blocking(reader.list_installed)
+        self._fill([(p.cp, (p.description or "")[:60]) for p in pkgs],
+                   [p.cp for p in pkgs], [True] * len(pkgs))
+        self._set_count(f"{len(pkgs)} installed package(s)")
 
-    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        # Don't let "/" swallow slashes typed into the search box (atoms use /).
-        return not (
-            action == "focus_search"
-            and self.focused is self.query_one("#search", Input)
+    async def _run_search(self, term: str) -> None:
+        fields = []
+        if self._name_cb.state:
+            fields.append("name")
+        if self._summary_cb.state:
+            fields.append("summary")
+        results = await self.app.run_blocking(
+            lambda: reader.search(term, fields=tuple(fields) or ("name",))
+        )
+        self._fill([(r.cp, (r.description or "")[:60]) for r in results],
+                   [r.cp for r in results], [r.installed for r in results])
+        self._set_count(f"{len(results)} package(s) found")
+
+    def _fill(self, rows, cps, installed) -> None:
+        self._cps = cps
+        self._installed = installed
+        self._summaries = [summary for _cp, summary in rows]
+        widgets = [_row(self._row_text(i, cp, summary))
+                   for i, (cp, summary) in enumerate(rows)]
+        self._walker[:] = widgets or [urwid.Text(" (no packages)")]
+        if cps:
+            self._walker.set_focus(0)
+        self.app.refresh()
+
+    def _row_text(self, i: int, cp: str, summary: str) -> str:
+        return f"{self._status_for(i, cp)} {cp:<32} {summary}"
+
+    def _status_for(self, i: int, cp: str) -> str:
+        mark = self._selection.mark_of(cp)
+        if mark == "install":
+            return "u" if self._installed[i] else "+"
+        if mark == "remove":
+            return "-"
+        return "i" if self._installed[i] else " "
+
+    # -- detail pane --------------------------------------------------------
+
+    def _on_focus(self) -> None:
+        if self._cps and 0 <= self._walker.focus < len(self._cps):
+            self.app.run_async(self._load_detail(self._cps[self._walker.focus]))
+
+    async def _load_detail(self, cp: str) -> None:
+        detail = await self.app.run_blocking(reader.get_package_detail, cp)
+        self._detail.set_text(self._render_detail(cp, detail))
+        self.app.refresh()
+
+    def _render_detail(self, cp: str, d: PackageDetail | None) -> str:
+        if d is None:
+            return f"{cp}\n(no metadata)"
+        return (
+            f"{d.cp} — {d.description}\n"
+            f"Version: {d.available_version or '—'}   Installed: {d.installed_version or '—'}"
+            f"   Slot: {d.slot}\n"
+            f"License: {d.license or '—'}\n"
+            f"Homepage: {d.homepage or '—'}\n"
+            f"Keywords: {d.keywords or '—'}"
         )
 
-    def on_key(self, event: events.Key) -> None:
-        table = self.query_one("#results", DataTable)
-        if event.key == "down" and self.focused is self.query_one("#search", Input):
-            if table.row_count:
-                table.focus()
-                event.stop()
-        elif event.key == "space" and self.focused is table:
-            self.action_toggle_mark()
-            event.stop()
-        elif event.key == "r" and self.focused is table:
-            self.action_toggle_remove()
-            event.stop()
+    # -- marks + count ------------------------------------------------------
 
-    def action_focus_search(self) -> None:
-        self.query_one("#search", Input).focus()
+    def _set_count(self, text: str) -> None:
+        summary = self._selection.summary()
+        if not self._selection.is_empty:
+            text += f"   ·   {summary} (F10 Accept · c clear)"
+        self._count.set_text(f" {text}")
+        self._base_count = text
+        self.app.refresh()
 
-    def action_help(self) -> None:
-        self.app.notify("Help isn't implemented yet.", severity="warning")
+    def _refresh_count(self) -> None:
+        base = getattr(self, "_base_count", "")
+        # strip a previous selection suffix
+        base = base.split("   ·   ")[0]
+        self._set_count(base)
 
-    def action_accept(self) -> None:
-        installs = self._selection.install_atoms()
-        removes = self._selection.remove_atoms()
-        if not installs and not removes:
-            cp = self._current_cp()
-            installs = [cp] if cp else []
-        if not installs and not removes:
-            self.app.notify("Mark packages with Space (install) or r (remove).",
-                            severity="warning")
+    def _toggle(self, remove: bool) -> None:
+        if not self._cps:
             return
-        # Apply installs first, then removals — each as its own streamed screen.
-        self._pending_removes = removes
-        if installs:
-            self.app.push_screen(
-                InstallScreen("", mode="multi", atoms=installs), self._after_installs
-            )
-        else:
-            self._start_removes()
-
-    def _after_installs(self, _result=None) -> None:
-        if self._pending_removes:
-            self._start_removes()
-        else:
-            self._after_apply()
-
-    def _start_removes(self) -> None:
-        removes, self._pending_removes = self._pending_removes, []
-        self.app.push_screen(
-            InstallScreen("", mode="depclean-multi", atoms=removes), self._after_apply
-        )
-
-    def _after_apply(self, _result=None) -> None:
-        self._selection.clear()
-        self.load_installed()
-
-    def _toggle_current(self, *, remove: bool) -> None:
-        table = self.query_one("#results", DataTable)
-        if not self._cps or table.cursor_row is None:
-            return
-        row = table.cursor_row
-        if not (0 <= row < len(self._cps)):
-            return
-        cp = self._cps[row]
+        i = self._walker.focus
+        cp = self._cps[i]
         if remove:
             self._selection.toggle_remove(cp)
         else:
             self._selection.toggle_install(cp)
-        table.update_cell_at(Coordinate(row, 0), self._status_for(row))
-        self._render_count()
+        self._walker[i].base_widget.set_text(self._row_text(i, cp, self._summaries[i]))
+        self._refresh_count()
 
-    def action_toggle_mark(self) -> None:
-        self._toggle_current(remove=False)
+    # -- accept -------------------------------------------------------------
 
-    def action_toggle_remove(self) -> None:
-        self._toggle_current(remove=True)
-
-    def action_clear_marks(self) -> None:
-        if self._selection.is_empty:
+    def _accept(self) -> None:
+        installs = self._selection.install_atoms()
+        removes = self._selection.remove_atoms()
+        if not installs and not removes and self._cps:
+            installs = [self._cps[self._walker.focus]]
+        if not installs and not removes:
+            self.app.notify("Mark packages with Space or r first.", error=True)
             return
+        plans = []
+        if installs:
+            plans.append(install_plan(installs))
+        if removes:
+            plans.append(remove_plan(removes))
+        self.app.push(ApplyScreen(self.app, plans, verb="Accept", on_done=self._after))
+
+    def _after(self) -> None:
         self._selection.clear()
-        self._repaint_status()
-        self._render_count()
+        self.app.run_async(self._load_installed())
 
-    def _status_for(self, row: int) -> str:
-        mark = self._selection.mark_of(self._cps[row])
-        if mark == "install":
-            return "u" if self._installed[row] else "+"
-        if mark == "remove":
-            return "-"
-        return "i" if self._installed[row] else " "
+    # -- keys ---------------------------------------------------------------
 
-    def _repaint_status(self) -> None:
-        table = self.query_one("#results", DataTable)
-        for row in range(len(self._cps)):
-            table.update_cell_at(Coordinate(row, 0), self._status_for(row))
-
-    # -- current selection --------------------------------------------------
-
-    def _current_cp(self) -> str | None:
-        table = self.query_one("#results", DataTable)
-        if not self._cps or table.cursor_row is None:
+    def handle_key(self, key):
+        focus_search = self._pile.focus_position == self._SEARCH_IDX
+        if key == "esc":
+            self.app.pop()
             return None
-        if 0 <= table.cursor_row < len(self._cps):
-            return self._cps[table.cursor_row]
-        return None
+        if key == "enter":
+            if focus_search:
+                term = self._search.edit_text.strip()
+                self.app.run_async(
+                    self._run_search(term) if term else self._load_installed()
+                )
+            elif self._cps:
+                self.app.push(ApplyScreen(
+                    self.app, [install_plan([self._cps[self._walker.focus]])],
+                    verb="Install"))
+            return None
+        if key == "f10":
+            self._accept()
+            return None
+        if key == " " and not focus_search:
+            self._toggle(remove=False)
+            return None
+        if key == "r" and not focus_search:
+            self._toggle(remove=True)
+            return None
+        if key == "c" and not focus_search:
+            if not self._selection.is_empty:
+                self._selection.clear()
+                self._repaint()
+                self._refresh_count()
+            return None
+        if key == "u" and not focus_search and self._cps:
+            self.app.push(UseFlagScreen(self.app, self._cps[self._walker.focus]))
+            return None
+        if key == "k" and not focus_search and self._cps:
+            self.app.push(KeywordsScreen(self.app, self._cps[self._walker.focus]))
+            return None
+        return key
 
-    # -- input / rows -------------------------------------------------------
-
-    def on_input_submitted(self, event: Input.Submitted) -> None:
-        term = event.value.strip()
-        if term:
-            self.run_search(term, self._search_fields())
-        else:
-            self.load_installed()
-
-    def _search_fields(self) -> tuple[str, ...]:
-        fields = []
-        if self.query_one("#in-name", Checkbox).value:
-            fields.append("name")
-        if self.query_one("#in-summary", Checkbox).value:
-            fields.append("summary")
-        return tuple(fields) or ("name",)
-
-    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
-        cp = self._current_cp()
-        if cp is not None:
-            self.app.push_screen(InstallScreen(cp))
-
-    def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
-        if 0 <= event.cursor_row < len(self._cps):
-            self.show_detail(self._cps[event.cursor_row])
-
-    # -- menu bar -----------------------------------------------------------
-
-    def on_menu_bar_selected(self, event: MenuBar.Selected) -> None:
-        if event.item == "installed":
-            self.load_installed()
-        elif event.item == "world":
-            self.load_installed(world_only=True)
-        elif event.item == "use":
-            self.action_edit_use()
-        elif event.item == "keywords":
-            self.action_edit_keywords()
-        elif event.item == "update":
-            self.app.push_screen(InstallScreen("@world", mode="world"))
-        elif event.item == "sync":
-            self.app.push_screen(InstallScreen("", mode="sync"))
-        elif event.item == "news":
-            self.app.push_screen(NewsScreen())
-        elif event.item == "checknow":
-            self.check_marked()
-        else:
-            self.app.notify("Not implemented yet.", severity="warning")
-
-    def on_bracket_button_pressed(self, event: BracketButton.Pressed) -> None:
-        if event.button.id == "cancel":
-            self.app.pop_screen()
-        elif event.button.id == "accept":
-            self.action_accept()
-        elif event.button.id == "help":
-            self.action_help()
-
-    # -- config actions -----------------------------------------------------
-
-    def action_edit_use(self) -> None:
-        cp = self._current_cp()
-        if cp is not None:
-            self.app.push_screen(UseFlagScreen(cp))
-
-    def action_edit_keywords(self) -> None:
-        cp = self._current_cp()
-        if cp is not None:
-            self.app.push_screen(KeywordsScreen(cp))
-
-    # -- rendering ----------------------------------------------------------
-
-    @work(thread=True, exclusive=True)
-    def check_marked(self) -> None:
-        atoms = self._selection.install_atoms()
-        if not atoms:
-            self.app.call_from_thread(
-                self.app.notify, "No packages marked for install.",
-                severity="warning")
-            return
-        result = preview.preview_install_many(atoms)
-        self.app.call_from_thread(
-            self.app.notify, result.summary, title="Dependency check",
-            severity="information" if result.ok else "error")
-
-    def _set_count(self, text: str) -> None:
-        self._base_count = text
-        self._render_count()
-
-    def _render_count(self) -> None:
-        text = self._base_count
-        if not self._selection.is_empty:
-            text += f"   ·   [b]{self._selection.summary()}[/b] (F10 Accept · c clear)"
-        self.query_one("#sw-count", Static).update(text)
-
-    def _fill(self, rows: list[tuple[str, str]], cps: list[str],
-              installed: list[bool]) -> None:
-        table = self.query_one("#results", DataTable)
-        table.clear()
-        self._cps = cps
-        self._installed = installed
-        for i, (cp, summary) in enumerate(rows):
-            table.add_row(self._status_for(i), cp, summary)
-
-    @work(thread=True, exclusive=True)
-    def load_installed(self, world_only: bool = False) -> None:
-        pkgs = reader.list_installed()
-        if world_only:
-            pkgs = [p for p in pkgs if p.world_member]
-        rows = [(p.cp, (p.description or "")[:70]) for p in pkgs]
-        cps = [p.cp for p in pkgs]
-        installed = [True] * len(pkgs)
-        self.app.call_from_thread(self._fill, rows, cps, installed)
-        scope = "@world" if world_only else "installed"
-        self.app.call_from_thread(self._set_count, f" {len(pkgs)} {scope} package(s)")
-
-    @work(thread=True, exclusive=True)
-    def run_search(self, term: str, fields: tuple[str, ...] = ("name",)) -> None:
-        self.app.call_from_thread(self._set_count, f" searching for “{term}” …")
-        results = reader.search(term, fields=fields)
-        rows = [(r.cp, (r.description or "")[:70]) for r in results]
-        cps = [r.cp for r in results]
-        installed = [r.installed for r in results]
-        self.app.call_from_thread(self._fill, rows, cps, installed)
-        self.app.call_from_thread(self._set_count, f" {len(results)} package(s) found")
-
-    @work(thread=True, exclusive=True)
-    def show_detail(self, cp: str) -> None:
-        detail = reader.get_package_detail(cp)
-        self.app.call_from_thread(self._render_detail, cp, detail)
-
-    def _render_detail(self, cp: str, detail: PackageDetail | None) -> None:
-        pane = self.query_one("#sw-detail", Static)
-        if detail is None:
-            pane.update(f"[b]{cp}[/b]\n(no metadata)")
-            return
-        installed = detail.installed_version or "—"
-        lines = [
-            f"[b]{detail.cp}[/b] — {detail.description}",
-            "",
-            f"[b]Version:[/b] {detail.available_version or '—'}   "
-            f"[b]Installed:[/b] {installed}   [b]Slot:[/b] {detail.slot}",
-            f"[b]License:[/b] {detail.license or '—'}",
-            f"[b]Homepage:[/b] {detail.homepage or '—'}",
-            f"[b]Keywords:[/b] {detail.keywords or '—'}",
-        ]
-        pane.update("\n".join(lines))
+    def _repaint(self) -> None:
+        for i, cp in enumerate(self._cps):
+            self._walker[i].base_widget.set_text(self._row_text(i, cp, self._summaries[i]))

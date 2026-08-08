@@ -17,11 +17,11 @@ SLOT="0"
 KEYWORDS=""
 
 # portage: the query API. PyGObject: GLib/Gio for the root backend.
-# textual + dbus-next: the TUI frontend and its async D-Bus client.
+# urwid + dbus-next: the TUI frontend and its async D-Bus client.
 RDEPEND="
 	sys-apps/portage[${PYTHON_USEDEP}]
 	dev-python/pygobject:3[${PYTHON_USEDEP}]
-	dev-python/textual[${PYTHON_USEDEP}]
+	dev-python/urwid[${PYTHON_USEDEP}]
 	dev-python/dbus-next[${PYTHON_USEDEP}]
 	sys-auth/polkit
 	sys-apps/dbus

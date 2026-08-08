@@ -1,108 +1,67 @@
-"""Portage news viewer: list items and read their content (read-only)."""
+"""Portage news viewer (urwid): list items, read content. Read-only."""
 
 from __future__ import annotations
 
-from textual import work
-from textual.app import ComposeResult
-from textual.binding import Binding
-from textual.screen import Screen
-from textual.widgets import DataTable, Footer, Header, RichLog, Static
+import urwid
 
 from gest.core.software import news
-from gest.core.software.backend_client import SoftwareBackend
+from gest.tui.runtime import App, Screen
+
+
+def _line(text: str) -> urwid.Widget:
+    return urwid.SelectableIcon(text, 0)
 
 
 class NewsScreen(Screen):
-    BINDINGS = [
-        Binding("escape", "app.pop_screen", "Back"),
-        Binding("r", "mark_read", "Mark read"),
-        Binding("a", "mark_all_read", "Mark all read"),
-        Binding("q", "app.quit", "Quit"),
-    ]
-
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, app: App) -> None:
         self._numbers: list[int] = []
-
-    def compose(self) -> ComposeResult:
-        yield Header()
-        yield Static("Portage news — Enter read · r read · a all · Esc back", id="use-title")
-        table = DataTable(id="news", cursor_type="row", zebra_stripes=True)
-        table.add_columns("#", "", "Date", "Title")
-        yield table
-        yield RichLog(id="news-body", highlight=False, markup=False, wrap=True)
-        yield Footer()
-
-    def on_mount(self) -> None:
-        self.title = "Portage News"
-        self.query_one("#news", DataTable).focus()
-        self.load()
-
-    @work(thread=True, exclusive=True)
-    def load(self) -> None:
-        items = news.list_news()
-        self.app.call_from_thread(self._populate, items)
-
-    def _populate(self, items: list[news.NewsItem]) -> None:
-        table = self.query_one("#news", DataTable)
-        table.clear()
-        self._numbers = []
-        for item in items:
-            self._numbers.append(item.number)
-            table.add_row(
-                str(item.number),
-                "●" if item.unread else " ",
-                item.date,
-                item.title,
-                key=str(item.number),
-            )
-        if not items:
-            self.query_one("#news-body", RichLog).write("No news items.")
-
-    def _current_number(self) -> int | None:
-        table = self.query_one("#news", DataTable)
-        if not self._numbers:
-            return None
-        return self._numbers[table.cursor_row]
-
-    def action_mark_read(self) -> None:
-        number = self._current_number()
-        if number is not None:
-            self._mark(str(number))
-
-    def action_mark_all_read(self) -> None:
-        if self._numbers:
-            self._mark("all")
-
-    @work(exclusive=True)
-    async def _mark(self, selector: str) -> None:
-        backend = SoftwareBackend()
-        try:
-            await backend.connect()
-            ok = await backend.mark_news_read(selector)
-        except Exception as exc:
-            self.app.notify(f"mark read: {exc}", severity="error")
-            await backend.close()
-            return
-        await backend.close()
-        target = "all items" if selector == "all" else f"item {selector}"
-        self.app.notify(
-            f"marked {target} read" if ok else f"could not mark {target} read",
-            severity="information" if ok else "error",
+        self._item_walker = urwid.SimpleFocusListWalker([urwid.Text(" loading …")])
+        self._list = urwid.ListBox(self._item_walker)
+        self._content_walker = urwid.SimpleFocusListWalker(
+            [urwid.Text("Select an item and press Enter to read it.")]
         )
-        self.load()
+        self._content = urwid.ListBox(self._content_walker)
+        self._pile = urwid.Pile([
+            ("weight", 2, urwid.LineBox(self._list, title="Portage news")),
+            ("weight", 1, urwid.LineBox(self._content, title="Content")),
+        ])
+        super().__init__(
+            app, self._pile, title="Portage News",
+            footer_keys=[("Enter", "Read"), ("Tab", "Content"), ("Esc", "Back")],
+        )
+        app.run_async(self._load())
 
-    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
-        number = int(event.data_table.get_row(event.row_key)[0])
-        self.read_item(number)
+    async def _load(self) -> None:
+        items = await self.app.run_blocking(news.list_news)
+        self._numbers = [it.number for it in items]
+        rows = [
+            urwid.AttrMap(
+                _line(f"{'●' if it.unread else ' '} [{it.number}] {it.date}  {it.title}"),
+                None, focus_map="focus",
+            )
+            for it in items
+        ] or [urwid.Text(" (no news items)")]
+        self._item_walker[:] = rows
+        self.app.refresh()
 
-    @work(thread=True, exclusive=True)
-    def read_item(self, number: int) -> None:
-        body = news.read_news(number)
-        self.app.call_from_thread(self._show, body)
+    async def _read(self, number: int) -> None:
+        body = await self.app.run_blocking(news.read_news, number)
+        lines = body.splitlines() or ["(empty)"]
+        self._content_walker[:] = [_line(line) for line in lines]
+        self._content_walker.set_focus(0)
+        self.app.refresh()
 
-    def _show(self, body: str) -> None:
-        log = self.query_one("#news-body", RichLog)
-        log.clear()
-        for line in body.splitlines():
-            log.write(line)
+    def handle_key(self, key):
+        if key == "esc":
+            if self._pile.focus_position == 1:
+                self._pile.focus_position = 0
+            else:
+                self.app.pop()
+            return None
+        if key == "tab":
+            self._pile.focus_position = 0 if self._pile.focus_position == 1 else 1
+            return None
+        if key == "enter" and self._pile.focus_position == 0 and self._numbers:
+            self.app.run_async(self._read(self._numbers[self._item_walker.focus]))
+            return None
+        return key
