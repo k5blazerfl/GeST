@@ -8,6 +8,7 @@ preview (run as the user) with a streamed backend operation.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import re
 from collections.abc import Awaitable, Callable
 
@@ -15,7 +16,7 @@ import urwid
 
 from gest.core.software import preview
 from gest.core.software.backend_client import SoftwareBackend
-from gest.tui.runtime import App, Screen, ansi_markup, strip_ansi
+from gest.tui.runtime import App, Modal, Screen, ansi_markup, strip_ansi
 
 # emerge's per-package progress markers, e.g.
 #   >>> Emerging (2 of 5) app-editors/vim-9.1::gentoo
@@ -203,20 +204,46 @@ class ApplyScreen(Screen):
     async def _apply(self) -> None:
         self._running = True
         overall = 0
+        aborted = False
         for plan in self._plans:
             code = await self._run_one(plan)
-            if code is None:
-                self._running = False
-                return
+            if code is None:      # a plan failed to start / authorize
+                aborted = True
+                break
             overall = overall or code
         self._running = False
         self._done = True
-        self.app.notify(
-            f"completed (exit {overall})" if overall == 0 else f"failed (exit {overall})",
-            error=overall != 0,
-        )
-        if self._on_done is not None:
-            self._on_done()
+        if not aborted and self._on_done is not None:
+            # never let a refresh hiccup swallow the result prompt
+            with contextlib.suppress(Exception):
+                self._on_done()   # refresh the caller's installed list
+        if aborted:
+            self._finish("Not started", False,
+                         "The operation did not start — administrator authentication "
+                         "was declined, or the backend was unavailable. Nothing was "
+                         "changed.")
+        elif overall == 0:
+            self._finish("Completed", True,
+                         f"All package operations completed successfully "
+                         f"(emerge exit {overall}).")
+        else:
+            self._finish("Failed", False,
+                         f"A problem occurred — emerge exited {overall}. The changes "
+                         "may be incomplete; review the log above for details.")
+
+    def _finish(self, title: str, ok: bool, message: str) -> None:
+        """Show an unmistakable success/failure prompt when the run ends."""
+        self.app.notify(title.lower(), error=not ok)
+        self._set_phase(f"{self._verb}: {title.lower()}", "ok" if ok else "error")
+
+        def back():
+            self.app.pop()   # the result modal
+            self.app.pop()   # the apply screen → back to the caller
+
+        modal = Modal(self.app, title,
+                      [urwid.Text(("ok" if ok else "error", message))],
+                      [("Back", back), ("View log", self.app.pop)])
+        self.app.push_modal(modal, width=("relative", 62), height=("relative", 40))
 
     def handle_key(self, key):
         if key == "esc" and not self._running:

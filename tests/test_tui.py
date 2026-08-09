@@ -517,6 +517,29 @@ def test_apply_progress_parses_emerge_markers():
     assert scr._bar.current == 2
 
 
+def test_apply_completion_modal_success_and_failure():
+    import urwid
+
+    from gest.core.software.preview import PreviewResult
+    from gest.tui.screens.apply import ApplyScreen, Plan
+    app = App()
+    stub = Plan("Install", lambda: PreviewResult("x", 0, "Total: 1 package"),
+                lambda b, p, f: True)
+    scr = ApplyScreen(app, [stub], verb="Accept")
+    app._stack.append(scr)
+    _pump(app, lambda: scr._ready, ticks=50)
+    # success prompt appears, names the outcome, and 'View log' (esc) returns
+    scr._finish("Completed", True, "all good")
+    assert isinstance(app._stack[-1], urwid.Overlay)
+    out = _render(app._stack[-1])
+    assert "Completed" in out and "all good" in out
+    app._stack[-1].keypress(_SIZE, "esc")               # View log
+    assert isinstance(app._stack[-1], ApplyScreen)
+    # failure prompt likewise
+    scr._finish("Failed", False, "emerge exited 1")
+    assert "Failed" in _render(app._stack[-1])
+
+
 def test_menu_launches_software():
     app = App()
     menu = MenuScreen(app)
