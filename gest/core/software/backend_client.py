@@ -61,14 +61,6 @@ class SoftwareBackend:
             self._iface.on_finished(on_finished)
         return await self._iface.call_install_multi(atoms)
 
-    async def set_package_config(self, kind: str, atom: str, line: str) -> bool:
-        """Write ``line`` for ``atom`` into package.<kind>/gest (polkit-gated)."""
-        return await self._iface.call_set_package_config(kind, atom, line)
-
-    async def set_makeconf(self, name: str, value: str) -> bool:
-        """Set a variable in /etc/portage/make.conf (polkit-gated)."""
-        return await self._iface.call_set_makeconf(name, value)
-
     async def rebuild(
         self,
         atom: str,
@@ -117,10 +109,6 @@ class SoftwareBackend:
         if on_finished is not None:
             self._iface.on_finished(on_finished)
         return await self._iface.call_depclean_multi(atoms)
-
-    async def set_package_use(self, atom: str, line: str) -> bool:
-        """Write ``line`` for ``atom`` into package.use/gest (polkit-gated)."""
-        return await self._iface.call_set_package_use(atom, line)
 
     async def close(self) -> None:
         if self._bus is not None:

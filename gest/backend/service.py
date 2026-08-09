@@ -17,12 +17,10 @@ from the unprivileged frontend. See ``backend/README.md``.
 
 from __future__ import annotations
 
-import contextlib
 import os
 import re
 import shutil
 import sys
-import tempfile
 
 import gi
 
@@ -40,11 +38,11 @@ from gest.backend.polkit import (
     authorization_variant,
     caller_uid,
 )
+from gest.backend.portage import PortageService
 from gest.backend.repos import ReposService
 from gest.backend.services import ServicesService
 from gest.backend.system import SystemService
 from gest.backend.users import UsersService
-from gest.core.makeconf import reader as makeconf
 from gest.core.software import news
 from gest.ipc.interface import BUS_NAME, SOFTWARE_IFACE, SOFTWARE_PATH, polkit_action
 
@@ -86,22 +84,6 @@ _INTROSPECTION = f"""
       <arg type="s" name="selector" direction="in"/>
       <arg type="b" name="ok" direction="out"/>
     </method>
-    <method name="SetPackageUse">
-      <arg type="s" name="atom" direction="in"/>
-      <arg type="s" name="line" direction="in"/>
-      <arg type="b" name="ok" direction="out"/>
-    </method>
-    <method name="SetPackageConfig">
-      <arg type="s" name="kind" direction="in"/>
-      <arg type="s" name="atom" direction="in"/>
-      <arg type="s" name="line" direction="in"/>
-      <arg type="b" name="ok" direction="out"/>
-    </method>
-    <method name="SetMakeconf">
-      <arg type="s" name="name" direction="in"/>
-      <arg type="s" name="value" direction="in"/>
-      <arg type="b" name="ok" direction="out"/>
-    </method>
     <signal name="Progress"><arg type="s" name="line"/></signal>
     <signal name="Finished"><arg type="i" name="exit_code"/></signal>
   </interface>
@@ -113,20 +95,6 @@ _INTROSPECTION = f"""
 _EMERGE = shutil.which("emerge") or "/usr/bin/emerge"
 _ESELECT = shutil.which("eselect") or "/usr/bin/eselect"
 
-
-def _atomic_write_file(path: str, text: str) -> None:
-    directory = os.path.dirname(path)
-    os.makedirs(directory, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=directory, prefix=".gest.")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            fh.write(text)
-        os.chmod(tmp, 0o644)
-        os.replace(tmp, path)
-    except Exception:
-        with contextlib.suppress(OSError):
-            os.unlink(tmp)
-        raise
 
 # Exit after this many idle seconds so a re-activation picks up new code and
 # the root service doesn't linger. Never exits while a merge is streaming.
@@ -202,15 +170,6 @@ class SoftwareService:
         elif method == "MarkNewsRead":
             (selector,) = params.unpack()
             self._mark_news_read(selector, sender, invocation)
-        elif method == "SetPackageUse":
-            atom, line = params.unpack()
-            self._set_package_use(atom, line, sender, invocation)
-        elif method == "SetPackageConfig":
-            kind, atom, line = params.unpack()
-            self._set_package_config(kind, atom, line, sender, invocation)
-        elif method == "SetMakeconf":
-            name, value = params.unpack()
-            self._set_makeconf(name, value, sender, invocation)
         else:
             invocation.return_error_literal(
                 Gio.dbus_error_quark(),
@@ -361,104 +320,9 @@ class SoftwareService:
             return
         invocation.return_value(GLib.Variant("(b)", (code == 0,)))
 
-    # -- package.use write ---------------------------------------------------
-
+    # Package atom (category/name), validated before merges/removes. Portage
+    # config writes now go through the org.gentoo.gest.Portage WriteConfig RPC.
     _ATOM_RE = re.compile(r"^[a-z0-9][a-z0-9+._-]*/[a-zA-Z0-9+._-]+$")
-
-    _ALLOWED_KINDS = ("use", "accept_keywords", "mask", "unmask")
-
-    def _set_package_use(self, atom, line, sender, invocation):
-        self._set_package_config("use", atom, line, sender, invocation)
-
-    def _set_package_config(self, kind, atom, line, sender, invocation):
-        if not self._check_authorized(sender, polkit_action("modify-config")):
-            invocation.return_error_literal(
-                Gio.dbus_error_quark(), Gio.DBusError.ACCESS_DENIED,
-                "Not authorized to modify Portage configuration")
-            return
-        if kind not in self._ALLOWED_KINDS:
-            invocation.return_error_literal(
-                Gio.dbus_error_quark(), Gio.DBusError.INVALID_ARGS,
-                f"unknown config kind: {kind}")
-            return
-        if "\n" in atom or "\n" in line or not self._ATOM_RE.match(atom):
-            invocation.return_error_literal(
-                Gio.dbus_error_quark(), Gio.DBusError.INVALID_ARGS,
-                "invalid package atom")
-            return
-        if line and line.split()[0] != atom:
-            invocation.return_error_literal(
-                Gio.dbus_error_quark(), Gio.DBusError.INVALID_ARGS,
-                "line does not match atom")
-            return
-        try:
-            self._write_package_config(kind, atom, line)
-        except OSError as exc:
-            invocation.return_error_literal(
-                Gio.dbus_error_quark(), Gio.DBusError.FAILED,
-                f"write failed: {exc}")
-            return
-        invocation.return_value(GLib.Variant("(b)", (True,)))
-
-    @staticmethod
-    def _write_package_use(atom, line, directory="/etc/portage/package.use"):
-        SoftwareService._write_package_config("use", atom, line, directory)
-
-    @staticmethod
-    def _write_package_config(kind, atom, line, directory=None):
-        if directory is None:
-            directory = f"/etc/portage/package.{kind}"
-        os.makedirs(directory, exist_ok=True)
-        path = os.path.join(directory, "gest")
-        try:
-            with open(path, encoding="utf-8") as fh:
-                existing = fh.read().splitlines()
-        except OSError:
-            existing = []
-        kept = [
-            ln for ln in existing
-            if not (ln.strip() and not ln.strip().startswith("#")
-                    and ln.split()[0] == atom)
-        ]
-        if line:
-            kept.append(line)
-        text = "\n".join(kept).strip()
-        text = text + "\n" if text else ""
-        fd, tmp = tempfile.mkstemp(dir=directory, prefix=".gest.")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                fh.write(text)
-            os.chmod(tmp, 0o644)
-            os.replace(tmp, path)
-        except Exception:
-            with contextlib.suppress(OSError):
-                os.unlink(tmp)
-            raise
-
-    def _set_makeconf(self, name, value, sender, invocation):
-        """Set a variable in /etc/portage/make.conf (polkit modify-config)."""
-        if not self._check_authorized(sender, polkit_action("modify-config")):
-            invocation.return_error_literal(
-                Gio.dbus_error_quark(), Gio.DBusError.ACCESS_DENIED,
-                "Not authorized to modify Portage configuration")
-            return
-        if not makeconf.valid_name(name) or not makeconf.valid_value(value):
-            invocation.return_error_literal(
-                Gio.dbus_error_quark(), Gio.DBusError.INVALID_ARGS,
-                "invalid make.conf variable name or value")
-            return
-        try:
-            with open(makeconf.MAKE_CONF, encoding="utf-8") as fh:
-                text = fh.read()
-        except OSError:
-            text = ""
-        try:
-            _atomic_write_file(makeconf.MAKE_CONF, makeconf.render(text, name, value))
-        except OSError as exc:
-            invocation.return_error_literal(
-                Gio.dbus_error_quark(), Gio.DBusError.FAILED, f"write failed: {exc}")
-            return
-        invocation.return_value(GLib.Variant("(b)", (True,)))
 
     # -- polkit -------------------------------------------------------------
 
@@ -544,6 +408,7 @@ def main() -> int:
         EselectService(conn)
         BootloaderService(conn)
         ReposService(conn)
+        PortageService(conn)
         DiskService(conn)
         DateTimeService(conn)
 
