@@ -24,6 +24,8 @@ from __future__ import annotations
 import contextlib
 import os
 import re
+import shutil
+import subprocess
 import tempfile
 
 import gi
@@ -44,9 +46,15 @@ _INTROSPECTION = f"""
       <arg type="a(ssu)" name="writes" direction="in"/>
       <arg type="b" name="ok" direction="out"/>
     </method>
+    <method name="SetupTrust">
+      <arg type="b" name="ok" direction="out"/>
+      <arg type="s" name="output" direction="out"/>
+    </method>
   </interface>
 </node>
 """
+
+_GETUTO = shutil.which("getuto") or "/usr/bin/getuto"
 
 # A package atom (category/name), the key of every package.* line.
 _ATOM_RE = re.compile(r"^[a-z0-9][a-z0-9+._-]*/[a-zA-Z0-9+._-]+$")
@@ -126,13 +134,15 @@ class PortageService:
         )
 
     def _on_call(self, conn, sender, path, iface, method, params, invocation):
-        if method != "WriteConfig":
+        if method == "WriteConfig":
+            (writes,) = params.unpack()
+            self._write_config(writes, sender, invocation)
+        elif method == "SetupTrust":
+            self._setup_trust(sender, invocation)
+        else:
             invocation.return_error_literal(
                 Gio.dbus_error_quark(), Gio.DBusError.UNKNOWN_METHOD,
                 f"No such method {method}")
-            return
-        (writes,) = params.unpack()
-        self._write_config(writes, sender, invocation)
 
     def _write_config(self, writes, sender, invocation) -> None:
         uid = caller_uid(self._conn, sender)
@@ -169,3 +179,25 @@ class PortageService:
         audit("portage.WriteConfig", uid=uid, result="ok",
               detail=",".join(p for p, _t, _m in plan))
         invocation.return_value(GLib.Variant("(b)", (True,)))
+
+    def _setup_trust(self, sender, invocation) -> None:
+        """Run ``getuto`` to set up the binary-package trust keyring."""
+        uid = caller_uid(self._conn, sender)
+        if not check_authorization(self._conn, sender, PORTAGE_POLKIT):
+            audit("portage.SetupTrust", uid=uid, result="denied")
+            invocation.return_error_literal(
+                Gio.dbus_error_quark(), Gio.DBusError.ACCESS_DENIED,
+                "Not authorized to set up binary-package trust")
+            return
+        try:
+            proc = subprocess.run([_GETUTO], capture_output=True, text=True)
+        except FileNotFoundError:
+            audit("portage.SetupTrust", uid=uid, result="failed", detail="getuto missing")
+            invocation.return_error_literal(
+                Gio.dbus_error_quark(), Gio.DBusError.FAILED,
+                "getuto is not installed (emerge app-portage/getuto)")
+            return
+        ok = proc.returncode == 0
+        out = (proc.stdout + (f"\n{proc.stderr}" if proc.stderr else "")).strip()
+        audit("portage.SetupTrust", uid=uid, result="ok" if ok else "failed")
+        invocation.return_value(GLib.Variant("(bs)", (ok, out)))

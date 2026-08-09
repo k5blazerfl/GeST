@@ -8,6 +8,7 @@ import urwid
 
 from gest.tui.runtime import App, Screen, accel_label
 from gest.tui.screens.apply import ApplyScreen, depclean_plan, sync_plan, world_plan
+from gest.tui.screens.binhost import BinhostScreen
 from gest.tui.screens.bootloader import BootloaderScreen
 from gest.tui.screens.datetime import DateTimeScreen
 from gest.tui.screens.disk import DiskScreen
@@ -32,6 +33,7 @@ CATEGORIES: list[tuple[str, list[tuple[str, str, bool]]]] = [
         ("sync", "Sync Portage Tree", True),
         ("news", "Portage News", True),
         ("repositories", "Software Repositories", True),
+        ("binhost", "Binary Packages (binhost)", True),
     ]),
     ("System", [
         ("hostname", "Hostname", True),
@@ -142,6 +144,8 @@ class MenuScreen(Screen):
             self.app.push(ApplyScreen(self.app, [sync_plan()], verb="Sync"))
         elif key == "repositories":
             self.app.push(ReposScreen(self.app))
+        elif key == "binhost":
+            self.app.push(BinhostScreen(self.app))
         elif key == "services":
             self.app.push(ServicesScreen(self.app))
         elif key == "hostname":

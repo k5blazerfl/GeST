@@ -162,6 +162,13 @@ working tree.
       (add/edit/remove non-critical entries, protected /, /boot, /efi, swap)
       and mount/unmount of fstab entries via the polkit-gated backend
       (atomic write with an /etc/fstab.gest.bak backup)
+- [x] Unified Portage config core (`gest/core/portage`) — shared shell / ini /
+      atomfile codecs behind a single polkit-gated `WriteConfig` RPC
+      (`portage.configure`) for make.conf, package.use / keywords / mask, and
+      repos.conf; retires the old per-surface RPCs and `software.modify-config`
+- [x] Binary Packages (binhost) module — manage `binrepos.conf/gest.conf` hosts,
+      toggle `FEATURES` getbinpkg / binpkg-request-signature in make.conf, and
+      run `getuto` to set up the binary-package trust keyring
 - [ ] systemd support in Services (out of scope — OpenRC only)
 - [x] Backend hardening — every privileged action is audit-logged
       (authpriv, with caller uid); dispatch/auth round-trips are tested

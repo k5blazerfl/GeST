@@ -37,6 +37,10 @@ class PortageBackend:
         payload = [[w.path, w.text, w.mode] for w in writes]
         return await self._iface.call_write_config(payload)
 
+    async def setup_trust(self) -> tuple[bool, str]:
+        """Run ``getuto`` to set up the binary-package trust keyring (polkit-gated)."""
+        return await self._iface.call_setup_trust()
+
     async def close(self) -> None:
         if self._bus is not None:
             self._bus.disconnect()
