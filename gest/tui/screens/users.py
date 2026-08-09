@@ -21,6 +21,21 @@ from gest.tui.runtime import App, Modal, Screen
 _U_LOGIN, _U_UID, _U_NAME = 18, 8, 24
 _G_NAME, _G_GID = 22, 8
 
+# Account filter (YaST-style): human logins live in [1000, 65534); everything
+# else (uid < 1000 daemons/services, plus nobody at 65534) is a system account.
+_LOCAL_MIN, _NOBODY = 1000, 65534
+_FILTERS = ["local", "system", "all"]
+
+
+def _is_local(xid: int) -> bool:
+    return _LOCAL_MIN <= xid < _NOBODY
+
+
+def _passes(xid: int, flt: str) -> bool:
+    if flt == "all":
+        return True
+    return _is_local(xid) if flt == "local" else not _is_local(xid)
+
 
 def _clip(text: str, width: int) -> str:
     return text if len(text) <= width - 1 else text[: width - 2] + "…"
@@ -55,6 +70,8 @@ class UsersScreen(Screen):
 
     def __init__(self, app: App) -> None:
         self._view = "users"
+        self._filter = "local"   # default to real login accounts, not services
+        self._loads = 0          # completed loads (for tests to await)
         self._users: dict[str, User] = {}
         self._order: list[str] = []
         self._walker = urwid.SimpleFocusListWalker([urwid.Text(" loading …")])
@@ -70,15 +87,18 @@ class UsersScreen(Screen):
         super().__init__(
             app, body, title="User and Group Administration",
             footer_keys=[
-                ("←/→", "Tabs"), ("a", "Add"), ("e", "Edit"), ("d", "Delete"),
-                ("p", "Passwd"), ("m", "Member"), ("g", "Usr/Grp"), ("Esc", "Back"),
+                ("←/→", "Tabs"), ("f", "Filter"), ("a", "Add"), ("e", "Edit"),
+                ("d", "Delete"), ("p", "Passwd"), ("m", "Member"), ("g", "Usr/Grp"),
+                ("Esc", "Back"),
             ],
             help_text=(
                 "User and group administration, in four tabs (←/→ to switch;\n"
                 "g toggles Users ⇄ Groups):\n\n"
                 "Users / Groups — add, edit, delete, set passwords, and manage\n"
                 "  group membership. The Groups column shows each user's primary\n"
-                "  group plus any supplementary groups.\n"
+                "  group plus any supplementary groups. On the Users tab, f\n"
+                "  cycles the filter: local human accounts → system/service\n"
+                "  accounts → all. Groups are always shown in full.\n"
                 "Defaults for New Users — the settings applied to new accounts\n"
                 "  (from /etc/default/useradd and /etc/login.defs). Read-only.\n"
                 "Authentication — which back-ends resolve accounts, parsed from\n"
@@ -123,9 +143,11 @@ class UsersScreen(Screen):
 
     def _list_box(self, view: str) -> urwid.Widget:
         if view == "users":
-            header, title = _fmt_user("Login", "UID", "Name", "Groups"), "Users"
+            title = f"Users — filter: {self._filter}"
+            header = _fmt_user("Login", "UID", "Name", "Groups")
         else:
-            header, title = _fmt_group("Group", "GID", "Members"), "Groups"
+            title = "Groups"   # groups are always shown in full
+            header = _fmt_group("Group", "GID", "Members")
         hdr = urwid.AttrMap(urwid.Text(header, wrap="clip"), "pane_title")
         inner = urwid.Pile([
             ("pack", hdr), ("pack", urwid.Divider("─")), ("weight", 1, self._list),
@@ -138,6 +160,7 @@ class UsersScreen(Screen):
         if self._view == "users":
             users = await self.app.run_blocking(reader.list_users)
             groups = await self.app.run_blocking(reader.list_groups)
+            users = [u for u in users if _passes(u.uid, self._filter)]
             gid_name = {g.gid: g.name for g in groups}
             self._users = {u.name: u for u in users}
             self._order = [u.name for u in users]
@@ -149,9 +172,11 @@ class UsersScreen(Screen):
             self._order = [g.name for g in groups]
             rows = [_row(_fmt_group(g.name, str(g.gid), ", ".join(g.members)))
                     for g in groups]
-        self._walker[:] = rows or [urwid.Text(" (empty)")]
+        empty = f" (no {self._filter} users)" if self._view == "users" else " (no groups)"
+        self._walker[:] = rows or [urwid.Text(empty)]
         if self._order:
             self._walker.set_focus(0)
+        self._loads += 1
         self.app.refresh()
 
     @staticmethod
@@ -251,7 +276,11 @@ class UsersScreen(Screen):
             self._view = "groups" if self._view == "users" else "users"
             self._show_tab()
         elif self._view in ("users", "groups"):
-            if key in ("a", "enter"):
+            if key == "f" and self._view == "users":
+                self._filter = _FILTERS[(_FILTERS.index(self._filter) + 1) % len(_FILTERS)]
+                self._content.original_widget = self._list_box(self._view)
+                self.app.run_async(self._load())
+            elif key in ("a", "enter"):
                 self._add()
             elif key == "e":
                 self._edit()

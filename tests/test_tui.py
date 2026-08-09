@@ -192,11 +192,21 @@ def test_menu_launches_hostname():
     assert isinstance(app._stack[-1], HostnameScreen)
 
 
-def test_users_list_and_group_toggle():
-    app = App()
+def _users_all(app):
+    """A UsersScreen forced to the 'all' filter so root is always present
+    (the default 'local' filter hides system accounts, and CI may have no
+    local login accounts at all)."""
     scr = UsersScreen(app)
     app._stack.append(scr)
-    _pump(app, lambda: len(scr._order) > 0)
+    scr._filter = "all"
+    app.run_async(scr._load())
+    _pump(app, lambda: "root" in scr._order)
+    return scr
+
+
+def test_users_list_and_group_toggle():
+    app = App()
+    scr = _users_all(app)
     assert scr._order and scr._view == "users"
     assert "root" in _render(scr)
     scr.keypress(_SIZE, "g")
@@ -204,11 +214,22 @@ def test_users_list_and_group_toggle():
     assert "Groups" in _render(scr)
 
 
-def test_users_add_modal_opens_and_cancels():
+def test_users_filter_hides_system_accounts():
     app = App()
     scr = UsersScreen(app)
     app._stack.append(scr)
-    _pump(app, lambda: len(scr._order) > 0)
+    _pump(app, lambda: scr._loads >= 1)          # default 'local' load done
+    assert scr._filter == "local"
+    assert "root" not in scr._order              # root is a system account
+    n = scr._loads
+    scr.keypress(_SIZE, "f")                      # local -> system
+    _pump(app, lambda: scr._loads > n)
+    assert scr._filter == "system" and "root" in scr._order
+
+
+def test_users_add_modal_opens_and_cancels():
+    app = App()
+    scr = _users_all(app)
     scr.keypress(_SIZE, "a")
     assert isinstance(app._stack[-1], urwid.Overlay)
     assert "Add user" in _render(app._stack[-1])
@@ -218,9 +239,7 @@ def test_users_add_modal_opens_and_cancels():
 
 def test_users_edit_modal_prefills():
     app = App()
-    scr = UsersScreen(app)
-    app._stack.append(scr)
-    _pump(app, lambda: len(scr._order) > 0)
+    scr = _users_all(app)
     scr.keypress(_SIZE, "e")
     assert "Edit user" in _render(app._stack[-1])
 
