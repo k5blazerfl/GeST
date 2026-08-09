@@ -4,9 +4,9 @@ Ebuilds that install GeST system-wide — the **hardened** install: the root
 backend loads the *installed* package from system paths, not a working tree
 (unlike the dev `install-backend.sh`). Two are provided:
 
-- **`gest-0.35.0`** — the latest released version (urwid; depends only on
-  `::gentoo` packages), from the `v0.35.0` tag tarball (`~amd64`). Recommended —
-  Software Management two-pane (YaST sw_single) layout.
+- **`gest-0.36.0`** — the latest released version (urwid; depends only on
+  `::gentoo` packages), from the `v0.36.0` tag tarball (`~amd64`). Recommended —
+  Software Management filter power + rich detail pane + Actions menu.
 - **`gest-9999`** — a live ebuild that builds the current `main` (for
   hacking on the tree).
 
