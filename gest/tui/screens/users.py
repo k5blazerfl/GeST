@@ -1,21 +1,24 @@
-"""Users & Groups in urwid: a YaST-style tabbed admin screen.
+"""Users & Groups in urwid: a YaST-style tabbed, transactional admin screen.
 
 Four tabs — Users, Groups, Defaults for New Users, Authentication — switched
-with ←/→ (g toggles Users⇄Groups). Users/Groups are columnar tables with add/
-edit/delete/password/member modals; Defaults and Authentication are read-only
-status views (parsed from /etc/default/useradd + /etc/login.defs and
-/etc/nsswitch.conf respectively). Reads are unprivileged; mutations go through
-the async UsersBackend.
+with ←/→ (g toggles Users⇄Groups). Editing is transactional (YaST-style):
+add/edit/delete/password/member actions are *staged*, shown in the list with
++/~/- markers and a pending-count line; nothing touches the system until OK
+(F10) applies them all. Cancel (F9) discards, and leaving the Users/Groups
+editing surface with staged changes prompts to save or discard. Defaults and
+Authentication are read-only status views. Reads are unprivileged; the staged
+operations replay through the polkit-gated UsersBackend on OK.
 """
 
 from __future__ import annotations
 
 import urwid
 
-from gest.core.users import auth, defaults, reader
+from gest.core.users import auth, defaults, pending, reader
 from gest.core.users.backend_client import UsersBackend
 from gest.core.users.model import User
-from gest.tui.runtime import App, Modal, Screen
+from gest.core.users.pending import PendingChanges
+from gest.tui.runtime import App, Modal, Screen, accel_label
 
 # Column widths (characters); the last column takes the rest and is clipped.
 _U_LOGIN, _U_UID, _U_NAME = 18, 8, 24
@@ -39,6 +42,10 @@ def _passes(xid: int, flt: str) -> bool:
 
 def _clip(text: str, width: int) -> str:
     return text if len(text) <= width - 1 else text[: width - 2] + "…"
+
+
+def _mark(m: str | None) -> str:
+    return f"{m:<2}" if m else "  "
 
 
 def _fmt_user(login: str, uid: str, name: str, groups: str) -> str:
@@ -67,49 +74,66 @@ class UsersScreen(Screen):
         ("defaults", "Defaults for New Users"),
         ("auth", "Authentication"),
     ]
+    _EDIT_TABS = ("users", "groups")   # the transactional editing surface
 
     def __init__(self, app: App) -> None:
         self._view = "users"
         self._filter = "local"   # default to real login accounts, not services
         self._loads = 0          # completed loads (for tests to await)
+        self._pending = PendingChanges()
         self._users: dict[str, User] = {}
         self._order: list[str] = []
         self._walker = urwid.SimpleFocusListWalker([urwid.Text(" loading …")])
         self._list = urwid.ListBox(self._walker)
 
         self._tabbar = urwid.Text("")
+        self._count = urwid.Text("")
         self._content = urwid.WidgetPlaceholder(self._list_box("users"))
         body = urwid.Pile([
             ("pack", urwid.AttrMap(self._tabbar, "menubar")),
             ("pack", urwid.Divider()),
             ("weight", 1, self._content),
+            ("pack", self._count),
+            ("pack", self._action_bar()),
         ])
         super().__init__(
             app, body, title="User and Group Administration",
             footer_keys=[
                 ("←/→", "Tabs"), ("f", "Filter"), ("a", "Add"), ("e", "Edit"),
-                ("d", "Delete"), ("p", "Passwd"), ("m", "Member"), ("g", "Usr/Grp"),
-                ("Esc", "Back"),
+                ("d", "Delete"), ("p", "Passwd"), ("m", "Member"),
+                ("g", "Usr/Grp"), ("F10", "OK"), ("F9", "Cancel"), ("Esc", "Back"),
             ],
             help_text=(
                 "User and group administration, in four tabs (←/→ to switch;\n"
-                "g toggles Users ⇄ Groups):\n\n"
-                "Users / Groups — add, edit, delete, set passwords, and manage\n"
-                "  group membership. The Groups column shows each user's primary\n"
-                "  group plus any supplementary groups. On the Users tab, f\n"
-                "  cycles the filter: local human accounts → system/service\n"
-                "  accounts → all. Groups are always shown in full.\n"
-                "Defaults for New Users — the settings applied to new accounts\n"
-                "  (from /etc/default/useradd and /etc/login.defs). Read-only.\n"
-                "Authentication — which back-ends resolve accounts, parsed from\n"
-                "  /etc/nsswitch.conf (SSSD/LDAP/NIS/Winbind). Read-only status.\n\n"
-                "a  add    e  edit    d  delete    p  set password    m  member"
+                "g toggles Users ⇄ Groups).\n\n"
+                "Editing is transactional: add/edit/delete/password/member changes\n"
+                "are staged, not applied immediately. Staged rows are marked\n"
+                "  + add    ~ edit    - delete\n"
+                "and counted below the list. F10 (OK) applies every staged change;\n"
+                "F9 (Cancel) discards them. d on an already-staged row clears its\n"
+                "staged change. Leaving Users/Groups with staged changes prompts\n"
+                "to save or discard.\n\n"
+                "On the Users tab, f cycles the filter: local human accounts →\n"
+                "system/service accounts → all. Groups are always shown in full.\n\n"
+                "Defaults for New Users and Authentication are read-only status\n"
+                "views (/etc/default/useradd + /etc/login.defs, /etc/nsswitch.conf)."
             ),
         )
         self._render_tabs()
+        self._refresh_count()
         app.run_async(self._load())
 
-    # -- tab chrome ---------------------------------------------------------
+    # -- chrome -------------------------------------------------------------
+
+    def _action_bar(self) -> urwid.Widget:
+        return urwid.Columns([
+            ("pack", accel_label("Help")),
+            ("weight", 1, urwid.Text("")),
+            ("pack", accel_label("Cancel")),
+            ("pack", urwid.Text("  ")),
+            ("pack", accel_label("OK")),
+            ("pack", urwid.Text(" ")),
+        ])
 
     def _render_tabs(self) -> None:
         parts: list = [" "]
@@ -120,9 +144,32 @@ class UsersScreen(Screen):
             parts.append(("menu_focus", chip) if key == self._view else chip)
         self._tabbar.set_text(parts)
 
+    def _refresh_count(self) -> None:
+        if self._pending.is_empty:
+            self._count.set_text(("dim", " No pending changes"))
+        else:
+            self._count.set_text([
+                ("ok", f" {len(self._pending)} pending change(s)"),
+                ("dim", f"   {self._pending.summary()}   ·   F10 OK · F9 Cancel"),
+            ])
+        self.app.refresh()
+
+    # -- tab switching (guarded) -------------------------------------------
+
     def _cycle(self, delta: int) -> None:
         keys = [k for k, _ in self._TABS]
-        self._view = keys[(keys.index(self._view) + delta) % len(keys)]
+        self._switch_to(keys[(keys.index(self._view) + delta) % len(keys)])
+
+    def _switch_to(self, new_view: str) -> None:
+        leaving_edit = (self._view in self._EDIT_TABS
+                        and new_view not in self._EDIT_TABS)
+        if leaving_edit and not self._pending.is_empty:
+            self._guard(lambda: self._do_switch(new_view))
+        else:
+            self._do_switch(new_view)
+
+    def _do_switch(self, new_view: str) -> None:
+        self._view = new_view
         self._show_tab()
 
     def _show_tab(self) -> None:
@@ -144,40 +191,66 @@ class UsersScreen(Screen):
     def _list_box(self, view: str) -> urwid.Widget:
         if view == "users":
             title = f"Users — filter: {self._filter}"
-            header = _fmt_user("Login", "UID", "Name", "Groups")
+            header = "  " + _fmt_user("Login", "UID", "Name", "Groups")
         else:
             title = "Groups"   # groups are always shown in full
-            header = _fmt_group("Group", "GID", "Members")
+            header = "  " + _fmt_group("Group", "GID", "Members")
         hdr = urwid.AttrMap(urwid.Text(header, wrap="clip"), "pane_title")
         inner = urwid.Pile([
             ("pack", hdr), ("pack", urwid.Divider("─")), ("weight", 1, self._list),
         ])
         return urwid.LineBox(inner, title=title)
 
-    # -- loading ------------------------------------------------------------
+    # -- loading (projects staged changes over live state) ------------------
 
     async def _load(self) -> None:
+        prev = self._walker.focus if self._walker else 0
         if self._view == "users":
-            users = await self.app.run_blocking(reader.list_users)
-            groups = await self.app.run_blocking(reader.list_groups)
-            users = [u for u in users if _passes(u.uid, self._filter)]
-            gid_name = {g.gid: g.name for g in groups}
-            self._users = {u.name: u for u in users}
-            self._order = [u.name for u in users]
-            rows = [_row(_fmt_user(u.name, str(u.uid), u.full_name,
-                                   self._group_summary(u, gid_name, groups)))
-                    for u in users]
+            rows, self._order = await self._user_rows()
         else:
-            groups = await self.app.run_blocking(reader.list_groups)
-            self._order = [g.name for g in groups]
-            rows = [_row(_fmt_group(g.name, str(g.gid), ", ".join(g.members)))
-                    for g in groups]
+            rows, self._order = await self._group_rows()
         empty = f" (no {self._filter} users)" if self._view == "users" else " (no groups)"
         self._walker[:] = rows or [urwid.Text(empty)]
         if self._order:
-            self._walker.set_focus(0)
+            self._walker.set_focus(min(prev, len(self._order) - 1))
         self._loads += 1
         self.app.refresh()
+
+    async def _user_rows(self) -> tuple[list, list[str]]:
+        users = await self.app.run_blocking(reader.list_users)
+        groups = await self.app.run_blocking(reader.list_groups)
+        users = [u for u in users if _passes(u.uid, self._filter)]
+        gid_name = {g.gid: g.name for g in groups}
+        self._users = {u.name: u for u in users}
+        rows, order = [], []
+        for u in users:
+            mk = self._pending.user_marker(u.name)
+            rows.append(_row(_mark(mk) + _fmt_user(
+                u.name, str(u.uid), u.full_name,
+                self._group_summary(u, gid_name, groups))))
+            order.append(u.name)
+        for op in self._pending.added_users():   # staged accounts not yet on disk
+            if op.key not in self._users:
+                d = op.data
+                rows.append(_row(_mark("+") + _fmt_user(
+                    d["name"], "—", d["comment"], d["groups"] or "—")))
+                order.append(op.key)
+        return rows, order
+
+    async def _group_rows(self) -> tuple[list, list[str]]:
+        groups = await self.app.run_blocking(reader.list_groups)
+        live = {g.name for g in groups}
+        rows, order = [], []
+        for g in groups:
+            mk = self._pending.group_marker(g.name)
+            rows.append(_row(_mark(mk) + _fmt_group(
+                g.name, str(g.gid), ", ".join(g.members))))
+            order.append(g.name)
+        for op in self._pending.added_groups():
+            if op.key not in live:
+                rows.append(_row(_mark("+") + _fmt_group(op.data["name"], "—", "")))
+                order.append(op.key)
+        return rows, order
 
     @staticmethod
     def _group_summary(user: User, gid_name: dict[int, str], groups: list) -> str:
@@ -252,29 +325,118 @@ class UsersScreen(Screen):
             return None
         return self._order[self._walker.focus]
 
-    async def _call(self, action) -> None:
+    # -- staging + apply/discard --------------------------------------------
+
+    def _after_stage(self) -> None:
+        self._refresh_count()
+        self.app.run_async(self._load())
+
+    async def _apply(self) -> None:
+        if self._pending.is_empty:
+            self.app.notify("No pending changes to apply.", error=True)
+            return
         backend = UsersBackend()
         try:
             await backend.connect()
-            ok, out = await action(backend)
         except Exception as exc:
             self.app.notify(str(exc), error=True)
-            await backend.close()
             return
+        ok_n = fail_n = 0
+        last_err = ""
+        for op in self._pending.ordered():
+            try:
+                ok, out = await self._apply_op(backend, op)
+            except Exception as exc:
+                ok, out = False, str(exc)
+            if ok:
+                ok_n += 1
+            else:
+                fail_n += 1
+                last_err = out or op.label
         await backend.close()
-        self.app.notify(out or ("done" if ok else "failed"), error=not ok)
+        self._pending.clear()
+        self._refresh_count()
+        if fail_n:
+            self.app.notify(f"applied {ok_n}, {fail_n} failed — {last_err}", error=True)
+        else:
+            self.app.notify(f"applied {ok_n} change(s)")
         await self._load()
+
+    @staticmethod
+    async def _apply_op(b: UsersBackend, op: pending.Op):
+        d, k = op.data, op.kind
+        if k == pending.ADD_USER:
+            return await b.add_user(d["name"], d["comment"], d["shell"], "",
+                                    d["groups"], d["system"])
+        if k == pending.MOD_USER:
+            return await b.modify_user(d["name"], d["comment"], d["shell"], d["groups"])
+        if k == pending.DEL_USER:
+            return await b.delete_user(d["name"], d["remove_home"])
+        if k == pending.SET_PASSWORD:
+            return await b.set_password(d["name"], d["password"])
+        if k == pending.ADD_GROUP:
+            return await b.add_group(d["name"], d["system"])
+        if k == pending.DEL_GROUP:
+            return await b.delete_group(d["name"])
+        if k == pending.SET_MEMBER:
+            return await b.set_group_member(d["group"], d["user"], d["add"])
+        return False, f"unknown op {k}"
+
+    def _discard(self) -> None:
+        if self._pending.is_empty:
+            self.app.notify("No pending changes.")
+            return
+
+        def do():
+            self.app.pop()
+            self._pending.clear()
+            self._refresh_count()
+            self.app.notify("discarded pending changes")
+            self.app.run_async(self._load())
+
+        modal = Modal(self.app, f"Discard {len(self._pending)} pending change(s)?",
+                      [], [("Discard", do), ("Keep editing", self.app.pop)])
+        self.app.push_modal(modal, width=("relative", 55), height=("relative", 35))
+
+    def _guard(self, proceed) -> None:
+        """Prompt to save/discard staged changes before leaving; else proceed."""
+        if self._pending.is_empty:
+            proceed()
+            return
+
+        async def save_then():
+            await self._apply()
+            proceed()
+
+        def save():
+            self.app.pop()
+            self.app.run_async(save_then())
+
+        def discard():
+            self.app.pop()
+            self._pending.clear()
+            self._refresh_count()
+            proceed()
+
+        modal = Modal(
+            self.app, f"{len(self._pending)} pending change(s)",
+            [urwid.Text("Save them, discard them, or keep editing?")],
+            [("Save", save), ("Discard", discard), ("Keep editing", self.app.pop)])
+        self.app.push_modal(modal, width=("relative", 55), height=("relative", 40))
 
     # -- key handling -------------------------------------------------------
 
     def handle_key(self, key):
         if key == "esc":
-            self.app.pop()
+            self._guard(self.app.pop)
         elif key in ("left", "right"):
             self._cycle(-1 if key == "left" else 1)
         elif key == "g":
-            self._view = "groups" if self._view == "users" else "users"
-            self._show_tab()
+            self._switch_to("groups" if self._view == "users" else "users")
+        elif key == "f10":
+            self.app.run_async(self._apply())
+        elif key == "f9":
+            self._discard()
         elif self._view in ("users", "groups"):
             if key == "f" and self._view == "users":
                 self._filter = _FILTERS[(_FILTERS.index(self._filter) + 1) % len(_FILTERS)]
@@ -296,7 +458,7 @@ class UsersScreen(Screen):
             return key
         return None
 
-    # -- forms --------------------------------------------------------------
+    # -- forms (all stage; none apply immediately) --------------------------
 
     def _add(self) -> None:
         if self._view == "groups":
@@ -309,69 +471,93 @@ class UsersScreen(Screen):
                     self.app.notify("A group name is required.", error=True)
                     return
                 self.app.pop()
-                self.app.run_async(self._call(lambda b: b.add_group(n, system.state)))
+                self._pending.stage(pending.add_group_op(n, system.state))
+                self._after_stage()
 
             self._open("Add group", [name, system], save)
             return
-        name = urwid.Edit("Login name: ")
-        comment = urwid.Edit("Full name: ")
-        shell = urwid.Edit("Shell: ", "/bin/bash")
-        groups = urwid.Edit("Extra groups: ")
-        system = urwid.CheckBox("System account")
+        self._user_form("Add user", "",
+                        {"comment": "", "shell": "/bin/bash", "groups": "", "system": False},
+                        is_add=True, new=True)
+
+    def _edit(self) -> None:
+        if self._view == "groups":
+            self.app.notify("Edit membership with m; renaming groups isn't supported.",
+                            error=True)
+            return
+        name = self._current()
+        if not name:
+            return
+        add_op = self._pending.added_user(name)
+        if add_op is not None:   # editing a still-staged new account
+            self._user_form(f"Edit staged user: {name}", name, add_op.data, is_add=True)
+        elif name in self._users:
+            u = self._users[name]
+            data = {"comment": u.full_name, "shell": u.shell,
+                    "groups": ",".join(reader.groups_for(name)), "system": False}
+            self._user_form(f"Edit user: {name}", name, data, is_add=False)
+
+    def _user_form(self, title: str, name: str, data: dict,
+                   *, is_add: bool, new: bool = False) -> None:
+        name_edit = urwid.Edit("Login name: ", name)
+        comment = urwid.Edit("Full name: ", data.get("comment", ""))
+        shell = urwid.Edit("Shell: ", data.get("shell") or "/bin/bash")
+        groups = urwid.Edit("Extra groups: ", data.get("groups", ""))
+        system = urwid.CheckBox("System account", state=data.get("system", False))
+        rows: list = [name_edit if new else urwid.Text(("field", f" Login name: {name}"))]
+        rows += [comment, shell, groups]
+        if is_add:
+            rows.append(system)
 
         def save():
-            n = name.edit_text.strip()
+            n = name_edit.edit_text.strip() if new else name
             if not n:
                 self.app.notify("A login name is required.", error=True)
                 return
             self.app.pop()
-            self.app.run_async(self._call(
-                lambda b: b.add_user(n, comment.edit_text.strip(),
-                                     shell.edit_text.strip(), "",
-                                     groups.edit_text.strip(), system.state)))
+            if is_add:
+                self._pending.stage(pending.add_user_op(
+                    n, comment.edit_text.strip(), shell.edit_text.strip(),
+                    groups.edit_text.strip(), system.state))
+            else:
+                self._pending.stage(pending.mod_user_op(
+                    n, comment.edit_text.strip(), shell.edit_text.strip(),
+                    groups.edit_text.strip()))
+            self._after_stage()
 
-        self._open("Add user", [name, comment, shell, groups, system], save)
-
-    def _edit(self) -> None:
-        if self._view != "users":
-            self.app.notify("Editing groups isn't supported.", error=True)
-            return
-        name = self._current()
-        if not name or name not in self._users:
-            return
-        user = self._users[name]
-        current_groups = ",".join(reader.groups_for(name))
-        comment = urwid.Edit("Full name: ", user.full_name)
-        shell = urwid.Edit("Shell: ", user.shell)
-        groups = urwid.Edit("Extra groups: ", current_groups)
-
-        def save():
-            self.app.pop()
-            self.app.run_async(self._call(
-                lambda b: b.modify_user(name, comment.edit_text.strip(),
-                                        shell.edit_text.strip(),
-                                        groups.edit_text.strip())))
-
-        self._open(f"Edit user: {name}", [comment, shell, groups], save)
+        self._open(title, rows, save)
 
     def _delete(self) -> None:
         name = self._current()
         if not name:
             return
         if self._view == "users":
+            if self._pending.user_marker(name):   # already staged → undo it
+                self._pending.remove_for_user(name)
+                self._after_stage()
+                self.app.notify(f"cleared staged changes for {name}")
+                return
             rmhome = urwid.CheckBox("Also remove home directory")
 
             def do():
                 self.app.pop()
-                self.app.run_async(self._call(lambda b: b.delete_user(name, rmhome.state)))
+                self._pending.stage(pending.del_user_op(name, rmhome.state))
+                self._after_stage()
 
-            self._confirm(f"Delete user “{name}”?", [rmhome], do)
+            self._confirm(f"Stage deletion of user “{name}”?", [rmhome], do)
         else:
+            if self._pending.group_marker(name):
+                self._pending.remove_for_group(name)
+                self._after_stage()
+                self.app.notify(f"cleared staged changes for {name}")
+                return
+
             def do():
                 self.app.pop()
-                self.app.run_async(self._call(lambda b: b.delete_group(name)))
+                self._pending.stage(pending.del_group_op(name))
+                self._after_stage()
 
-            self._confirm(f"Delete group “{name}”?", [], do)
+            self._confirm(f"Stage deletion of group “{name}”?", [], do)
 
     def _password(self) -> None:
         if self._view != "users":
@@ -389,9 +575,9 @@ class UsersScreen(Screen):
             if pw.edit_text != pw2.edit_text:
                 self.app.notify("Passwords do not match.", error=True)
                 return
-            secret = pw.edit_text
             self.app.pop()
-            self.app.run_async(self._call(lambda b: b.set_password(name, secret)))
+            self._pending.stage(pending.set_password_op(name, pw.edit_text))
+            self._after_stage()
 
         self._open(f"Set password for {name}", [pw, pw2], save)
 
@@ -410,7 +596,8 @@ class UsersScreen(Screen):
                 self.app.notify("A user name is required.", error=True)
                 return
             self.app.pop()
-            self.app.run_async(self._call(lambda b: b.set_group_member(group, u, add)))
+            self._pending.stage(pending.set_member_op(group, u, add))
+            self._after_stage()
 
         modal = Modal(
             self.app, f"Group “{group}” — add/remove member", [user],
@@ -426,5 +613,5 @@ class UsersScreen(Screen):
         self.app.push_modal(modal, width=("relative", 70), height=("relative", 60))
 
     def _confirm(self, message: str, rows: list, do) -> None:
-        modal = Modal(self.app, message, rows, [("Delete", do), ("Cancel", self.app.pop)])
+        modal = Modal(self.app, message, rows, [("Stage", do), ("Cancel", self.app.pop)])
         self.app.push_modal(modal, width=("relative", 60), height=("relative", 45))

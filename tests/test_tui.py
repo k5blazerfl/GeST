@@ -244,6 +244,43 @@ def test_users_edit_modal_prefills():
     assert "Edit user" in _render(app._stack[-1])
 
 
+def test_users_staged_add_shows_pending_row_and_count():
+    from gest.core.users import pending
+    app = App()
+    scr = _users_all(app)
+    assert "No pending changes" in scr._count.text
+    scr._pending.stage(pending.add_user_op("newdev", "New Dev", "/bin/bash", "", False))
+    scr._after_stage()
+    _pump(app, lambda: "newdev" in scr._order)
+    idx = scr._order.index("newdev")
+    assert scr._walker[idx].base_widget.text.startswith("+")   # staged-add marker
+    assert "pending change" in scr._count.text                 # count line updated
+
+
+def test_users_leaving_edit_surface_prompts_to_save():
+    from gest.core.users import pending
+    app = App()
+    scr = _users_all(app)
+    scr._pending.stage(pending.add_user_op("newdev", "New Dev", "/bin/bash", "", False))
+    scr._refresh_count()
+    scr.keypress(_SIZE, "left")             # users -> auth (leaves editing surface)
+    assert isinstance(app._stack[-1], urwid.Overlay)     # save/discard guard modal
+    out = _render(app._stack[-1])
+    assert "pending change" in out and "Discard" in out and "Keep editing" in out
+
+
+def test_users_discard_clears_pending():
+    from gest.core.users import pending
+    app = App()
+    scr = _users_all(app)
+    scr._pending.stage(pending.add_user_op("newdev", "New Dev", "/bin/bash", "", False))
+    scr._refresh_count()
+    scr.keypress(_SIZE, "f9")               # Cancel -> discard prompt
+    assert isinstance(app._stack[-1], urwid.Overlay)
+    app._stack[-1].keypress(_SIZE, "esc")   # keep editing (still staged)
+    assert not scr._pending.is_empty
+
+
 def test_network_list_and_config_modal():
     app = App()
     scr = NetworkScreen(app)
