@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import urwid
 
-from gest.core.users import auth, defaults, pending, reader
+from gest.core.users import auth, commands, defaults, pending, reader
 from gest.core.users.backend_client import UsersBackend
 from gest.core.users.model import User
 from gest.core.users.pending import PendingChanges
@@ -74,13 +74,14 @@ class UsersScreen(Screen):
         ("defaults", "Defaults for New Users"),
         ("auth", "Authentication"),
     ]
-    _EDIT_TABS = ("users", "groups")   # the transactional editing surface
+    _EDIT_TABS = ("users", "groups", "defaults")   # transactional editing surface
 
     def __init__(self, app: App) -> None:
         self._view = "users"
         self._filter = "local"   # default to real login accounts, not services
         self._loads = 0          # completed loads (for tests to await)
         self._pending = PendingChanges()
+        self._defaults = defaults.NewUserDefaults()   # last-read new-user defaults
         self._users: dict[str, User] = {}
         self._order: list[str] = []
         self._walker = urwid.SimpleFocusListWalker([urwid.Text(" loading …")])
@@ -115,8 +116,11 @@ class UsersScreen(Screen):
                 "to save or discard.\n\n"
                 "On the Users tab, f cycles the filter: local human accounts →\n"
                 "system/service accounts → all. Groups are always shown in full.\n\n"
-                "Defaults for New Users and Authentication are read-only status\n"
-                "views (/etc/default/useradd + /etc/login.defs, /etc/nsswitch.conf)."
+                "Defaults for New Users — edit (e) the defaults applied to new\n"
+                "accounts (group/shell/home prefix/inactive/expire); the change\n"
+                "is staged and written via useradd -D on OK. Umask and skeleton\n"
+                "are read-only. Authentication is a read-only status view\n"
+                "(/etc/nsswitch.conf)."
             ),
         )
         self._render_tabs()
@@ -262,34 +266,42 @@ class UsersScreen(Screen):
         d = await self.app.run_blocking(defaults.read_defaults)
         groups = await self.app.run_blocking(reader.list_groups)
         readable = await self.app.run_blocking(defaults.useradd_readable)
+        self._defaults = d
+        staged = self._pending.defaults_op()
+        sd = staged.data if staged else {}
         # /etc/default/useradd is typically root-only; show that honestly
         # rather than an empty value that reads as "unset".
         unread = "(requires root)"
 
-        def ua(value: str) -> str:
-            return value or (unread if not readable else "—")
+        def field(label: str, key: str, current: str, editable: bool = True):
+            if editable and sd.get(key):        # a staged override wins
+                return urwid.Text([("field", f" {label:<32}"),
+                                   ("ok", sd[key]), ("dim", "  (staged)")], wrap="clip")
+            shown = current or (unread if (editable and not readable) else "—")
+            return _kv(label, shown)
 
         group = d.group
-        if group.isdigit():   # useradd stores the primary group as a gid
+        if group.isdigit() and not sd.get("group"):   # resolve gid → name for display
             gid_name = {str(g.gid): g.name for g in groups}
             group = f"{gid_name.get(group, group)} ({group})"
         rows = [
-            urwid.Text(("hint", " Settings applied to newly-created users")),
+            urwid.Text(("hint", " Settings applied to newly-created users  "
+                               "(e edit · staged, applied on OK)")),
             urwid.Divider(),
-            _kv("Default group", ua(group)),
-            _kv("Default login shell", ua(d.shell)),
-            _kv("Home directory prefix", ua(d.home)),
-            _kv("Umask for home directory", d.umask),  # from world-readable login.defs
-            _kv("Default expiration date", ua(d.expire)),
-            _kv("Days after expiry login usable", ua(d.inactive)),
-            _kv("Skeleton directory", ua(d.skel)),
+            field("Default group", "group", group),
+            field("Default login shell", "shell", d.shell),
+            field("Home directory prefix", "home", d.home),
+            field("Umask for home directory", "umask", d.umask, editable=False),
+            field("Default expiration date", "expire", d.expire),
+            field("Days after expiry login usable", "inactive", d.inactive),
+            _kv("Skeleton directory", d.skel or (unread if not readable else "—")),
             urwid.Divider(),
-            urwid.Text(("dim", " Read-only — from /etc/default/useradd and "
-                               "/etc/login.defs.")),
+            urwid.Text(("dim", " Editable fields write via useradd -D. Umask and "
+                               "skeleton are read-only (login.defs).")),
         ]
         if not readable:
             rows.append(urwid.Text(("dim", " /etc/default/useradd is root-only; "
-                                          "run GeST as root to see its values.")))
+                                          "current values need root to read.")))
         self._content.original_widget = urwid.LineBox(
             urwid.ListBox(urwid.SimpleListWalker(rows)),
             title="Defaults for New Users")
@@ -329,7 +341,10 @@ class UsersScreen(Screen):
 
     def _after_stage(self) -> None:
         self._refresh_count()
-        self.app.run_async(self._load())
+        if self._view == "defaults":
+            self.app.run_async(self._load_defaults())
+        else:
+            self.app.run_async(self._load())
 
     async def _apply(self) -> None:
         if self._pending.is_empty:
@@ -380,6 +395,10 @@ class UsersScreen(Screen):
             return await b.delete_group(d["name"])
         if k == pending.SET_MEMBER:
             return await b.set_group_member(d["group"], d["user"], d["add"])
+        if k == pending.SET_DEFAULTS:
+            return await b.set_defaults(d.get("group", ""), d.get("home", ""),
+                                        d.get("shell", ""), d.get("inactive", ""),
+                                        d.get("expire", ""))
         return False, f"unknown op {k}"
 
     def _discard(self) -> None:
@@ -437,6 +456,15 @@ class UsersScreen(Screen):
             self.app.run_async(self._apply())
         elif key == "f9":
             self._discard()
+        elif self._view == "defaults":
+            if key in ("e", "enter"):
+                self._edit_defaults()
+            elif key == "d" and self._pending.defaults_op() is not None:
+                self._pending.remove_for_defaults()
+                self._after_stage()
+                self.app.notify("cleared staged defaults")
+            else:
+                return key
         elif self._view in ("users", "groups"):
             if key == "f" and self._view == "users":
                 self._filter = _FILTERS[(_FILTERS.index(self._filter) + 1) % len(_FILTERS)]
@@ -558,6 +586,40 @@ class UsersScreen(Screen):
                 self._after_stage()
 
             self._confirm(f"Stage deletion of group “{name}”?", [], do)
+
+    def _edit_defaults(self) -> None:
+        staged = self._pending.defaults_op()
+        src = staged.data if staged else {}
+        d = self._defaults
+
+        def pre(key: str, current: str) -> str:
+            return src.get(key) or current
+
+        group = urwid.Edit("Default group: ", pre("group", d.group))
+        shell = urwid.Edit("Login shell: ", pre("shell", d.shell))
+        home = urwid.Edit("Home prefix: ", pre("home", d.home))
+        inactive = urwid.Edit("Inactive days: ", pre("inactive", d.inactive))
+        expire = urwid.Edit("Expire (YYYY-MM-DD): ", pre("expire", d.expire))
+        fields = [("group", group), ("home", home), ("shell", shell),
+                  ("inactive", inactive), ("expire", expire)]
+
+        def save():
+            data = {k: w.edit_text.strip() for k, w in fields if w.edit_text.strip()}
+            if not data:
+                self.app.notify("Nothing to change.", error=True)
+                return
+            try:   # validate now for immediate feedback
+                commands.useradd_defaults_argv(**data)
+            except ValueError as exc:
+                self.app.notify(str(exc), error=True)
+                return
+            self.app.pop()
+            self._pending.stage(pending.set_defaults_op(data))
+            self._after_stage()
+
+        rows = [urwid.Text(("hint", "Blank = leave unchanged. Applied on OK.")),
+                urwid.Divider(), group, home, shell, inactive, expire]
+        self._open("Edit defaults for new users", rows, save)
 
     def _password(self) -> None:
         if self._view != "users":

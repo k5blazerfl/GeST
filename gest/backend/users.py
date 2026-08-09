@@ -73,6 +73,15 @@ _INTROSPECTION = f"""
       <arg type="b" name="ok" direction="out"/>
       <arg type="s" name="output" direction="out"/>
     </method>
+    <method name="SetDefaults">
+      <arg type="s" name="group" direction="in"/>
+      <arg type="s" name="home" direction="in"/>
+      <arg type="s" name="shell" direction="in"/>
+      <arg type="s" name="inactive" direction="in"/>
+      <arg type="s" name="expire" direction="in"/>
+      <arg type="b" name="ok" direction="out"/>
+      <arg type="s" name="output" direction="out"/>
+    </method>
   </interface>
 </node>
 """
@@ -111,6 +120,7 @@ class UsersService:
             "DeleteGroup": self._delete_group,
             "SetPassword": None,  # handled inline (needs stdin)
             "SetGroupMember": self._set_group_member,
+            "SetDefaults": self._set_defaults,
         }
         if method not in handlers:
             invocation.return_error_literal(
@@ -173,3 +183,10 @@ class UsersService:
     def _set_group_member(args):
         group, user, add = args
         return commands.gpasswd_argv(group, user, add=add, gpasswd=_GPASSWD)
+
+    @staticmethod
+    def _set_defaults(args):
+        group, home, shell, inactive, expire = args
+        return commands.useradd_defaults_argv(
+            group=group, home=home, shell=shell, inactive=inactive,
+            expire=expire, useradd=_USERADD)

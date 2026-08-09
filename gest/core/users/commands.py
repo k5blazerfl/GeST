@@ -13,10 +13,16 @@ import re
 # trailing '$' is allowed (Samba machine accounts).
 _NAME_RE = re.compile(r"\A[a-z_][a-z0-9_-]*\$?\Z")
 _PATH_RE = re.compile(r"\A/[^\0\n]*\Z")
+_DATE_RE = re.compile(r"\A\d{4}-\d{2}-\d{2}\Z")
 
 
 def valid_name(name: str) -> bool:
     return bool(_NAME_RE.match(name)) and len(name) <= 32
+
+
+def _valid_group_ref(group: str) -> bool:
+    """A default-group reference may be a group name or a numeric gid."""
+    return group.isdigit() or valid_name(group)
 
 
 def _require_name(name: str) -> None:
@@ -138,3 +144,44 @@ def gpasswd_argv(group: str, user: str, *, add: bool, gpasswd: str = "gpasswd") 
     _require_name(group)
     _require_name(user)
     return [gpasswd, "-a" if add else "-d", user, group]
+
+
+def useradd_defaults_argv(
+    *,
+    group: str = "",
+    home: str = "",
+    shell: str = "",
+    inactive: str = "",
+    expire: str = "",
+    useradd: str = "useradd",
+) -> list[str]:
+    """Build ``useradd -D …`` to change the defaults for new users.
+
+    Only non-empty fields are emitted, so this does a partial update; empty
+    fields are left as-is. Raises ValueError on any malformed field and when
+    nothing at all would change.
+    """
+    argv = [useradd, "-D"]
+    if group:
+        if not _valid_group_ref(group):
+            raise ValueError(f"invalid group: {group!r}")
+        argv += ["-g", group]
+    if home:
+        _require_path(home)
+        argv += ["-b", home]
+    if shell:
+        _require_path(shell)
+        argv += ["-s", shell]
+    if inactive:
+        try:
+            int(inactive)
+        except ValueError:
+            raise ValueError(f"invalid inactive days: {inactive!r}") from None
+        argv += ["-f", inactive]
+    if expire:
+        if not _DATE_RE.match(expire):
+            raise ValueError(f"invalid expiration date (use YYYY-MM-DD): {expire!r}")
+        argv += ["-e", expire]
+    if len(argv) == 2:
+        raise ValueError("no defaults to change")
+    return argv

@@ -65,3 +65,14 @@ def test_summary_counts_by_category():
     p.stage(pending.mod_user_op("b", "", "/bin/bash", ""))
     p.stage(pending.del_group_op("c"))
     assert p.summary() == "+1 ~1 -1"
+
+
+def test_set_defaults_is_singleton_edit():
+    p = PendingChanges()
+    p.stage(pending.set_defaults_op({"shell": "/bin/bash"}))
+    p.stage(pending.set_defaults_op({"shell": "/bin/zsh", "home": "/home"}))
+    assert len(p) == 1                       # one defaults op, replaced
+    assert p.defaults_op().data == {"shell": "/bin/zsh", "home": "/home"}
+    assert p.summary() == "~1"               # counts as an edit
+    p.remove_for_defaults()
+    assert p.defaults_op() is None and p.is_empty

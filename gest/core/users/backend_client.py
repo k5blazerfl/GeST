@@ -41,6 +41,9 @@ class UsersBackend:
     async def set_group_member(self, group, user, add):
         return await self._iface.call_set_group_member(group, user, add)
 
+    async def set_defaults(self, group="", home="", shell="", inactive="", expire=""):
+        return await self._iface.call_set_defaults(group, home, shell, inactive, expire)
+
     async def close(self) -> None:
         if self._bus is not None:
             self._bus.disconnect()

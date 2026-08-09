@@ -281,6 +281,26 @@ def test_users_discard_clears_pending():
     assert not scr._pending.is_empty
 
 
+def test_users_defaults_tab_edit_stages_and_shows():
+    app = App()
+    scr = _users_all(app)
+    scr._view = "defaults"
+    scr._show_tab()
+    _pump(app, lambda: "Defaults for New Users" in _render(scr))
+    scr.keypress(_SIZE, "e")                 # open the edit-defaults form
+    assert isinstance(app._stack[-1], urwid.Overlay)
+    assert "Edit defaults" in _render(app._stack[-1])
+    app._stack[-1].keypress(_SIZE, "esc")    # cancel the form
+    # stage a defaults change directly and confirm it projects into the tab
+    from gest.core.users import pending
+    scr._pending.stage(pending.set_defaults_op({"shell": "/bin/zsh"}))
+    scr._after_stage()
+    _pump(app, lambda: "staged" in _render(scr))
+    out = _render(scr)
+    assert "/bin/zsh" in out and "staged" in out
+    assert "pending change" in scr._count.text
+
+
 def test_network_list_and_config_modal():
     app = App()
     scr = NetworkScreen(app)

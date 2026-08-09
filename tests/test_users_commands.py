@@ -64,3 +64,29 @@ def test_gpasswd_argv_add_and_remove():
     assert c.gpasswd_argv("wheel", "alice", add=False) == ["gpasswd", "-d", "alice", "wheel"]
     with pytest.raises(ValueError):
         c.gpasswd_argv("wheel", "Bad User", add=True)
+
+
+def test_useradd_defaults_argv_partial_update():
+    argv = c.useradd_defaults_argv(shell="/bin/zsh", home="/home")
+    assert argv[:2] == ["useradd", "-D"]
+    assert argv[argv.index("-s") + 1] == "/bin/zsh"
+    assert argv[argv.index("-b") + 1] == "/home"
+    assert "-g" not in argv  # untouched fields are omitted
+
+
+def test_useradd_defaults_argv_accepts_name_or_gid():
+    assert "-g" in c.useradd_defaults_argv(group="users")
+    assert c.useradd_defaults_argv(group="100")[-1] == "100"
+
+
+def test_useradd_defaults_argv_validates():
+    with pytest.raises(ValueError):
+        c.useradd_defaults_argv()                       # nothing to change
+    with pytest.raises(ValueError):
+        c.useradd_defaults_argv(shell="not-a-path")     # shell must be a path
+    with pytest.raises(ValueError):
+        c.useradd_defaults_argv(inactive="soon")        # must be an integer
+    with pytest.raises(ValueError):
+        c.useradd_defaults_argv(expire="12/31/2026")    # must be YYYY-MM-DD
+    with pytest.raises(ValueError):
+        c.useradd_defaults_argv(group="Bad Group")

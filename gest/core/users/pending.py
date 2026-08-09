@@ -20,11 +20,13 @@ SET_PASSWORD = "set_password"
 ADD_GROUP = "add_group"
 DEL_GROUP = "del_group"
 SET_MEMBER = "set_member"
+SET_DEFAULTS = "set_defaults"
 
 # Apply order: create groups, then users, then modify, then membership, then
-# passwords, then deletions (users before their groups). Keeps dependencies sane
-# regardless of the order the admin staged things in.
-_ORDER = [ADD_GROUP, ADD_USER, MOD_USER, SET_MEMBER, SET_PASSWORD, DEL_USER, DEL_GROUP]
+# passwords, then the new-user defaults, then deletions (users before their
+# groups). Keeps dependencies sane regardless of the order things were staged.
+_ORDER = [ADD_GROUP, ADD_USER, MOD_USER, SET_MEMBER, SET_PASSWORD, SET_DEFAULTS,
+          DEL_USER, DEL_GROUP]
 
 _USER_KINDS = frozenset({ADD_USER, MOD_USER, DEL_USER, SET_PASSWORD})
 
@@ -54,6 +56,9 @@ class PendingChanges:
 
     def remove_for_group(self, name: str) -> None:
         self._ops = [o for o in self._ops if not self._touches_group(o, name)]
+
+    def remove_for_defaults(self) -> None:
+        self._ops = [o for o in self._ops if o.kind != SET_DEFAULTS]
 
     def clear(self) -> None:
         self._ops.clear()
@@ -114,9 +119,16 @@ class PendingChanges:
     def added_groups(self) -> list[Op]:
         return [o for o in self._ops if o.kind == ADD_GROUP]
 
+    def defaults_op(self) -> Op | None:
+        for o in self._ops:
+            if o.kind == SET_DEFAULTS:
+                return o
+        return None
+
     def summary(self) -> str:
         adds = sum(o.kind in (ADD_USER, ADD_GROUP) for o in self._ops)
-        edits = sum(o.kind in (MOD_USER, SET_PASSWORD, SET_MEMBER) for o in self._ops)
+        edits = sum(o.kind in (MOD_USER, SET_PASSWORD, SET_MEMBER, SET_DEFAULTS)
+                    for o in self._ops)
         dels = sum(o.kind in (DEL_USER, DEL_GROUP) for o in self._ops)
         parts = []
         if adds:
@@ -165,3 +177,8 @@ def set_member_op(group, user, add) -> Op:
     return Op(SET_MEMBER, f"{group}\x00{user}",
               {"group": group, "user": user, "add": add},
               f"{'add' if add else 'remove'} {user} {'to' if add else 'from'} {group}")
+
+
+def set_defaults_op(fields: dict) -> Op:
+    """Stage a change to the defaults for new users (a singleton op)."""
+    return Op(SET_DEFAULTS, "defaults", dict(fields), "edit new-user defaults")
