@@ -7,8 +7,8 @@ pins. Each flag is tri-state:
     on      — force enabled  (token ``flag``)
     off     — force disabled (token ``-flag``)
 
-Reads happen as the user; the file is *written* by the privileged backend
-(polkit action ``org.gentoo.gest.software.modify-config``).
+Reads happen as the user; the file is *written* by the privileged Portage
+backend via ``WriteConfig`` (polkit action ``org.gentoo.gest.portage.configure``).
 """
 
 from __future__ import annotations

@@ -16,22 +16,21 @@ _CONF_OVL = (
 )
 
 
-def test_parse_repos_conf_skips_default_and_reads_main():
-    parsed = reader.parse_repos_conf(_CONF_MAIN)
-    assert "gentoo" in parsed and "\0DEFAULT" not in parsed
-    assert parsed["\0main"]["name"] == "gentoo"
-    assert parsed["gentoo"]["sync-uri"] == "rsync://r/gentoo"
-
-
-def test_enabled_repos_from_tmp(tmp_path):
+def test_enabled_repos_merges_fragments_and_reads_main(tmp_path):
+    # main-repo comes from [DEFAULT] in one fragment; the overlay from another.
     (tmp_path / "gentoo.conf").write_text(_CONF_MAIN)
     (tmp_path / "eselect-repo.conf").write_text(_CONF_OVL)
     repos = reader.enabled_repos(str(tmp_path))
     by = {r.name: r for r in repos}
     assert repos[0].name == "gentoo" and repos[0].main       # main sorts first
+    assert by["gentoo"].sync_uri == "rsync://r/gentoo"
     assert by["amphitheater"].sync_type == "git"
     assert by["amphitheater"].sync_uri.endswith("Amphitheater.git")
     assert not by["amphitheater"].main
+
+
+def test_enabled_repos_missing_dir_is_empty(tmp_path):
+    assert reader.enabled_repos(str(tmp_path / "nope")) == []
 
 
 def test_command_builders():

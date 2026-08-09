@@ -42,8 +42,8 @@ BOOTLOADER_PATH = "/org/gentoo/gest/Bootloader"
 BOOTLOADER_IFACE = "org.gentoo.gest.Bootloader"
 BOOTLOADER_POLKIT = "org.gentoo.gest.bootloader.manage"
 
-# Object path + interface for the repositories module (reuses the
-# software.modify-config polkit action).
+# Object path + interface for the repositories module (gated by the
+# portage.configure polkit action; repository config is Portage config).
 REPOS_PATH = "/org/gentoo/gest/Repos"
 REPOS_IFACE = "org.gentoo.gest.Repos"
 

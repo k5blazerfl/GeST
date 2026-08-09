@@ -1,7 +1,7 @@
 """GeST root D-Bus interface for the repositories module.
 
 Registered at /org/gentoo/gest/Repos. Enables/disables/removes/adds Portage
-repositories via `eselect repository`. Reuses the software.modify-config polkit
+repositories via `eselect repository`. Gated by the portage.configure polkit
 action (repositories are Portage config); audit-logged.
 """
 
@@ -18,7 +18,7 @@ from gi.repository import Gio, GLib
 from gest.backend.audit import audit
 from gest.backend.polkit import caller_uid, check_authorization
 from gest.core.repos import commands
-from gest.ipc.interface import REPOS_IFACE, REPOS_PATH, polkit_action
+from gest.ipc.interface import PORTAGE_POLKIT, REPOS_IFACE, REPOS_PATH
 
 _INTROSPECTION = f"""
 <node>
@@ -50,7 +50,7 @@ _INTROSPECTION = f"""
 """
 
 _ESELECT = shutil.which("eselect") or "/usr/bin/eselect"
-_POLKIT = polkit_action("modify-config")
+_POLKIT = PORTAGE_POLKIT
 
 
 def _run(argv: list[str]) -> tuple[bool, str]:

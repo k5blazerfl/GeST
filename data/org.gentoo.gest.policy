@@ -33,16 +33,6 @@
     </defaults>
   </action>
 
-  <action id="org.gentoo.gest.software.modify-config">
-    <description>Modify Portage configuration (USE flags, keywords, masks)</description>
-    <message>Authentication is required to change Portage configuration</message>
-    <defaults>
-      <allow_any>auth_admin</allow_any>
-      <allow_inactive>auth_admin</allow_inactive>
-      <allow_active>auth_admin_keep</allow_active>
-    </defaults>
-  </action>
-
   <action id="org.gentoo.gest.portage.configure">
     <description>Write Portage configuration files under /etc/portage</description>
     <message>Authentication is required to change Portage configuration</message>

@@ -1,10 +1,19 @@
-"""Read enabled Portage repositories from /etc/portage/repos.conf."""
+"""Read enabled Portage repositories from /etc/portage/repos.conf.
+
+Parsing is the shared INI codec (:mod:`gest.core.portage.codec.ini`); this
+module just merges the ``*.conf`` fragments and shapes them into :class:`Repo`
+rows. Writes go through ``eselect repository`` (see ``core/repos/commands.py``),
+never this module.
+"""
 
 from __future__ import annotations
 
 import glob
 import os
 from dataclasses import dataclass
+
+from gest.core.portage import paths
+from gest.core.portage.codec import ini
 
 REPOS_CONF = "/etc/portage/repos.conf"
 
@@ -18,35 +27,13 @@ class Repo:
     main: bool = False
 
 
-def parse_repos_conf(text: str) -> dict[str, dict[str, str]]:
-    """Parse a repos.conf INI file into {section: {key: value}} (skips DEFAULT)."""
-    result: dict[str, dict[str, str]] = {}
-    main_repo = ""
-    current: str | None = None
-    for line in text.splitlines():
-        s = line.strip()
-        if not s or s.startswith("#") or s.startswith(";"):
-            continue
-        if s.startswith("[") and s.endswith("]"):
-            name = s[1:-1].strip()
-            current = None if name.upper() == "DEFAULT" else name
-            if current is not None:
-                result.setdefault(current, {})
-            else:
-                current = "\0DEFAULT"  # capture DEFAULT keys separately
-                result.setdefault(current, {})
-            continue
-        if current and "=" in line:
-            key, _, value = line.partition("=")
-            result[current][key.strip()] = value.strip()
-    default = result.pop("\0DEFAULT", {})
-    main_repo = default.get("main-repo", "")
-    if main_repo:
-        result.setdefault("\0main", {})["name"] = main_repo
-    return result
+def enabled_repos(conf_dir: str | None = None) -> list[Repo]:
+    """Every configured repository, main repo first then alphabetical.
 
-
-def enabled_repos(conf_dir: str = REPOS_CONF) -> list[Repo]:
+    Merges each ``*.conf`` fragment (later files win, matching Portage) and
+    resolves ``main-repo`` from any fragment's ``[DEFAULT]`` block.
+    """
+    conf_dir = conf_dir or paths.repos_conf_dir()
     merged: dict[str, dict[str, str]] = {}
     main_repo = ""
     try:
@@ -56,12 +43,13 @@ def enabled_repos(conf_dir: str = REPOS_CONF) -> list[Repo]:
     for path in files:
         try:
             with open(path, encoding="utf-8") as fh:
-                parsed = parse_repos_conf(fh.read())
+                defaults, sections = ini.parse(fh.read())
         except OSError:
             continue
-        if "\0main" in parsed:
-            main_repo = parsed.pop("\0main")["name"]
-        merged.update(parsed)
+        if defaults.get("main-repo"):
+            main_repo = defaults["main-repo"]
+        for sect in sections:
+            merged[sect.name] = sect.entries
     repos = [
         Repo(
             name=name,

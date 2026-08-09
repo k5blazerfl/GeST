@@ -1,7 +1,8 @@
 """Keyword acceptance and mask state — the package.accept_keywords / mask files.
 
 Like USE flags, GeST manages one file per kind (``package.<kind>/gest``). Reads
-happen as the user; writes go through the backend (polkit modify-config).
+happen as the user; writes go through the Portage backend's ``WriteConfig``
+(polkit action ``org.gentoo.gest.portage.configure``).
 
 Two tri-state settings per package:
 
