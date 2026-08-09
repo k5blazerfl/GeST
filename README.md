@@ -144,6 +144,9 @@ working tree.
       (polkit-gated date -s + hwclock), and toggle an NTP daemon (chrony/ntp/
       openntpd) via the Services backend; timezone read now falls back to the
       /etc/localtime symlink
+- [x] System Logs module — read-only viewer (dmesg, OpenRC boot log, readable
+      /var/log files) with a scrollable ANSI-coloured pager; new Miscellaneous
+      category
 - [x] Users & Groups module — list users/groups; add / edit / delete users,
       add / delete groups (polkit-gated useradd/usermod/userdel/groupadd/groupdel)
 - [x] User passwords (chpasswd via stdin) + group membership (gpasswd);

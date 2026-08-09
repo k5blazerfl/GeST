@@ -13,6 +13,7 @@ from gest.tui.screens.datetime import DateTimeScreen
 from gest.tui.screens.disk import DiskScreen
 from gest.tui.screens.eselect import EselectScreen
 from gest.tui.screens.hardware import HardwareScreen
+from gest.tui.screens.logs import LogsScreen
 from gest.tui.screens.makeconf import MakeconfScreen
 from gest.tui.screens.network import NetworkScreen
 from gest.tui.screens.news import NewsScreen
@@ -55,6 +56,9 @@ CATEGORIES: list[tuple[str, list[tuple[str, str, bool]]]] = [
     ]),
     ("Network", [
         ("network", "Network", True),
+    ]),
+    ("Miscellaneous", [
+        ("logs", "System Logs", True),
     ]),
 ]
 
@@ -162,6 +166,8 @@ class MenuScreen(Screen):
             self.app.push(UsersScreen(self.app))
         elif key == "network":
             self.app.push(NetworkScreen(self.app))
+        elif key == "logs":
+            self.app.push(LogsScreen(self.app))
         else:
             self.app.notify(f"“{key}” isn't ported to the urwid frontend yet.")
 

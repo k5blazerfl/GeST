@@ -16,6 +16,7 @@ from gest.tui.screens.datetime import DateTimeScreen
 from gest.tui.screens.disk import DiskScreen
 from gest.tui.screens.eselect import EselectScreen
 from gest.tui.screens.hardware import HardwareScreen
+from gest.tui.screens.logs import LogsScreen
 from gest.tui.screens.makeconf import MakeconfScreen
 from gest.tui.screens.menu import MenuScreen
 from gest.tui.screens.network import NetworkScreen
@@ -473,6 +474,27 @@ def test_menu_launches_disk():
     menu.keypress(_SIZE, "enter")  # focus modules
     menu.keypress(_SIZE, "enter")  # launch Disks & Mounts
     assert isinstance(app._stack[-1], DiskScreen)
+
+
+def test_logs_lists_sources_and_view():
+    app = App()
+    scr = LogsScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: len(scr._sources) > 0, ticks=300)
+    assert scr._sources                        # at least the dmesg source
+    out = _render(scr)
+    assert "Logs" in out and "View" in out
+
+
+def test_menu_launches_logs():
+    app = App()
+    menu = MenuScreen(app)
+    app._stack.append(menu)
+    for _ in range(7):             # -> Miscellaneous (8th category)
+        menu.keypress(_SIZE, "down")
+    menu.keypress(_SIZE, "enter")  # focus modules
+    menu.keypress(_SIZE, "enter")  # launch System Logs
+    assert isinstance(app._stack[-1], LogsScreen)
 
 
 def test_datetime_loads_clock_info():
