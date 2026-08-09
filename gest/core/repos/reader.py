@@ -24,6 +24,8 @@ class Repo:
     sync_type: str = ""
     sync_uri: str = ""
     location: str = ""
+    priority: str = ""
+    auto_sync: str = ""
     main: bool = False
 
 
@@ -56,6 +58,8 @@ def enabled_repos(conf_dir: str | None = None) -> list[Repo]:
             sync_type=data.get("sync-type", ""),
             sync_uri=data.get("sync-uri", ""),
             location=data.get("location", ""),
+            priority=data.get("priority", ""),
+            auto_sync=data.get("auto-sync", ""),
             main=(name == main_repo),
         )
         for name, data in merged.items()
