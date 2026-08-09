@@ -28,6 +28,7 @@ PALETTE = [
     ("error", "light red", "default"),
     ("pane_title", "light cyan,bold", "default"),
     ("field", "white,bold", "default"),
+    ("cc_title", "brown", "default"),   # YaST-style amber for the Control Center
     ("menubar", "black", "light gray"),
     ("menu_title", "black", "light gray"),
     ("menu_focus", "white", "dark blue"),

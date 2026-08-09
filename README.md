@@ -91,6 +91,8 @@ working tree.
 - [x] Layered skeleton: core + TUI + IPC contract
 - [x] YaST-style two-pane Control Center menu + reusable chrome widgets
       (function-key footer, bracket buttons)
+- [x] Control Center chrome tuned to YaST — centered title box, untitled
+      category/module panes, and [Help] / [Run] [Quit] accelerator buttons
 - [x] Software Management, YaST sw_single-style — dropdown menu bar +
       filter sidebar + package table + live detail pane
 - [x] Transactional package selection — mark packages with Space, commit

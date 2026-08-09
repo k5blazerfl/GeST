@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import socket
+
 import urwid
 
 from gest.tui.runtime import App, Screen
@@ -59,6 +61,11 @@ def _icon(label: str) -> urwid.Widget:
     return urwid.AttrMap(urwid.SelectableIcon(label, 0), None, focus_map="focus")
 
 
+def _accel(label: str) -> urwid.Widget:
+    """A YaST-style bracket label with the accelerator letter highlighted."""
+    return urwid.Text(["[", ("cc_title", label[0]), f"{label[1:]}]"])
+
+
 class MenuScreen(Screen):
     def __init__(self, app: App) -> None:
         cats = [_icon(name) for name, _mods in CATEGORIES]
@@ -71,14 +78,30 @@ class MenuScreen(Screen):
 
         self._columns = urwid.Columns(
             [
-                (30, urwid.LineBox(self._left, title="Categories")),
-                urwid.LineBox(self._right, title="Modules"),
+                (30, urwid.LineBox(self._left)),
+                urwid.LineBox(self._right),
             ],
             dividechars=1,
         )
+        title_box = urwid.LineBox(
+            urwid.Text(("cc_title", "GeST Control Center"), align="center"))
+        bottom = urwid.Columns([
+            ("pack", _accel("Help")),
+            urwid.Text(""),                       # spacer pushes Run/Quit right
+            ("pack", _accel("Run")),
+            ("pack", urwid.Text("  ")),
+            ("pack", _accel("Quit")),
+        ])
+        body = urwid.Pile([
+            ("pack", title_box),
+            ("pack", urwid.Divider()),
+            self._columns,
+            ("pack", urwid.Divider()),
+            ("pack", bottom),
+        ])
         super().__init__(
-            app, self._columns, title="GeST Control Center",
-            footer_keys=[("Enter", "Run"), ("→", "Modules"), ("F9", "Quit")],
+            app, body, title=f"GeST — menu @ {socket.gethostname()}",
+            footer_keys=[("F1", "Help"), ("F9", "Quit")],
         )
         urwid.connect_signal(self._cat_walker, "modified", self._on_cat_change)
         self._populate_modules(0)
@@ -135,9 +158,19 @@ class MenuScreen(Screen):
         else:
             self.app.notify(f"“{key}” isn't ported to the urwid frontend yet.")
 
+    def _run_focused(self) -> None:
+        if self._mod_keys:
+            self._launch(self._mod_keys[self._mod_walker.focus])
+
     def handle_key(self, key):
         if key == "f9":
             self.app.quit()
+            return None
+        if key in ("f1", "h", "H"):
+            self.app.notify("↑/↓ pick · →/Enter open · R run · Esc back · F9 quit")
+            return None
+        if key in ("r", "R"):
+            self._run_focused()
             return None
         if key == "enter":
             if self._columns.focus_position == 0:
