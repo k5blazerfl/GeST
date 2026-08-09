@@ -8,13 +8,21 @@ preview (run as the user) with a streamed backend operation.
 from __future__ import annotations
 
 import asyncio
+import re
 from collections.abc import Awaitable, Callable
 
 import urwid
 
 from gest.core.software import preview
 from gest.core.software.backend_client import SoftwareBackend
-from gest.tui.runtime import App, Screen, ansi_markup
+from gest.tui.runtime import App, Screen, ansi_markup, strip_ansi
+
+# emerge's per-package progress markers, e.g.
+#   >>> Emerging (2 of 5) app-editors/vim-9.1::gentoo
+#   >>> Installing (2 of 5) app-editors/vim-9.1::gentoo
+#   >>> Emerging binary (3 of 5) sys-apps/foo-1.0::gentoo   (--getbinpkg path)
+_PROGRESS_RE = re.compile(
+    r">>> (Emerging|Installing)(?: binary)? \((\d+) of (\d+)\)\s+(\S+)")
 
 
 class Plan:
@@ -73,15 +81,40 @@ class ApplyScreen(Screen):
         self._ready = False
         self._running = False
         self._done = False
+        self._plan_label = ""
         self._walker = urwid.SimpleFocusListWalker(
             [urwid.SelectableIcon(" computing plan …", 0)]
         )
         self._log = urwid.ListBox(self._walker)
+        self._phase = urwid.Text(("dim", " Reviewing the plan …"))
+        self._bar = urwid.ProgressBar("pb_normal", "pb_complete", 0, 1)
+        body = urwid.Pile([
+            ("pack", urwid.AttrMap(self._phase, "field")),
+            ("pack", self._bar),
+            ("pack", urwid.Divider("─")),
+            ("weight", 1, self._log),
+        ])
         super().__init__(
-            app, urwid.LineBox(self._log, title=verb), title=verb,
+            app, urwid.LineBox(body, title=verb), title=verb,
             footer_keys=[("F10", verb), ("Esc", "Back")],
         )
         app.run_async(self._preview())
+
+    def _set_phase(self, text: str, attr: str = "field") -> None:
+        self._phase.set_text((attr, f" {text}"))
+
+    def _update_progress(self, line: str) -> None:
+        """Advance the bar/label from an emerge '(N of M)' marker (ignore else)."""
+        m = _PROGRESS_RE.search(strip_ansi(line))
+        if not m:
+            return
+        phase, n, total, atom = m.group(1), int(m.group(2)), int(m.group(3)), m.group(4)
+        self._bar.done = max(total, 1)
+        # A package is "done" once its Installing phase runs; while Emerging,
+        # count the prior ones as complete.
+        self._bar.set_completion(n if phase == "Installing" else max(n - 1, 0))
+        self._set_phase(f"{self._plan_label}: {phase} {n} of {total} — {atom}")
+        self.app.refresh()
 
     def _append(self, lines: list[str]) -> None:
         for line in lines:
@@ -98,6 +131,10 @@ class ApplyScreen(Screen):
             if not result.ok:
                 ok_all = False
         self._ready = ok_all
+        self._set_phase(
+            f"Ready — F10 to {self._verb.lower()}" if ok_all
+            else "Cannot proceed — see the plan above",
+            "ok" if ok_all else "error")
         self.app.notify(
             f"Ready — F10 to {self._verb.lower()}" if ok_all else "Cannot proceed",
             error=not ok_all,
@@ -118,11 +155,17 @@ class ApplyScreen(Screen):
 
         def on_progress(line: str) -> None:
             self._append([line.rstrip("\n")])
+            self._update_progress(line)
 
         def on_finished(code: int) -> None:
             result["code"] = code
             finished.set()
 
+        # Reset the bar for this plan; emerge's own (N of M) drives it (M counts
+        # dependencies too, so it reflects the real work, not just marked atoms).
+        self._plan_label = plan.label
+        self._bar.done, self._bar.current = 1, 0
+        self._set_phase(f"{plan.label}: starting …")
         self._append([f"— {plan.label} started —"])
         try:
             started = await plan.run(backend, on_progress, on_finished)
@@ -150,6 +193,10 @@ class ApplyScreen(Screen):
         await finished.wait()
         await backend.close()
         code = result.get("code", -1)
+        if code == 0:
+            self._bar.set_completion(self._bar.done)   # fill on success
+        self._set_phase(f"{plan.label}: finished (exit {code})",
+                        "ok" if code == 0 else "error")
         self._append([f"— {plan.label} finished (exit {code}) —", ""])
         return code
 

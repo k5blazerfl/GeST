@@ -495,6 +495,28 @@ def test_software_accept_opens_apply_screen():
     assert isinstance(app._stack[-1], ApplyScreen)
 
 
+def test_apply_progress_parses_emerge_markers():
+    from gest.core.software.preview import PreviewResult
+    from gest.tui.screens.apply import ApplyScreen, Plan
+    app = App()
+    # A stub plan keeps the preview fast (no real emerge --pretend) so the
+    # screen's _preview coroutine completes and is properly awaited.
+    stub = Plan("Install", lambda: PreviewResult("x", 0, "Total: 5 packages"),
+                lambda b, p, f: True)
+    scr = ApplyScreen(app, [stub], verb="Accept")
+    _pump(app, lambda: scr._ready, ticks=50)
+    scr._plan_label = "Install"
+    scr._update_progress(">>> Emerging (2 of 5) app-editors/vim-9.1::gentoo")
+    assert scr._bar.done == 5 and scr._bar.current == 1   # emerging 2 → 1 complete
+    assert "2 of 5" in scr._phase.text and "vim" in scr._phase.text
+    scr._update_progress(">>> Installing (2 of 5) app-editors/vim-9.1::gentoo")
+    assert scr._bar.current == 2                          # installing 2 → 2 complete
+    scr._update_progress(">>> Emerging binary (3 of 5) sys-apps/foo-1.0::gentoo")
+    assert scr._bar.current == 2 and "3 of 5" in scr._phase.text
+    scr._update_progress("Calculating dependencies... done!")   # non-marker ignored
+    assert scr._bar.current == 2
+
+
 def test_menu_launches_software():
     app = App()
     menu = MenuScreen(app)

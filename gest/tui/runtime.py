@@ -34,6 +34,8 @@ PALETTE = [
     ("menu_focus", "white", "dark blue"),
     ("menu_drop", "black", "light gray"),
     ("dim", "dark gray", "default"),
+    ("pb_normal", "white", "dark blue"),        # progress bar: unfilled
+    ("pb_complete", "black", "light cyan"),      # progress bar: filled
 ]
 
 # ANSI SGR foreground colours (normal and bold/bright) mapped to urwid names.
