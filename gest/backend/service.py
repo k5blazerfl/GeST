@@ -62,6 +62,11 @@ _INTROSPECTION = f"""
       <arg type="as" name="atoms" direction="in"/>
       <arg type="b" name="started" direction="out"/>
     </method>
+    <method name="InstallBinaryMulti">
+      <arg type="as" name="atoms" direction="in"/>
+      <arg type="b" name="only" direction="in"/>
+      <arg type="b" name="started" direction="out"/>
+    </method>
     <method name="Rebuild">
       <arg type="s" name="atom" direction="in"/>
       <arg type="b" name="started" direction="out"/>
@@ -154,6 +159,9 @@ class SoftwareService:
         elif method == "InstallMulti":
             (atoms,) = params.unpack()
             self._install_multi(atoms, sender, invocation)
+        elif method == "InstallBinaryMulti":
+            atoms, only = params.unpack()
+            self._install_binary_multi(atoms, only, sender, invocation)
         elif method == "Rebuild":
             (atom,) = params.unpack()
             self._rebuild(atom, sender, invocation)
@@ -222,6 +230,29 @@ class SoftwareService:
             return
         invocation.return_value(GLib.Variant("(b)", (True,)))
         self._spawn_streaming([_EMERGE, "--color", "n", *atoms])
+
+    def _install_binary_multi(self, atoms, only, sender: str, invocation) -> None:
+        """Merge atoms as binary packages: emerge --getbinpkg [--usepkgonly].
+
+        ``only`` forces binary (fails if no binpkg); otherwise emerge prefers a
+        binary and falls back to building from source.
+        """
+        if not self._check_authorized(sender, polkit_action("install")):
+            invocation.return_error_literal(
+                Gio.dbus_error_quark(), Gio.DBusError.ACCESS_DENIED,
+                "Not authorized to install packages")
+            return
+        atoms = list(atoms)
+        if not atoms or any(not self._ATOM_RE.match(a) for a in atoms):
+            invocation.return_error_literal(
+                Gio.dbus_error_quark(), Gio.DBusError.INVALID_ARGS,
+                "invalid or empty package atom list")
+            return
+        invocation.return_value(GLib.Variant("(b)", (True,)))
+        argv = [_EMERGE, "--getbinpkg", "--color", "n"]
+        if only:
+            argv.insert(2, "--usepkgonly")
+        self._spawn_streaming([*argv, *atoms])
 
     def _rebuild(self, atom: str, sender: str, invocation) -> None:
         """Rebuild a package to apply changed USE flags (--changed-use)."""

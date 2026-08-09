@@ -11,17 +11,20 @@ from __future__ import annotations
 import urwid
 
 from gest.core.software import reader
+from gest.core.software import selection as sel
 from gest.core.software.model import PackageDetail
 from gest.core.software.selection import Selection
 from gest.tui.menubar import MenuBar, _Dropdown
 from gest.tui.runtime import App, Screen, action_bar
 from gest.tui.screens.apply import (
     ApplyScreen,
+    install_binary_plan,
     install_plan,
     remove_plan,
     sync_plan,
     world_plan,
 )
+from gest.tui.screens.binhost import BinhostScreen
 from gest.tui.screens.config import KeywordsScreen, UseFlagScreen
 from gest.tui.screens.news import NewsScreen
 
@@ -47,6 +50,8 @@ _MENUS = [
     ("view", "View", [("installed", "Installed packages", True)]),
     ("config", "Configuration", [
         ("use", "USE flags", True), ("keywords", "Keywords / mask", True)]),
+    ("binary", "Binary packages", [
+        ("binhost", "Binary package sources & options…", True)]),
     ("deps", "Dependencies", [("check", "Check marked packages", True)]),
     ("extras", "Extras", [
         ("update", "System update", True), ("sync", "Sync tree", True),
@@ -72,6 +77,8 @@ _MODES = [
 # Per-package actions menu (id, label, enabled).
 _ACTIONS = [
     ("install", "Install / Update", True),
+    ("binpkg", "Install binary (only)", True),
+    ("binpref", "Install (prefer binary)", True),
     ("remove", "Remove", True),
     ("use", "USE flags", True),
     ("keywords", "Keywords / mask", True),
@@ -152,17 +159,21 @@ class SoftwareScreen(Screen):
         super().__init__(
             app, pile, title="Software Management",
             footer_keys=[
-                ("Enter", "Search/Install"), ("Space", "Mark"), ("r", "Remove"),
-                ("a", "Actions"), ("Tab", "Pane"), ("u", "USE"), ("k", "Keys"),
-                ("F10", "Accept"), ("Esc", "Back"),
+                ("Enter", "Search/Install"), ("Space", "Mark"), ("b", "Binary"),
+                ("r", "Remove"), ("a", "Actions"), ("Tab", "Pane"), ("u", "USE"),
+                ("k", "Keys"), ("F10", "Accept"), ("Esc", "Back"),
             ],
             help_text=(
                 "Browse and manage Portage packages, YaST sw_single-style.\n\n"
                 "Filter (left): pick a view (Search / Provides / Categories / "
                 "Installed / World), a search mode, and which fields to search.\n"
-                "Table: ↑/↓ move · Space mark install/update · r mark remove · "
-                "c clear marks · a Actions · u USE flags · k keywords.\n"
-                "Tab switches panes. F10 (Accept) applies all marks; Esc cancels."
+                "Table: ↑/↓ move · Space mark install/update · b mark install as a\n"
+                "binary package (only) · r mark remove · c clear marks · a Actions\n"
+                "(includes 'prefer binary') · u USE flags · k keywords.\n"
+                "Marks: + install · b binary-only · B prefer-binary · - remove · "
+                "i installed.\n"
+                "Binary installs use emerge --getbinpkg (configure sources under "
+                "the Binary packages menu). F10 (Accept) applies all marks."
             ),
         )
         self._pile = pile
@@ -220,9 +231,13 @@ class SoftwareScreen(Screen):
             return
         cp = self._cps[self._walker.focus]
         if action_id == "install":
-            self._toggle(remove=False)
+            self._mark(sel.INSTALL)
+        elif action_id == "binpkg":
+            self._mark(sel.BINPKG)
+        elif action_id == "binpref":
+            self._mark(sel.BINPREF)
         elif action_id == "remove":
-            self._toggle(remove=True)
+            self._mark(sel.REMOVE)
         elif action_id == "use":
             self.app.push(UseFlagScreen(self.app, cp))
         elif action_id == "keywords":
@@ -340,9 +355,13 @@ class SoftwareScreen(Screen):
 
     def _status_for(self, i: int, cp: str) -> str:
         mark = self._selection.mark_of(cp)
-        if mark == "install":
+        if mark == sel.INSTALL:
             return "u" if self._installed[i] else "+"
-        if mark == "remove":
+        if mark == sel.BINPKG:
+            return "b"          # binary only
+        if mark == sel.BINPREF:
+            return "B"          # prefer binary
+        if mark == sel.REMOVE:
             return "-"
         return "i" if self._installed[i] else " "
 
@@ -398,14 +417,14 @@ class SoftwareScreen(Screen):
         self._set_count(base)
 
     def _toggle(self, remove: bool) -> None:
-        if not self._cps:
+        self._mark(sel.REMOVE if remove else sel.INSTALL)
+
+    def _mark(self, mark: str) -> None:
+        if self._table_mode != "packages" or not self._cps:
             return
         i = self._walker.focus
         cp = self._cps[i]
-        if remove:
-            self._selection.toggle_remove(cp)
-        else:
-            self._selection.toggle_install(cp)
+        self._selection.toggle(cp, mark)
         self._walker[i].base_widget.set_text(self._row_text(i, cp, self._summaries[i]))
         self._refresh_count()
 
@@ -413,15 +432,22 @@ class SoftwareScreen(Screen):
 
     def _accept(self) -> None:
         installs = self._selection.install_atoms()
+        binpkgs = self._selection.binpkg_atoms()
+        binprefs = self._selection.binpref_atoms()
         removes = self._selection.remove_atoms()
-        if not installs and not removes and self._table_mode == "packages" and self._cps:
+        if (not installs and not binpkgs and not binprefs and not removes
+                and self._table_mode == "packages" and self._cps):
             installs = [self._cps[self._walker.focus]]
-        if not installs and not removes:
+        if not installs and not binpkgs and not binprefs and not removes:
             self.app.notify("Mark packages with Space or r first.", error=True)
             return
         plans = []
         if installs:
             plans.append(install_plan(installs))
+        if binpkgs:
+            plans.append(install_binary_plan(binpkgs, only=True))
+        if binprefs:
+            plans.append(install_binary_plan(binprefs, only=False))
         if removes:
             plans.append(remove_plan(removes))
         self.app.push(ApplyScreen(self.app, plans, verb="Accept", on_done=self._after))
@@ -444,6 +470,8 @@ class SoftwareScreen(Screen):
             self.app.push(KeywordsScreen(self.app, cp))
         elif item_id == "check":
             self.app.run_async(self._check_marked())
+        elif item_id == "binhost":
+            self.app.push(BinhostScreen(self.app))
         elif item_id == "update":
             self.app.push(ApplyScreen(self.app, [world_plan()], verb="System update"))
         elif item_id == "sync":
@@ -522,6 +550,9 @@ class SoftwareScreen(Screen):
         if in_table and self._table_mode == "packages":
             if key == " ":
                 self._toggle(remove=False)
+                return None
+            if key == "b":
+                self._mark(sel.BINPKG)   # mark install binary-only
                 return None
             if key == "r":
                 self._toggle(remove=True)

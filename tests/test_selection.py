@@ -49,3 +49,26 @@ def test_toggle_remove_overrides_install():
     assert sel.install_atoms() == [] and sel.remove_atoms() == ["x/y"]
     sel.toggle_remove("x/y")  # toggling remove again clears it
     assert sel.is_empty
+
+
+def test_binary_marks_partition_and_summary():
+    from gest.core.software import selection as s
+    sel = Selection()
+    sel.toggle("app-editors/vim", s.BINPKG)      # binary-only
+    sel.toggle("app-misc/hello", s.BINPREF)      # prefer binary
+    sel.toggle("sys-apps/portage", s.INSTALL)    # source
+    assert sel.binpkg_atoms() == ["app-editors/vim"]
+    assert sel.binpref_atoms() == ["app-misc/hello"]
+    assert sel.install_atoms() == ["sys-apps/portage"]
+    assert sel.summary() == "1 to install · 1 binary · 1 prefer-binary"
+
+
+def test_toggle_switches_and_clears_marks():
+    from gest.core.software import selection as s
+    sel = Selection()
+    sel.toggle("x/y", s.INSTALL)
+    sel.toggle("x/y", s.BINPKG)                  # switch source -> binary-only
+    assert sel.mark_of("x/y") == s.BINPKG
+    assert sel.install_atoms() == [] and sel.binpkg_atoms() == ["x/y"]
+    sel.toggle("x/y", s.BINPKG)                  # same mark again clears it
+    assert sel.is_empty

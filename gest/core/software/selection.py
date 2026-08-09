@@ -8,7 +8,9 @@ mark set is a dict so remove/update can slot in later without a rewrite.
 
 from __future__ import annotations
 
-INSTALL = "install"
+INSTALL = "install"          # build/update from source (plain emerge)
+BINPKG = "binpkg"            # install binary only  (emerge --getbinpkg --usepkgonly)
+BINPREF = "binpref"          # prefer binary, else source (emerge --getbinpkg)
 REMOVE = "remove"
 
 
@@ -39,6 +41,13 @@ class Selection:
         else:
             self.mark_remove(cp)
 
+    def toggle(self, cp: str, mark: str) -> None:
+        """Toggle an arbitrary mark (install/binpkg/binpref/remove)."""
+        if self._marks.get(cp) == mark:
+            self.unmark(cp)
+        else:
+            self._marks[cp] = mark
+
     def mark_of(self, cp: str) -> str | None:
         return self._marks.get(cp)
 
@@ -52,20 +61,31 @@ class Selection:
     def is_empty(self) -> bool:
         return not self._marks
 
+    def _atoms(self, mark: str) -> list[str]:
+        return sorted(cp for cp, m in self._marks.items() if m == mark)
+
     def install_atoms(self) -> list[str]:
-        return sorted(cp for cp, mark in self._marks.items() if mark == INSTALL)
+        return self._atoms(INSTALL)
+
+    def binpkg_atoms(self) -> list[str]:
+        return self._atoms(BINPKG)
+
+    def binpref_atoms(self) -> list[str]:
+        return self._atoms(BINPREF)
 
     def remove_atoms(self) -> list[str]:
-        return sorted(cp for cp, mark in self._marks.items() if mark == REMOVE)
+        return self._atoms(REMOVE)
 
     def summary(self) -> str:
         parts = []
-        n_install = len(self.install_atoms())
-        n_remove = len(self.remove_atoms())
-        if n_install:
-            parts.append(f"{n_install} to install")
-        if n_remove:
-            parts.append(f"{n_remove} to remove")
+        for n, label in (
+            (len(self.install_atoms()), "to install"),
+            (len(self.binpkg_atoms()), "binary"),
+            (len(self.binpref_atoms()), "prefer-binary"),
+            (len(self.remove_atoms()), "to remove"),
+        ):
+            if n:
+                parts.append(f"{n} {label}")
         return " · ".join(parts) if parts else "no changes"
 
     def __len__(self) -> int:

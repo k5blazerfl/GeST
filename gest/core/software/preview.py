@@ -121,6 +121,27 @@ def preview_install_many(atoms, *, runner: Runner | None = None) -> PreviewResul
     return PreviewResult(atom=" ".join(atoms), returncode=returncode, output=output.strip())
 
 
+def preview_install_binary_many(
+    atoms, *, only: bool, runner: Runner | None = None
+) -> PreviewResult:
+    """Preview a binary merge: emerge --pretend --getbinpkg [--usepkgonly] <atoms>.
+
+    ``only`` forces binary packages (``--usepkgonly``): the pretend run fails
+    cleanly if no binary is available. Without it, emerge prefers a binary and
+    falls back to building from source.
+    """
+    atoms = list(atoms)
+    if not atoms:
+        return PreviewResult(atom="", returncode=0, output="nothing selected")
+    run = runner or _default_runner
+    argv = [_EMERGE, "--pretend", "--verbose", "--color", "n", "--getbinpkg"]
+    if only:
+        argv.append("--usepkgonly")
+    argv += atoms
+    returncode, output = run(argv)
+    return PreviewResult(atom=" ".join(atoms), returncode=returncode, output=output.strip())
+
+
 def preview_depclean_many(atoms, *, runner: Runner | None = None) -> PreviewResult:
     """Preview removing several atoms at once: emerge --pretend --depclean <atoms>."""
     atoms = list(atoms)

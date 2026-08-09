@@ -118,3 +118,31 @@ def test_preview_depclean_many_builds_argv():
     assert result.ok
     assert "--depclean" in calls["argv"]
     assert calls["argv"][-2:] == ["a/b", "c/d"]
+
+
+def test_preview_install_binary_only_forces_usepkgonly():
+    calls = {}
+    def runner(argv):
+        calls["argv"] = argv
+        return 0, "Total: 1 package"
+    from gest.core.software.preview import preview_install_binary_many
+    r = preview_install_binary_many(["app-editors/vim"], only=True, runner=runner)
+    assert "--getbinpkg" in calls["argv"] and "--usepkgonly" in calls["argv"]
+    assert "--pretend" in calls["argv"] and calls["argv"][-1] == "app-editors/vim"
+    assert r.ok
+
+
+def test_preview_install_binary_prefer_omits_usepkgonly():
+    calls = {}
+    def runner(argv):
+        calls["argv"] = argv
+        return 0, "Total: 1 package"
+    from gest.core.software.preview import preview_install_binary_many
+    preview_install_binary_many(["a/b"], only=False, runner=runner)
+    assert "--getbinpkg" in calls["argv"] and "--usepkgonly" not in calls["argv"]
+
+
+def test_preview_install_binary_empty_is_noop():
+    from gest.core.software.preview import preview_install_binary_many
+    r = preview_install_binary_many([], only=True, runner=lambda a: (99, "no"))
+    assert r.ok and r.output == "nothing selected"

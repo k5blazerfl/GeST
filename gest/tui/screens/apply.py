@@ -52,6 +52,13 @@ def install_plan(atoms: list[str]) -> Plan:
                 lambda b, p, f: b.install_multi(atoms, p, f))
 
 
+def install_binary_plan(atoms: list[str], *, only: bool) -> Plan:
+    label = "Install (binary only)" if only else "Install (prefer binary)"
+    return Plan(label,
+                lambda: preview.preview_install_binary_many(atoms, only=only),
+                lambda b, p, f: b.install_binary_multi(atoms, only, p, f))
+
+
 def remove_plan(atoms: list[str]) -> Plan:
     return Plan("Remove", lambda: preview.preview_depclean_many(atoms),
                 lambda b, p, f: b.depclean_multi(atoms, p, f))

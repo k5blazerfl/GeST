@@ -403,6 +403,27 @@ def test_software_actions_menu_marks_install():
     assert len(scr._selection) == 1
 
 
+def test_software_binary_mark_key_and_glyph():
+    from gest.core.software import selection as s
+    app = App()
+    scr = _software(app)
+    scr.keypress(_SIZE, "tab")                    # focus table
+    scr.keypress(_SIZE, "b")                      # mark install binary-only
+    cp = scr._cps[0]
+    assert scr._selection.mark_of(cp) == s.BINPKG
+    assert scr._walker[0].base_widget.text.startswith("b")   # 'b' glyph
+    assert "binary" in scr._count.text
+
+
+def test_software_binary_menu_opens_binhost():
+    from gest.tui.screens.binhost import BinhostScreen
+    app = App()
+    scr = _software(app)
+    # Binary packages menu → sources launches the (now-merged) binhost screen
+    scr._on_menu("binary", "binhost")
+    assert isinstance(app._stack[-1], BinhostScreen)
+
+
 def test_software_detail_pane_has_bold_labels():
     app = App()
     scr = _software(app)
@@ -664,8 +685,9 @@ def test_software_menu_bar_opens_and_selects():
     # focus the menu bar, open Extras, pick "Portage news"
     scr._pile.focus_position = 0
     assert scr._pile.focus_position == 0
-    for _ in range(3):
-        scr.keypress(_SIZE, "right")              # View -> Configuration -> Dependencies -> Extras
+    for _ in range(4):
+        # View -> Configuration -> Binary packages -> Dependencies -> Extras
+        scr.keypress(_SIZE, "right")
     scr.keypress(_SIZE, "enter")                  # open Extras dropdown
     assert isinstance(app._stack[-1], urwid.Overlay)
     drop = app._stack[-1]

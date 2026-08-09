@@ -61,6 +61,15 @@ class SoftwareBackend:
             self._iface.on_finished(on_finished)
         return await self._iface.call_install_multi(atoms)
 
+    async def install_binary_multi(self, atoms, only, on_progress=None,
+                                   on_finished=None) -> bool:
+        """Merge atoms as binary packages (--getbinpkg [--usepkgonly]); streams."""
+        if on_progress is not None:
+            self._iface.on_progress(on_progress)
+        if on_finished is not None:
+            self._iface.on_finished(on_finished)
+        return await self._iface.call_install_binary_multi(atoms, only)
+
     async def rebuild(
         self,
         atom: str,
