@@ -137,6 +137,9 @@ working tree.
       (metadata.xml longdescription, the opt-in time-consuming path)
 - [x] TUI polish — F1 help overlay on every screen (bespoke or synthesised from
       the key list) + YaST-style [Cancel]/[Accept] action bar on Software
+- [x] Chrome consistency — documented key conventions (F1 help, Esc back,
+      F10 apply) and made quit a top-level-only action (menu q/Q/F9; sub-screens
+      step back with Esc rather than exiting the app)
 - [x] Users & Groups module — list users/groups; add / edit / delete users,
       add / delete groups (polkit-gated useradd/usermod/userdel/groupadd/groupdel)
 - [x] User passwords (chpasswd via stdin) + group membership (gpasswd);

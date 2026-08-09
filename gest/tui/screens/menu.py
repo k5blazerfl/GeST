@@ -166,7 +166,7 @@ class MenuScreen(Screen):
             self._launch(self._mod_keys[self._mod_walker.focus])
 
     def handle_key(self, key):
-        if key == "f9":
+        if key in ("f9", "q", "Q"):  # quit is a top-level action (see App._unhandled)
             self.app.quit()
             return None
         if key in ("h", "H"):  # F1 is handled by the Screen base

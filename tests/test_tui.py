@@ -51,6 +51,16 @@ def test_menu_two_panes_and_category_navigation():
     assert "Hostname" in out2 and "Timezone" in out2
 
 
+def test_quit_is_top_level_only():
+    import pytest
+    app = App()
+    app._unhandled("q")          # a sub-screen's unhandled q must NOT quit
+    menu = MenuScreen(app)
+    app._stack.append(menu)
+    with pytest.raises(urwid.ExitMainLoop):
+        menu.keypress(_SIZE, "q")   # but q/Q/F9 quit from the Control Center
+
+
 def test_f1_opens_help_overlay_with_bespoke_text():
     import urwid
     app = App()

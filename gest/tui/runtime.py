@@ -155,6 +155,16 @@ class Screen(urwid.WidgetWrap):
 
     Subclasses build ``body`` and may override ``handle_key`` for screen-level
     keys (nav keys reach the focused body widget first).
+
+    Chrome conventions (keep these consistent across screens):
+    - **F1** opens a help overlay on every screen — pass ``help_text`` for
+      bespoke help, else one is synthesised from ``footer_keys``. F1 is added to
+      the footer automatically.
+    - **Esc** steps back (``app.pop``) — every module screen handles it and lists
+      ``("Esc", "Back")`` last in its ``footer_keys``.
+    - **F10** applies/accepts a pending change where a screen has one.
+    - **Quit is top-level only**: the Control Center menu handles q/Q/F9;
+      sub-screens never exit the app (use Esc to back out).
     """
 
     def __init__(self, app: App, body: urwid.Widget, *, title: str = "",
@@ -319,8 +329,9 @@ class App:
         self.main.run()
 
     def _unhandled(self, key):
-        if key in ("q", "Q"):
-            self.quit()
+        # Quitting is a top-level action: the Control Center menu handles q/Q/F9.
+        # Sub-screens use Esc to step back rather than exiting the whole app.
+        return
 
 
 async def _guard(app: App, coro: Awaitable) -> None:
