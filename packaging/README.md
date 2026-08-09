@@ -4,10 +4,11 @@ Ebuilds that install GeST system-wide — the **hardened** install: the root
 backend loads the *installed* package from system paths, not a working tree
 (unlike the dev `install-backend.sh`). Two are provided:
 
-- **`gest-0.47.0`** — the latest released version (urwid; depends only on
-  `::gentoo` packages), from the `v0.47.0` tag tarball (`~amd64`). Recommended —
-  Software Management can install the binary version of a package (--getbinpkg),
-  with the binhost sources merged into its Binary packages menu.
+- **`gest-0.47.1`** — the latest released version (urwid; depends only on
+  `::gentoo` packages), from the `v0.47.1` tag tarball (`~amd64`). Recommended —
+  Software Management can install the binary version of a package (--getbinpkg,
+  Space cycles the mark through binary), binhost sources merged into its Binary
+  packages menu.
 - **`gest-9999`** — a live ebuild that builds the current `main` (for
   hacking on the tree).
 
