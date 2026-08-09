@@ -85,3 +85,24 @@ def test_packages_in_category_are_scoped_and_sorted():
     assert all(r.cp.startswith("sys-apps/") for r in pkgs)
     assert [r.cp for r in pkgs] == sorted(r.cp for r in pkgs)
     assert any(r.cp == "sys-apps/portage" for r in pkgs)
+
+
+def test_search_exact_mode_matches_package_name():
+    hits = reader.search("portage", fields=("name",), mode="exact")
+    cps = {r.cp for r in hits}
+    assert "sys-apps/portage" in cps          # pn == "portage"
+    assert all(r.cp.split("/")[-1] == "portage" or r.cp == "portage" for r in hits)
+
+
+def test_search_regexp_mode():
+    hits = reader.search(r"^sys-apps/portage$", fields=("name",), mode="regexp")
+    assert [r.cp for r in hits] == ["sys-apps/portage"]
+    # an invalid regexp yields no results rather than raising
+    assert reader.search("*bad(", fields=("name",), mode="regexp") == []
+
+
+def test_search_ignore_case_toggle():
+    insensitive = reader.search("PORTAGE", fields=("name",), ignore_case=True)
+    sensitive = reader.search("PORTAGE", fields=("name",), ignore_case=False)
+    assert any(r.cp == "sys-apps/portage" for r in insensitive)
+    assert not any(r.cp == "sys-apps/portage" for r in sensitive)  # lowercase cp

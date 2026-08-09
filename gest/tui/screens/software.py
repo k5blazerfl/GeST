@@ -50,6 +50,21 @@ _VIEWS = [
     ("world", "World set"),
 ]
 
+# Search-phrase match modes (id, label).
+_MODES = [
+    ("contains", "Contains"),
+    ("exact", "Exact"),
+    ("regexp", "RegExp"),
+]
+
+# Per-package actions menu (id, label, enabled).
+_ACTIONS = [
+    ("install", "Install / Update", True),
+    ("remove", "Remove", True),
+    ("use", "USE flags", True),
+    ("keywords", "Keywords / mask", True),
+]
+
 _PKG_HEADER = f"   {'Name':<32} Summary"
 _CAT_HEADER = "   Category"
 
@@ -58,6 +73,7 @@ class SoftwareScreen(Screen):
     # sidebar widget indices
     _VIEW_IDX = 0
     _SEARCH_W_IDX = 2
+    _MODE_IDX = 3
 
     def __init__(self, app: App) -> None:
         self._cps: list[str] = []
@@ -66,21 +82,31 @@ class SoftwareScreen(Screen):
         self._categories: list[str] = []
         self._selection = Selection()
         self._view = "installed"
+        self._mode = "contains"
         self._table_mode = "packages"  # "packages" | "categories"
         self._drilled: str | None = None
 
         # -- left: filter sidebar ------------------------------------------
         self._view_selector = _row(self._view_label())
         self._search = urwid.Edit("Search: ")
+        self._mode_selector = _row(self._mode_label())
+        self._ignore_cb = urwid.CheckBox("Ignore case", state=True)
         self._name_cb = urwid.CheckBox("Name", state=True)
         self._summary_cb = urwid.CheckBox("Summary")
+        self._homepage_cb = urwid.CheckBox("Homepage")
+        self._license_cb = urwid.CheckBox("License")
         self._sidebar = urwid.Pile([
             ("pack", self._view_selector),
             ("pack", urwid.Divider()),
             ("pack", self._search),
+            ("pack", self._mode_selector),
+            ("pack", self._ignore_cb),
+            ("pack", urwid.Divider()),
             ("pack", urwid.Text(("hint", "Search in:"))),
             ("pack", self._name_cb),
             ("pack", self._summary_cb),
+            ("pack", self._homepage_cb),
+            ("pack", self._license_cb),
         ])
         sidebar_box = urwid.LineBox(
             urwid.Filler(self._sidebar, valign="top"), title="Filter")
@@ -97,6 +123,7 @@ class SoftwareScreen(Screen):
         right = urwid.Pile([
             ("weight", 3, urwid.LineBox(self._table_frame, title="Packages")),
             ("pack", self._count),
+            ("pack", urwid.Text(("hint", " [ Actions ▾ ]  press a")), ),
             ("weight", 2, detail_box),
         ])
 
@@ -108,7 +135,7 @@ class SoftwareScreen(Screen):
             app, pile, title="Software Management",
             footer_keys=[
                 ("Enter", "Search/Install"), ("Space", "Mark"), ("r", "Remove"),
-                ("Tab", "Pane"), ("u", "USE"), ("k", "Keywords"),
+                ("a", "Actions"), ("Tab", "Pane"), ("u", "USE"), ("k", "Keys"),
                 ("F10", "Accept"), ("Esc", "Back"),
             ],
         )
@@ -136,6 +163,44 @@ class SoftwareScreen(Screen):
 
     def _on_view_pick(self, _menu_id: str, view_id: str) -> None:
         self._switch_view(view_id)
+
+    # -- mode selector ------------------------------------------------------
+
+    def _mode_label(self) -> str:
+        title = dict(_MODES).get(self._mode, "Contains")
+        return f" Mode: {title} ▾"
+
+    def _open_mode_menu(self) -> None:
+        items = [(mid, label, True) for mid, label in _MODES]
+        drop = _Dropdown(self.app, "mode", items, self._on_mode_pick)
+        self.app.push_overlay(drop, align="left", left=2, valign="top", top=6,
+                              width=drop.width, height=drop.height)
+
+    def _on_mode_pick(self, _menu_id: str, mode_id: str) -> None:
+        self._mode = mode_id
+        self._mode_selector.base_widget.set_text(self._mode_label())
+
+    # -- actions menu -------------------------------------------------------
+
+    def _open_actions_menu(self) -> None:
+        if self._table_mode != "packages" or not self._cps:
+            return
+        drop = _Dropdown(self.app, "actions", _ACTIONS, self._on_action_pick)
+        self.app.push_overlay(drop, align="left", left=38, valign="top", top=8,
+                              width=drop.width, height=drop.height)
+
+    def _on_action_pick(self, _menu_id: str, action_id: str) -> None:
+        if not self._cps:
+            return
+        cp = self._cps[self._walker.focus]
+        if action_id == "install":
+            self._toggle(remove=False)
+        elif action_id == "remove":
+            self._toggle(remove=True)
+        elif action_id == "use":
+            self.app.push(UseFlagScreen(self.app, cp))
+        elif action_id == "keywords":
+            self.app.push(KeywordsScreen(self.app, cp))
 
     def _switch_view(self, view: str) -> None:
         self._view = view
@@ -204,8 +269,14 @@ class SoftwareScreen(Screen):
             fields.append("name")
         if self._summary_cb.state:
             fields.append("summary")
+        if self._homepage_cb.state:
+            fields.append("homepage")
+        if self._license_cb.state:
+            fields.append("license")
+        mode, ignore_case = self._mode, self._ignore_cb.state
         results = await self.app.run_blocking(
-            lambda: reader.search(term, fields=tuple(fields) or ("name",))
+            lambda: reader.search(term, fields=tuple(fields) or ("name",),
+                                  mode=mode, ignore_case=ignore_case)
         )
         self._fill([(r.cp, (r.description or "")[:60]) for r in results],
                    [r.cp for r in results], [r.installed for r in results])
@@ -248,17 +319,18 @@ class SoftwareScreen(Screen):
         self._detail.set_text(self._render_detail(cp, detail))
         self.app.refresh()
 
-    def _render_detail(self, cp: str, d: PackageDetail | None) -> str:
+    def _render_detail(self, cp: str, d: PackageDetail | None):
         if d is None:
             return f"{cp}\n(no metadata)"
-        return (
-            f"{d.cp} — {d.description}\n"
-            f"Version: {d.available_version or '—'}   Installed: {d.installed_version or '—'}"
-            f"   Slot: {d.slot}\n"
-            f"License: {d.license or '—'}\n"
-            f"Homepage: {d.homepage or '—'}\n"
-            f"Keywords: {d.keywords or '—'}"
-        )
+        return [
+            ("title", f"{d.cp}"), f" — {d.description}\n\n",
+            ("field", "Version: "), f"{d.available_version or '—'}   ",
+            ("field", "Installed: "), f"{d.installed_version or '—'}   ",
+            ("field", "Slot: "), f"{d.slot}\n",
+            ("field", "License: "), f"{d.license or '—'}\n",
+            ("field", "Homepage: "), f"{d.homepage or '—'}\n",
+            ("field", "Keywords: "), f"{d.keywords or '—'}",
+        ]
 
     # -- marks + count ------------------------------------------------------
 
@@ -350,6 +422,7 @@ class SoftwareScreen(Screen):
         _in_menu, in_sidebar, in_table, sidebar_focus = self._context()
         on_view = in_sidebar and sidebar_focus == self._VIEW_IDX
         on_search = in_sidebar and sidebar_focus == self._SEARCH_W_IDX
+        on_mode = in_sidebar and sidebar_focus == self._MODE_IDX
 
         if key == "tab":
             self._cycle_pane()
@@ -362,6 +435,12 @@ class SoftwareScreen(Screen):
             return None
         if on_view and key in ("enter", " ", "down"):
             self._open_view_menu()
+            return None
+        if on_mode and key in ("enter", " "):
+            self._open_mode_menu()
+            return None
+        if key == "a" and in_table:
+            self._open_actions_menu()
             return None
         if key == "f10":
             self._accept()

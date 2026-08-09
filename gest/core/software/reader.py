@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import functools
 import os
+import re
 
 import portage
 from portage.versions import cpv_getkey, cpv_getversion
@@ -102,36 +103,85 @@ def list_installed() -> list[Package]:
     return packages
 
 
-def search(
-    term: str, *, fields: tuple[str, ...] = ("name",), limit: int = 200
-) -> list[SearchResult]:
-    """Substring search over packages.
+# Search-in fields that require reading package metadata → their aux_get key.
+_META_FIELD_KEYS = {"summary": "DESCRIPTION", "homepage": "HOMEPAGE", "license": "LICENSE"}
 
-    ``fields`` chooses what to match: ``"name"`` (category/package, cheap) and/or
-    ``"summary"`` (the one-line DESCRIPTION). Summary search must read metadata
-    for every package, so it is the "time-consuming" option — only paid when the
-    caller asks for it, and always run off the UI thread by the frontend.
+
+def _make_matcher(term: str, mode: str, ignore_case: bool):
+    """Return a predicate ``matches(text) -> bool`` for the given search mode."""
+    if mode == "regexp":
+        try:
+            pattern = re.compile(term, re.IGNORECASE if ignore_case else 0)
+        except re.error:
+            return None
+        return lambda text: bool(pattern.search(text or ""))
+    needle = term.lower() if ignore_case else term
+
+    def norm(text: str) -> str:
+        return (text or "").lower() if ignore_case else (text or "")
+
+    if mode == "exact":
+        return lambda text: norm(text) == needle
+    return lambda text: needle in norm(text)  # "contains" (default)
+
+
+def search(
+    term: str,
+    *,
+    fields: tuple[str, ...] = ("name",),
+    mode: str = "contains",
+    ignore_case: bool = True,
+    limit: int = 200,
+) -> list[SearchResult]:
+    """Search packages by name and/or metadata fields.
+
+    ``fields`` chooses what to match: ``"name"`` (category/package, cheap) plus
+    any of ``"summary"``/``"homepage"``/``"license"`` (a single per-package
+    ``aux_get`` read — the "time-consuming" part, only paid when requested and
+    always run off the UI thread). ``mode`` is ``"contains"`` (substring),
+    ``"exact"`` (whole name/field equals the phrase) or ``"regexp"``.
     """
-    needle = term.strip().lower()
-    if not needle:
+    term = term.strip()
+    if not term:
         return []
-    want_summary = "summary" in fields
+    matches = _make_matcher(term, mode, ignore_case)
+    if matches is None:  # invalid regexp
+        return []
+
+    want_name = "name" in fields
+    meta_fields = [f for f in fields if f in _META_FIELD_KEYS]
+    want_meta = bool(meta_fields)
     results: list[SearchResult] = []
+
     for cp in _PORTDB.cp_all():
-        name_hit = needle in cp.lower()
-        if not name_hit and not want_summary:
+        name_hit = False
+        if want_name:
+            name_hit = matches(cp) or (mode == "exact" and matches(cp.split("/")[-1]))
+        if not name_hit and not want_meta:
             continue  # name-only search skips the expensive metadata read
         best = _best_available(cp)
         version = cpv_getversion(best) if best else ""
-        desc = ""
+        values: dict[str, str] = {}
         if best:
+            # DESCRIPTION is always read (shown as the row summary); add the
+            # other requested metadata keys.
+            keys = ["DESCRIPTION", *[_META_FIELD_KEYS[f] for f in meta_fields
+                                     if _META_FIELD_KEYS[f] != "DESCRIPTION"]]
             try:
-                desc = _PORTDB.aux_get(best, ["DESCRIPTION"])[0]
+                got = _PORTDB.aux_get(best, keys)
+                values = dict(zip(keys, got, strict=True))
             except Exception:
                 # A broken ebuild (e.g. in a third-party overlay) can make
                 # aux_get raise; don't let one bad package sink the whole search.
-                desc = ""
-        if not name_hit and needle not in (desc or "").lower():
+                values = {}
+        desc = values.get("DESCRIPTION", "")
+        hit = name_hit
+        if not hit:
+            for field in meta_fields:
+                if matches(values.get(_META_FIELD_KEYS[field], "")):
+                    hit = True
+                    break
+        if not hit:
             continue
         inst = _VARDB.cp_list(cp)
         inst_ver = cpv_getversion(inst[-1]) if inst else None

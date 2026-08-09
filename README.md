@@ -124,6 +124,10 @@ working tree.
 - [x] Software Management two-pane layout — YaST sw_single-style Filter sidebar
       (view selector: Search / Categories / Installed / World) + package table
       with a pinned column header + live detail pane
+- [x] Software Management filter power — search modes (Contains / Exact / RegExp)
+      + Ignore case + search-in fields (Name / Summary / Homepage / License),
+      a formatted detail pane (coloured title + bold labels), and an Actions
+      dropdown (Install/Remove/USE/keywords) per package
 - [x] Users & Groups module — list users/groups; add / edit / delete users,
       add / delete groups (polkit-gated useradd/usermod/userdel/groupadd/groupdel)
 - [x] User passwords (chpasswd via stdin) + group membership (gpasswd);

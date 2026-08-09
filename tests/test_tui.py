@@ -266,6 +266,43 @@ def test_software_view_switch_to_categories():
     assert scr._drilled == scr._categories[0]
 
 
+def test_software_mode_selector_changes_mode():
+    import urwid
+    app = App()
+    scr = _software(app)
+    scr._columns.focus_position = 0
+    scr._sidebar.focus_position = scr._MODE_IDX
+    scr.keypress(_SIZE, "enter")                  # open the Mode dropdown
+    assert isinstance(app._stack[-1], urwid.Overlay)
+    drop = app._stack[-1]
+    drop.keypress(_SIZE, "down")                  # Contains -> Exact
+    drop.keypress(_SIZE, "enter")
+    assert scr._mode == "exact"
+    assert "Exact" in scr._mode_selector.base_widget.text
+
+
+def test_software_actions_menu_marks_install():
+    import urwid
+    app = App()
+    scr = _software(app)
+    scr.keypress(_SIZE, "tab")                    # focus table
+    scr.keypress(_SIZE, "a")                      # open Actions
+    assert isinstance(app._stack[-1], urwid.Overlay)
+    drop = app._stack[-1]
+    drop.keypress(_SIZE, "enter")                 # first item: Install / Update
+    assert len(scr._selection) == 1
+
+
+def test_software_detail_pane_has_bold_labels():
+    app = App()
+    scr = _software(app)
+    _pump(app, lambda: "Version" in str(scr._detail.get_text()), ticks=300)
+    text, attrs = scr._detail.get_text()
+    assert "Version:" in text and "Homepage:" in text
+    assert any(attr == "field" for attr, _run in attrs)   # bold field labels
+    assert any(attr == "title" for attr, _run in attrs)   # coloured pkg title
+
+
 def test_software_accept_opens_apply_screen():
     app = App()
     scr = _software(app)
