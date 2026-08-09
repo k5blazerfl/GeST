@@ -15,23 +15,24 @@ from collections.abc import Awaitable, Callable
 
 import urwid
 
-# A restrained, YaST-ish blue palette.
+# A green palette — a nod to SUSE/openSUSE (the Geeko green), keeping YaST's
+# chrome layout. Blue/cyan chrome becomes green; amber accelerators stay.
 PALETTE = [
-    ("header", "white", "dark blue"),
-    ("footer", "light gray", "dark blue"),
-    ("footer_key", "black", "light gray"),
-    ("title", "light cyan,bold", "default"),
+    ("header", "white", "dark green"),
+    ("footer", "white", "dark green"),
+    ("footer_key", "black", "light green"),
+    ("title", "light green,bold", "default"),
     ("hint", "dark gray", "default"),
-    ("focus", "black", "light cyan"),
+    ("focus", "black", "light green"),
     ("reversed", "standout", "default"),
     ("ok", "light green", "default"),
     ("error", "light red", "default"),
-    ("pane_title", "light cyan,bold", "default"),
+    ("pane_title", "light green,bold", "default"),
     ("field", "white,bold", "default"),
-    ("cc_title", "brown", "default"),   # YaST-style amber for the Control Center
+    ("cc_title", "brown", "default"),   # amber accelerator letters (kept)
     ("menubar", "black", "light gray"),
     ("menu_title", "black", "light gray"),
-    ("menu_focus", "white", "dark blue"),
+    ("menu_focus", "white", "dark green"),
     ("menu_drop", "black", "light gray"),
     ("dim", "dark gray", "default"),
 ]
