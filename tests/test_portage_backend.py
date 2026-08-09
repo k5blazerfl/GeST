@@ -30,6 +30,14 @@ def test_validate_package_file_checks_atoms():
     assert "invalid package atom" in bad
 
 
+def test_validate_package_file_accepts_wildcard_use_expand():
+    # the */* form used by CPU_FLAGS_X86 / VIDEO_CARDS drop-ins
+    assert svc._validate_content(
+        "/etc/portage/package.use/50gest-cpuflags", "*/* CPU_FLAGS_X86: mmx sse\n") == ""
+    assert svc._validate_content(
+        "/etc/portage/package.use/50gest-videocards", "*/* VIDEO_CARDS: amdgpu\n") == ""
+
+
 def test_validate_binrepos_and_unknown_surface():
     assert svc._validate_content(
         "/etc/portage/binrepos.conf/gest.conf", "[gentoo]\nsync-uri = https://d/\n"

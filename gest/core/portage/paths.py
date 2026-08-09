@@ -46,6 +46,11 @@ def package_dir(kind: str, root: str | None = None) -> str:
     return os.path.join(etc_portage(root), f"package.{kind}")
 
 
+def package_fragment(kind: str, name: str, root: str | None = None) -> str:
+    """A named drop-in ``package.<kind>/<name>`` (e.g. ``50gest-cpuflags``)."""
+    return os.path.join(package_dir(kind, root), name)
+
+
 def gest_fragment(kind: str, root: str | None = None) -> str:
     """The GeST-owned drop-in ``package.<kind>/gest``."""
-    return os.path.join(package_dir(kind, root), "gest")
+    return package_fragment(kind, "gest", root)

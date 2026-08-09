@@ -56,8 +56,11 @@ _INTROSPECTION = f"""
 
 _GETUTO = shutil.which("getuto") or "/usr/bin/getuto"
 
-# A package atom (category/name), the key of every package.* line.
-_ATOM_RE = re.compile(r"^[a-z0-9][a-z0-9+._-]*/[a-zA-Z0-9+._-]+$")
+# The key of a package.* line: a category/name atom, or a wildcard form such as
+# ``*/*`` (used by USE_EXPAND directives like ``*/* CPU_FLAGS_X86: ...``),
+# ``cat/*`` or ``*/pkg``.
+_ATOM_RE = re.compile(
+    r"^(?:\*|[a-z0-9][a-z0-9+._-]*)/(?:\*|[a-zA-Z0-9+._-]+)$")
 _MAX_BYTES = 1 << 20  # 1 MiB — a sanity ceiling; config files are tiny
 
 

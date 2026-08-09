@@ -14,6 +14,7 @@ from gest.tui.screens.datetime import DateTimeScreen
 from gest.tui.screens.disk import DiskScreen
 from gest.tui.screens.eselect import EselectScreen
 from gest.tui.screens.hardware import HardwareScreen
+from gest.tui.screens.hwflags import HwFlagsScreen
 from gest.tui.screens.licenses import LicensesScreen
 from gest.tui.screens.logs import LogsScreen
 from gest.tui.screens.makeconf import MakeconfScreen
@@ -48,6 +49,7 @@ CATEGORIES: list[tuple[str, list[tuple[str, str, bool]]]] = [
     ]),
     ("Hardware", [
         ("hardware", "Hardware Information", True),
+        ("hwflags", "CPU & Video Flags", True),
     ]),
     ("Storage", [
         ("disk", "Disks & Mounts", True),
@@ -168,6 +170,8 @@ class MenuScreen(Screen):
             self.app.push(DateTimeScreen(self.app))
         elif key == "hardware":
             self.app.push(HardwareScreen(self.app))
+        elif key == "hwflags":
+            self.app.push(HwFlagsScreen(self.app))
         elif key == "disk":
             self.app.push(DiskScreen(self.app))
         elif key == "users":
