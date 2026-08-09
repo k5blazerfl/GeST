@@ -78,6 +78,9 @@ class PackageDetail:
     homepage: str = ""
     description: str = ""
     keywords: str = ""
+    installed_size: int = 0  # bytes, installed version
+    download_size: int = 0   # bytes, distfiles for the best available version
+    required_by: list[str] = field(default_factory=list)  # installed dependents
 
     @property
     def name(self) -> str:

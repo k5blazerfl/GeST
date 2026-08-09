@@ -12,11 +12,13 @@ already-running event loop such as the TUI's. The synchronous ``cp_list`` +
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import os
 import re
 
 import portage
+from portage.dep import Atom, dep_getkey, use_reduce
 from portage.versions import cpv_getkey, cpv_getversion
 
 from gest.core.software.model import Package, PackageDetail, SearchResult, UseFlag
@@ -263,6 +265,86 @@ def counts() -> dict[str, int]:
     }
 
 
+# -- package facts: size + reverse dependencies -------------------------------
+
+_DEP_KEYS = ("RDEPEND", "DEPEND", "BDEPEND", "PDEPEND")
+
+
+def _human_bytes(n: int) -> str:
+    """Human-readable byte size (B / KiB / MiB / GiB)."""
+    value = float(n)
+    for unit in ("B", "KiB", "MiB", "GiB"):
+        if value < 1024 or unit == "GiB":
+            return f"{value:.0f} {unit}" if unit == "B" else f"{value:.1f} {unit}"
+        value /= 1024
+    return f"{value:.1f} GiB"
+
+
+def installed_size(cp: str) -> int:
+    """Total on-disk size (bytes) of the installed version, else 0."""
+    cp = portage.dep_getkey(cp) if "/" in cp else cp
+    inst = _VARDB.cp_list(cp)
+    if not inst:
+        return 0
+    try:
+        contents = _VARDB._dblink(inst[-1]).getcontents()
+    except Exception:
+        return 0
+    total = 0
+    for path in contents:
+        with contextlib.suppress(OSError):
+            total += os.lstat(path).st_size
+    return total
+
+
+def download_size(cp: str) -> int:
+    """Total distfile download size (bytes) for the best available version."""
+    cp = portage.dep_getkey(cp) if "/" in cp else cp
+    best = _best_available(cp)
+    if not best:
+        return 0
+    try:
+        return sum(_PORTDB.getfetchsizes(best).values())
+    except Exception:
+        return 0
+
+
+@functools.lru_cache(maxsize=1)
+def _reverse_index() -> dict[str, frozenset[str]]:
+    """Map each cp to the set of *installed* packages that depend on it.
+
+    Built once per session from the installed packages' dependency strings
+    (USE-flattened to the superset). Blockers are ignored. Cleared by
+    ``invalidate_caches`` after a merge/unmerge.
+    """
+    idx: dict[str, set[str]] = {}
+    for cpv in _VARDB.cpv_all():
+        dependent = cpv_getkey(cpv)
+        for dep in _VARDB.aux_get(cpv, _DEP_KEYS):
+            if not dep:
+                continue
+            try:
+                tokens = use_reduce(dep, matchall=True, flat=True, token_class=Atom)
+            except Exception:
+                continue
+            for tok in tokens:
+                if isinstance(tok, Atom) and not tok.blocker:
+                    idx.setdefault(dep_getkey(str(tok)), set()).add(dependent)
+    return {key: frozenset(deps) for key, deps in idx.items()}
+
+
+def reverse_dependencies(cp: str) -> list[str]:
+    """Installed packages that depend on ``cp`` (sorted)."""
+    cp = portage.dep_getkey(cp) if "/" in cp else cp
+    return sorted(_reverse_index().get(cp, ()))
+
+
+def invalidate_caches() -> None:
+    """Drop cached indexes after a mutation (merge/unmerge) so they rebuild."""
+    _reverse_index.cache_clear()
+    _world_atoms.cache_clear()
+
+
 def get_package_detail(cp: str) -> PackageDetail | None:
     """Metadata for the detail pane: best-available + installed versions.
 
@@ -288,4 +370,7 @@ def get_package_detail(cp: str) -> PackageDetail | None:
         homepage=homepage,
         description=desc,
         keywords=kw,
+        installed_size=installed_size(cp),
+        download_size=download_size(cp),
+        required_by=reverse_dependencies(cp),
     )

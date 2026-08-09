@@ -130,6 +130,8 @@ working tree.
       + Ignore case + search-in fields (Name / Summary / Homepage / License),
       a formatted detail pane (coloured title + bold labels), and an Actions
       dropdown (Install/Remove/USE/keywords) per package
+- [x] Software detail facts — installed/download Size and Required-by (a
+      session-cached, installed-only reverse-dependency index) in the detail pane
 - [x] Users & Groups module — list users/groups; add / edit / delete users,
       add / delete groups (polkit-gated useradd/usermod/userdel/groupadd/groupdel)
 - [x] User passwords (chpasswd via stdin) + group membership (gpasswd);

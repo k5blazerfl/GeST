@@ -106,3 +106,35 @@ def test_search_ignore_case_toggle():
     sensitive = reader.search("PORTAGE", fields=("name",), ignore_case=False)
     assert any(r.cp == "sys-apps/portage" for r in insensitive)
     assert not any(r.cp == "sys-apps/portage" for r in sensitive)  # lowercase cp
+
+
+def test_installed_size_positive_for_installed_package():
+    assert reader.installed_size("sys-apps/portage") > 0
+    assert reader.installed_size("no-such/package-xyz") == 0
+
+
+def test_download_size_returns_int():
+    assert isinstance(reader.download_size("sys-apps/portage"), int)
+    assert reader.download_size("sys-apps/portage") >= 0
+
+
+def test_reverse_dependencies_finds_dependents():
+    # acct-user/geoclue RDEPENDs acct-group/geoclue on any Gentoo host with it
+    rdeps = reader.reverse_dependencies("acct-group/geoclue")
+    assert "acct-user/geoclue" in rdeps
+    assert rdeps == sorted(rdeps)
+    # a widely-used library has many installed dependents
+    assert len(reader.reverse_dependencies("dev-libs/glib")) > 1
+
+
+def test_invalidate_caches_rebuilds_index():
+    first = reader.reverse_dependencies("dev-libs/glib")
+    reader.invalidate_caches()
+    assert reader.reverse_dependencies("dev-libs/glib") == first  # rebuilds, same data
+
+
+def test_get_package_detail_has_size_and_reverse_deps():
+    d = reader.get_package_detail("sys-apps/portage")
+    assert d.installed_size > 0
+    assert isinstance(d.download_size, int)
+    assert isinstance(d.required_by, list)

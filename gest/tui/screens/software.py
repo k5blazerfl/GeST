@@ -32,6 +32,17 @@ def _row(text: str) -> urwid.Widget:
     return urwid.AttrMap(icon, None, focus_map="focus")
 
 
+def _fmt_size(n: int) -> str:
+    if n <= 0:
+        return "—"
+    value = float(n)
+    for unit in ("B", "KiB", "MiB", "GiB"):
+        if value < 1024 or unit == "GiB":
+            return f"{value:.0f} {unit}" if unit == "B" else f"{value:.1f} {unit}"
+        value /= 1024
+    return f"{value:.1f} GiB"
+
+
 _MENUS = [
     ("view", "View", [("installed", "Installed packages", True)]),
     ("config", "Configuration", [
@@ -322,14 +333,24 @@ class SoftwareScreen(Screen):
     def _render_detail(self, cp: str, d: PackageDetail | None):
         if d is None:
             return f"{cp}\n(no metadata)"
+        rb = d.required_by
+        if rb:
+            rb_text = ", ".join(rb[:8])
+            if len(rb) > 8:
+                rb_text += f" … (+{len(rb) - 8} more)"
+        else:
+            rb_text = "—"
         return [
             ("title", f"{d.cp}"), f" — {d.description}\n\n",
             ("field", "Version: "), f"{d.available_version or '—'}   ",
             ("field", "Installed: "), f"{d.installed_version or '—'}   ",
             ("field", "Slot: "), f"{d.slot}\n",
+            ("field", "Size: "),
+            f"{_fmt_size(d.installed_size)} installed · {_fmt_size(d.download_size)} download\n",
             ("field", "License: "), f"{d.license or '—'}\n",
             ("field", "Homepage: "), f"{d.homepage or '—'}\n",
-            ("field", "Keywords: "), f"{d.keywords or '—'}",
+            ("field", "Keywords: "), f"{d.keywords or '—'}\n",
+            ("field", "Required by: "), rb_text,
         ]
 
     # -- marks + count ------------------------------------------------------
@@ -378,6 +399,7 @@ class SoftwareScreen(Screen):
 
     def _after(self) -> None:
         self._selection.clear()
+        reader.invalidate_caches()  # deps/world changed → rebuild cached indexes
         self.app.run_async(self._load_installed())
 
     # -- menu bar -----------------------------------------------------------

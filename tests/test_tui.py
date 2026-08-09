@@ -300,6 +300,7 @@ def test_software_detail_pane_has_bold_labels():
     _pump(app, lambda: "Version" in str(scr._detail.get_text()), ticks=300)
     text, attrs = scr._detail.get_text()
     assert "Version:" in text and "Homepage:" in text
+    assert "Size:" in text and "Required by:" in text     # phase-A facts
     assert any(attr == "field" for attr, _run in attrs)   # bold field labels
     assert any(attr == "title" for attr, _run in attrs)   # coloured pkg title
 
