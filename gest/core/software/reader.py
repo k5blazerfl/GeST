@@ -142,6 +142,35 @@ def search(
     return results
 
 
+def list_categories() -> list[str]:
+    """Every Portage category (the Gentoo analogue of YaST 'package groups')."""
+    return sorted(_PORTDB.categories)
+
+
+def packages_in_category(category: str, *, limit: int = 500) -> list[SearchResult]:
+    """Available packages within one category, as lightweight search hits."""
+    prefix = f"{category}/"
+    results: list[SearchResult] = []
+    for cp in _PORTDB.cp_all():
+        if not cp.startswith(prefix):
+            continue
+        best = _best_available(cp)
+        version = cpv_getversion(best) if best else ""
+        desc = ""
+        if best:
+            try:
+                desc = _PORTDB.aux_get(best, ["DESCRIPTION"])[0]
+            except Exception:
+                desc = ""
+        inst = _VARDB.cp_list(cp)
+        inst_ver = cpv_getversion(inst[-1]) if inst else None
+        results.append(SearchResult(cp, version, desc, inst_ver))
+        if len(results) >= limit:
+            break
+    results.sort(key=lambda r: r.cp)
+    return results
+
+
 def get_package(cp: str) -> Package | None:
     """Detailed view of a package by cp, preferring the installed version.
 

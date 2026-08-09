@@ -1,9 +1,9 @@
-"""Software Management (urwid): search / list, live detail, transactional marks.
+"""Software Management (urwid): YaST sw_single-style two-pane browser.
 
-Mark packages (Space install/update, r remove), then Accept applies them —
-installs first, then a depclean pass — through the streaming ApplyScreen. USE /
-keyword editing and the dropdown menu bar are follow-ups; the core browse +
-transactional flow lives here.
+Left: a Filter sidebar (view selector + search phrase + search-in fields).
+Right: a package table with a pinned column header, a count line, and a live
+detail pane. Mark packages (Space install/update, r remove), then Accept applies
+them — installs first, then a depclean pass — through the streaming ApplyScreen.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import urwid
 from gest.core.software import reader
 from gest.core.software.model import PackageDetail
 from gest.core.software.selection import Selection
-from gest.tui.menubar import MenuBar
+from gest.tui.menubar import MenuBar, _Dropdown
 from gest.tui.runtime import App, Screen
 from gest.tui.screens.apply import (
     ApplyScreen,
@@ -27,7 +27,9 @@ from gest.tui.screens.news import NewsScreen
 
 
 def _row(text: str) -> urwid.Widget:
-    return urwid.AttrMap(urwid.SelectableIcon(text, 0), None, focus_map="focus")
+    icon = urwid.SelectableIcon(text, 0)
+    icon.set_wrap_mode("clip")  # YaST-style: one line per package, no wrapping
+    return urwid.AttrMap(icon, None, focus_map="focus")
 
 
 _MENUS = [
@@ -40,62 +42,161 @@ _MENUS = [
         ("news", "Portage news", True)]),
 ]
 
+# Filter views offered by the sidebar selector (id, label).
+_VIEWS = [
+    ("search", "Search"),
+    ("categories", "Categories"),
+    ("installed", "Installed"),
+    ("world", "World set"),
+]
+
+_PKG_HEADER = f"   {'Name':<32} Summary"
+_CAT_HEADER = "   Category"
+
 
 class SoftwareScreen(Screen):
-    _SEARCH_IDX = 1
-    _TABLE_IDX = 4
+    # sidebar widget indices
+    _VIEW_IDX = 0
+    _SEARCH_W_IDX = 2
 
     def __init__(self, app: App) -> None:
         self._cps: list[str] = []
         self._installed: list[bool] = []
         self._summaries: list[str] = []
+        self._categories: list[str] = []
         self._selection = Selection()
+        self._view = "installed"
+        self._table_mode = "packages"  # "packages" | "categories"
+        self._drilled: str | None = None
 
+        # -- left: filter sidebar ------------------------------------------
+        self._view_selector = _row(self._view_label())
         self._search = urwid.Edit("Search: ")
         self._name_cb = urwid.CheckBox("Name", state=True)
         self._summary_cb = urwid.CheckBox("Summary")
-        search_in = urwid.Columns([
-            ("pack", urwid.Text("Search in: ")),
+        self._sidebar = urwid.Pile([
+            ("pack", self._view_selector),
+            ("pack", urwid.Divider()),
+            ("pack", self._search),
+            ("pack", urwid.Text(("hint", "Search in:"))),
             ("pack", self._name_cb),
-            ("pack", urwid.Text("  ")),
             ("pack", self._summary_cb),
         ])
-        self._count = urwid.Text(" loading …")
+        sidebar_box = urwid.LineBox(
+            urwid.Filler(self._sidebar, valign="top"), title="Filter")
+
+        # -- right: table (with header) + count + detail -------------------
         self._walker = urwid.SimpleFocusListWalker([urwid.Text(" loading …")])
         self._table = urwid.ListBox(self._walker)
+        self._header = urwid.AttrMap(urwid.Text(_PKG_HEADER), "pane_title")
+        self._table_frame = urwid.Frame(self._table, header=self._header)
+        self._count = urwid.Text(" loading …")
         self._detail = urwid.Text("")
         detail_box = urwid.LineBox(
-            urwid.Filler(self._detail, valign="top"), title="Detail"
-        )
-        self._menubar = MenuBar(app, _MENUS, self._on_menu, top=2)
-        pile = urwid.Pile([
-            ("pack", self._menubar),
-            ("pack", self._search),
-            ("pack", search_in),
+            urwid.Filler(self._detail, valign="top"), title="Detail")
+        right = urwid.Pile([
+            ("weight", 3, urwid.LineBox(self._table_frame, title="Packages")),
             ("pack", self._count),
-            ("weight", 3, urwid.LineBox(self._table, title="Packages")),
             ("weight", 2, detail_box),
         ])
+
+        self._columns = urwid.Columns(
+            [(34, sidebar_box), right], dividechars=1)
+        self._menubar = MenuBar(app, _MENUS, self._on_menu, top=2)
+        pile = urwid.Pile([("pack", self._menubar), self._columns])
         super().__init__(
             app, pile, title="Software Management",
             footer_keys=[
                 ("Enter", "Search/Install"), ("Space", "Mark"), ("r", "Remove"),
-                ("c", "Clear"), ("u", "USE"), ("k", "Keywords"),
-                ("F10", "Accept"), ("↑", "Menu"), ("Esc", "Back"),
+                ("Tab", "Pane"), ("u", "USE"), ("k", "Keywords"),
+                ("F10", "Accept"), ("Esc", "Back"),
             ],
         )
         self._pile = pile
-        self._pile.focus_position = self._SEARCH_IDX  # land on search, not the menu
+        self._pile.focus_position = 1              # the columns, not the menu
+        self._columns.focus_position = 0           # the sidebar
+        self._sidebar.focus_position = self._SEARCH_W_IDX
         urwid.connect_signal(self._walker, "modified", self._on_focus)
         app.run_async(self._load_installed())
 
+    # -- view selector ------------------------------------------------------
+
+    def _view_label(self) -> str:
+        title = dict(_VIEWS).get(self._view, "Search")
+        return f" View: {title} ▾"
+
+    def _update_view_label(self) -> None:
+        self._view_selector.base_widget.set_text(self._view_label())
+
+    def _open_view_menu(self) -> None:
+        items = [(vid, label, True) for vid, label in _VIEWS]
+        drop = _Dropdown(self.app, "view", items, self._on_view_pick)
+        self.app.push_overlay(drop, align="left", left=2, valign="top", top=3,
+                              width=drop.width, height=drop.height)
+
+    def _on_view_pick(self, _menu_id: str, view_id: str) -> None:
+        self._switch_view(view_id)
+
+    def _switch_view(self, view: str) -> None:
+        self._view = view
+        self._drilled = None
+        self._update_view_label()
+        if view == "search":
+            self._columns.focus_position = 0
+            self._sidebar.focus_position = self._SEARCH_W_IDX
+            term = self._search.edit_text.strip()
+            if term:
+                self.app.run_async(self._run_search(term))
+            else:
+                self._empty_table("Type a search phrase, then Enter.")
+        elif view == "categories":
+            self.app.run_async(self._load_categories())
+        elif view == "world":
+            self.app.run_async(self._load_world())
+        else:
+            self.app.run_async(self._load_installed())
+
     # -- loading ------------------------------------------------------------
+
+    def _empty_table(self, hint: str) -> None:
+        self._table_mode = "packages"
+        self._cps, self._installed, self._summaries = [], [], []
+        self._walker[:] = [urwid.Text(f" {hint}")]
+        self._detail.set_text("")
+        self._set_count("0 package(s)")
 
     async def _load_installed(self) -> None:
         pkgs = await self.app.run_blocking(reader.list_installed)
         self._fill([(p.cp, (p.description or "")[:60]) for p in pkgs],
                    [p.cp for p in pkgs], [True] * len(pkgs))
         self._set_count(f"{len(pkgs)} installed package(s)")
+
+    async def _load_world(self) -> None:
+        pkgs = await self.app.run_blocking(reader.list_installed)
+        world = [p for p in pkgs if p.world_member]
+        self._fill([(p.cp, (p.description or "")[:60]) for p in world],
+                   [p.cp for p in world], [True] * len(world))
+        self._set_count(f"{len(world)} @world package(s)")
+
+    async def _load_categories(self) -> None:
+        cats = await self.app.run_blocking(reader.list_categories)
+        self._table_mode = "categories"
+        self._categories = cats
+        self._cps, self._installed, self._summaries = [], [], []
+        self._header.base_widget.set_text(_CAT_HEADER)
+        self._walker[:] = [_row(f"   {c}") for c in cats] or [urwid.Text(" (none)")]
+        if cats:
+            self._walker.set_focus(0)
+        self._detail.set_text("Enter a category to list its packages.")
+        self._set_count(f"{len(cats)} categories")
+
+    async def _load_category(self, category: str) -> None:
+        results = await self.app.run_blocking(
+            lambda: reader.packages_in_category(category))
+        self._drilled = category
+        self._fill([(r.cp, (r.description or "")[:60]) for r in results],
+                   [r.cp for r in results], [r.installed for r in results])
+        self._set_count(f"{category}: {len(results)} package(s)")
 
     async def _run_search(self, term: str) -> None:
         fields = []
@@ -111,6 +212,8 @@ class SoftwareScreen(Screen):
         self._set_count(f"{len(results)} package(s) found")
 
     def _fill(self, rows, cps, installed) -> None:
+        self._table_mode = "packages"
+        self._header.base_widget.set_text(_PKG_HEADER)
         self._cps = cps
         self._installed = installed
         self._summaries = [summary for _cp, summary in rows]
@@ -135,6 +238,8 @@ class SoftwareScreen(Screen):
     # -- detail pane --------------------------------------------------------
 
     def _on_focus(self) -> None:
+        if self._table_mode != "packages":
+            return
         if self._cps and 0 <= self._walker.focus < len(self._cps):
             self.app.run_async(self._load_detail(self._cps[self._walker.focus]))
 
@@ -167,7 +272,6 @@ class SoftwareScreen(Screen):
 
     def _refresh_count(self) -> None:
         base = getattr(self, "_base_count", "")
-        # strip a previous selection suffix
         base = base.split("   ·   ")[0]
         self._set_count(base)
 
@@ -188,7 +292,7 @@ class SoftwareScreen(Screen):
     def _accept(self) -> None:
         installs = self._selection.install_atoms()
         removes = self._selection.remove_atoms()
-        if not installs and not removes and self._cps:
+        if not installs and not removes and self._table_mode == "packages" and self._cps:
             installs = [self._cps[self._walker.focus]]
         if not installs and not removes:
             self.app.notify("Mark packages with Space or r first.", error=True)
@@ -207,9 +311,10 @@ class SoftwareScreen(Screen):
     # -- menu bar -----------------------------------------------------------
 
     def _on_menu(self, menu_id: str, item_id: str) -> None:
-        cp = self._cps[self._walker.focus] if self._cps else None
+        cp = self._cps[self._walker.focus] if (
+            self._table_mode == "packages" and self._cps) else None
         if item_id == "installed":
-            self.app.run_async(self._load_installed())
+            self._switch_view("installed")
         elif item_id == "use" and cp:
             self.app.push(UseFlagScreen(self.app, cp))
         elif item_id == "keywords" and cp:
@@ -234,44 +339,80 @@ class SoftwareScreen(Screen):
 
     # -- keys ---------------------------------------------------------------
 
+    def _context(self):
+        in_menu = self._pile.focus_position == 0
+        in_sidebar = (not in_menu) and self._columns.focus_position == 0
+        in_table = (not in_menu) and self._columns.focus_position == 1
+        sidebar_focus = self._sidebar.focus_position if in_sidebar else None
+        return in_menu, in_sidebar, in_table, sidebar_focus
+
     def handle_key(self, key):
-        focus_search = self._pile.focus_position == self._SEARCH_IDX
-        if key == "esc":
-            self.app.pop()
+        _in_menu, in_sidebar, in_table, sidebar_focus = self._context()
+        on_view = in_sidebar and sidebar_focus == self._VIEW_IDX
+        on_search = in_sidebar and sidebar_focus == self._SEARCH_W_IDX
+
+        if key == "tab":
+            self._cycle_pane()
             return None
-        if key == "enter":
-            if focus_search:
-                term = self._search.edit_text.strip()
-                self.app.run_async(
-                    self._run_search(term) if term else self._load_installed()
-                )
-            elif self._cps:
-                self.app.push(ApplyScreen(
-                    self.app, [install_plan([self._cps[self._walker.focus]])],
-                    verb="Install"))
+        if key == "esc":
+            if in_table and self._view == "categories" and self._drilled is not None:
+                self.app.run_async(self._load_categories())
+            else:
+                self.app.pop()
+            return None
+        if on_view and key in ("enter", " ", "down"):
+            self._open_view_menu()
             return None
         if key == "f10":
             self._accept()
             return None
-        if key == " " and not focus_search:
-            self._toggle(remove=False)
+        if key == "enter":
+            if on_search:
+                term = self._search.edit_text.strip()
+                self.app.run_async(
+                    self._run_search(term) if term else self._load_installed())
+            elif in_table and self._table_mode == "categories" and self._categories:
+                self.app.run_async(self._load_category(self._categories[self._walker.focus]))
+            elif in_table and self._cps:
+                self.app.push(ApplyScreen(
+                    self.app, [install_plan([self._cps[self._walker.focus]])],
+                    verb="Install"))
             return None
-        if key == "r" and not focus_search:
-            self._toggle(remove=True)
+        if key == "left" and in_table:
+            self._columns.focus_position = 0
             return None
-        if key == "c" and not focus_search:
-            if not self._selection.is_empty:
-                self._selection.clear()
-                self._repaint()
-                self._refresh_count()
+        if key == "right" and in_sidebar and not on_search:
+            self._columns.focus_position = 1
             return None
-        if key == "u" and not focus_search and self._cps:
-            self.app.push(UseFlagScreen(self.app, self._cps[self._walker.focus]))
-            return None
-        if key == "k" and not focus_search and self._cps:
-            self.app.push(KeywordsScreen(self.app, self._cps[self._walker.focus]))
-            return None
+        if in_table and self._table_mode == "packages":
+            if key == " ":
+                self._toggle(remove=False)
+                return None
+            if key == "r":
+                self._toggle(remove=True)
+                return None
+            if key == "c":
+                if not self._selection.is_empty:
+                    self._selection.clear()
+                    self._repaint()
+                    self._refresh_count()
+                return None
+            if key == "u" and self._cps:
+                self.app.push(UseFlagScreen(self.app, self._cps[self._walker.focus]))
+                return None
+            if key == "k" and self._cps:
+                self.app.push(KeywordsScreen(self.app, self._cps[self._walker.focus]))
+                return None
         return key
+
+    def _cycle_pane(self) -> None:
+        if self._pile.focus_position == 0:            # menu -> sidebar
+            self._pile.focus_position = 1
+            self._columns.focus_position = 0
+        elif self._columns.focus_position == 0:       # sidebar -> table
+            self._columns.focus_position = 1
+        else:                                          # table -> menu
+            self._pile.focus_position = 0
 
     def _repaint(self) -> None:
         for i, cp in enumerate(self._cps):

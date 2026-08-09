@@ -4,4 +4,8 @@
 # Portage Python API is importable (see README).
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-exec "${here}/.venv/bin/python" -m gest "$@"
+# Force the working tree onto sys.path ahead of any system-installed GeST
+# (the --system-site-packages venv can otherwise shadow it with the emerged
+# copy when launched from outside the repo).
+exec env PYTHONPATH="${here}${PYTHONPATH:+:${PYTHONPATH}}" \
+    "${here}/.venv/bin/python" -m gest "$@"

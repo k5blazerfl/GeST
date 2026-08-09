@@ -121,6 +121,9 @@ working tree.
 - [x] Bootloader & Kernel — kernel/bootloader info + regenerate GRUB config
 - [x] Colourised streamed command output (ANSI SGR → urwid attributes)
 - [x] Dropdown menu bar on Software Management (View/Configuration/Dependencies/Extras)
+- [x] Software Management two-pane layout — YaST sw_single-style Filter sidebar
+      (view selector: Search / Categories / Installed / World) + package table
+      with a pinned column header + live detail pane
 - [x] Users & Groups module — list users/groups; add / edit / delete users,
       add / delete groups (polkit-gated useradd/usermod/userdel/groupadd/groupdel)
 - [x] User passwords (chpasswd via stdin) + group membership (gpasswd);

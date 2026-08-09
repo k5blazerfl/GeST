@@ -218,13 +218,20 @@ def _software(app):
     return scr
 
 
+def test_software_two_pane_layout():
+    app = App()
+    scr = _software(app)
+    out = _render(scr)
+    assert "Filter" in out and "Packages" in out and "Detail" in out
+    assert "Name" in out and "Summary" in out  # pinned column header
+
+
 def test_software_loads_marks_and_clears():
     app = App()
     scr = _software(app)
     assert scr._cps  # installed packages
-    scr.keypress(_SIZE, "down")   # search -> checkboxes
-    scr.keypress(_SIZE, "down")   # -> table
-    assert scr._pile.focus_position == scr._TABLE_IDX
+    scr.keypress(_SIZE, "tab")    # sidebar -> table
+    assert scr._columns.focus_position == 1
     scr.keypress(_SIZE, " ")      # mark install (installed pkg shows "u")
     assert len(scr._selection) == 1
     assert scr._walker[0].base_widget.text[0] in ("+", "u")
@@ -238,18 +245,31 @@ def test_software_search_narrows():
     app = App()
     scr = _software(app)
     installed = len(scr._cps)
-    scr._pile.focus_position = scr._SEARCH_IDX
+    scr._columns.focus_position = 0
+    scr._sidebar.focus_position = scr._SEARCH_W_IDX
     scr._search.set_edit_text("app-editors/vim")
     scr.keypress(_SIZE, "enter")
     _pump(app, lambda: 0 < len(scr._cps) < installed, ticks=300)
     assert any("vim" in cp for cp in scr._cps)
 
 
+def test_software_view_switch_to_categories():
+    app = App()
+    scr = _software(app)
+    scr._switch_view("categories")
+    _pump(app, lambda: len(scr._categories) > 0, ticks=300)
+    assert scr._table_mode == "categories" and scr._categories
+    # drill into the first category -> its packages
+    scr._columns.focus_position = 1
+    scr.keypress(_SIZE, "enter")
+    _pump(app, lambda: scr._table_mode == "packages" and scr._drilled is not None, ticks=300)
+    assert scr._drilled == scr._categories[0]
+
+
 def test_software_accept_opens_apply_screen():
     app = App()
     scr = _software(app)
-    scr.keypress(_SIZE, "down")
-    scr.keypress(_SIZE, "down")
+    scr.keypress(_SIZE, "tab")    # focus table
     scr.keypress(_SIZE, " ")      # mark one
     scr.keypress(_SIZE, "f10")    # Accept
     assert isinstance(app._stack[-1], ApplyScreen)
@@ -288,8 +308,7 @@ def test_keywords_editor_cycles():
 def test_software_u_opens_use_editor():
     app = App()
     scr = _software(app)
-    scr.keypress(_SIZE, "down")
-    scr.keypress(_SIZE, "down")   # focus table
+    scr.keypress(_SIZE, "tab")   # focus table
     scr.keypress(_SIZE, "u")
     assert isinstance(app._stack[-1], UseFlagScreen)
 
@@ -439,9 +458,8 @@ def test_software_menu_bar_opens_and_selects():
     from gest.tui.screens.news import NewsScreen
     app = App()
     scr = _software(app)
-    # focus the menu bar (Up from the search field), open Extras, pick "Portage news"
-    scr._pile.focus_position = scr._SEARCH_IDX
-    scr.keypress(_SIZE, "up")                     # -> menu bar
+    # focus the menu bar, open Extras, pick "Portage news"
+    scr._pile.focus_position = 0
     assert scr._pile.focus_position == 0
     for _ in range(3):
         scr.keypress(_SIZE, "right")              # View -> Configuration -> Dependencies -> Extras

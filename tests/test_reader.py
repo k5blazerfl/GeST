@@ -71,3 +71,17 @@ def test_search_summary_is_superset_of_name():
     # summary search still matches every name hit, plus description-only hits
     assert names <= both
     assert len(both) >= len(names)
+
+
+def test_list_categories_includes_known_categories():
+    cats = reader.list_categories()
+    assert "sys-apps" in cats and "dev-python" in cats
+    assert cats == sorted(cats)  # returned sorted
+
+
+def test_packages_in_category_are_scoped_and_sorted():
+    pkgs = reader.packages_in_category("sys-apps")
+    assert pkgs
+    assert all(r.cp.startswith("sys-apps/") for r in pkgs)
+    assert [r.cp for r in pkgs] == sorted(r.cp for r in pkgs)
+    assert any(r.cp == "sys-apps/portage" for r in pkgs)
