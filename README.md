@@ -129,6 +129,9 @@ working tree.
       (polkit-gated writes to /etc/conf.d/hostname, /etc/localtime, /etc/env.d)
 - [x] Network module — list interfaces (ip -j addr), bring links up/down,
       and edit netifrc config (DHCP / static IP+gateway in /etc/conf.d/net)
+- [x] Hardware Information — read-only inventory (CPU, memory, storage,
+      PCI/USB devices, DMI/firmware) from lscpu/lspci/lsusb/lsblk +
+      /proc/meminfo + world-readable /sys/class/dmi/id (no root needed)
 - [ ] systemd support in Services (out of scope — OpenRC only)
 - [x] Backend hardening — every privileged action is audit-logged
       (authpriv, with caller uid); dispatch/auth round-trips are tested

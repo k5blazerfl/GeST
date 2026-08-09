@@ -8,6 +8,7 @@ from gest.tui.runtime import App, Screen
 from gest.tui.screens.apply import ApplyScreen, depclean_plan, sync_plan, world_plan
 from gest.tui.screens.bootloader import BootloaderScreen
 from gest.tui.screens.eselect import EselectScreen
+from gest.tui.screens.hardware import HardwareScreen
 from gest.tui.screens.makeconf import MakeconfScreen
 from gest.tui.screens.network import NetworkScreen
 from gest.tui.screens.news import NewsScreen
@@ -34,6 +35,9 @@ CATEGORIES: list[tuple[str, list[tuple[str, str, bool]]]] = [
         ("eselect", "eselect (selections)", True),
         ("bootloader", "Bootloader & Kernel", True),
         ("makeconf", "make.conf editor", True),
+    ]),
+    ("Hardware", [
+        ("hardware", "Hardware Information", True),
     ]),
     ("Services", [
         ("services", "Services (OpenRC)", True),
@@ -116,6 +120,8 @@ class MenuScreen(Screen):
             self.app.push(BootloaderScreen(self.app))
         elif key == "makeconf":
             self.app.push(MakeconfScreen(self.app))
+        elif key == "hardware":
+            self.app.push(HardwareScreen(self.app))
         elif key == "users":
             self.app.push(UsersScreen(self.app))
         elif key == "network":

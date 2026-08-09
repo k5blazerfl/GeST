@@ -13,6 +13,7 @@ from gest.tui.screens.apply import ApplyScreen
 from gest.tui.screens.bootloader import BootloaderScreen
 from gest.tui.screens.config import KeywordsScreen, UseFlagScreen
 from gest.tui.screens.eselect import EselectScreen
+from gest.tui.screens.hardware import HardwareScreen
 from gest.tui.screens.makeconf import MakeconfScreen
 from gest.tui.screens.menu import MenuScreen
 from gest.tui.screens.network import NetworkScreen
@@ -98,6 +99,7 @@ def test_menu_launches_services():
     menu = MenuScreen(app)
     app._stack.append(menu)
     menu.keypress(_SIZE, "down")   # System
+    menu.keypress(_SIZE, "down")   # Hardware
     menu.keypress(_SIZE, "down")   # Services
     menu.keypress(_SIZE, "enter")  # focus modules
     menu.keypress(_SIZE, "enter")  # launch Services
@@ -315,6 +317,33 @@ def test_menu_launches_eselect():
         menu.keypress(_SIZE, "down")  # hostname/timezone/locale -> eselect (4th)
     menu.keypress(_SIZE, "enter")
     assert isinstance(app._stack[-1], EselectScreen)
+
+
+def test_hardware_lists_sections_and_details():
+    app = App()
+    scr = HardwareScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: len(scr._sections) > 0, ticks=300)
+    assert any(s.key == "cpu" for s in scr._sections)  # every host has a CPU
+    out = _render(scr)
+    assert "Hardware" in out and "CPU" in out
+    # focusing the CPU section fills the detail pane with its lines
+    for i, s in enumerate(scr._sections):
+        if s.key == "cpu":
+            scr._cat_walker.set_focus(i)
+            break
+    assert scr._detail_walker  # details populated
+
+
+def test_menu_launches_hardware():
+    app = App()
+    menu = MenuScreen(app)
+    app._stack.append(menu)
+    menu.keypress(_SIZE, "down")   # System
+    menu.keypress(_SIZE, "down")   # Hardware
+    menu.keypress(_SIZE, "enter")  # focus modules
+    menu.keypress(_SIZE, "enter")  # launch the single module
+    assert isinstance(app._stack[-1], HardwareScreen)
 
 
 def test_bootloader_shows_info():
