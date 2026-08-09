@@ -167,9 +167,9 @@ class SoftwareScreen(Screen):
                 "Browse and manage Portage packages, YaST sw_single-style.\n\n"
                 "Filter (left): pick a view (Search / Provides / Categories / "
                 "Installed / World), a search mode, and which fields to search.\n"
-                "Table: ↑/↓ move · Space mark install/update · b mark install as a\n"
-                "binary package (only) · r mark remove · c clear marks · a Actions\n"
-                "(includes 'prefer binary') · u USE flags · k keywords.\n"
+                "Table: ↑/↓ move · Space cycles the mark (none → install →\n"
+                "binary-only) · b jumps straight to binary-only · r mark remove ·\n"
+                "c clear marks · a Actions (adds 'prefer binary') · u USE · k keys.\n"
                 "Marks: + install · b binary-only · B prefer-binary · - remove · "
                 "i installed.\n"
                 "Binary installs use emerge --getbinpkg (configure sources under "
@@ -416,8 +416,22 @@ class SoftwareScreen(Screen):
         base = base.split("   ·   ")[0]
         self._set_count(base)
 
+    # Space cycles the primary mark through: none → install → binary-only.
+    # (r toggles remove; b jumps straight to binary; Actions has prefer-binary.)
+    _SPACE_CYCLE = (None, sel.INSTALL, sel.BINPKG)
+
     def _toggle(self, remove: bool) -> None:
         self._mark(sel.REMOVE if remove else sel.INSTALL)
+
+    def _cycle_mark(self) -> None:
+        if self._table_mode != "packages" or not self._cps:
+            return
+        i = self._walker.focus
+        cp = self._cps[i]
+        cur = self._selection.mark_of(cp)
+        idx = self._SPACE_CYCLE.index(cur) if cur in self._SPACE_CYCLE else 0
+        self._selection.set(cp, self._SPACE_CYCLE[(idx + 1) % len(self._SPACE_CYCLE)])
+        self._repaint_row(i, cp)
 
     def _mark(self, mark: str) -> None:
         if self._table_mode != "packages" or not self._cps:
@@ -425,6 +439,9 @@ class SoftwareScreen(Screen):
         i = self._walker.focus
         cp = self._cps[i]
         self._selection.toggle(cp, mark)
+        self._repaint_row(i, cp)
+
+    def _repaint_row(self, i: int, cp: str) -> None:
         self._walker[i].base_widget.set_text(self._row_text(i, cp, self._summaries[i]))
         self._refresh_count()
 
@@ -549,10 +566,10 @@ class SoftwareScreen(Screen):
             return None
         if in_table and self._table_mode == "packages":
             if key == " ":
-                self._toggle(remove=False)
+                self._cycle_mark()       # none → install → binary-only
                 return None
             if key == "b":
-                self._mark(sel.BINPKG)   # mark install binary-only
+                self._mark(sel.BINPKG)   # jump straight to binary-only
                 return None
             if key == "r":
                 self._toggle(remove=True)

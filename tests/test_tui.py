@@ -424,6 +424,21 @@ def test_software_binary_menu_opens_binhost():
     assert isinstance(app._stack[-1], BinhostScreen)
 
 
+def test_software_space_cycles_mark_through_binary():
+    from gest.core.software import selection as s
+    app = App()
+    scr = _software(app)
+    scr.keypress(_SIZE, "tab")                    # focus table
+    cp = scr._cps[0]
+    scr.keypress(_SIZE, " ")                       # none → install
+    assert scr._selection.mark_of(cp) == s.INSTALL
+    scr.keypress(_SIZE, " ")                       # install → binary-only
+    assert scr._selection.mark_of(cp) == s.BINPKG
+    assert scr._walker[0].base_widget.text.startswith("b")
+    scr.keypress(_SIZE, " ")                       # binary → none
+    assert scr._selection.mark_of(cp) is None
+
+
 def test_software_detail_pane_has_bold_labels():
     app = App()
     scr = _software(app)

@@ -48,6 +48,13 @@ class Selection:
         else:
             self._marks[cp] = mark
 
+    def set(self, cp: str, mark: str | None) -> None:
+        """Force ``cp`` to ``mark`` (or clear it when ``mark`` is None)."""
+        if mark is None:
+            self.unmark(cp)
+        else:
+            self._marks[cp] = mark
+
     def mark_of(self, cp: str) -> str | None:
         return self._marks.get(cp)
 
