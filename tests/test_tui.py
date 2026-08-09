@@ -12,6 +12,7 @@ from gest.tui.runtime import App, Screen, ansi_markup, function_bar, strip_ansi
 from gest.tui.screens.apply import ApplyScreen
 from gest.tui.screens.bootloader import BootloaderScreen
 from gest.tui.screens.config import KeywordsScreen, UseFlagScreen
+from gest.tui.screens.datetime import DateTimeScreen
 from gest.tui.screens.disk import DiskScreen
 from gest.tui.screens.eselect import EselectScreen
 from gest.tui.screens.hardware import HardwareScreen
@@ -472,6 +473,27 @@ def test_menu_launches_disk():
     menu.keypress(_SIZE, "enter")  # focus modules
     menu.keypress(_SIZE, "enter")  # launch Disks & Mounts
     assert isinstance(app._stack[-1], DiskScreen)
+
+
+def test_datetime_loads_clock_info():
+    app = App()
+    scr = DateTimeScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: scr._info is not None, ticks=300)
+    out = _render(scr)
+    assert "Local time" in out and "Timezone" in out and "NTP sync" in out
+
+
+def test_menu_launches_datetime():
+    app = App()
+    menu = MenuScreen(app)
+    app._stack.append(menu)
+    menu.keypress(_SIZE, "down")   # System category
+    menu.keypress(_SIZE, "enter")  # focus modules
+    for _ in range(6):             # -> datetime (7th System module)
+        menu.keypress(_SIZE, "down")
+    menu.keypress(_SIZE, "enter")
+    assert isinstance(app._stack[-1], DateTimeScreen)
 
 
 def test_bootloader_shows_info():

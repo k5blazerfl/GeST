@@ -140,6 +140,10 @@ working tree.
 - [x] Chrome consistency — documented key conventions (F1 help, Esc back,
       F10 apply) and made quit a top-level-only action (menu q/Q/F9; sub-screens
       step back with Esc rather than exiting the app)
+- [x] Date & Time module — show clock/timezone/NTP status, set the clock
+      (polkit-gated date -s + hwclock), and toggle an NTP daemon (chrony/ntp/
+      openntpd) via the Services backend; timezone read now falls back to the
+      /etc/localtime symlink
 - [x] Users & Groups module — list users/groups; add / edit / delete users,
       add / delete groups (polkit-gated useradd/usermod/userdel/groupadd/groupdel)
 - [x] User passwords (chpasswd via stdin) + group membership (gpasswd);

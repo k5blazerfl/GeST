@@ -60,3 +60,16 @@ def test_current_locale_reads_first_present(tmp_path):
     f.write_text('LANG="fr_FR.UTF-8"\n')
     assert locale.current_locale((str(f), str(tmp_path / "missing"))) == "fr_FR.UTF-8"
     assert os.path.exists(f)
+
+
+def test_current_timezone_falls_back_to_localtime_symlink(tmp_path):
+    from gest.core.system import timezone
+    zoneinfo = tmp_path / "zoneinfo"
+    (zoneinfo / "America").mkdir(parents=True)
+    (zoneinfo / "America" / "New_York").write_text("TZif")
+    localtime = tmp_path / "localtime"
+    localtime.symlink_to(zoneinfo / "America" / "New_York")
+    # no /etc/timezone -> resolves the symlink into a zone name
+    tz = timezone.current_timezone(
+        path=str(tmp_path / "nope"), localtime=str(localtime), zoneinfo=str(zoneinfo))
+    assert tz == "America/New_York"

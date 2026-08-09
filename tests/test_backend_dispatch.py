@@ -11,6 +11,7 @@ import gi
 gi.require_version("Gio", "2.0")
 from gi.repository import Gio  # noqa: E402
 
+from gest.backend import datetime as datetime_mod  # noqa: E402
 from gest.backend import disk as disk_mod  # noqa: E402
 from gest.backend import network as network_mod  # noqa: E402
 from gest.backend import system as system_mod  # noqa: E402
@@ -171,6 +172,40 @@ def test_disk_mount_bad_target_invalid_args(monkeypatch):
     inv = _disk_call(_disk_service(), "Mount", ["swap"])  # not a real mount target
     assert inv.value is None
     assert inv.error[0] == Gio.DBusError.INVALID_ARGS
+
+
+def _datetime_service():
+    svc = datetime_mod.DateTimeService.__new__(datetime_mod.DateTimeService)
+    svc._conn = None
+    return svc
+
+
+def test_datetime_setclock_unauthorized_denied(monkeypatch):
+    monkeypatch.setattr(datetime_mod, "check_authorization", lambda *a: False)
+    monkeypatch.setattr(datetime_mod, "caller_uid", lambda *a: 1000)
+    inv = _FakeInvocation()
+    _datetime_service()._on_call(None, ":1.5", "/p", "i", "SetClock",
+                                 _FakeParams(["2026-08-08 12:00:00"]), inv)
+    assert inv.value is None
+    assert inv.error[0] == Gio.DBusError.ACCESS_DENIED
+
+
+def test_datetime_bad_timestamp_invalid_args(monkeypatch):
+    # authorized but a malformed timestamp is refused before `date -s` runs
+    monkeypatch.setattr(datetime_mod, "check_authorization", lambda *a: True)
+    monkeypatch.setattr(datetime_mod, "caller_uid", lambda *a: 0)
+    inv = _FakeInvocation()
+    _datetime_service()._on_call(None, ":1.5", "/p", "i", "SetClock",
+                                 _FakeParams(["not-a-date"]), inv)
+    assert inv.value is None
+    assert inv.error[0] == Gio.DBusError.INVALID_ARGS
+
+
+def test_datetime_unknown_method(monkeypatch):
+    monkeypatch.setattr(datetime_mod, "check_authorization", lambda *a: True)
+    inv = _FakeInvocation()
+    _datetime_service()._on_call(None, ":1.5", "/p", "i", "Nope", _FakeParams([]), inv)
+    assert inv.error[0] == Gio.DBusError.UNKNOWN_METHOD
 
 
 def test_authorization_variant_builds():

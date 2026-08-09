@@ -35,9 +35,32 @@ def list_zones(root: str = "/usr/share/zoneinfo") -> list[str]:
     return sorted(set(zones))
 
 
-def current_timezone(path: str = "/etc/timezone") -> str:
+def current_timezone(
+    path: str = "/etc/timezone",
+    *,
+    localtime: str = "/etc/localtime",
+    zoneinfo: str = "/usr/share/zoneinfo",
+) -> str:
+    """Current timezone name.
+
+    Prefers ``/etc/timezone`` (Gentoo's canonical file); falls back to resolving
+    the ``/etc/localtime`` symlink into a zoneinfo-relative name for systems that
+    only have the symlink.
+    """
     try:
         with open(path, encoding="utf-8") as fh:
-            return fh.read().strip().splitlines()[0].strip() if fh else ""
+            line = fh.read().strip().splitlines()[0].strip()
+        if line:
+            return line
     except (OSError, IndexError):
-        return ""
+        pass
+    try:
+        target = os.path.realpath(localtime)
+        root = os.path.realpath(zoneinfo)
+        if target.startswith(root + os.sep):
+            zone = os.path.relpath(target, root)
+            if valid_zone_name(zone):
+                return zone
+    except OSError:
+        pass
+    return ""

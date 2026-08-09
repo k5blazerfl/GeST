@@ -9,6 +9,7 @@ import urwid
 from gest.tui.runtime import App, Screen, accel_label
 from gest.tui.screens.apply import ApplyScreen, depclean_plan, sync_plan, world_plan
 from gest.tui.screens.bootloader import BootloaderScreen
+from gest.tui.screens.datetime import DateTimeScreen
 from gest.tui.screens.disk import DiskScreen
 from gest.tui.screens.eselect import EselectScreen
 from gest.tui.screens.hardware import HardwareScreen
@@ -38,6 +39,7 @@ CATEGORIES: list[tuple[str, list[tuple[str, str, bool]]]] = [
         ("eselect", "eselect (selections)", True),
         ("bootloader", "Bootloader & Kernel", True),
         ("makeconf", "make.conf editor", True),
+        ("datetime", "Date & Time", True),
     ]),
     ("Hardware", [
         ("hardware", "Hardware Information", True),
@@ -150,6 +152,8 @@ class MenuScreen(Screen):
             self.app.push(BootloaderScreen(self.app))
         elif key == "makeconf":
             self.app.push(MakeconfScreen(self.app))
+        elif key == "datetime":
+            self.app.push(DateTimeScreen(self.app))
         elif key == "hardware":
             self.app.push(HardwareScreen(self.app))
         elif key == "disk":

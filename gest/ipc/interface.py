@@ -52,6 +52,11 @@ DISK_PATH = "/org/gentoo/gest/Disk"
 DISK_IFACE = "org.gentoo.gest.Disk"
 DISK_POLKIT = "org.gentoo.gest.disk.manage"
 
+# Object path + interface for the date & time module.
+DATETIME_PATH = "/org/gentoo/gest/DateTime"
+DATETIME_IFACE = "org.gentoo.gest.DateTime"
+DATETIME_POLKIT = "org.gentoo.gest.datetime.manage"
+
 # polkit action id prefix. Concrete actions append the verb, e.g.
 # ``org.gentoo.gest.software.install``.
 POLKIT_PREFIX = "org.gentoo.gest.software"
