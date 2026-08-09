@@ -28,6 +28,10 @@ RDEPEND="
 	sys-apps/dbus
 "
 
+# Test suite: pytest with the asyncio plugin (pyproject sets asyncio_mode = auto).
+distutils_enable_tests pytest
+BDEPEND+=" test? ( dev-python/pytest-asyncio[${PYTHON_USEDEP}] )"
+
 src_install() {
 	distutils-r1_src_install
 
