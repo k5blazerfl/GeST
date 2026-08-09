@@ -7,6 +7,7 @@ import urwid
 from gest.tui.runtime import App, Screen
 from gest.tui.screens.apply import ApplyScreen, depclean_plan, sync_plan, world_plan
 from gest.tui.screens.bootloader import BootloaderScreen
+from gest.tui.screens.disk import DiskScreen
 from gest.tui.screens.eselect import EselectScreen
 from gest.tui.screens.hardware import HardwareScreen
 from gest.tui.screens.makeconf import MakeconfScreen
@@ -38,6 +39,9 @@ CATEGORIES: list[tuple[str, list[tuple[str, str, bool]]]] = [
     ]),
     ("Hardware", [
         ("hardware", "Hardware Information", True),
+    ]),
+    ("Storage", [
+        ("disk", "Disks & Mounts", True),
     ]),
     ("Services", [
         ("services", "Services (OpenRC)", True),
@@ -122,6 +126,8 @@ class MenuScreen(Screen):
             self.app.push(MakeconfScreen(self.app))
         elif key == "hardware":
             self.app.push(HardwareScreen(self.app))
+        elif key == "disk":
+            self.app.push(DiskScreen(self.app))
         elif key == "users":
             self.app.push(UsersScreen(self.app))
         elif key == "network":

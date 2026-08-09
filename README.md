@@ -132,6 +132,10 @@ working tree.
 - [x] Hardware Information — read-only inventory (CPU, memory, storage,
       PCI/USB devices, DMI/firmware) from lscpu/lspci/lsusb/lsblk +
       /proc/meminfo + world-readable /sys/class/dmi/id (no root needed)
+- [x] Disks & Mounts — block-device tree (lsblk) + /etc/fstab editor
+      (add/edit/remove non-critical entries, protected /, /boot, /efi, swap)
+      and mount/unmount of fstab entries via the polkit-gated backend
+      (atomic write with an /etc/fstab.gest.bak backup)
 - [ ] systemd support in Services (out of scope — OpenRC only)
 - [x] Backend hardening — every privileged action is audit-logged
       (authpriv, with caller uid); dispatch/auth round-trips are tested

@@ -12,6 +12,7 @@ from gest.tui.runtime import App, Screen, ansi_markup, function_bar, strip_ansi
 from gest.tui.screens.apply import ApplyScreen
 from gest.tui.screens.bootloader import BootloaderScreen
 from gest.tui.screens.config import KeywordsScreen, UseFlagScreen
+from gest.tui.screens.disk import DiskScreen
 from gest.tui.screens.eselect import EselectScreen
 from gest.tui.screens.hardware import HardwareScreen
 from gest.tui.screens.makeconf import MakeconfScreen
@@ -100,6 +101,7 @@ def test_menu_launches_services():
     app._stack.append(menu)
     menu.keypress(_SIZE, "down")   # System
     menu.keypress(_SIZE, "down")   # Hardware
+    menu.keypress(_SIZE, "down")   # Storage
     menu.keypress(_SIZE, "down")   # Services
     menu.keypress(_SIZE, "enter")  # focus modules
     menu.keypress(_SIZE, "enter")  # launch Services
@@ -344,6 +346,30 @@ def test_menu_launches_hardware():
     menu.keypress(_SIZE, "enter")  # focus modules
     menu.keypress(_SIZE, "enter")  # launch the single module
     assert isinstance(app._stack[-1], HardwareScreen)
+
+
+def test_disk_lists_devices_and_fstab():
+    app = App()
+    scr = DiskScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: len(scr._entries) > 0, ticks=300)
+    assert scr._entries  # the host has fstab entries
+    out = _render(scr)
+    assert "Block Devices" in out and "/etc/fstab" in out
+    # the root filesystem is present and flagged protected
+    assert any(e.mountpoint == "/" and e.protected for e in scr._entries)
+
+
+def test_menu_launches_disk():
+    app = App()
+    menu = MenuScreen(app)
+    app._stack.append(menu)
+    menu.keypress(_SIZE, "down")   # System
+    menu.keypress(_SIZE, "down")   # Hardware
+    menu.keypress(_SIZE, "down")   # Storage
+    menu.keypress(_SIZE, "enter")  # focus modules
+    menu.keypress(_SIZE, "enter")  # launch Disks & Mounts
+    assert isinstance(app._stack[-1], DiskScreen)
 
 
 def test_bootloader_shows_info():

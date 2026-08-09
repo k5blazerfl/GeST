@@ -11,6 +11,7 @@ import gi
 gi.require_version("Gio", "2.0")
 from gi.repository import Gio  # noqa: E402
 
+from gest.backend import disk as disk_mod  # noqa: E402
 from gest.backend import network as network_mod  # noqa: E402
 from gest.backend import system as system_mod  # noqa: E402
 from gest.backend import users as users_mod  # noqa: E402
@@ -116,6 +117,60 @@ def test_setlink_unauthorized_denied(monkeypatch):
     svc._on_call(None, ":1.5", "/p", "i", "SetLink", _FakeParams(["eth0", True]), inv)
     assert inv.value is None
     assert inv.error[0] == Gio.DBusError.ACCESS_DENIED
+
+
+def _disk_service():
+    svc = disk_mod.DiskService.__new__(disk_mod.DiskService)
+    svc._conn = None
+    return svc
+
+
+def _disk_call(svc, method, values):
+    inv = _FakeInvocation()
+    svc._on_call(None, ":1.5", "/p", "iface", method, _FakeParams(values), inv)
+    return inv
+
+
+def test_disk_write_unauthorized_denied(monkeypatch):
+    monkeypatch.setattr(disk_mod, "check_authorization", lambda *a: False)
+    monkeypatch.setattr(disk_mod, "caller_uid", lambda *a: 1000)
+    inv = _disk_call(_disk_service(), "WriteFstabEntry",
+                     ["UUID=x", "/mnt/data", "ext4", "defaults", 0, 0])
+    assert inv.value is None
+    assert inv.error[0] == Gio.DBusError.ACCESS_DENIED
+
+
+def test_disk_unknown_method(monkeypatch):
+    monkeypatch.setattr(disk_mod, "check_authorization", lambda *a: True)
+    inv = _disk_call(_disk_service(), "Nope", [])
+    assert inv.error[0] == Gio.DBusError.UNKNOWN_METHOD
+
+
+def test_disk_write_protected_refused(monkeypatch):
+    # writing the root entry is refused (INVALID_ARGS) before any file is touched
+    monkeypatch.setattr(disk_mod, "check_authorization", lambda *a: True)
+    monkeypatch.setattr(disk_mod, "caller_uid", lambda *a: 0)
+    inv = _disk_call(_disk_service(), "WriteFstabEntry",
+                     ["UUID=x", "/", "ext4", "defaults", 0, 1])
+    assert inv.value is None
+    assert inv.error[0] == Gio.DBusError.INVALID_ARGS
+
+
+def test_disk_write_bad_options_invalid_args(monkeypatch):
+    monkeypatch.setattr(disk_mod, "check_authorization", lambda *a: True)
+    monkeypatch.setattr(disk_mod, "caller_uid", lambda *a: 0)
+    inv = _disk_call(_disk_service(), "WriteFstabEntry",
+                     ["UUID=x", "/mnt/data", "ext4", "bad options", 0, 0])
+    assert inv.value is None
+    assert inv.error[0] == Gio.DBusError.INVALID_ARGS
+
+
+def test_disk_mount_bad_target_invalid_args(monkeypatch):
+    monkeypatch.setattr(disk_mod, "check_authorization", lambda *a: True)
+    monkeypatch.setattr(disk_mod, "caller_uid", lambda *a: 0)
+    inv = _disk_call(_disk_service(), "Mount", ["swap"])  # not a real mount target
+    assert inv.value is None
+    assert inv.error[0] == Gio.DBusError.INVALID_ARGS
 
 
 def test_authorization_variant_builds():

@@ -31,6 +31,7 @@ from gi.repository import Gio, GLib
 
 from gest.backend.audit import audit
 from gest.backend.bootloader import BootloaderService
+from gest.backend.disk import DiskService
 from gest.backend.eselect import EselectService
 from gest.backend.network import NetworkService
 from gest.backend.polkit import (
@@ -542,6 +543,7 @@ def main() -> int:
         EselectService(conn)
         BootloaderService(conn)
         ReposService(conn)
+        DiskService(conn)
 
     def on_name_lost(conn, name):
         sys.stderr.write(f"gest-backend: lost/could not acquire name {name}\n")

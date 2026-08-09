@@ -47,6 +47,11 @@ BOOTLOADER_POLKIT = "org.gentoo.gest.bootloader.manage"
 REPOS_PATH = "/org/gentoo/gest/Repos"
 REPOS_IFACE = "org.gentoo.gest.Repos"
 
+# Object path + interface for the disks & mounts module.
+DISK_PATH = "/org/gentoo/gest/Disk"
+DISK_IFACE = "org.gentoo.gest.Disk"
+DISK_POLKIT = "org.gentoo.gest.disk.manage"
+
 # polkit action id prefix. Concrete actions append the verb, e.g.
 # ``org.gentoo.gest.software.install``.
 POLKIT_PREFIX = "org.gentoo.gest.software"
