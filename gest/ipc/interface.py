@@ -47,6 +47,13 @@ BOOTLOADER_POLKIT = "org.gentoo.gest.bootloader.manage"
 REPOS_PATH = "/org/gentoo/gest/Repos"
 REPOS_IFACE = "org.gentoo.gest.Repos"
 
+# Object path + interface for the unified Portage-configuration module.
+# One generic WriteConfig(a(ssu)) RPC applies files under /etc/portage/,
+# gated by the single portage.configure polkit action.
+PORTAGE_PATH = "/org/gentoo/gest/Portage"
+PORTAGE_IFACE = "org.gentoo.gest.Portage"
+PORTAGE_POLKIT = "org.gentoo.gest.portage.configure"
+
 # Object path + interface for the disks & mounts module.
 DISK_PATH = "/org/gentoo/gest/Disk"
 DISK_IFACE = "org.gentoo.gest.Disk"

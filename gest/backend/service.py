@@ -40,11 +40,11 @@ from gest.backend.polkit import (
     authorization_variant,
     caller_uid,
 )
+from gest.backend.portage import PortageService
 from gest.backend.repos import ReposService
 from gest.backend.services import ServicesService
 from gest.backend.system import SystemService
 from gest.backend.users import UsersService
-from gest.core.makeconf import reader as makeconf
 from gest.core.software import news
 from gest.ipc.interface import BUS_NAME, SOFTWARE_IFACE, SOFTWARE_PATH, polkit_action
 
@@ -97,11 +97,6 @@ _INTROSPECTION = f"""
       <arg type="s" name="line" direction="in"/>
       <arg type="b" name="ok" direction="out"/>
     </method>
-    <method name="SetMakeconf">
-      <arg type="s" name="name" direction="in"/>
-      <arg type="s" name="value" direction="in"/>
-      <arg type="b" name="ok" direction="out"/>
-    </method>
     <signal name="Progress"><arg type="s" name="line"/></signal>
     <signal name="Finished"><arg type="i" name="exit_code"/></signal>
   </interface>
@@ -113,20 +108,6 @@ _INTROSPECTION = f"""
 _EMERGE = shutil.which("emerge") or "/usr/bin/emerge"
 _ESELECT = shutil.which("eselect") or "/usr/bin/eselect"
 
-
-def _atomic_write_file(path: str, text: str) -> None:
-    directory = os.path.dirname(path)
-    os.makedirs(directory, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=directory, prefix=".gest.")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            fh.write(text)
-        os.chmod(tmp, 0o644)
-        os.replace(tmp, path)
-    except Exception:
-        with contextlib.suppress(OSError):
-            os.unlink(tmp)
-        raise
 
 # Exit after this many idle seconds so a re-activation picks up new code and
 # the root service doesn't linger. Never exits while a merge is streaming.
@@ -208,9 +189,6 @@ class SoftwareService:
         elif method == "SetPackageConfig":
             kind, atom, line = params.unpack()
             self._set_package_config(kind, atom, line, sender, invocation)
-        elif method == "SetMakeconf":
-            name, value = params.unpack()
-            self._set_makeconf(name, value, sender, invocation)
         else:
             invocation.return_error_literal(
                 Gio.dbus_error_quark(),
@@ -435,31 +413,6 @@ class SoftwareService:
                 os.unlink(tmp)
             raise
 
-    def _set_makeconf(self, name, value, sender, invocation):
-        """Set a variable in /etc/portage/make.conf (polkit modify-config)."""
-        if not self._check_authorized(sender, polkit_action("modify-config")):
-            invocation.return_error_literal(
-                Gio.dbus_error_quark(), Gio.DBusError.ACCESS_DENIED,
-                "Not authorized to modify Portage configuration")
-            return
-        if not makeconf.valid_name(name) or not makeconf.valid_value(value):
-            invocation.return_error_literal(
-                Gio.dbus_error_quark(), Gio.DBusError.INVALID_ARGS,
-                "invalid make.conf variable name or value")
-            return
-        try:
-            with open(makeconf.MAKE_CONF, encoding="utf-8") as fh:
-                text = fh.read()
-        except OSError:
-            text = ""
-        try:
-            _atomic_write_file(makeconf.MAKE_CONF, makeconf.render(text, name, value))
-        except OSError as exc:
-            invocation.return_error_literal(
-                Gio.dbus_error_quark(), Gio.DBusError.FAILED, f"write failed: {exc}")
-            return
-        invocation.return_value(GLib.Variant("(b)", (True,)))
-
     # -- polkit -------------------------------------------------------------
 
     def _check_authorized(self, sender: str, action_id: str) -> bool:
@@ -544,6 +497,7 @@ def main() -> int:
         EselectService(conn)
         BootloaderService(conn)
         ReposService(conn)
+        PortageService(conn)
         DiskService(conn)
         DateTimeService(conn)
 

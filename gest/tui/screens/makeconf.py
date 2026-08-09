@@ -1,16 +1,16 @@
 """make.conf editor (urwid): list variables, edit a value, add a variable.
 
-Reading is unprivileged; writing goes through the polkit-gated backend
-(SoftwareBackend.set_makeconf → software.modify-config).
+Reading is unprivileged; writing goes through the polkit-gated Portage backend
+(PortageBackend.write_config → portage.configure).
 """
 
 from __future__ import annotations
 
 import urwid
 
-from gest.core.makeconf import reader
+from gest.core.makeconf import reader, writer
 from gest.core.makeconf.reader import Var
-from gest.core.software.backend_client import SoftwareBackend
+from gest.core.portage.backend_client import PortageBackend
 from gest.tui.runtime import App, Modal, Screen
 
 
@@ -45,10 +45,11 @@ class MakeconfScreen(Screen):
         return None
 
     async def _apply(self, name: str, value: str) -> None:
-        backend = SoftwareBackend()
+        write = await self.app.run_blocking(lambda: writer.set_variable(name, value))
+        backend = PortageBackend()
         try:
             await backend.connect()
-            ok = await backend.set_makeconf(name, value)
+            ok = await backend.write_config([write])
         except Exception as exc:
             self.app.notify(str(exc), error=True)
             await backend.close()
