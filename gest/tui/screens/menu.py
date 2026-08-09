@@ -14,6 +14,7 @@ from gest.tui.screens.datetime import DateTimeScreen
 from gest.tui.screens.disk import DiskScreen
 from gest.tui.screens.eselect import EselectScreen
 from gest.tui.screens.hardware import HardwareScreen
+from gest.tui.screens.licenses import LicensesScreen
 from gest.tui.screens.logs import LogsScreen
 from gest.tui.screens.makeconf import MakeconfScreen
 from gest.tui.screens.network import NetworkScreen
@@ -34,6 +35,7 @@ CATEGORIES: list[tuple[str, list[tuple[str, str, bool]]]] = [
         ("news", "Portage News", True),
         ("repositories", "Software Repositories", True),
         ("binhost", "Binary Packages (binhost)", True),
+        ("licenses", "Package Licenses", True),
     ]),
     ("System", [
         ("hostname", "Hostname", True),
@@ -146,6 +148,8 @@ class MenuScreen(Screen):
             self.app.push(ReposScreen(self.app))
         elif key == "binhost":
             self.app.push(BinhostScreen(self.app))
+        elif key == "licenses":
+            self.app.push(LicensesScreen(self.app))
         elif key == "services":
             self.app.push(ServicesScreen(self.app))
         elif key == "hostname":
