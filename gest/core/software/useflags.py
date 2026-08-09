@@ -18,6 +18,8 @@ from dataclasses import dataclass
 
 import portage
 
+from gest.core.portage.codec import atomfile
+from gest.core.portage.write import ConfigWrite
 from gest.core.software import reader, usedesc
 
 DEFAULT, ON, OFF = "default", "on", "off"
@@ -138,21 +140,14 @@ def _current_file_text() -> str:
 
 def render_file(cp: str, line: str) -> str:
     """New full contents of package.use/gest with ``cp``'s line set to ``line``."""
-    kept = []
-    for existing in _current_file_text().splitlines():
-        stripped = existing.strip()
-        if not stripped or stripped.startswith("#"):
-            kept.append(existing)
-            continue
-        if stripped.split()[0] == cp:
-            continue  # drop the old line for this package
-        kept.append(existing)
-    if line:
-        kept.append(line)
-    text = "\n".join(kept).strip()
-    return text + "\n" if text else ""
+    return atomfile.upsert(_current_file_text(), cp, line)
 
 
 def preview(cp: str, states: dict[str, str]) -> tuple[str, str]:
     """(old_file_text, new_file_text) for the pending change."""
     return _current_file_text(), render_file(cp, build_line(cp, states))
+
+
+def write_for(cp: str, states: dict[str, str]) -> ConfigWrite:
+    """A :class:`ConfigWrite` setting ``cp``'s package.use/gest line from ``states``."""
+    return ConfigWrite(gest_file(), render_file(cp, build_line(cp, states)))

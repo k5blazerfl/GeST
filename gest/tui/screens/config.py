@@ -2,16 +2,17 @@
 
 USE flags are tri-state (default/on/off) and applied via a --changed-use
 rebuild; keyword/mask edits are written to /etc/portage/package.* through the
-backend. Reached with u/k from Software Management.
+Portage backend (WriteConfig → portage.configure). Reached with u/k from
+Software Management.
 """
 
 from __future__ import annotations
 
 import urwid
 
+from gest.core.portage.backend_client import PortageBackend
 from gest.core.software import pkgconfig as pc
 from gest.core.software import useflags
-from gest.core.software.backend_client import SoftwareBackend
 from gest.tui.runtime import App, Screen
 from gest.tui.screens.apply import ApplyScreen, rebuild_plan
 
@@ -79,11 +80,12 @@ class UseFlagScreen(Screen):
         return key
 
     async def _apply(self) -> None:
-        line = useflags.build_line(self.cp, self._states)
-        backend = SoftwareBackend()
+        write = await self.app.run_blocking(
+            lambda: useflags.write_for(self.cp, self._states))
+        backend = PortageBackend()
         try:
             await backend.connect()
-            await backend.set_package_use(self.cp, line)
+            await backend.write_config([write])
         except Exception as exc:
             self.app.notify(str(exc), error=True)
             await backend.close()
@@ -132,15 +134,15 @@ class KeywordsScreen(Screen):
         return key
 
     async def _apply(self) -> None:
-        writes = pc.changed_writes(self.cp, self._kw, self._mask)
+        writes = await self.app.run_blocking(
+            lambda: pc.writes_for(self.cp, self._kw, self._mask))
         if not writes:
             self.app.notify("No keyword/mask changes to apply.")
             return
-        backend = SoftwareBackend()
+        backend = PortageBackend()
         try:
             await backend.connect()
-            for kind, line in writes:
-                await backend.set_package_config(kind, self.cp, line)
+            await backend.write_config(writes)
         except Exception as exc:
             self.app.notify(str(exc), error=True)
             await backend.close()

@@ -20,6 +20,9 @@ import os
 
 import portage
 
+from gest.core.portage.codec import atomfile
+from gest.core.portage.write import ConfigWrite
+
 KW_DEFAULT, KW_TESTING, KW_ANY = "default", "~arch", "**"
 MASK_DEFAULT, MASKED, UNMASKED = "default", "masked", "unmasked"
 
@@ -39,13 +42,9 @@ def read_line(kind: str, cp: str) -> str:
     """The current package.<kind>/gest line for ``cp`` ("" if none)."""
     try:
         with open(gest_path(kind), encoding="utf-8") as fh:
-            for raw in fh:
-                line = raw.strip()
-                if line and not line.startswith("#") and line.split()[0] == cp:
-                    return line
+            return atomfile.line_for(fh.read(), cp)
     except OSError:
-        pass
-    return ""
+        return ""
 
 
 def keyword_state(cp: str) -> str:
@@ -87,3 +86,17 @@ def changed_writes(cp: str, kw: str, mask: str) -> list[tuple[str, str]]:
         if line != read_line(kind, cp):
             writes.append((kind, line))
     return writes
+
+
+def writes_for(cp: str, kw: str, mask: str) -> list[ConfigWrite]:
+    """A :class:`ConfigWrite` per package.<kind>/gest file that must change."""
+    out: list[ConfigWrite] = []
+    for kind, line in changed_writes(cp, kw, mask):
+        target = gest_path(kind)
+        try:
+            with open(target, encoding="utf-8") as fh:
+                text = fh.read()
+        except OSError:
+            text = ""
+        out.append(ConfigWrite(target, atomfile.upsert(text, cp, line)))
+    return out
