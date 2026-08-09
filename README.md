@@ -135,6 +135,8 @@ working tree.
 - [x] Software search fields — a "Provides (file)" view (path → owning package,
       qfile-style via the CONTENTS owner index) and a Description search-in field
       (metadata.xml longdescription, the opt-in time-consuming path)
+- [x] TUI polish — F1 help overlay on every screen (bespoke or synthesised from
+      the key list) + YaST-style [Cancel]/[Accept] action bar on Software
 - [x] Users & Groups module — list users/groups; add / edit / delete users,
       add / delete groups (polkit-gated useradd/usermod/userdel/groupadd/groupdel)
 - [x] User passwords (chpasswd via stdin) + group membership (gpasswd);

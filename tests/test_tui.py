@@ -51,6 +51,26 @@ def test_menu_two_panes_and_category_navigation():
     assert "Hostname" in out2 and "Timezone" in out2
 
 
+def test_f1_opens_help_overlay_with_bespoke_text():
+    import urwid
+    app = App()
+    menu = MenuScreen(app)
+    app._stack.append(menu)
+    menu.keypress(_SIZE, "f1")
+    assert isinstance(app._stack[-1], urwid.Overlay)
+    assert "Help" in _render(app._stack[-1])
+
+
+def test_f1_help_synthesized_from_footer_keys():
+    import urwid
+    app = App()
+    scr = HardwareScreen(app)
+    app._stack.append(scr)
+    scr.keypress(_SIZE, "f1")               # no bespoke help_text -> synthesized
+    assert isinstance(app._stack[-1], urwid.Overlay)
+    assert "Keys:" in _render(app._stack[-1])
+
+
 def test_menu_launches_news():
     app = App()
     menu = MenuScreen(app)
@@ -225,6 +245,7 @@ def test_software_two_pane_layout():
     out = _render(scr)
     assert "Filter" in out and "Packages" in out and "Detail" in out
     assert "Name" in out and "Summary" in out  # pinned column header
+    assert "[Cancel]" in out and "[Accept]" in out  # YaST-style action bar
 
 
 def test_software_loads_marks_and_clears():

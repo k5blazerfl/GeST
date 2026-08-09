@@ -6,7 +6,7 @@ import socket
 
 import urwid
 
-from gest.tui.runtime import App, Screen
+from gest.tui.runtime import App, Screen, accel_label
 from gest.tui.screens.apply import ApplyScreen, depclean_plan, sync_plan, world_plan
 from gest.tui.screens.bootloader import BootloaderScreen
 from gest.tui.screens.disk import DiskScreen
@@ -61,11 +61,6 @@ def _icon(label: str) -> urwid.Widget:
     return urwid.AttrMap(urwid.SelectableIcon(label, 0), None, focus_map="focus")
 
 
-def _accel(label: str) -> urwid.Widget:
-    """A YaST-style bracket label with the accelerator letter highlighted."""
-    return urwid.Text(["[", ("cc_title", label[0]), f"{label[1:]}]"])
-
-
 class MenuScreen(Screen):
     def __init__(self, app: App) -> None:
         cats = [_icon(name) for name, _mods in CATEGORIES]
@@ -86,11 +81,11 @@ class MenuScreen(Screen):
         title_box = urwid.LineBox(
             urwid.Text(("cc_title", "GeST Control Center"), align="center"))
         bottom = urwid.Columns([
-            ("pack", _accel("Help")),
+            ("pack", accel_label("Help")),
             urwid.Text(""),                       # spacer pushes Run/Quit right
-            ("pack", _accel("Run")),
+            ("pack", accel_label("Run")),
             ("pack", urwid.Text("  ")),
-            ("pack", _accel("Quit")),
+            ("pack", accel_label("Quit")),
         ])
         body = urwid.Pile([
             ("pack", title_box),
@@ -101,7 +96,15 @@ class MenuScreen(Screen):
         ])
         super().__init__(
             app, body, title=f"GeST — menu @ {socket.gethostname()}",
-            footer_keys=[("F1", "Help"), ("F9", "Quit")],
+            footer_keys=[("F9", "Quit")],
+            help_text=(
+                "GeST Control Center — a YaST-style front-end for Gentoo.\n\n"
+                "↑/↓   move within a pane\n"
+                "→/Enter   open a category / run a module\n"
+                "R   run the highlighted module\n"
+                "Esc/←   go back to the categories\n"
+                "F9/Q   quit"
+            ),
         )
         urwid.connect_signal(self._cat_walker, "modified", self._on_cat_change)
         self._populate_modules(0)
@@ -166,8 +169,8 @@ class MenuScreen(Screen):
         if key == "f9":
             self.app.quit()
             return None
-        if key in ("f1", "h", "H"):
-            self.app.notify("↑/↓ pick · →/Enter open · R run · Esc back · F9 quit")
+        if key in ("h", "H"):  # F1 is handled by the Screen base
+            self.show_help()
             return None
         if key in ("r", "R"):
             self._run_focused()

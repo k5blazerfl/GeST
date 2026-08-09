@@ -14,7 +14,7 @@ from gest.core.software import reader
 from gest.core.software.model import PackageDetail
 from gest.core.software.selection import Selection
 from gest.tui.menubar import MenuBar, _Dropdown
-from gest.tui.runtime import App, Screen
+from gest.tui.runtime import App, Screen, action_bar
 from gest.tui.screens.apply import (
     ApplyScreen,
     install_plan,
@@ -144,7 +144,11 @@ class SoftwareScreen(Screen):
         self._columns = urwid.Columns(
             [(34, sidebar_box), right], dividechars=1)
         self._menubar = MenuBar(app, _MENUS, self._on_menu, top=2)
-        pile = urwid.Pile([("pack", self._menubar), self._columns])
+        pile = urwid.Pile([
+            ("pack", self._menubar),
+            self._columns,
+            ("pack", action_bar(["Cancel", "Accept"])),
+        ])
         super().__init__(
             app, pile, title="Software Management",
             footer_keys=[
@@ -152,6 +156,14 @@ class SoftwareScreen(Screen):
                 ("a", "Actions"), ("Tab", "Pane"), ("u", "USE"), ("k", "Keys"),
                 ("F10", "Accept"), ("Esc", "Back"),
             ],
+            help_text=(
+                "Browse and manage Portage packages, YaST sw_single-style.\n\n"
+                "Filter (left): pick a view (Search / Provides / Categories / "
+                "Installed / World), a search mode, and which fields to search.\n"
+                "Table: ↑/↓ move · Space mark install/update · r mark remove · "
+                "c clear marks · a Actions · u USE flags · k keywords.\n"
+                "Tab switches panes. F10 (Accept) applies all marks; Esc cancels."
+            ),
         )
         self._pile = pile
         self._pile.focus_position = 1              # the columns, not the menu

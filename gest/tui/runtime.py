@@ -128,6 +128,20 @@ def function_bar(keys: list[tuple[str, str]]) -> urwid.Widget:
     return urwid.AttrMap(urwid.Text(markup or ""), "footer")
 
 
+def accel_label(label: str) -> urwid.Widget:
+    """A YaST-style ``[Label]`` with the first (accelerator) letter highlighted."""
+    return urwid.Text(["[", ("cc_title", label[0]), f"{label[1:]}]"])
+
+
+def action_bar(labels: list[str]) -> urwid.Widget:
+    """A right-aligned row of ``[Label]`` action buttons (visual; key-driven)."""
+    cols: list = [urwid.Text("")]  # left spacer pushes actions right
+    for label in labels:
+        cols.append(("pack", accel_label(label)))
+        cols.append(("pack", urwid.Text("  ")))
+    return urwid.Columns(cols)
+
+
 class BracketButton(urwid.Button):
     """A urwid Button rendered YaST-style as ``[Label]``."""
 
@@ -144,11 +158,22 @@ class Screen(urwid.WidgetWrap):
     """
 
     def __init__(self, app: App, body: urwid.Widget, *, title: str = "",
-                 footer_keys: list[tuple[str, str]] | None = None):
+                 footer_keys: list[tuple[str, str]] | None = None,
+                 help_text: str = ""):
         self.app = app
+        self._title = title
         self._status = urwid.Text("")
+        keys = list(footer_keys or [])
+        # Every screen gets an F1 help overlay. When a screen doesn't supply its
+        # own help_text, synthesise one from its function-key list so help is
+        # always available and consistent.
+        if not help_text and keys:
+            help_text = "Keys:\n" + "\n".join(f"  {k:<10} {d}" for k, d in keys)
+        self._help_text = help_text
+        if help_text and not any(label == "F1" for label, _desc in keys):
+            keys = [("F1", "Help"), *keys]
         header = urwid.AttrMap(urwid.Text(f" {title}"), "header")
-        footer = urwid.Pile([self._status, function_bar(footer_keys or [])])
+        footer = urwid.Pile([self._status, function_bar(keys)])
         self._frame = urwid.Frame(body, header=header, footer=footer)
         super().__init__(self._frame)
 
@@ -158,9 +183,21 @@ class Screen(urwid.WidgetWrap):
     def set_status(self, text: str, attr: str = "hint") -> None:
         self._status.set_text((attr, f" {text}") if text else "")
 
+    def show_help(self) -> None:
+        """Open a modal with this screen's help text (F1)."""
+        if not self._help_text:
+            return
+        rows = [urwid.Text(line) for line in self._help_text.split("\n")]
+        modal = Modal(self.app, f"Help — {self._title}", rows,
+                      [("Close", self.app.pop)])
+        self.app.push_modal(modal, width=("relative", 70))
+
     def keypress(self, size, key):
         key = super().keypress(size, key)
         if key is None:
+            return None
+        if key == "f1" and self._help_text:
+            self.show_help()
             return None
         return self.handle_key(key)
 
