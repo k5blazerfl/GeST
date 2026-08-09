@@ -424,7 +424,27 @@ def test_software_binary_menu_opens_binhost():
     assert isinstance(app._stack[-1], BinhostScreen)
 
 
-def test_software_space_cycles_mark_through_binary():
+def test_software_origin_glyph_source_vs_binary():
+    app = App()
+    scr = _software(app)
+    scr._cps = ["cat/src", "cat/bin"]
+    scr._installed = [True, True]
+    scr._from_binary = [False, True]
+    assert scr._status_for(0, "cat/src") == "i"     # built from source
+    assert scr._status_for(1, "cat/bin") == "ⓑ"     # installed from a binary pkg
+
+
+def test_software_detail_shows_origin():
+    from gest.core.software.model import PackageDetail
+    app = App()
+    scr = _software(app)
+    d = PackageDetail(cp="cat/pkg", installed_version="1.0", from_binary=True)
+    assert "binary package" in str(scr._render_detail("cat/pkg", d))
+    d2 = PackageDetail(cp="cat/pkg", installed_version="1.0", from_binary=False)
+    assert "source build" in str(scr._render_detail("cat/pkg", d2))
+
+
+def test_software_space_cycles_mark_through_binary_and_remove():
     from gest.core.software import selection as s
     app = App()
     scr = _software(app)
@@ -435,7 +455,10 @@ def test_software_space_cycles_mark_through_binary():
     scr.keypress(_SIZE, " ")                       # install → binary-only
     assert scr._selection.mark_of(cp) == s.BINPKG
     assert scr._walker[0].base_widget.text.startswith("b")
-    scr.keypress(_SIZE, " ")                       # binary → none
+    scr.keypress(_SIZE, " ")                       # binary → remove
+    assert scr._selection.mark_of(cp) == s.REMOVE
+    assert scr._walker[0].base_widget.text.startswith("-")
+    scr.keypress(_SIZE, " ")                       # remove → none
     assert scr._selection.mark_of(cp) is None
 
 

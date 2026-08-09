@@ -32,6 +32,7 @@ class Package:
     repository: str = ""
     homepage: str = ""
     installed: bool = False
+    from_binary: bool = False   # installed from a binary package (VDB has BUILD_ID)
     world_member: bool = False
     use_flags: list[UseFlag] = field(default_factory=list)
 
@@ -80,6 +81,7 @@ class PackageDetail:
     keywords: str = ""
     installed_size: int = 0  # bytes, installed version
     download_size: int = 0   # bytes, distfiles for the best available version
+    from_binary: bool = False  # installed version came from a binary package
     required_by: list[str] = field(default_factory=list)  # installed dependents
 
     @property

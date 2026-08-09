@@ -97,6 +97,7 @@ class SoftwareScreen(Screen):
     def __init__(self, app: App) -> None:
         self._cps: list[str] = []
         self._installed: list[bool] = []
+        self._from_binary: list[bool] = []
         self._summaries: list[str] = []
         self._categories: list[str] = []
         self._selection = Selection()
@@ -168,10 +169,11 @@ class SoftwareScreen(Screen):
                 "Filter (left): pick a view (Search / Provides / Categories / "
                 "Installed / World), a search mode, and which fields to search.\n"
                 "Table: ↑/↓ move · Space cycles the mark (none → install →\n"
-                "binary-only) · b jumps straight to binary-only · r mark remove ·\n"
-                "c clear marks · a Actions (adds 'prefer binary') · u USE · k keys.\n"
-                "Marks: + install · b binary-only · B prefer-binary · - remove · "
-                "i installed.\n"
+                "binary-only → remove) · b jumps to binary-only · r jumps to\n"
+                "remove · c clear marks · a Actions (adds 'prefer binary') · u USE.\n"
+                "Status: i installed (from source) · ⓑ installed (from a binary "
+                "package). Marks: + install · b binary-only · B prefer-binary · "
+                "- remove.\n"
                 "Binary installs use emerge --getbinpkg (configure sources under "
                 "the Binary packages menu). F10 (Accept) applies all marks."
             ),
@@ -271,6 +273,7 @@ class SoftwareScreen(Screen):
     def _empty_table(self, hint: str) -> None:
         self._table_mode = "packages"
         self._cps, self._installed, self._summaries = [], [], []
+        self._from_binary = []
         self._walker[:] = [urwid.Text(f" {hint}")]
         self._detail.set_text("")
         self._set_count("0 package(s)")
@@ -278,14 +281,16 @@ class SoftwareScreen(Screen):
     async def _load_installed(self) -> None:
         pkgs = await self.app.run_blocking(reader.list_installed)
         self._fill([(p.cp, (p.description or "")[:60]) for p in pkgs],
-                   [p.cp for p in pkgs], [True] * len(pkgs))
+                   [p.cp for p in pkgs], [True] * len(pkgs),
+                   [p.from_binary for p in pkgs])
         self._set_count(f"{len(pkgs)} installed package(s)")
 
     async def _load_world(self) -> None:
         pkgs = await self.app.run_blocking(reader.list_installed)
         world = [p for p in pkgs if p.world_member]
         self._fill([(p.cp, (p.description or "")[:60]) for p in world],
-                   [p.cp for p in world], [True] * len(world))
+                   [p.cp for p in world], [True] * len(world),
+                   [p.from_binary for p in world])
         self._set_count(f"{len(world)} @world package(s)")
 
     async def _load_categories(self) -> None:
@@ -293,6 +298,7 @@ class SoftwareScreen(Screen):
         self._table_mode = "categories"
         self._categories = cats
         self._cps, self._installed, self._summaries = [], [], []
+        self._from_binary = []
         self._header.base_widget.set_text(_CAT_HEADER)
         self._walker[:] = [_row(f"   {c}") for c in cats] or [urwid.Text(" (none)")]
         if cats:
@@ -337,11 +343,14 @@ class SoftwareScreen(Screen):
                    [r.cp for r in results], [r.installed for r in results])
         self._set_count(f"{len(results)} package(s) found")
 
-    def _fill(self, rows, cps, installed) -> None:
+    def _fill(self, rows, cps, installed, from_binary=None) -> None:
         self._table_mode = "packages"
         self._header.base_widget.set_text(_PKG_HEADER)
         self._cps = cps
         self._installed = installed
+        # Origin (source vs binary) is known only for installed listings; other
+        # views leave it False and rely on the detail pane's Origin line.
+        self._from_binary = from_binary if from_binary is not None else [False] * len(cps)
         self._summaries = [summary for _cp, summary in rows]
         widgets = [_row(self._row_text(i, cp, summary))
                    for i, (cp, summary) in enumerate(rows)]
@@ -363,7 +372,9 @@ class SoftwareScreen(Screen):
             return "B"          # prefer binary
         if mark == sel.REMOVE:
             return "-"
-        return "i" if self._installed[i] else " "
+        if self._installed[i]:
+            return "ⓑ" if self._from_binary[i] else "i"   # ⓑ = from a binary pkg
+        return " "
 
     # -- detail pane --------------------------------------------------------
 
@@ -393,6 +404,9 @@ class SoftwareScreen(Screen):
             ("field", "Version: "), f"{d.available_version or '—'}   ",
             ("field", "Installed: "), f"{d.installed_version or '—'}   ",
             ("field", "Slot: "), f"{d.slot}\n",
+            ("field", "Origin: "),
+            (("binary package" if d.from_binary else "source build")
+             if d.installed else "—") + "\n",
             ("field", "Size: "),
             f"{_fmt_size(d.installed_size)} installed · {_fmt_size(d.download_size)} download\n",
             ("field", "License: "), f"{d.license or '—'}\n",
@@ -416,9 +430,9 @@ class SoftwareScreen(Screen):
         base = base.split("   ·   ")[0]
         self._set_count(base)
 
-    # Space cycles the primary mark through: none → install → binary-only.
-    # (r toggles remove; b jumps straight to binary; Actions has prefer-binary.)
-    _SPACE_CYCLE = (None, sel.INSTALL, sel.BINPKG)
+    # Space cycles the primary mark: none → install → binary-only → remove.
+    # (r jumps to remove; b jumps to binary; Actions has prefer-binary.)
+    _SPACE_CYCLE = (None, sel.INSTALL, sel.BINPKG, sel.REMOVE)
 
     def _toggle(self, remove: bool) -> None:
         self._mark(sel.REMOVE if remove else sel.INSTALL)
@@ -566,7 +580,7 @@ class SoftwareScreen(Screen):
             return None
         if in_table and self._table_mode == "packages":
             if key == " ":
-                self._cycle_mark()       # none → install → binary-only
+                self._cycle_mark()       # none → install → binary-only → remove
                 return None
             if key == "b":
                 self._mark(sel.BINPKG)   # jump straight to binary-only

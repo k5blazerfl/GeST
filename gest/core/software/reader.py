@@ -83,6 +83,15 @@ def _parse_use_flags(iuse: str, use: str) -> list[UseFlag]:
     return sorted(flags, key=lambda f: f.name)
 
 
+def _installed_from_binary(cpv: str) -> bool:
+    """True if the installed ``cpv`` was merged from a binary package.
+
+    Portage stamps BUILD_ID (and BINPKGMD5) into the VDB only for packages that
+    came from a binpkg; a source build has neither.
+    """
+    return bool(_VARDB.aux_get(cpv, ("BUILD_ID",))[0])
+
+
 def list_installed() -> list[Package]:
     """Every installed package version, sorted by cp."""
     world = _world_atoms()
@@ -99,6 +108,7 @@ def list_installed() -> list[Package]:
                 repository=repo,
                 homepage=homepage,
                 installed=True,
+                from_binary=_installed_from_binary(cpv),
                 world_member=cp in world,
                 use_flags=_parse_use_flags(iuse, use),
             )
@@ -311,6 +321,7 @@ def get_package(cp: str) -> Package | None:
         repository=repo,
         homepage=homepage,
         installed=installed,
+        from_binary=installed and _installed_from_binary(cpv),
         world_member=cp in world,
         use_flags=_parse_use_flags(iuse, use),
     )
@@ -431,5 +442,6 @@ def get_package_detail(cp: str) -> PackageDetail | None:
         keywords=kw,
         installed_size=installed_size(cp),
         download_size=download_size(cp),
+        from_binary=bool(inst) and _installed_from_binary(inst[-1]),
         required_by=reverse_dependencies(cp),
     )
