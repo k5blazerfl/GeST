@@ -20,6 +20,7 @@ import re
 import portage
 from portage.dep import Atom, dep_getkey, use_reduce
 from portage.versions import cpv_getkey, cpv_getversion
+from portage.xml.metadata import MetaDataXML
 
 from gest.core.software.model import Package, PackageDetail, SearchResult, UseFlag
 
@@ -109,6 +110,31 @@ def list_installed() -> list[Package]:
 _META_FIELD_KEYS = {"summary": "DESCRIPTION", "homepage": "HOMEPAGE", "license": "LICENSE"}
 
 
+@functools.lru_cache(maxsize=4096)
+def _longdescription(cp: str) -> str:
+    """The package's metadata.xml <longdescription>, or "" (time-consuming).
+
+    Cached per cp; parses the ebuild's metadata.xml. Almost always empty in
+    Gentoo, so this is the slow, opt-in search path.
+    """
+    cp = portage.dep_getkey(cp) if "/" in cp else cp
+    cpv = _best_available(cp)
+    if not cpv:
+        inst = _VARDB.cp_list(cp)
+        cpv = inst[-1] if inst else ""
+    if not cpv:
+        return ""
+    try:
+        ebuild, _repo = _PORTDB.findname2(cpv)
+        if not ebuild:
+            return ""
+        meta = os.path.join(os.path.dirname(ebuild), "metadata.xml")
+        descs = MetaDataXML(meta, None).descriptions()
+    except Exception:
+        return ""
+    return " ".join(d.strip() for d in (descs or []) if d and d.strip())
+
+
 def _make_matcher(term: str, mode: str, ignore_case: bool):
     """Return a predicate ``matches(text) -> bool`` for the given search mode."""
     if mode == "regexp":
@@ -153,13 +179,14 @@ def search(
     want_name = "name" in fields
     meta_fields = [f for f in fields if f in _META_FIELD_KEYS]
     want_meta = bool(meta_fields)
+    want_desc = "description" in fields
     results: list[SearchResult] = []
 
     for cp in _PORTDB.cp_all():
         name_hit = False
         if want_name:
             name_hit = matches(cp) or (mode == "exact" and matches(cp.split("/")[-1]))
-        if not name_hit and not want_meta:
+        if not name_hit and not want_meta and not want_desc:
             continue  # name-only search skips the expensive metadata read
         best = _best_available(cp)
         version = cpv_getversion(best) if best else ""
@@ -183,6 +210,8 @@ def search(
                 if matches(values.get(_META_FIELD_KEYS[field], "")):
                     hit = True
                     break
+        if not hit and want_desc and matches(_longdescription(cp)):
+            hit = True
         if not hit:
             continue
         inst = _VARDB.cp_list(cp)
@@ -190,6 +219,36 @@ def search(
         results.append(SearchResult(cp, version, desc, inst_ver))
         if len(results) >= limit:
             break
+    results.sort(key=lambda r: r.cp)
+    return results
+
+
+def search_file_owner(path: str) -> list[SearchResult]:
+    """Installed package(s) that own a given file path (the qfile concept).
+
+    Uses the vardb CONTENTS owner index; only installed packages have file
+    lists, so this is installed-only. Needs an absolute path.
+    """
+    if not path.startswith("/"):
+        return []
+    try:
+        owners = _VARDB._owners.get_owners([path])
+    except Exception:
+        return []
+    results: list[SearchResult] = []
+    seen: set[str] = set()
+    for dblink in owners:
+        cpv = dblink.mycpv
+        cp = cpv_getkey(cpv)
+        if cp in seen:
+            continue
+        seen.add(cp)
+        version = cpv_getversion(cpv)
+        try:
+            desc = _VARDB.aux_get(cpv, ["DESCRIPTION"])[0]
+        except Exception:
+            desc = ""
+        results.append(SearchResult(cp, version, desc, version))
     results.sort(key=lambda r: r.cp)
     return results
 

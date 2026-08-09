@@ -305,6 +305,19 @@ def test_software_detail_pane_has_bold_labels():
     assert any(attr == "title" for attr, _run in attrs)   # coloured pkg title
 
 
+def test_software_provides_view_resolves_file_owner():
+    app = App()
+    scr = _software(app)
+    scr._switch_view("provides")
+    assert scr._view == "provides" and scr._description_cb is not None
+    scr._columns.focus_position = 0
+    scr._sidebar.focus_position = scr._SEARCH_W_IDX
+    scr._search.set_edit_text("/bin/bash")
+    scr.keypress(_SIZE, "enter")
+    _pump(app, lambda: any(cp == "app-shells/bash" for cp in scr._cps), ticks=300)
+    assert "app-shells/bash" in scr._cps
+
+
 def test_software_accept_opens_apply_screen():
     app = App()
     scr = _software(app)

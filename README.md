@@ -132,6 +132,9 @@ working tree.
       dropdown (Install/Remove/USE/keywords) per package
 - [x] Software detail facts — installed/download Size and Required-by (a
       session-cached, installed-only reverse-dependency index) in the detail pane
+- [x] Software search fields — a "Provides (file)" view (path → owning package,
+      qfile-style via the CONTENTS owner index) and a Description search-in field
+      (metadata.xml longdescription, the opt-in time-consuming path)
 - [x] Users & Groups module — list users/groups; add / edit / delete users,
       add / delete groups (polkit-gated useradd/usermod/userdel/groupadd/groupdel)
 - [x] User passwords (chpasswd via stdin) + group membership (gpasswd);

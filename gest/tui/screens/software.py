@@ -56,6 +56,7 @@ _MENUS = [
 # Filter views offered by the sidebar selector (id, label).
 _VIEWS = [
     ("search", "Search"),
+    ("provides", "Provides (file)"),
     ("categories", "Categories"),
     ("installed", "Installed"),
     ("world", "World set"),
@@ -106,6 +107,7 @@ class SoftwareScreen(Screen):
         self._summary_cb = urwid.CheckBox("Summary")
         self._homepage_cb = urwid.CheckBox("Homepage")
         self._license_cb = urwid.CheckBox("License")
+        self._description_cb = urwid.CheckBox("Description (slow)")
         self._sidebar = urwid.Pile([
             ("pack", self._view_selector),
             ("pack", urwid.Divider()),
@@ -118,6 +120,7 @@ class SoftwareScreen(Screen):
             ("pack", self._summary_cb),
             ("pack", self._homepage_cb),
             ("pack", self._license_cb),
+            ("pack", self._description_cb),
         ])
         sidebar_box = urwid.LineBox(
             urwid.Filler(self._sidebar, valign="top"), title="Filter")
@@ -225,6 +228,10 @@ class SoftwareScreen(Screen):
                 self.app.run_async(self._run_search(term))
             else:
                 self._empty_table("Type a search phrase, then Enter.")
+        elif view == "provides":
+            self._columns.focus_position = 0
+            self._sidebar.focus_position = self._SEARCH_W_IDX
+            self._empty_table("Type a file path (e.g. /usr/bin/python), then Enter.")
         elif view == "categories":
             self.app.run_async(self._load_categories())
         elif view == "world":
@@ -274,6 +281,14 @@ class SoftwareScreen(Screen):
                    [r.cp for r in results], [r.installed for r in results])
         self._set_count(f"{category}: {len(results)} package(s)")
 
+    async def _run_file_search(self, path: str) -> None:
+        results = await self.app.run_blocking(lambda: reader.search_file_owner(path))
+        self._fill([(r.cp, (r.description or "")[:60]) for r in results],
+                   [r.cp for r in results], [r.installed for r in results])
+        self._set_count(
+            f"{len(results)} package(s) own {path}" if results
+            else f"no installed package owns {path}")
+
     async def _run_search(self, term: str) -> None:
         fields = []
         if self._name_cb.state:
@@ -284,6 +299,8 @@ class SoftwareScreen(Screen):
             fields.append("homepage")
         if self._license_cb.state:
             fields.append("license")
+        if self._description_cb.state:
+            fields.append("description")
         mode, ignore_case = self._mode, self._ignore_cb.state
         results = await self.app.run_blocking(
             lambda: reader.search(term, fields=tuple(fields) or ("name",),
@@ -470,8 +487,13 @@ class SoftwareScreen(Screen):
         if key == "enter":
             if on_search:
                 term = self._search.edit_text.strip()
-                self.app.run_async(
-                    self._run_search(term) if term else self._load_installed())
+                if self._view == "provides":
+                    if term:
+                        self.app.run_async(self._run_file_search(term))
+                elif term:
+                    self.app.run_async(self._run_search(term))
+                else:
+                    self.app.run_async(self._load_installed())
             elif in_table and self._table_mode == "categories" and self._categories:
                 self.app.run_async(self._load_category(self._categories[self._walker.focus]))
             elif in_table and self._cps:

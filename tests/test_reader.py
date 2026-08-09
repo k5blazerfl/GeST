@@ -138,3 +138,21 @@ def test_get_package_detail_has_size_and_reverse_deps():
     assert d.installed_size > 0
     assert isinstance(d.download_size, int)
     assert isinstance(d.required_by, list)
+
+
+def test_search_file_owner_resolves_path():
+    owners = reader.search_file_owner("/bin/bash")
+    assert any(r.cp == "app-shells/bash" for r in owners)
+    assert all(r.installed for r in owners)  # file owners are installed
+
+
+def test_search_file_owner_rejects_relative_path():
+    assert reader.search_file_owner("relative/path") == []
+    assert reader.search_file_owner("/no/such/file/xyzzy") == []
+
+
+def test_search_description_field_runs():
+    hits = reader.search("superuser", fields=("description",), limit=50)
+    assert isinstance(hits, list)
+    # app-admin/sudo's metadata.xml longdescription mentions "superuser"
+    assert any(r.cp == "app-admin/sudo" for r in hits)
