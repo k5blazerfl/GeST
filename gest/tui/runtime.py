@@ -10,14 +10,21 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
 import re
 from collections.abc import Awaitable, Callable
 
 import urwid
 
+# GeST normally runs unprivileged (privileged actions go through the polkit-gated
+# backend). Show a "User Mode" banner in the top bar so it's obvious you're not
+# root; it never changes during a run, so compute it once.
+_IS_ROOT = os.geteuid() == 0
+
 # A restrained, YaST-ish blue palette.
 PALETTE = [
     ("header", "white", "dark blue"),
+    ("header_mode", "yellow,bold", "dark blue"),  # "User Mode" banner (non-root)
     ("footer", "light gray", "dark blue"),
     ("footer_key", "black", "light gray"),
     ("title", "light cyan,bold", "default"),
@@ -151,6 +158,21 @@ class BracketButton(urwid.Button):
     button_right = urwid.Text("]")
 
 
+def _header_row(title: str) -> urwid.Widget:
+    """Top-bar contents: the title on the left, and a centered 'User Mode' banner
+    when GeST runs unprivileged (not root). The banner sits between two
+    equal-weight spacers so it stays centered regardless of the title's length.
+    """
+    title_w = urwid.Text(f" {title}")
+    if _IS_ROOT:
+        return title_w
+    return urwid.Columns([
+        ("weight", 1, title_w),
+        ("pack", urwid.AttrMap(urwid.Text("User Mode"), "header_mode")),
+        ("weight", 1, urwid.Text("")),
+    ])
+
+
 class Screen(urwid.WidgetWrap):
     """Base screen: a framed widget with a title header and a footer holding a
     transient status line above the function-key bar.
@@ -184,7 +206,7 @@ class Screen(urwid.WidgetWrap):
         self._help_text = help_text
         if help_text and not any(label == "F1" for label, _desc in keys):
             keys = [("F1", "Help"), *keys]
-        header = urwid.AttrMap(urwid.Text(f" {title}"), "header")
+        header = urwid.AttrMap(_header_row(title), "header")
         footer = urwid.Pile([self._status, function_bar(keys)])
         self._frame = urwid.Frame(body, header=header, footer=footer)
         super().__init__(self._frame)
