@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from gest.core.portage.write import ConfigWrite
-from gest.core.repos import refresh
+from gest.core.repos import disabled, refresh
 
 
 def set_refresh(names: Iterable[str], *, path: str | None = None) -> ConfigWrite:
@@ -22,3 +22,14 @@ def set_refresh(names: Iterable[str], *, path: str | None = None) -> ConfigWrite
     """
     target = path or refresh.state_path()
     return ConfigWrite(target, refresh.render(set(names)))
+
+
+def set_disabled(repos: Iterable[disabled.DisabledRepo], *,
+                 path: str | None = None) -> ConfigWrite:
+    """A :class:`ConfigWrite` persisting the disabled-repos record.
+
+    An empty list renders to ``""`` (deletes the file) — so re-enabling the last
+    tracked repo leaves no stray state behind.
+    """
+    target = path or disabled.state_path()
+    return ConfigWrite(target, disabled.render(list(repos)))

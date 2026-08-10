@@ -14,6 +14,7 @@ from __future__ import annotations
 import urwid
 
 from gest.core.portage.backend_client import PortageBackend
+from gest.core.repos import disabled as disabled_state
 from gest.core.repos import pending, reader, writer
 from gest.core.repos.backend_client import ReposBackend
 from gest.core.repos.reader import Repo
@@ -45,7 +46,8 @@ def _fmt(mark: str, name: str, auto: str, refresh: str,
 
 def _repo_line(r: Repo, mark: str, refresh_cell: str) -> str:
     auto = "x" if r.auto_sync.strip().lower() in _TRUTHY else ""
-    lead = mark or ("★" if r.main else "")
+    # Lead column: a staged mark takes priority, else ★ main / D disabled / blank.
+    lead = mark or ("★" if r.main else ("D" if not r.enabled else ""))
     return _fmt(lead, r.name, auto, refresh_cell,
                 r.sync_type or "—", r.sync_uri or "—")
 
@@ -56,15 +58,16 @@ def _new_line(name: str, kind: str, spec: pending.AddSpec | None) -> str:
     return _fmt(_STATE_GLYPH[kind], name, "", "", stype or "—", uri)
 
 
-def _row(text: str) -> urwid.Widget:
+def _row(text: str, attr: str | None = None) -> urwid.Widget:
     icon = urwid.SelectableIcon(text, 0)
     icon.set_wrap_mode("clip")   # keep rows to one line so columns stay aligned
-    return urwid.AttrMap(icon, None, focus_map="focus")
+    return urwid.AttrMap(icon, attr, focus_map="focus")   # attr="dim" greys it
 
 
 class ReposScreen(Screen):
     def __init__(self, app: App) -> None:
-        self._repos: list[Repo] = []
+        self._repos: list[Repo] = []      # enabled repos, then disabled (greyed)
+        self._disabled: list[Repo] = []   # the disabled subset (with saved sync info)
         self._pending = pending.Pending()
         # Each walker row maps to an entry: ("repo", Repo) or ("new", name).
         self._entries: list[tuple | None] = []
@@ -112,23 +115,32 @@ class ReposScreen(Screen):
                 "Refresh column). The count line and [Accept] button sit below the\n"
                 "list. F10 (Accept) applies every staged change; F9 (Cancel)\n"
                 "discards them; a key pressed twice on a row clears its mark.\n\n"
-                "The main (default) repository is marked ★ and is protected — it\n"
+                "Disabled repositories stay in the list, greyed out and flagged D in\n"
+                "the leftmost column — GeST saves a disabled repo's sync info so you\n"
+                "can re-enable it without retyping the URI (press a on the D row; x\n"
+                "forgets it).\n\n"
+                "The main (default) repository is flagged ★ and is protected — it\n"
                 "can't be disabled, removed, or refreshed-on-open.\n\n"
                 "Columns:  Name · AutoSync (in emerge --sync) · Refresh (sync on\n"
                 "open) · Type · Sync URI. Refresh: when on (x), GeST syncs that repo\n"
                 "each time Software Management opens; the ★ main tree is excluded —\n"
                 "sync it with the Sync Portage Tree tool.\n\n"
-                "a  stage enabling a known repository (from the eselect list)\n"
+                "a  enable — on a greyed (disabled) repo, re-enables it; otherwise\n"
+                "   stage enabling a known repository by name (from the eselect list)\n"
                 "A  stage adding a custom repository (name / sync type / URI)\n"
-                "d  stage disabling      x  stage removing (deletes files on Accept;\n"
-                "on a staged new repo, x cancels it)      t  toggle refresh-on-open\n"
-                "F10 Accept    F9 Cancel    r  reload"
+                "d  stage disabling (keeps files + saves info)    x  remove — on an\n"
+                "   enabled repo deletes its files; on a disabled one forgets it\n"
+                "t  toggle refresh-on-open    F10 Accept    F9 Cancel    r  reload"
             ),
         )
         app.run_async(self._load())
 
     async def _load(self) -> None:
-        self._repos = await self.app.run_blocking(reader.enabled_repos)
+        enabled = await self.app.run_blocking(reader.enabled_repos)
+        disabled = await self.app.run_blocking(reader.disabled_repos)
+        names = {r.name for r in enabled}
+        self._disabled = [r for r in disabled if r.name not in names]
+        self._repos = enabled + self._disabled     # disabled shown last, greyed
         self._rebuild()
 
     # -- rendering ----------------------------------------------------------
@@ -139,13 +151,18 @@ class ReposScreen(Screen):
         rows: list[urwid.Widget] = []
         entries: list[tuple | None] = []
         for r in self._repos:
-            rows.append(_row(_repo_line(r, self._mark_for(r), self._refresh_cell(r))))
+            attr = None if r.enabled else "dim"   # greyed out when disabled
+            rows.append(_row(_repo_line(r, self._mark_for(r), self._refresh_cell(r)),
+                             attr))
             entries.append(("repo", r))
+        existing = {r.name for r in self._repos}
         for name, spec in sorted(self._pending.adds.items()):
             rows.append(_row(_new_line(name, pending.ADD, spec)))
             entries.append(("new", name))
         for name, op in self._pending.state.items():
-            if op == pending.ENABLE:
+            # A brand-new by-name enable is its own row; re-enabling a disabled
+            # repo shows on that repo's existing (greyed) row instead.
+            if op == pending.ENABLE and name not in existing:
                 rows.append(_row(_new_line(name, pending.ENABLE, None)))
                 entries.append(("new", name))
         if not rows:
@@ -159,11 +176,13 @@ class ReposScreen(Screen):
         self.app.refresh()
 
     def _mark_for(self, r: Repo) -> str:
-        """Leading mark glyph for an existing repo (disable/remove), else ''."""
+        """Leading mark glyph for a staged change on this repo, else ''."""
         op = self._pending.state_of(r.name)
-        return _STATE_GLYPH[op] if op in (pending.DISABLE, pending.REMOVE) else ""
+        return _STATE_GLYPH.get(op, "") if op else ""
 
     def _refresh_cell(self, r: Repo) -> str:
+        if not r.enabled:
+            return ""          # disabled repos aren't synced
         if r.main:
             return "—"
         staged = self._pending.refresh_of(r.name)
@@ -200,11 +219,12 @@ class ReposScreen(Screen):
     def _prop_rows(repo: Repo | None) -> list[urwid.Widget]:
         if repo is None:
             return [urwid.Text(("hint", " (no repository selected)"))]
-        refresh = "n/a" if repo.main else ("yes" if repo.refresh else "no")
+        refresh = "n/a" if not repo.enabled or repo.main else (
+            "yes" if repo.refresh else "no")
         flags: list = [
-            ("field", " Type: "), repo.sync_type or "—",
+            ("field", " State: "), ("ok", "enabled") if repo.enabled else ("dim", "disabled"),
+            ("field", "    Type: "), repo.sync_type or "—",
             ("field", "    Priority: "), repo.priority or "—",
-            ("field", "    Auto-sync: "), repo.auto_sync or "—",
             ("field", "    Refresh: "), refresh,
             ("field", "    Default: "), "yes" if repo.main else "no",
         ]
@@ -239,7 +259,12 @@ class ReposScreen(Screen):
                 self._rebuild()
                 self.app.notify("Pending changes discarded.")
         elif key == "a":
-            self._enable()
+            entry = self._current_entry()
+            if entry is not None and entry[0] == "repo" and not entry[1].enabled:
+                self._pending.mark_state(entry[1].name, pending.ENABLE)  # re-enable
+                self._rebuild()
+            else:
+                self._enable()
         elif key == "A":
             self._add()
         elif key in ("d", "x", "t"):
@@ -280,6 +305,14 @@ class ReposScreen(Screen):
         repo = entry[1]
         if repo.main:
             self.app.notify("The main repository can't be changed here.", error=True)
+            return
+        if not repo.enabled:
+            if key == "x":
+                self._pending.mark_state(repo.name, pending.REMOVE)   # forget it
+                self._rebuild()
+            else:
+                self.app.notify("This repository is disabled — press a to re-enable "
+                                "it, or x to forget it.", error=True)
             return
         if key == "d":
             self._pending.mark_state(repo.name, pending.DISABLE)
@@ -338,56 +371,105 @@ class ReposScreen(Screen):
 
     # -- accept -------------------------------------------------------------
 
+    @staticmethod
+    def _to_disabled(repo: Repo) -> disabled_state.DisabledRepo:
+        return disabled_state.DisabledRepo(repo.name, repo.sync_type,
+                                           repo.sync_uri, repo.priority)
+
     async def _accept(self) -> None:
         if self._pending.is_empty:
             self.app.notify("No pending changes to apply.")
             return
-        results: list[tuple[str, bool]] = []
+        by_name = {r.name: r for r in self._repos}
         ops = self._pending.ordered_ops()
-        if ops and not await self._run_ops(ops, results):
-            return  # backend unavailable; nothing changed, keep marks
-        if self._pending.touches_refresh_file():
-            await self._apply_refresh(results)
+        results: list[tuple[str, bool]] = []
+        initial = [self._to_disabled(r) for r in self._disabled]
+        final_disabled = list(initial)
+
+        # Only "forget a disabled repo" (REMOVE on a disabled row) needs no eselect.
+        needs_eselect = any(
+            not self._is_forget(kind, name, by_name) for kind, name, _s in ops)
+        backend = ReposBackend()
+        if needs_eselect:
+            try:
+                await backend.connect()
+            except Exception as exc:
+                self.app.notify(f"Repository backend unavailable: {exc}", error=True)
+                return
+        for kind, name, spec in ops:
+            ok, final_disabled = await self._apply_op(
+                backend, kind, name, spec, by_name.get(name), final_disabled)
+            results.append((f"{name} ({kind})", ok))
+        if needs_eselect:
+            await backend.close()
+
+        await self._write_state(initial, final_disabled, results)
         self._pending.clear()
         self._report(results)
         await self._load()
 
-    async def _run_ops(self, ops, results: list) -> bool:
-        backend = ReposBackend()
-        try:
-            await backend.connect()
-        except Exception as exc:
-            self.app.notify(f"Repository backend unavailable: {exc}", error=True)
-            return False
-        for kind, name, spec in ops:
-            try:
-                if kind == pending.ADD:
-                    ok, _out = await backend.add(name, spec.sync_type, spec.uri)
-                elif kind == pending.ENABLE:
-                    ok, _out = await backend.enable(name)
-                elif kind == pending.DISABLE:
-                    ok, _out = await backend.disable(name)
-                else:  # REMOVE
-                    ok, _out = await backend.remove(name)
-            except Exception:
-                ok = False
-            results.append((f"{name} ({kind})", ok))
-        await backend.close()
-        return True
+    @staticmethod
+    def _is_forget(kind: str, name: str, by_name: dict) -> bool:
+        repo = by_name.get(name)
+        return kind == pending.REMOVE and repo is not None and not repo.enabled
 
-    async def _apply_refresh(self, results: list) -> None:
-        current_on = {r.name for r in self._repos if r.refresh and not r.main}
-        final = self._pending.resolved_refresh(current_on)
+    async def _apply_op(self, backend, kind, name, spec, repo, final_disabled):
+        """Run one op via eselect (as needed) and return (ok, updated disabled list)."""
+        try:
+            if kind == pending.ADD:
+                ok, _ = await backend.add(name, spec.sync_type, spec.uri)
+            elif kind == pending.ENABLE:
+                if repo is not None and not repo.enabled:      # re-enable a disabled repo
+                    if repo.sync_uri:
+                        ok, _ = await backend.add(name, repo.sync_type or "git",
+                                                  repo.sync_uri)
+                    else:
+                        ok, _ = await backend.enable(name)
+                    if ok:
+                        final_disabled = disabled_state.without(final_disabled, name)
+                else:                                          # brand-new known repo
+                    ok, _ = await backend.enable(name)
+            elif kind == pending.DISABLE:                      # enabled -> disable + save
+                ok, _ = await backend.disable(name)
+                if ok and repo is not None:
+                    final_disabled = disabled_state.upsert(
+                        final_disabled, self._to_disabled(repo))
+            elif repo is not None and not repo.enabled:        # REMOVE: forget it
+                final_disabled = disabled_state.without(final_disabled, name)
+                ok = True
+            else:                                              # REMOVE: delete files
+                ok, _ = await backend.remove(name)
+                if ok:
+                    final_disabled = disabled_state.without(final_disabled, name)
+        except Exception:
+            ok = False
+        return ok, final_disabled
+
+    async def _write_state(self, initial, final_disabled, results: list) -> None:
+        """Persist the disabled record and refresh file (one batched WriteConfig)."""
+        def key(rows):
+            return sorted((d.name, d.sync_type, d.sync_uri, d.priority) for d in rows)
+
+        builders: list[tuple[str, object]] = []
+        if key(final_disabled) != key(initial):
+            builders.append(("disabled", lambda: writer.set_disabled(final_disabled)))
+        if self._pending.touches_refresh_file():
+            current_on = {r.name for r in self._repos
+                          if r.refresh and r.enabled and not r.main}
+            final = self._pending.resolved_refresh(current_on)
+            builders.append(("refresh-on-open", lambda: writer.set_refresh(final)))
+        if not builders:
+            return
+        writes = [await self.app.run_blocking(fn) for _label, fn in builders]
         backend = PortageBackend()
         try:
-            write = await self.app.run_blocking(lambda: writer.set_refresh(final))
             await backend.connect()
-            ok = await backend.write_config([write])
+            ok = await backend.write_config(writes)
         except Exception:
             ok = False
         else:
             await backend.close()
-        results.append(("refresh-on-open", ok))
+        results += [(label, ok) for label, _fn in builders]
 
     def _report(self, results: list[tuple[str, bool]]) -> None:
         failed = [name for name, ok in results if not ok]

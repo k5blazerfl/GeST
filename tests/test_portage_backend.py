@@ -56,6 +56,15 @@ def test_validate_gest_state_surface():
     assert "invalid repository name" in bad
 
 
+def test_validate_gest_disabled_surface():
+    # The disabled-repos record is an INI file; section names must be valid.
+    ok = "[guru]\nsync-type = git\nsync-uri = https://h/guru\n"
+    assert svc._validate_content("/etc/portage/gest/disabled", ok) == ""
+    assert svc._validate_content("/etc/portage/gest/disabled", "") == ""         # deletion
+    bad = svc._validate_content("/etc/portage/gest/disabled", "[bad name]\n")
+    assert "invalid repository name" in bad
+
+
 # --------------------------------------------------------------------------- #
 # path validation (containment + traversal)
 # --------------------------------------------------------------------------- #

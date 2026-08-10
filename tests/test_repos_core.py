@@ -2,7 +2,7 @@
 
 import pytest
 
-from gest.core.repos import commands, pending, reader, refresh, writer
+from gest.core.repos import commands, disabled, pending, reader, refresh, writer
 
 _CONF_MAIN = (
     "[DEFAULT]\nmain-repo = gentoo\n\n"
@@ -155,3 +155,46 @@ def test_pending_resolved_refresh_applies_removes_and_toggles():
     final = p.resolved_refresh(current_on={"gone", "keep"})
     assert final == {"keep", "guru"}                     # gone dropped, guru added
     assert p.touches_refresh_file()
+
+
+# -- disabled-repos record (saved so they can be re-added) --------------------
+
+def test_disabled_render_parse_round_trip():
+    rows = [disabled.DisabledRepo("guru", "git", "https://h/guru", "50"),
+            disabled.DisabledRepo("mine", "git", "https://h/mine")]
+    text = disabled.render(rows)
+    back = {d.name: d for d in disabled.parse(text)}
+    assert back["guru"].sync_uri == "https://h/guru"
+    assert back["guru"].priority == "50"
+    assert back["mine"].sync_type == "git"
+    assert disabled.render([]) == ""                     # empty -> deletes the file
+
+
+def test_disabled_upsert_and_without():
+    rows = [disabled.DisabledRepo("guru", "git", "u1")]
+    rows = disabled.upsert(rows, disabled.DisabledRepo("guru", "git", "u2"))  # replace
+    assert len(rows) == 1 and rows[0].sync_uri == "u2"
+    rows = disabled.upsert(rows, disabled.DisabledRepo("mine", "git", "u3"))
+    assert {r.name for r in rows} == {"guru", "mine"}
+    assert [r.name for r in disabled.without(rows, "guru")] == ["mine"]
+
+
+def test_reader_disabled_repos_from_state(tmp_path):
+    (tmp_path / "repos.conf").mkdir()
+    (tmp_path / "gest").mkdir()
+    (tmp_path / "gest" / "disabled").write_text(
+        "[guru]\nsync-type = git\nsync-uri = https://h/guru\n")
+    repos = reader.disabled_repos(str(tmp_path / "repos.conf"))
+    assert len(repos) == 1
+    assert repos[0].name == "guru"
+    assert repos[0].enabled is False
+    assert repos[0].sync_uri == "https://h/guru"
+
+
+def test_writer_set_disabled_builds_state_write(tmp_path):
+    target = tmp_path / "gest" / "disabled"
+    rows = [disabled.DisabledRepo("guru", "git", "https://h/guru")]
+    write = writer.set_disabled(rows, path=str(target))
+    assert write.path == str(target)
+    assert disabled.parse(write.text)[0].name == "guru"
+    assert writer.set_disabled([], path=str(target)).text == ""   # deletes

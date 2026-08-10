@@ -92,8 +92,15 @@ def _validate_content(path: str, text: str) -> str:
         ini.parse(text)  # raises nothing; malformed lines are ignored
         return ""
     if os.path.basename(os.path.dirname(os.path.normpath(path))) == "gest":
-        # GeST's own state under /etc/portage/gest/ — a newline list of repo
-        # names (e.g. the refresh-on-open selection). Not Portage config.
+        # GeST's own state under /etc/portage/gest/. Not Portage config.
+        if os.path.basename(path) == "disabled":
+            # An INI record of disabled repos; validate the section names.
+            _defaults, sections = ini.parse(text)
+            for sect in sections:
+                if not repo_commands.valid_name(sect.name):
+                    return f"invalid repository name: {sect.name}"
+            return ""
+        # Otherwise a newline list of repo names (e.g. refresh-on-open).
         for line in text.splitlines():
             name = line.strip()
             if name and not name.startswith("#") and not repo_commands.valid_name(name):

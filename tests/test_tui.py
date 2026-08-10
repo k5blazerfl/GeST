@@ -939,6 +939,29 @@ def test_repos_stages_changes_then_clears():
     assert scr._pending.is_empty
 
 
+def test_repos_reenable_disabled_repo():
+    from gest.core.repos.reader import Repo
+    app = App()
+    scr = ReposScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: len(scr._repos) > 0, ticks=200)
+    d = Repo(name="zz-disabled", sync_type="git", sync_uri="https://h/z.git",
+             enabled=False)
+    scr._disabled = [d]
+    scr._repos = [*scr._repos, d]
+    scr._rebuild()
+    scr._walker.set_focus(len(scr._repos) - 1)   # focus the greyed disabled row
+    scr.keypress(_SIZE, "a")                      # a re-enables a disabled repo
+    assert scr._pending.state_of("zz-disabled") == "enable"
+    # it stays on its own row — no spurious duplicate "new" row
+    hits = [e for e in scr._entries if e and e[0] == "repo"
+            and e[1].name == "zz-disabled"]
+    assert len(hits) == 1
+    assert sum(1 for e in scr._entries if e and e[1:] == ("zz-disabled",)) == 0
+    scr.keypress(_SIZE, "a")                      # toggle the re-enable back off
+    assert scr._pending.is_empty
+
+
 def test_menu_launches_repos():
     app = App()
     menu = MenuScreen(app)
