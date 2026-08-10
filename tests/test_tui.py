@@ -131,7 +131,8 @@ def _pump(app, cond, ticks=150):
 
 class _FakeSoftwareBackend:
     """A no-op stand-in for the root backend, so TUI tests never touch the real
-    system D-Bus service. Records the repos a refresh-on-open would have synced."""
+    system D-Bus service (or run a real emerge sync/update/depclean). Streaming
+    ops just report success; refresh-on-open records what it would have synced."""
 
     synced: list[list[str]] = []
 
@@ -142,18 +143,33 @@ class _FakeSoftwareBackend:
         _FakeSoftwareBackend.synced.append(list(names))
         return (True, "")
 
+    async def _stream(self, on_progress=None, on_finished=None):
+        if on_finished is not None:
+            on_finished(0)
+        return True
+
+    sync = update_world = _stream
+
+    async def depclean(self, atom="", on_progress=None, on_finished=None):
+        return await self._stream(on_progress, on_finished)
+
+    async def depclean_multi(self, atoms, on_progress=None, on_finished=None):
+        return await self._stream(on_progress, on_finished)
+
     async def close(self):
         return None
 
 
 @pytest.fixture(autouse=True)
 def _isolate_software_backend(monkeypatch):
-    """Software Management syncs its refresh-on-open repos when it opens, which on
-    a host with flagged repos + a live backend would run real overlay syncs mid
-    test (slow, non-deterministic). Swap in a no-op backend for every TUI test."""
+    """The Software modules open a real backend for refresh-on-open and for the
+    sync/update/clean-up runs — on a live host that would hit the system D-Bus
+    service and run real emerge operations mid test. Swap in a no-op backend for
+    every TUI test so nothing touches the real system, regardless of host state."""
     _FakeSoftwareBackend.synced.clear()
-    monkeypatch.setattr("gest.tui.screens.software.SoftwareBackend",
-                        _FakeSoftwareBackend)
+    for mod in ("software", "sync", "update", "cleanup"):
+        monkeypatch.setattr(f"gest.tui.screens.{mod}.SoftwareBackend",
+                            _FakeSoftwareBackend, raising=False)
 
 
 def test_menu_launches_services():
@@ -1050,6 +1066,24 @@ def test_update_screen_empty_state(monkeypatch):
     app._stack.append(scr)
     _pump(app, lambda: scr._plan is not None, ticks=200)
     assert "up to date" in _render(scr)
+
+
+def test_sync_screen_lists_repos_and_tracks_progress():
+    from gest.tui.screens.sync import SyncScreen
+    app = App()
+    scr = SyncScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: scr._repos, ticks=200)   # reads repos.conf
+    if not scr._repos:
+        pytest.skip("no syncable repositories on this host")
+    name = scr._repos[0].name
+    scr._consume(f">>> Syncing repository '{name}' into '/x'...")
+    assert scr._by_name[name].status == "syncing"
+    scr._consume(f"Action: sync for repo: {name}, returned code = 0")
+    assert scr._by_name[name].status == "synced"
+    assert "✓" in _render(scr)
+    scr._finish(0, "")
+    assert scr._done and not scr._running
 
 
 def test_update_run_screen_tracks_progress():

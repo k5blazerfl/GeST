@@ -37,7 +37,7 @@ jobs:
                  tests/test_users_reader.py tests/test_users_commands.py \
                  tests/test_system_core.py tests/test_audit.py \
                  tests/test_network_core.py tests/test_overlay_manifest.py \
-                 tests/test_cleanup.py tests/test_update.py -q
+                 tests/test_cleanup.py tests/test_update.py tests/test_sync.py -q
 
       - name: Syntax-check the ebuilds
         run: |
