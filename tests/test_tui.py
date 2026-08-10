@@ -11,6 +11,7 @@ import urwid
 from gest.tui.runtime import App, Screen, ansi_markup, function_bar, strip_ansi
 from gest.tui.screens.apply import ApplyScreen
 from gest.tui.screens.bootloader import BootloaderScreen
+from gest.tui.screens.cleanup import CleanupScreen
 from gest.tui.screens.config import KeywordsScreen, UseFlagScreen
 from gest.tui.screens.datetime import DateTimeScreen
 from gest.tui.screens.disk import DiskScreen
@@ -960,6 +961,27 @@ def test_repos_reenable_disabled_repo():
     assert sum(1 for e in scr._entries if e and e[1:] == ("zz-disabled",)) == 0
     scr.keypress(_SIZE, "a")                      # toggle the re-enable back off
     assert scr._pending.is_empty
+
+
+def test_cleanup_lists_orphans_and_toggles_keep():
+    import pytest
+    app = App()
+    scr = CleanupScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: scr._plan is not None, ticks=400)
+    if not scr._orphans():
+        pytest.skip("no orphaned packages on this host")
+    assert "✓" in _render(scr)                    # marked for removal by default
+    o = scr._orphans()[0]
+    scr._walker.set_focus(0)
+    scr.keypress(_SIZE, " ")                      # Space keeps it (unmarks)
+    assert o.cp in scr._kept
+    scr.keypress(_SIZE, " ")                      # toggle back to remove
+    assert o.cp not in scr._kept
+    scr.keypress(_SIZE, "n")                      # keep all
+    assert len(scr._kept) == len(scr._orphans())
+    scr.keypress(_SIZE, "a")                      # mark all for removal
+    assert not scr._kept
 
 
 def test_menu_launches_repos():

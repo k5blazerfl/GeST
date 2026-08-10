@@ -7,8 +7,9 @@ import socket
 import urwid
 
 from gest.tui.runtime import App, Screen, accel_label
-from gest.tui.screens.apply import ApplyScreen, depclean_plan, sync_plan, world_plan
+from gest.tui.screens.apply import ApplyScreen, sync_plan, world_plan
 from gest.tui.screens.bootloader import BootloaderScreen
+from gest.tui.screens.cleanup import CleanupScreen
 from gest.tui.screens.datetime import DateTimeScreen
 from gest.tui.screens.disk import DiskScreen
 from gest.tui.screens.eselect import EselectScreen
@@ -141,7 +142,7 @@ class MenuScreen(Screen):
         elif key == "update":
             self.app.push(ApplyScreen(self.app, [world_plan()], verb="System update"))
         elif key == "depclean":
-            self.app.push(ApplyScreen(self.app, [depclean_plan()], verb="Clean up"))
+            self.app.push(CleanupScreen(self.app))
         elif key == "sync":
             self.app.push(ApplyScreen(self.app, [sync_plan()], verb="Sync"))
         elif key == "repositories":
