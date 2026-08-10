@@ -103,7 +103,9 @@ class SoftwareScreen(Screen):
         self._cps: list[str] = []
         self._installed: list[bool] = []
         self._from_binary: list[bool] = []
-        self._upgradable: list[bool] = []
+        # cps with an available update — cached from the installed/world loads so
+        # the ↑ flag shows in every view, not just the installed list.
+        self._upgradable_cps: set[str] = set()
         self._summaries: list[str] = []
         self._categories: list[str] = []
         self._selection = Selection()
@@ -284,7 +286,6 @@ class SoftwareScreen(Screen):
         self._table_mode = "packages"
         self._cps, self._installed, self._summaries = [], [], []
         self._from_binary = []
-        self._upgradable = []
         self._walker[:] = [urwid.Text(f" {hint}")]
         self._detail.set_text("")
         self._set_count("0 package(s)")
@@ -323,33 +324,43 @@ class SoftwareScreen(Screen):
             tail = out.strip().splitlines()[-1] if out.strip() else "sync failed"
             self.app.notify(f"Some repositories didn't refresh — {tail}", error=True)
 
+    def _note_upgradable(self, pkgs) -> None:
+        """Cache the cps that have an available update, so the ↑ flag shows in
+        every view. Refreshed whenever installed packages are (re)loaded."""
+        self._upgradable_cps = {p.cp for p in pkgs if p.upgradable}
+
     async def _load_installed(self) -> None:
         pkgs = await self.app.run_blocking(reader.list_installed)
+        self._note_upgradable(pkgs)
         self._fill([(p.cp, (p.description or "")[:60]) for p in pkgs],
                    [p.cp for p in pkgs], [True] * len(pkgs),
-                   [p.from_binary for p in pkgs], [p.upgradable for p in pkgs])
-        n_up = sum(p.upgradable for p in pkgs)
+                   [p.from_binary for p in pkgs])
+        n_up = len(self._upgradable_cps)
         suffix = f" · {n_up} with updates" if n_up else ""
         self._set_count(f"{len(pkgs)} installed package(s){suffix}")
 
     async def _load_upgradable(self) -> None:
         pkgs = await self.app.run_blocking(reader.list_upgradable)
+        self._note_upgradable(pkgs)
         self._fill(
             [(p.cp, f"{p.version} → {p.available_version}  {(p.description or '')[:40]}")
              for p in pkgs],
             [p.cp for p in pkgs], [True] * len(pkgs),
-            [p.from_binary for p in pkgs], [True] * len(pkgs))
+            [p.from_binary for p in pkgs])
         self._set_count(
             f"{len(pkgs)} package(s) with updates available" if pkgs
             else "no updates available — everything is up to date")
 
     async def _load_world(self) -> None:
         pkgs = await self.app.run_blocking(reader.list_installed)
+        self._note_upgradable(pkgs)
         world = [p for p in pkgs if p.world_member]
         self._fill([(p.cp, (p.description or "")[:60]) for p in world],
                    [p.cp for p in world], [True] * len(world),
                    [p.from_binary for p in world])
-        self._set_count(f"{len(world)} @world package(s)")
+        n_up = sum(1 for p in world if p.upgradable)
+        suffix = f" · {n_up} with updates" if n_up else ""
+        self._set_count(f"{len(world)} @world package(s){suffix}")
 
     async def _load_categories(self) -> None:
         cats = await self.app.run_blocking(reader.list_categories)
@@ -401,16 +412,15 @@ class SoftwareScreen(Screen):
                    [r.cp for r in results], [r.installed for r in results])
         self._set_count(f"{len(results)} package(s) found")
 
-    def _fill(self, rows, cps, installed, from_binary=None, upgradable=None) -> None:
+    def _fill(self, rows, cps, installed, from_binary=None) -> None:
         self._table_mode = "packages"
         self._header.base_widget.set_text(_PKG_HEADER)
         self._cps = cps
         self._installed = installed
-        # Origin (source vs binary) and upgradable state are known only for the
-        # installed-derived listings; other views leave them False and rely on
-        # the detail pane's Version/Installed lines instead.
+        # Origin (source vs binary) is known only for the installed-derived
+        # listings; other views leave it False. The ↑ update flag is driven by
+        # the cross-view _upgradable_cps cache, so it works in every view.
         self._from_binary = from_binary if from_binary is not None else [False] * len(cps)
-        self._upgradable = upgradable if upgradable is not None else [False] * len(cps)
         self._summaries = [summary for _cp, summary in rows]
         widgets = [_row(self._row_text(i, cp, summary))
                    for i, (cp, summary) in enumerate(rows)]
@@ -419,8 +429,12 @@ class SoftwareScreen(Screen):
             self._walker.set_focus(0)
         self.app.refresh()
 
-    def _row_text(self, i: int, cp: str, summary: str) -> str:
-        return f"{self._status_for(i, cp)} {cp:<32} {summary}"
+    def _row_text(self, i: int, cp: str, summary: str):
+        status = self._status_for(i, cp)
+        line = f"{status} {cp:<32} {summary}"
+        if status == "↑":                       # colour just the update flag
+            return [("update", "↑"), line[1:]]
+        return line
 
     def _status_for(self, i: int, cp: str) -> str:
         mark = self._selection.mark_of(cp)
@@ -433,8 +447,8 @@ class SoftwareScreen(Screen):
         if mark == sel.REMOVE:
             return "-"
         if self._installed[i]:
-            if i < len(self._upgradable) and self._upgradable[i]:
-                return "↑"   # installed, newer version available in-slot
+            if cp in self._upgradable_cps:
+                return "↑"   # installed, a newer version is available (any view)
             return "ⓑ" if self._from_binary[i] else "i"   # ⓑ = from a binary pkg
         return " "
 

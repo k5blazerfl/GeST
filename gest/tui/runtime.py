@@ -41,6 +41,7 @@ PALETTE = [
     ("menu_focus", "white", "dark blue"),
     ("menu_drop", "black", "light gray"),
     ("dim", "dark gray", "default"),
+    ("update", "light green,bold", "default"),   # ↑ "update available" flag
     ("pb_normal", "white", "dark blue"),        # progress bar: unfilled
     ("pb_complete", "black", "light cyan"),      # progress bar: filled
 ]
