@@ -3,7 +3,8 @@
 Left: a Filter sidebar (view selector + search phrase + search-in fields).
 Right: a package table with a pinned column header, a count line, and a live
 detail pane. Mark packages (Space install/update, r remove), then Accept applies
-them — installs first, then a depclean pass — through the streaming ApplyScreen.
+them — installs first, then a depclean pass — through the organized per-package
+AcceptRunScreen.
 """
 
 from __future__ import annotations
@@ -18,17 +19,12 @@ from gest.core.software.model import PackageDetail
 from gest.core.software.selection import Selection
 from gest.tui.menubar import MenuBar, _Dropdown
 from gest.tui.runtime import App, Screen, action_bar
-from gest.tui.screens.apply import (
-    ApplyScreen,
-    install_binary_plan,
-    install_plan,
-    remove_plan,
-    sync_plan,
-    world_plan,
-)
+from gest.tui.screens.accept import AcceptRunScreen
 from gest.tui.screens.binhost import BinhostScreen
 from gest.tui.screens.config import KeywordsScreen, UseFlagScreen
 from gest.tui.screens.news import NewsScreen
+from gest.tui.screens.sync import SyncScreen
+from gest.tui.screens.update import UpdateScreen
 
 
 def _row(text: str) -> urwid.Widget:
@@ -548,16 +544,9 @@ class SoftwareScreen(Screen):
         if not installs and not binpkgs and not binprefs and not removes:
             self.app.notify("Mark packages with Space or r first.", error=True)
             return
-        plans = []
-        if installs:
-            plans.append(install_plan(installs))
-        if binpkgs:
-            plans.append(install_binary_plan(binpkgs, only=True))
-        if binprefs:
-            plans.append(install_binary_plan(binprefs, only=False))
-        if removes:
-            plans.append(remove_plan(removes))
-        self.app.push(ApplyScreen(self.app, plans, verb="Accept", on_done=self._after))
+        self.app.push(AcceptRunScreen(
+            self.app, installs=installs, binpkgs=binpkgs, binprefs=binprefs,
+            removes=removes, on_done=self._after))
 
     def _after(self) -> None:
         self._selection.clear()
@@ -582,9 +571,9 @@ class SoftwareScreen(Screen):
         elif item_id == "binhost":
             self.app.push(BinhostScreen(self.app))
         elif item_id == "update":
-            self.app.push(ApplyScreen(self.app, [world_plan()], verb="System update"))
+            self.app.push(UpdateScreen(self.app))
         elif item_id == "sync":
-            self.app.push(ApplyScreen(self.app, [sync_plan()], verb="Sync"))
+            self.app.push(SyncScreen(self.app))
         elif item_id == "news":
             self.app.push(NewsScreen(self.app))
 
@@ -646,9 +635,9 @@ class SoftwareScreen(Screen):
             elif in_table and self._table_mode == "categories" and self._categories:
                 self.app.run_async(self._load_category(self._categories[self._walker.focus]))
             elif in_table and self._cps:
-                self.app.push(ApplyScreen(
-                    self.app, [install_plan([self._cps[self._walker.focus]])],
-                    verb="Install"))
+                self.app.push(AcceptRunScreen(
+                    self.app, installs=[self._cps[self._walker.focus]],
+                    verb="Install", on_done=self._after))
             return None
         if key == "left" and in_table:
             self._columns.focus_position = 0

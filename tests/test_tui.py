@@ -167,7 +167,7 @@ def _isolate_software_backend(monkeypatch):
     service and run real emerge operations mid test. Swap in a no-op backend for
     every TUI test so nothing touches the real system, regardless of host state."""
     _FakeSoftwareBackend.synced.clear()
-    for mod in ("software", "sync", "update", "cleanup"):
+    for mod in ("software", "sync", "update", "cleanup", "accept"):
         monkeypatch.setattr(f"gest.tui.screens.{mod}.SoftwareBackend",
                             _FakeSoftwareBackend, raising=False)
 
@@ -543,18 +543,19 @@ def test_software_provides_view_resolves_file_owner():
     assert "app-shells/bash" in scr._cps
 
 
-def test_software_accept_opens_apply_screen():
+def test_software_accept_opens_run_screen():
+    from gest.tui.screens.accept import AcceptRunScreen
     app = App()
     scr = _software(app)
     scr.keypress(_SIZE, "tab")    # focus table
     scr.keypress(_SIZE, " ")      # mark one
     scr.keypress(_SIZE, "f10")    # Accept
-    assert isinstance(app._stack[-1], ApplyScreen)
+    assert isinstance(app._stack[-1], AcceptRunScreen)
 
 
 def test_apply_progress_parses_emerge_markers():
     from gest.core.software.preview import PreviewResult
-    from gest.tui.screens.apply import ApplyScreen, Plan
+    from gest.tui.screens.apply import Plan
     app = App()
     # A stub plan keeps the preview fast (no real emerge --pretend) so the
     # screen's _preview coroutine completes and is properly awaited.
@@ -578,7 +579,7 @@ def test_apply_completion_modal_success_and_failure():
     import urwid
 
     from gest.core.software.preview import PreviewResult
-    from gest.tui.screens.apply import ApplyScreen, Plan
+    from gest.tui.screens.apply import Plan
     app = App()
     stub = Plan("Install", lambda: PreviewResult("x", 0, "Total: 1 package"),
                 lambda b, p, f: True)
@@ -603,7 +604,7 @@ def test_apply_log_is_bounded_and_spills_to_file():
     import os
 
     from gest.core.software.preview import PreviewResult
-    from gest.tui.screens.apply import _MAX_LOG_LINES, ApplyScreen, Plan
+    from gest.tui.screens.apply import _MAX_LOG_LINES, Plan
     app = App()
     stub = Plan("Install", lambda: PreviewResult("x", 0, "Total: 1 package"),
                 lambda b, p, f: True)
@@ -630,7 +631,7 @@ def test_apply_refresh_is_coalesced():
     """Streaming N lines must not trigger N full redraws; a burst collapses to
     a single scheduled draw."""
     from gest.core.software.preview import PreviewResult
-    from gest.tui.screens.apply import ApplyScreen, Plan
+    from gest.tui.screens.apply import Plan
     app = App()
     stub = Plan("Install", lambda: PreviewResult("x", 0, "Total: 1 package"),
                 lambda b, p, f: True)
@@ -651,7 +652,7 @@ def test_apply_refresh_is_coalesced():
 
 def _sync_apply_screen(app):
     from gest.core.software.preview import PreviewResult
-    from gest.tui.screens.apply import ApplyScreen, Plan
+    from gest.tui.screens.apply import Plan
     stub = Plan("Sync", lambda: PreviewResult("x", 0, "sync"), lambda b, p, f: True)
     scr = ApplyScreen(app, [stub], verb="Sync")
     _pump(app, lambda: scr._ready, ticks=50)
@@ -1084,6 +1085,24 @@ def test_sync_screen_lists_repos_and_tracks_progress():
     assert "✓" in _render(scr)
     scr._finish(0, "")
     assert scr._done and not scr._running
+
+
+def test_accept_run_screen_tracks_install_and_remove():
+    from gest.tui.screens.accept import AcceptRunScreen
+    app = App()
+    scr = AcceptRunScreen(app, installs=["app-editors/vim"],
+                          removes=["app-arch/oldpkg"])
+    app._stack.append(scr)
+    scr._consume(">>> Emerging (1 of 1) app-editors/vim-9.1::gentoo")
+    assert scr._install["app-editors/vim"].status == "active"
+    scr._consume(">>> Installing (1 of 1) app-editors/vim-9.1::gentoo")
+    assert scr._install["app-editors/vim"].status == "done"
+    scr._consume(">>> Unmerging (1 of 1) app-arch/oldpkg-1.0...")
+    assert scr._remove["app-arch/oldpkg"].status == "active"
+    assert "install 9.1" in _render(scr) and "remove" in _render(scr)
+    scr._finish(0)                            # emerge exited 0
+    assert all(it.status == "done" for it in scr._items)
+    assert scr._done
 
 
 def test_update_run_screen_tracks_progress():
