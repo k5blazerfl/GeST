@@ -540,6 +540,58 @@ def test_apply_completion_modal_success_and_failure():
     assert "Failed" in _render(app._stack[-1])
 
 
+def test_apply_log_is_bounded_and_spills_to_file():
+    """A failing build streams a huge log; the on-screen scrollback must stay
+    bounded (memory/redraw safety) while the full log lands on disk."""
+    import os
+
+    from gest.core.software.preview import PreviewResult
+    from gest.tui.screens.apply import _MAX_LOG_LINES, ApplyScreen, Plan
+    app = App()
+    stub = Plan("Install", lambda: PreviewResult("x", 0, "Total: 1 package"),
+                lambda b, p, f: True)
+    scr = ApplyScreen(app, [stub], verb="Accept")
+    _pump(app, lambda: scr._ready, ticks=50)
+
+    total = _MAX_LOG_LINES * 3
+    for i in range(total):
+        scr._append([f"build line {i}"])
+
+    # Scrollback is capped, and it kept the *tail* (the error end of a failure).
+    assert len(scr._walker) <= _MAX_LOG_LINES
+    assert f"build line {total - 1}" in scr._walker[-1].text
+    # The complete log spilled to disk — nothing lost for debugging.
+    scr._close_log()
+    with open(scr._logpath) as fh:
+        contents = fh.read()
+    assert "build line 0" in contents and f"build line {total - 1}" in contents
+    assert contents.count("\n") >= total
+    os.unlink(scr._logpath)
+
+
+def test_apply_refresh_is_coalesced():
+    """Streaming N lines must not trigger N full redraws; a burst collapses to
+    a single scheduled draw."""
+    from gest.core.software.preview import PreviewResult
+    from gest.tui.screens.apply import ApplyScreen, Plan
+    app = App()
+    stub = Plan("Install", lambda: PreviewResult("x", 0, "Total: 1 package"),
+                lambda b, p, f: True)
+    scr = ApplyScreen(app, [stub], verb="Accept")
+    _pump(app, lambda: scr._ready, ticks=50)
+
+    calls = {"n": 0}
+    app.refresh = lambda: calls.__setitem__("n", calls["n"] + 1)
+    for i in range(500):
+        scr._append([f"line {i}"])          # a burst within one loop tick
+    assert scr._refresh_pending             # one draw scheduled, not 500
+    scr._flush_refresh()
+    assert calls["n"] == 1
+    scr._close_log()
+    import os
+    os.unlink(scr._logpath)
+
+
 def test_menu_launches_software():
     app = App()
     menu = MenuScreen(app)

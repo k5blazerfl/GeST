@@ -8,7 +8,7 @@ Contract (interface ``org.gentoo.gest.Software``):
 
     InstallPreview(atom: s) -> report: s   # `emerge --pretend`, no auth needed
     Install(atom: s)        -> started: b  # polkit-gated; streams via signals
-    Progress(line: s)                      # signal: one line of emerge output
+    Progress(lines: as)                    # signal: a batch of emerge output lines
     Finished(exit_code: i)                 # signal: the merge has ended
 
 This module is installed and started as root; it is not importable usefully
@@ -89,7 +89,7 @@ _INTROSPECTION = f"""
       <arg type="s" name="selector" direction="in"/>
       <arg type="b" name="ok" direction="out"/>
     </method>
-    <signal name="Progress"><arg type="s" name="line"/></signal>
+    <signal name="Progress"><arg type="as" name="lines"/></signal>
     <signal name="Finished"><arg type="i" name="exit_code"/></signal>
   </interface>
 </node>
@@ -105,6 +105,18 @@ _ESELECT = shutil.which("eselect") or "/usr/bin/eselect"
 # the root service doesn't linger. Never exits while a merge is streaming.
 _IDLE_TIMEOUT = 120
 _IDLE_CHECK = 30
+
+# Coalesce streamed output into one D-Bus signal per flush so a large (e.g.
+# failing) build can't emit a signal per line and storm the frontend. Flush when
+# the buffer fills or _BATCH_INTERVAL_MS elapses, whichever comes first — this
+# bounds both the signal rate and the latency before a line reaches the TUI.
+_BATCH_MAX_LINES = 200
+_BATCH_INTERVAL_MS = 100
+# Read the merge's output in chunks and split lines ourselves. A zero-length
+# read is the one reliable EOF signal — GLib's read_line can return an empty
+# string for both a blank line *and* EOF, which makes it unusable for detecting
+# the end of the stream.
+_READ_CHUNK = 65536
 
 
 class SoftwareService:
@@ -393,23 +405,63 @@ class SoftwareService:
         proc = Gio.Subprocess.new(
             argv, Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_MERGE
         )
-        stream = Gio.DataInputStream.new(proc.get_stdout_pipe())
+        stdout = proc.get_stdout_pipe()
 
-        def read_next(*_):
-            stream.read_line_async(GLib.PRIORITY_DEFAULT, None, on_line)
+        # Buffer complete lines and emit them in batches (see _BATCH_* above).
+        # ``timer`` holds the id of a pending flush timeout, or 0 when none is
+        # scheduled; ``partial`` holds the trailing bytes of a not-yet-complete
+        # line carried across chunk reads.
+        buf: list[str] = []
+        timer = {"id": 0}
+        partial = {"bytes": b""}
 
-        def on_line(src, res):
-            try:
-                data, _len = src.read_line_finish(res)
-            except GLib.Error:
-                data = None
-            if data is None:  # EOF
-                proc.wait_async(None, on_done)
-                return
+        def emit_buffered():
+            if buf:
+                self._emit("Progress", GLib.Variant("(as)", (list(buf),)))
+                buf.clear()
+
+        def flush_now():
+            """Emit immediately and cancel any pending timed flush."""
+            if timer["id"]:
+                GLib.source_remove(timer["id"])
+                timer["id"] = 0
+            emit_buffered()
+
+        def on_timer():
+            timer["id"] = 0
+            emit_buffered()
+            return False  # one-shot
+
+        def queue_line(raw: bytes):
             # Decode tolerantly: build output can still emit stray non-UTF-8
             # bytes; replace them rather than truncate the stream.
-            line = bytes(data).decode("utf-8", "replace")
-            self._emit("Progress", GLib.Variant("(s)", (line,)))
+            buf.append(raw.decode("utf-8", "replace"))
+            if len(buf) >= _BATCH_MAX_LINES:
+                flush_now()          # buffer full — send this batch now
+
+        def read_next(*_):
+            stdout.read_bytes_async(
+                _READ_CHUNK, GLib.PRIORITY_DEFAULT, None, on_chunk)
+
+        def on_chunk(src, res):
+            try:
+                chunk = src.read_bytes_finish(res)
+            except GLib.Error:
+                chunk = None
+            data = chunk.get_data() if chunk is not None else b""
+            if not data:  # zero-length read == EOF
+                if partial["bytes"]:               # a final unterminated line
+                    queue_line(partial["bytes"])
+                    partial["bytes"] = b""
+                flush_now()
+                proc.wait_async(None, on_done)
+                return
+            lines = (partial["bytes"] + data).split(b"\n")
+            partial["bytes"] = lines.pop()         # trailing partial (or b"")
+            for raw in lines:
+                queue_line(raw)
+            if buf and timer["id"] == 0:
+                timer["id"] = GLib.timeout_add(_BATCH_INTERVAL_MS, on_timer)
             read_next()
 
         def on_done(p, res):

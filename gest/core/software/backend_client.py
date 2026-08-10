@@ -39,10 +39,13 @@ class SoftwareBackend:
     async def install(
         self,
         atom: str,
-        on_progress: Callable[[str], None] | None = None,
+        on_progress: Callable[[list[str]], None] | None = None,
         on_finished: Callable[[int], None] | None = None,
     ) -> bool:
         """Start a merge; stream output through the supplied callbacks.
+
+        ``on_progress`` receives a *batch* of output lines per call — the backend
+        coalesces emerge output to avoid a signal-per-line storm.
 
         Returns True once the backend has accepted and started the merge (i.e.
         polkit authorized the caller). Raises on access-denied.

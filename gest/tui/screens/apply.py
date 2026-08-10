@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
 import re
+import tempfile
 from collections.abc import Awaitable, Callable
 
 import urwid
@@ -24,6 +26,13 @@ from gest.tui.runtime import App, Modal, Screen, ansi_markup, strip_ansi
 #   >>> Emerging binary (3 of 5) sys-apps/foo-1.0::gentoo   (--getbinpkg path)
 _PROGRESS_RE = re.compile(
     r">>> (Emerging|Installing)(?: binary)? \((\d+) of (\d+)\)\s+(\S+)")
+
+# Cap the on-screen scrollback. A failing build streams its whole compiler/error
+# log — often tens of thousands of lines — one D-Bus signal per line; retaining a
+# urwid widget for every one grows memory unboundedly and makes each redraw
+# slower until the UI locks up. Keep the last _MAX_LOG_LINES (the error tail is
+# what matters on failure) and spill the complete log to a file.
+_MAX_LOG_LINES = 2000
 
 
 class Plan:
@@ -83,6 +92,9 @@ class ApplyScreen(Screen):
         self._running = False
         self._done = False
         self._plan_label = ""
+        self._logfile = None       # full on-disk log, created on first line
+        self._logpath: str | None = None
+        self._refresh_pending = False
         self._walker = urwid.SimpleFocusListWalker(
             [urwid.SelectableIcon(" computing plan …", 0)]
         )
@@ -104,6 +116,31 @@ class ApplyScreen(Screen):
     def _set_phase(self, text: str, attr: str = "field") -> None:
         self._phase.set_text((attr, f" {text}"))
 
+    def _schedule_refresh(self) -> None:
+        """Coalesce redraws: collapse a burst of streamed lines into a single
+        draw on the next loop tick instead of one full redraw per line."""
+        if self._refresh_pending:
+            return
+        self._refresh_pending = True
+        self.app.loop.call_soon(self._flush_refresh)
+
+    def _flush_refresh(self) -> None:
+        self._refresh_pending = False
+        self.app.refresh()
+
+    def _write_log(self, lines: list[str]) -> None:
+        """Append plain-text lines to the full on-disk log (created lazily).
+
+        The on-screen scrollback is capped, so this file is the complete record
+        a build failure can be debugged from.
+        """
+        if self._logfile is None:
+            fd, self._logpath = tempfile.mkstemp(prefix="gest-apply-", suffix=".log")
+            self._logfile = os.fdopen(fd, "w", buffering=1)
+        for line in lines:
+            with contextlib.suppress(Exception):
+                self._logfile.write(strip_ansi(line) + "\n")
+
     def _update_progress(self, line: str) -> None:
         """Advance the bar/label from an emerge '(N of M)' marker (ignore else)."""
         m = _PROGRESS_RE.search(strip_ansi(line))
@@ -115,13 +152,19 @@ class ApplyScreen(Screen):
         # count the prior ones as complete.
         self._bar.set_completion(n if phase == "Installing" else max(n - 1, 0))
         self._set_phase(f"{self._plan_label}: {phase} {n} of {total} — {atom}")
-        self.app.refresh()
+        self._schedule_refresh()
 
     def _append(self, lines: list[str]) -> None:
+        self._write_log(lines)
         for line in lines:
             self._walker.append(urwid.SelectableIcon(ansi_markup(line), 0))
+        # Bound the scrollback so a failing build's error dump can't grow memory
+        # (and per-redraw cost) without limit; the full log is on disk.
+        overflow = len(self._walker) - _MAX_LOG_LINES
+        if overflow > 0:
+            del self._walker[:overflow]
         self._walker.set_focus(len(self._walker) - 1)
-        self.app.refresh()
+        self._schedule_refresh()
 
     async def _preview(self) -> None:
         self._walker[:] = []
@@ -154,9 +197,12 @@ class ApplyScreen(Screen):
         finished = asyncio.Event()
         result: dict[str, int] = {}
 
-        def on_progress(line: str) -> None:
-            self._append([line.rstrip("\n")])
-            self._update_progress(line)
+        def on_progress(lines: list[str]) -> None:
+            # The backend batches output, so ``lines`` is a group of emerge
+            # output lines, not a single one.
+            self._append([ln.rstrip("\n") for ln in lines])
+            for ln in lines:
+                self._update_progress(ln)
 
         def on_finished(code: int) -> None:
             result["code"] = code
@@ -213,6 +259,7 @@ class ApplyScreen(Screen):
             overall = overall or code
         self._running = False
         self._done = True
+        self._close_log()
         if not aborted and self._on_done is not None:
             # never let a refresh hiccup swallow the result prompt
             with contextlib.suppress(Exception):
@@ -231,10 +278,18 @@ class ApplyScreen(Screen):
                          f"A problem occurred — emerge exited {overall}. The changes "
                          "may be incomplete; review the log above for details.")
 
+    def _close_log(self) -> None:
+        if self._logfile is not None:
+            with contextlib.suppress(Exception):
+                self._logfile.close()
+            self._logfile = None
+
     def _finish(self, title: str, ok: bool, message: str) -> None:
         """Show an unmistakable success/failure prompt when the run ends."""
         self.app.notify(title.lower(), error=not ok)
         self._set_phase(f"{self._verb}: {title.lower()}", "ok" if ok else "error")
+        if self._logpath:
+            message = f"{message}\n\nFull log: {self._logpath}"
 
         def back():
             self.app.pop()   # the result modal

@@ -13,7 +13,7 @@ Interface `org.gentoo.gest.Software` on `/org/gentoo/gest/Software`:
 |---|---|---|---|
 | `InstallPreview(atom) → report` | method | none | `emerge --pretend` output |
 | `Install(atom) → started`       | method | `org.gentoo.gest.software.install` | start a merge |
-| `Progress(line)`                | signal | — | one line of live merge output |
+| `Progress(lines)`               | signal | — | a batch of live merge output lines |
 | `Finished(exit_code)`           | signal | — | the merge has ended |
 
 `InstallPreview` needs no authorization because `--pretend` changes nothing.
