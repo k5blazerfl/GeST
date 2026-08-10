@@ -930,12 +930,12 @@ def test_repos_stages_changes_then_clears():
     scr.keypress(_SIZE, "d")                 # stage disable — NOT applied
     assert scr._pending.state_of(name) == "disable"
     assert scr._pending.count() == 1
-    assert "[disable]" in _render(scr)       # shown in the Change column
+    assert "pending change" in _render(scr)  # count line, not a Change column
     scr.keypress(_SIZE, "d")                 # same key toggles the mark off
     assert scr._pending.is_empty
     scr.keypress(_SIZE, "t")                 # stage a refresh toggle
     assert not scr._pending.is_empty
-    scr.keypress(_SIZE, "c")                 # clear all pending
+    scr.keypress(_SIZE, "f9")                # F9 Cancel discards all pending
     assert scr._pending.is_empty
 
 

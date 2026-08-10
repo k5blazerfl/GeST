@@ -1,11 +1,12 @@
 """Software repositories (urwid): stage enable/add/disable/remove/refresh, then Accept.
 
-A YaST-style layout: a columnar table (Change · Priority · AutoSync · Refresh ·
-Name · Type · Sync URI) with pinned headers over a Properties panel. Reading is
-unprivileged (/etc/portage/repos.conf). Changes are *staged* — nothing touches
-the system until F10 Accept, which runs `eselect repository` through the
-polkit-gated ReposBackend and writes the refresh-state file via the Portage
-backend. `c` clears pending changes.
+A YaST-style layout consistent with the other transactional modules (Software,
+Users): a columnar table over a Properties panel, a pending-count line, and a
+[Cancel] [Accept] action bar. Changes are *staged* — shown as a mark glyph in the
+row, not applied — until F10 Accept runs `eselect repository` (via the polkit-gated
+ReposBackend) and writes the refresh-state file (via the Portage backend). F9
+discards. Staged marks reuse the shared vocabulary: + add/enable · ~ disable ·
+- remove.
 """
 
 from __future__ import annotations
@@ -16,48 +17,43 @@ from gest.core.portage.backend_client import PortageBackend
 from gest.core.repos import pending, reader, writer
 from gest.core.repos.backend_client import ReposBackend
 from gest.core.repos.reader import Repo
-from gest.tui.runtime import App, Modal, Screen
+from gest.tui.runtime import App, Modal, Screen, action_bar
 
-# Table column widths (characters). Sync URI takes the remaining width and is
-# clipped; the Properties panel shows it in full. The lead column shows either
-# the ★ main marker or a staged-change tag like [disable] (mutually exclusive —
-# the main repo can't be staged).
-_FLAG_W = 11  # "★" or "[refresh-]"
-_PRIO_W = 10
+# Table column widths (characters). Name leads (after the mark glyph); Sync URI
+# takes the remaining width and is clipped. The Properties panel shows the full
+# URI and the repo's priority.
+_MARK_W = 2   # ★ main marker or a staged mark glyph (mutually exclusive)
+_NAME_W = 24
 _AUTO_W = 9   # "AutoSync"
 _REFRESH_W = 8  # "Refresh"
-_NAME_W = 22
 _TYPE_W = 8
 
 _TRUTHY = {"yes", "true", "1", "on"}
 
-# Staged-op → the tag shown in the Change column.
-_OP_TAG = {pending.DISABLE: "disable", pending.REMOVE: "remove",
-           pending.ENABLE: "enable", pending.ADD: "add"}
+# Staged-change glyphs — the shared vocabulary (cf. Users: + add · ~ edit · - del).
+_STATE_GLYPH = {pending.ENABLE: "+", pending.ADD: "+",
+                pending.DISABLE: "~", pending.REMOVE: "-"}
 
 
-def _fmt(flag: str, prio: str, auto: str, refresh: str, name: str,
+def _fmt(mark: str, name: str, auto: str, refresh: str,
          stype: str, uri: str) -> str:
     if len(name) > _NAME_W - 1:
         name = name[: _NAME_W - 2] + "…"
-    return (f"{flag:<{_FLAG_W}}{prio:<{_PRIO_W}}{auto:<{_AUTO_W}}"
-            f"{refresh:<{_REFRESH_W}}{name:<{_NAME_W}}{stype:<{_TYPE_W}}{uri}")
+    return (f"{mark:<{_MARK_W}}{name:<{_NAME_W}}{auto:<{_AUTO_W}}"
+            f"{refresh:<{_REFRESH_W}}{stype:<{_TYPE_W}}{uri}")
 
 
-def _repo_line(r: Repo, flag: str) -> str:
+def _repo_line(r: Repo, mark: str, refresh_cell: str) -> str:
     auto = "x" if r.auto_sync.strip().lower() in _TRUTHY else ""
-    # The main tree is barred from refresh-on-open (too slow — that's the Sync
-    # Portage Tree tool's job); show a dash rather than a togglable cell.
-    refresh = "—" if r.main else ("x" if r.refresh else "")
-    lead = flag or ("★" if r.main else "")
-    return _fmt(lead, r.priority or "—", auto, refresh, r.name,
+    lead = mark or ("★" if r.main else "")
+    return _fmt(lead, r.name, auto, refresh_cell,
                 r.sync_type or "—", r.sync_uri or "—")
 
 
 def _new_line(name: str, kind: str, spec: pending.AddSpec | None) -> str:
     stype = spec.sync_type if spec else "—"
     uri = spec.uri if spec else "(from eselect repository list)"
-    return _fmt(f"[{_OP_TAG[kind]}]", "—", "", "", name, stype or "—", uri)
+    return _fmt(_STATE_GLYPH[kind], name, "", "", stype or "—", uri)
 
 
 def _row(text: str) -> urwid.Widget:
@@ -76,8 +72,7 @@ class ReposScreen(Screen):
         self._list = urwid.ListBox(self._walker)
 
         header = urwid.AttrMap(
-            urwid.Text(_fmt("Change", "Priority", "AutoSync", "Refresh", "Name",
-                            "Type", "Sync URI"),
+            urwid.Text(_fmt("", "Name", "AutoSync", "Refresh", "Type", "Sync URI"),
                        wrap="clip"),
             "pane_title")
         table = urwid.LineBox(
@@ -90,8 +85,14 @@ class ReposScreen(Screen):
 
         self._props = urwid.Pile([urwid.Text("")])
         props_box = urwid.LineBox(self._props, title="Properties")
+        self._count = urwid.Text("")
 
-        body = urwid.Pile([("weight", 1, table), ("pack", props_box)])
+        body = urwid.Pile([
+            ("weight", 1, table),
+            ("pack", props_box),
+            ("pack", self._count),
+            ("pack", action_bar(["Cancel", "Accept"])),
+        ])
         urwid.connect_signal(self._walker, "modified", self._on_focus)
 
         super().__init__(
@@ -99,29 +100,29 @@ class ReposScreen(Screen):
             title="Repositories",
             footer_keys=[
                 ("a", "Enable"), ("A", "Add"), ("d", "Disable"), ("x", "Remove"),
-                ("t", "Refresh"), ("F10", "Accept"), ("c", "Clear"),
+                ("t", "Refresh"), ("F10", "Accept"), ("F9", "Cancel"),
                 ("r", "Reload"), ("Esc", "Back"),
             ],
             help_text=(
                 "Software repositories configured in /etc/portage/repos.conf.\n\n"
-                "Changes are STAGED, not applied immediately — mark what you want,\n"
-                "then press F10 to Accept (apply) them all, or c to clear. The\n"
-                "Change column shows each repo's pending mark; the status line\n"
-                "counts them.\n\n"
+                "Editing is transactional: changes are STAGED as a mark, not applied\n"
+                "immediately —\n"
+                "  +  enable / add    ~  disable    -  remove\n"
+                "shown in the leftmost column (a staged refresh shows + / - in the\n"
+                "Refresh column). The count line and [Accept] button sit below the\n"
+                "list. F10 (Accept) applies every staged change; F9 (Cancel)\n"
+                "discards them; a key pressed twice on a row clears its mark.\n\n"
                 "The main (default) repository is marked ★ and is protected — it\n"
                 "can't be disabled, removed, or refreshed-on-open.\n\n"
-                "Columns:  Change · Priority · AutoSync (in emerge --sync) ·\n"
-                "Refresh (sync on open) · Name · Type · Sync URI\n\n"
-                "Refresh: when on (x), GeST syncs that repository each time Software\n"
-                "Management opens. The ★ main tree is excluded — sync it with the\n"
-                "Sync Portage Tree tool.\n\n"
-                "a   stage enabling a known repository (from the eselect list)\n"
-                "A   stage adding a custom repository (name / sync type / URI)\n"
-                "d   stage disabling the highlighted repository\n"
-                "x   stage removing it (deletes its files on Accept); on a staged\n"
-                "    new repo, x cancels it\n"
-                "t   toggle staged refresh-on-open for the highlighted repository\n"
-                "F10 apply all staged changes    c  clear them    r  reload"
+                "Columns:  Name · AutoSync (in emerge --sync) · Refresh (sync on\n"
+                "open) · Type · Sync URI. Refresh: when on (x), GeST syncs that repo\n"
+                "each time Software Management opens; the ★ main tree is excluded —\n"
+                "sync it with the Sync Portage Tree tool.\n\n"
+                "a  stage enabling a known repository (from the eselect list)\n"
+                "A  stage adding a custom repository (name / sync type / URI)\n"
+                "d  stage disabling      x  stage removing (deletes files on Accept;\n"
+                "on a staged new repo, x cancels it)      t  toggle refresh-on-open\n"
+                "F10 Accept    F9 Cancel    r  reload"
             ),
         )
         app.run_async(self._load())
@@ -138,7 +139,7 @@ class ReposScreen(Screen):
         rows: list[urwid.Widget] = []
         entries: list[tuple | None] = []
         for r in self._repos:
-            rows.append(_row(_repo_line(r, self._flag_for(r))))
+            rows.append(_row(_repo_line(r, self._mark_for(r), self._refresh_cell(r))))
             entries.append(("repo", r))
         for name, spec in sorted(self._pending.adds.items()):
             rows.append(_row(_new_line(name, pending.ADD, spec)))
@@ -154,25 +155,31 @@ class ReposScreen(Screen):
         self._walker[:] = rows
         self._walker.set_focus(min(focus, len(rows) - 1))
         self._render_props()
-        self._update_status()
+        self._refresh_count()
         self.app.refresh()
 
-    def _flag_for(self, r: Repo) -> str:
+    def _mark_for(self, r: Repo) -> str:
+        """Leading mark glyph for an existing repo (disable/remove), else ''."""
         op = self._pending.state_of(r.name)
-        if op in (pending.DISABLE, pending.REMOVE):
-            return f"[{_OP_TAG[op]}]"
-        ref = self._pending.refresh_of(r.name)
-        if ref is not None:
-            return "[refresh+]" if ref else "[refresh-]"
-        return ""
+        return _STATE_GLYPH[op] if op in (pending.DISABLE, pending.REMOVE) else ""
 
-    def _update_status(self) -> None:
+    def _refresh_cell(self, r: Repo) -> str:
+        if r.main:
+            return "—"
+        staged = self._pending.refresh_of(r.name)
+        if staged is not None:
+            return "+" if staged else "-"
+        return "x" if r.refresh else ""
+
+    def _refresh_count(self) -> None:
         if self._pending.is_empty:
-            self.set_status("")
-            return
-        n = self._pending.count()
-        self.set_status(f"{n} pending change{'s' if n != 1 else ''} — "
-                        "F10 Accept · c Clear")
+            self._count.set_text(("dim", " No pending changes"))
+        else:
+            n = self._pending.count()
+            self._count.set_text([
+                ("ok", f" {n} pending change{'s' if n != 1 else ''}"),
+                ("dim", "   ·   F10 Accept · F9 Cancel"),
+            ])
 
     # -- properties panel ---------------------------------------------------
 
@@ -221,16 +228,16 @@ class ReposScreen(Screen):
 
     def handle_key(self, key):
         if key == "esc":
-            self.app.pop()
+            self._leave()
         elif key == "r":
             self.app.run_async(self._load())
         elif key == "f10":
             self.app.run_async(self._accept())
-        elif key == "c":
+        elif key == "f9":
             if not self._pending.is_empty:
                 self._pending.clear()
                 self._rebuild()
-                self.app.notify("Pending changes cleared.")
+                self.app.notify("Pending changes discarded.")
         elif key == "a":
             self._enable()
         elif key == "A":
@@ -240,6 +247,23 @@ class ReposScreen(Screen):
         else:
             return key
         return None
+
+    def _leave(self) -> None:
+        if self._pending.is_empty:
+            self.app.pop()
+            return
+        n = self._pending.count()
+
+        def discard():
+            self._pending.clear()
+            self.app.pop()   # modal
+            self.app.pop()   # screen
+
+        modal = Modal(
+            self.app, f"You have {n} pending change{'s' if n != 1 else ''}.",
+            [urwid.Text("Apply them (F10) before leaving, or discard?")],
+            [("Discard & leave", discard), ("Keep editing", self.app.pop)])
+        self.app.push_modal(modal, width=("relative", 60), height=("relative", 35))
 
     def _mark(self, key: str) -> None:
         entry = self._current_entry()
@@ -251,7 +275,7 @@ class ReposScreen(Screen):
                 self._rebuild()
             else:
                 self.app.notify("Staged new repository — press x to cancel it "
-                                "(or c to clear all).", error=True)
+                                "(or F9 to discard all).", error=True)
             return
         repo = entry[1]
         if repo.main:
