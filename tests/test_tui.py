@@ -916,6 +916,29 @@ def test_repos_protects_main_repo():
     assert isinstance(app._stack[-1], ReposScreen)
 
 
+def test_repos_stages_changes_then_clears():
+    import pytest
+    app = App()
+    scr = ReposScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: len(scr._repos) > 0, ticks=200)
+    idx = next((i for i, r in enumerate(scr._repos) if not r.main), None)
+    if idx is None:
+        pytest.skip("no non-main repository configured on this host")
+    scr._walker.set_focus(idx)
+    name = scr._repos[idx].name
+    scr.keypress(_SIZE, "d")                 # stage disable — NOT applied
+    assert scr._pending.state_of(name) == "disable"
+    assert scr._pending.count() == 1
+    assert "[disable]" in _render(scr)       # shown in the Change column
+    scr.keypress(_SIZE, "d")                 # same key toggles the mark off
+    assert scr._pending.is_empty
+    scr.keypress(_SIZE, "t")                 # stage a refresh toggle
+    assert not scr._pending.is_empty
+    scr.keypress(_SIZE, "c")                 # clear all pending
+    assert scr._pending.is_empty
+
+
 def test_menu_launches_repos():
     app = App()
     menu = MenuScreen(app)

@@ -2,7 +2,7 @@
 
 import pytest
 
-from gest.core.repos import commands, reader, refresh, writer
+from gest.core.repos import commands, pending, reader, refresh, writer
 
 _CONF_MAIN = (
     "[DEFAULT]\nmain-repo = gentoo\n\n"
@@ -98,3 +98,60 @@ def test_writer_builds_state_file_write(tmp_path):
     assert write.path == str(target)
     assert refresh.parse(write.text) == {"guru", "amphitheater"}
     assert writer.set_refresh(set(), path=str(target)).text == ""  # deletes
+
+
+# -- staged changes (mark → Accept) ------------------------------------------
+
+def test_pending_mark_state_toggles_and_replaces():
+    p = pending.Pending()
+    p.mark_state("guru", pending.DISABLE)
+    assert p.state_of("guru") == pending.DISABLE
+    p.mark_state("guru", pending.REMOVE)                 # different op replaces
+    assert p.state_of("guru") == pending.REMOVE
+    p.mark_state("guru", pending.REMOVE)                 # same op clears
+    assert p.state_of("guru") is None
+    assert p.is_empty
+
+
+def test_pending_remove_drops_refresh_mark():
+    p = pending.Pending()
+    p.toggle_refresh("guru", current=False)              # stage refresh on
+    assert p.refresh_of("guru") is True
+    p.mark_state("guru", pending.REMOVE)                 # removing moots refresh
+    assert p.refresh_of("guru") is None
+    assert p.count() == 1
+
+
+def test_pending_toggle_refresh_clears_when_back_to_current():
+    p = pending.Pending()
+    assert p.toggle_refresh("guru", current=True) is False   # stage off
+    assert p.refresh_of("guru") is False
+    assert p.toggle_refresh("guru", current=True) is True    # back to current
+    assert p.refresh_of("guru") is None                      # mark cleared
+
+
+def test_pending_add_and_cancel():
+    p = pending.Pending()
+    p.add("mine", "git", "https://h/r")
+    assert p.adds["mine"] == pending.AddSpec("git", "https://h/r")
+    p.cancel("mine")
+    assert p.is_empty
+
+
+def test_pending_ordered_ops_adds_and_enables_before_removes():
+    p = pending.Pending()
+    p.mark_state("old", pending.REMOVE)
+    p.mark_state("known", pending.ENABLE)
+    p.add("new", "git", "u")
+    kinds = [op[0] for op in p.ordered_ops()]
+    assert kinds.index(pending.ADD) < kinds.index(pending.REMOVE)
+    assert kinds.index(pending.ENABLE) < kinds.index(pending.REMOVE)
+
+
+def test_pending_resolved_refresh_applies_removes_and_toggles():
+    p = pending.Pending()
+    p.mark_state("gone", pending.REMOVE)
+    p.toggle_refresh("guru", current=False)              # turn on
+    final = p.resolved_refresh(current_on={"gone", "keep"})
+    assert final == {"keep", "guru"}                     # gone dropped, guru added
+    assert p.touches_refresh_file()
