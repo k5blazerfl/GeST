@@ -21,6 +21,7 @@ from gest.core.software import sync
 from gest.core.software.backend_client import SoftwareBackend
 from gest.tui.runtime import App, Modal, Screen, action_bar
 from gest.tui.screens.apply import RawLogScreen, StreamLog
+from gest.tui.screens.runscreen import clip, row
 
 _STATUS_W = 2
 _NAME_W = 24
@@ -30,19 +31,9 @@ _GLYPH = {"pending": "·", "syncing": "▸", "synced": "✓", "failed": "✗"}
 _ATTR = {"pending": "dim", "syncing": None, "synced": "dim", "failed": "error"}
 
 
-def _clip(text: str, width: int) -> str:
-    return text if len(text) <= width - 1 else text[: width - 2] + "…"
-
-
 def _fmt(glyph: str, name: str, stype: str, uri: str) -> str:
-    return (f"{glyph:<{_STATUS_W}}{_clip(name, _NAME_W):<{_NAME_W}}"
-            f"{_clip(stype, _TYPE_W):<{_TYPE_W}}{uri}")
-
-
-def _row(text: str, attr: str | None = None) -> urwid.Widget:
-    icon = urwid.SelectableIcon(text, 0)
-    icon.set_wrap_mode("clip")
-    return urwid.AttrMap(icon, attr, focus_map="focus")
+    return (f"{glyph:<{_STATUS_W}}{clip(name, _NAME_W):<{_NAME_W}}"
+            f"{clip(stype, _TYPE_W):<{_TYPE_W}}{uri}")
 
 
 class _SyncRepo:
@@ -111,8 +102,8 @@ class SyncScreen(StreamLog, Screen):
                         if n else "No syncable repositories configured.", "dim")
 
     def _render(self) -> None:
-        rows = [_row(_fmt(_GLYPH[r.status], r.name, r.sync_type or "—",
-                          r.sync_uri or "—"), _ATTR[r.status])
+        rows = [row(_fmt(_GLYPH[r.status], r.name, r.sync_type or "—",
+                         r.sync_uri or "—"), _ATTR[r.status])
                 for r in self._repos] or [urwid.Text(" (no repositories)")]
         self._walker[:] = rows
         self._schedule_refresh()
@@ -164,18 +155,18 @@ class SyncScreen(StreamLog, Screen):
         ev = sync.parse_sync_event(line)
         if ev is None:
             return
-        row = self._by_name.get(ev.repo)
-        if row is None:                        # a repo not in repos.conf's list
-            row = _SyncRepo(ev.repo)
-            self._repos.append(row)
-            self._by_name[ev.repo] = row
+        repo = self._by_name.get(ev.repo)
+        if repo is None:                       # a repo not in repos.conf's list
+            repo = _SyncRepo(ev.repo)
+            self._repos.append(repo)
+            self._by_name[ev.repo] = repo
             self._total = len(self._repos)
             self._bar.done = max(self._total, 1)
         if ev.kind == "start":
-            row.status = "syncing"
+            repo.status = "syncing"
             self._set_phase(f"Syncing {ev.repo} …")
         else:                                  # result
-            row.status = "synced" if ev.code == 0 else "failed"
+            repo.status = "synced" if ev.code == 0 else "failed"
             done = sum(1 for r in self._repos if r.status in ("synced", "failed"))
             self._bar.set_completion(min(done, self._total))
         self._render()

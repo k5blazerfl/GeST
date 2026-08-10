@@ -1120,8 +1120,8 @@ def test_update_run_screen_tracks_progress():
     scr._consume(">>> Installing (1 of 2) app-arch/gzip-1.14::gentoo")
     assert scr._by_cp["app-arch/gzip"].status == "installed"
     assert "▸" in _render(scr) or "✓" in _render(scr)
-    scr._finish(0, "")                       # emerge exited 0
-    assert all(ln.status == "installed" for ln in scr._lines)
+    scr._finish(0)                           # emerge exited 0
+    assert all(it.status == "installed" for it in scr._items)
     assert scr._done
 
 
@@ -1145,8 +1145,8 @@ def test_cleanup_run_screen_tracks_removal_progress():
     assert scr._by_pf["dev-libs/oldlib-1.4.2"].status == "removing"
     assert "▸" in _render(scr) and "✓" in _render(scr)
 
-    scr._finish(0, "")                          # emerge exited 0
-    assert all(ln.status == "removed" for ln in scr._lines)
+    scr._finish(0)                              # emerge exited 0
+    assert all(ln.status == "removed" for ln in scr._items)
     assert scr._done
 
 
