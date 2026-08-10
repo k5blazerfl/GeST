@@ -592,6 +592,55 @@ def test_apply_refresh_is_coalesced():
     os.unlink(scr._logpath)
 
 
+def _sync_apply_screen(app):
+    from gest.core.software.preview import PreviewResult
+    from gest.tui.screens.apply import ApplyScreen, Plan
+    stub = Plan("Sync", lambda: PreviewResult("x", 0, "sync"), lambda b, p, f: True)
+    scr = ApplyScreen(app, [stub], verb="Sync")
+    _pump(app, lambda: scr._ready, ticks=50)
+    return scr
+
+
+def test_apply_captures_per_repo_sync_results():
+    """The real `emerge --sync` summary lines are parsed into per-repo codes."""
+    app = App()
+    scr = _sync_apply_screen(app)
+    for line in [
+        "Action: sync for repo: gentoo, returned code = 0",
+        ">>> Syncing repository 'zGentoo' ...",   # noise, ignored
+        "Action: sync for repo: zGentoo, returned code = 1",
+        "Action: sync for repo: amphitheater, returned code = 0",
+    ]:
+        scr._note_sync_result(line)
+    assert scr._sync_results == {"gentoo": 0, "zGentoo": 1, "amphitheater": 0}
+
+
+def test_apply_sync_outcome_partial_is_not_flat_failure():
+    """A mix of ok/failed repos → 'Partially synced', naming the culprit — not a
+    flat 'Failed'. This is the reported symptom: a working sync read as failed."""
+    app = App()
+    scr = _sync_apply_screen(app)
+
+    # No sync lines seen → generic wording (returns None, caller uses old path).
+    assert scr._sync_outcome(0) is None
+
+    # All succeeded → Completed, listing repos.
+    scr._sync_results = {"gentoo": 0, "amphitheater": 0}
+    title, ok, msg = scr._sync_outcome(0)
+    assert title == "Completed" and ok is True and "gentoo" in msg
+
+    # One overlay failed while the tree synced → partial, not failure.
+    scr._sync_results = {"gentoo": 0, "zGentoo": 1}
+    title, ok, msg = scr._sync_outcome(1)
+    assert title == "Partially synced" and ok is False
+    assert "✓ gentoo" in msg and "✗ zGentoo (code 1)" in msg
+
+    # Everything failed → genuine failure.
+    scr._sync_results = {"gentoo": 1, "zGentoo": 1}
+    title, ok, msg = scr._sync_outcome(1)
+    assert title == "Failed" and ok is False
+
+
 def test_menu_launches_software():
     app = App()
     menu = MenuScreen(app)

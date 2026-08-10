@@ -27,6 +27,13 @@ from gest.tui.runtime import App, Modal, Screen, ansi_markup, strip_ansi
 _PROGRESS_RE = re.compile(
     r">>> (Emerging|Installing)(?: binary)? \((\d+) of (\d+)\)\s+(\S+)")
 
+# emerge --sync prints one summary line per repository at the end, e.g.
+#   Action: sync for repo: gentoo, returned code = 0
+# Captured so a sync where only a flaky overlay failed reads as "Partially
+# synced" (naming the culprit) rather than a flat "Failed".
+_SYNC_RESULT_RE = re.compile(
+    r"sync for repo:\s+([\w][\w.+-]*),\s+returned code\s*=\s*(\d+)")
+
 # Cap the on-screen scrollback. A failing build streams its whole compiler/error
 # log — often tens of thousands of lines — one D-Bus signal per line; retaining a
 # urwid widget for every one grows memory unboundedly and makes each redraw
@@ -95,6 +102,7 @@ class ApplyScreen(Screen):
         self._logfile = None       # full on-disk log, created on first line
         self._logpath: str | None = None
         self._refresh_pending = False
+        self._sync_results: dict[str, int] = {}  # repo -> emerge --sync exit code
         self._walker = urwid.SimpleFocusListWalker(
             [urwid.SelectableIcon(" computing plan …", 0)]
         )
@@ -154,6 +162,38 @@ class ApplyScreen(Screen):
         self._set_phase(f"{self._plan_label}: {phase} {n} of {total} — {atom}")
         self._schedule_refresh()
 
+    def _note_sync_result(self, line: str) -> None:
+        """Record a per-repo `emerge --sync` result line, if this is one."""
+        m = _SYNC_RESULT_RE.search(strip_ansi(line))
+        if m:
+            self._sync_results[m.group(1)] = int(m.group(2))
+
+    def _sync_outcome(self, overall: int) -> tuple[str, bool, str] | None:
+        """For a run that captured per-repo sync results, return
+        (title, ok, message); else None so the caller uses generic wording.
+
+        A sync where some repos succeeded and others failed is reported as a
+        partial success naming each repo, rather than a flat failure — one flaky
+        third-party overlay shouldn't read as "the sync failed".
+        """
+        if not self._sync_results:
+            return None
+        ok = sorted(r for r, c in self._sync_results.items() if c == 0)
+        fail = sorted(r for r, c in self._sync_results.items() if c != 0)
+        body = "\n".join(
+            [f"  ✓ {r}" for r in ok]
+            + [f"  ✗ {r} (code {self._sync_results[r]})" for r in fail]
+        )
+        if not fail:
+            return ("Completed", True, f"All {len(ok)} repositories synced:\n{body}")
+        if ok:
+            return ("Partially synced", False,
+                    f"{len(ok)} of {len(ok) + len(fail)} repositories synced; "
+                    f"{len(fail)} failed:\n{body}\n\n"
+                    "The repositories that succeeded were updated.")
+        return ("Failed", False,
+                f"All {len(fail)} repositories failed to sync:\n{body}")
+
     def _append(self, lines: list[str]) -> None:
         self._write_log(lines)
         for line in lines:
@@ -203,6 +243,7 @@ class ApplyScreen(Screen):
             self._append([ln.rstrip("\n") for ln in lines])
             for ln in lines:
                 self._update_progress(ln)
+                self._note_sync_result(ln)
 
         def on_finished(code: int) -> None:
             result["code"] = code
@@ -264,11 +305,16 @@ class ApplyScreen(Screen):
             # never let a refresh hiccup swallow the result prompt
             with contextlib.suppress(Exception):
                 self._on_done()   # refresh the caller's installed list
+        sync_outcome = self._sync_outcome(overall)
         if aborted:
             self._finish("Not started", False,
                          "The operation did not start — administrator authentication "
                          "was declined, or the backend was unavailable. Nothing was "
                          "changed.")
+        elif sync_outcome is not None:
+            # A sync run: report per-repo so a single failed overlay doesn't read
+            # as a total failure (and a full success names what was updated).
+            self._finish(*sync_outcome)
         elif overall == 0:
             self._finish("Completed", True,
                          f"All package operations completed successfully "
