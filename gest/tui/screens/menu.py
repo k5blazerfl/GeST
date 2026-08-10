@@ -7,7 +7,7 @@ import socket
 import urwid
 
 from gest.tui.runtime import App, Screen, accel_label
-from gest.tui.screens.apply import ApplyScreen, sync_plan, world_plan
+from gest.tui.screens.apply import ApplyScreen, sync_plan
 from gest.tui.screens.bootloader import BootloaderScreen
 from gest.tui.screens.cleanup import CleanupScreen
 from gest.tui.screens.datetime import DateTimeScreen
@@ -24,6 +24,7 @@ from gest.tui.screens.repos import ReposScreen
 from gest.tui.screens.services import ServicesScreen
 from gest.tui.screens.software import SoftwareScreen
 from gest.tui.screens.system import HostnameScreen, LocaleScreen, TimezoneScreen
+from gest.tui.screens.update import UpdateScreen
 from gest.tui.screens.users import UsersScreen
 
 # Category → [(module_key, label, implemented)]. All modules are implemented.
@@ -140,7 +141,7 @@ class MenuScreen(Screen):
         elif key == "software":
             self.app.push(SoftwareScreen(self.app))
         elif key == "update":
-            self.app.push(ApplyScreen(self.app, [world_plan()], verb="System update"))
+            self.app.push(UpdateScreen(self.app))
         elif key == "depclean":
             self.app.push(CleanupScreen(self.app))
         elif key == "sync":

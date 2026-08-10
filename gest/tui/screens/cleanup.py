@@ -22,7 +22,7 @@ from gest.core.software import cleanup
 from gest.core.software.backend_client import SoftwareBackend
 from gest.core.software.cleanup import Orphan, human_size
 from gest.tui.runtime import App, Modal, Screen, action_bar
-from gest.tui.screens.apply import StreamLog, depclean_plan, remove_plan
+from gest.tui.screens.apply import RawLogScreen, StreamLog, depclean_plan, remove_plan
 
 _MARK_W = 2   # ✓ = will be removed
 _CAT_W = 16
@@ -412,7 +412,7 @@ class CleanupRunScreen(StreamLog, Screen):
         self.app.push_modal(modal, width=("relative", 62), height=("relative", 40))
 
     def _view_log(self) -> None:
-        self.app.push(_RawLogScreen(self.app, self._logpath))
+        self.app.push(RawLogScreen(self.app, self._logpath))
 
     def handle_key(self, key):
         if key == "esc" and self._done:
@@ -422,29 +422,3 @@ class CleanupRunScreen(StreamLog, Screen):
         else:
             return key
         return None
-
-
-class _RawLogScreen(Screen):
-    """A scrollable view of the full raw emerge log (l / View log)."""
-
-    def __init__(self, app: App, path: str | None):
-        text = ""
-        if path:
-            try:
-                with open(path, encoding="utf-8") as fh:
-                    text = fh.read()
-            except OSError as exc:
-                text = f"(could not read log: {exc})"
-        lines = text.splitlines() or ["(the log is empty)"]
-        walker = urwid.SimpleFocusListWalker(
-            [urwid.Text(ln, wrap="clip") for ln in lines])
-        walker.set_focus(len(walker) - 1)   # tail of the log
-        super().__init__(
-            app, urwid.LineBox(urwid.ListBox(walker), title="emerge log"),
-            title="emerge log", footer_keys=[("Esc", "Back")])
-
-    def handle_key(self, key):
-        if key == "esc":
-            self.app.pop()
-            return None
-        return key

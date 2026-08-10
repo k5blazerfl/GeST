@@ -1022,6 +1022,56 @@ def test_cleanup_lists_orphans_and_toggles_keep():
     assert not scr._kept
 
 
+def test_update_screen_lists_changes(monkeypatch):
+    from gest.core.software import update as core_update
+    from gest.core.software.update import Change, UpdatePlan
+    from gest.tui.screens.update import UpdateScreen
+    fake = UpdatePlan(changes=[
+        Change("app-arch/gzip", "1.13", "1.14", "update", False, 430080),
+        Change("dev-libs/newdep", "", "2.0", "new", False, 1258291),
+    ], ok=True)
+    monkeypatch.setattr(core_update, "plan_update", lambda: fake)
+    app = App()
+    scr = UpdateScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: scr._plan is not None, ticks=200)
+    out = _render(scr)
+    assert "gzip" in out and "1.13 → 1.14" in out and "newdep" in out
+    assert "Updates 1" in out and "New 1" in out
+
+
+def test_update_screen_empty_state(monkeypatch):
+    from gest.core.software import update as core_update
+    from gest.tui.screens.update import UpdateScreen
+    monkeypatch.setattr(core_update, "plan_update",
+                        lambda: core_update.UpdatePlan(changes=[], ok=True))
+    app = App()
+    scr = UpdateScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: scr._plan is not None, ticks=200)
+    assert "up to date" in _render(scr)
+
+
+def test_update_run_screen_tracks_progress():
+    from gest.core.software.update import Change
+    from gest.tui.screens.apply import world_plan
+    from gest.tui.screens.update import UpdateRunScreen
+    app = App()
+    changes = [Change("app-arch/gzip", "1.13", "1.14", "update", False, 1000),
+               Change("dev-libs/newdep", "", "2.0", "new", False, 500)]
+    # constructing schedules _run() but without pumping it never runs (no real emerge)
+    scr = UpdateRunScreen(app, changes, world_plan())
+    app._stack.append(scr)
+    scr._consume(">>> Emerging (1 of 2) app-arch/gzip-1.14::gentoo")
+    assert scr._by_cp["app-arch/gzip"].status == "building"
+    scr._consume(">>> Installing (1 of 2) app-arch/gzip-1.14::gentoo")
+    assert scr._by_cp["app-arch/gzip"].status == "installed"
+    assert "▸" in _render(scr) or "✓" in _render(scr)
+    scr._finish(0, "")                       # emerge exited 0
+    assert all(ln.status == "installed" for ln in scr._lines)
+    assert scr._done
+
+
 def test_cleanup_run_screen_tracks_removal_progress():
     from gest.core.software.cleanup import Orphan
     from gest.tui.screens.apply import depclean_plan

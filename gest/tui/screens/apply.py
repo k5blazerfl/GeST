@@ -130,6 +130,33 @@ class StreamLog:
             self._logfile = None
 
 
+class RawLogScreen(Screen):
+    """A scrollable view of a full raw emerge log (the organized run screens'
+    'View log' / l). Shared by the Clean Up and System Update progress screens."""
+
+    def __init__(self, app: App, path: str | None):
+        text = ""
+        if path:
+            try:
+                with open(path, encoding="utf-8") as fh:
+                    text = fh.read()
+            except OSError as exc:
+                text = f"(could not read log: {exc})"
+        lines = text.splitlines() or ["(the log is empty)"]
+        walker = urwid.SimpleFocusListWalker(
+            [urwid.Text(ln, wrap="clip") for ln in lines])
+        walker.set_focus(len(walker) - 1)   # tail of the log
+        super().__init__(
+            app, urwid.LineBox(urwid.ListBox(walker), title="emerge log"),
+            title="emerge log", footer_keys=[("Esc", "Back")])
+
+    def handle_key(self, key):
+        if key == "esc":
+            self.app.pop()
+            return None
+        return key
+
+
 class ApplyScreen(StreamLog, Screen):
     def __init__(self, app: App, plans: list[Plan], *, verb: str = "Apply",
                  on_done=None) -> None:
