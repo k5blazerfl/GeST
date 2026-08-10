@@ -1,5 +1,6 @@
 """Tests for the backend idle-exit decision and streamed-output batching."""
 
+import os
 import sys
 
 from gest.backend.service import SoftwareService
@@ -10,6 +11,25 @@ def test_should_exit_only_when_idle_and_no_active_ops():
     assert SoftwareService._should_exit(0, 119, 120) is False   # not idle enough
     assert SoftwareService._should_exit(1, 130, 120) is False   # merge streaming
     assert SoftwareService._should_exit(3, 999, 120) is False
+
+
+def test_augmented_path_guarantees_system_dirs():
+    """D-Bus activation can hand the backend an empty/minimal PATH; emerge then
+    can't find rsync/git/bzip2 and every sync fails. PATH must always include the
+    standard system dirs while preserving any extras."""
+    from gest.backend.service import _augmented_path
+
+    # Empty activation PATH — the failing case from the field — still yields the
+    # essential dirs so emerge finds its helpers.
+    got = _augmented_path("").split(os.pathsep)
+    for essential in ("/usr/bin", "/bin", "/usr/sbin", "/sbin"):
+        assert essential in got
+
+    # Extra entries are preserved, and standard dirs aren't duplicated.
+    out = _augmented_path("/usr/bin:/opt/custom/bin")
+    parts = out.split(os.pathsep)
+    assert "/opt/custom/bin" in parts
+    assert parts.count("/usr/bin") == 1
 
 
 def test_spawn_streaming_batches_output_without_loss():

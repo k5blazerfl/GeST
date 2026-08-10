@@ -474,12 +474,31 @@ class SoftwareService:
         read_next()
 
 
+# Standard system executable directories. D-Bus activation can hand the service
+# an empty or minimal PATH, in which case emerge can't find its sync/unpack
+# helpers (git, rsync, bzip2, tar) and every repo sync fails with
+# "!!! Command not found: <tool>". We ensure these are always on PATH.
+_SYSTEM_PATH = (
+    "/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin",
+)
+
+
+def _augmented_path(current: str) -> str:
+    """Return ``current`` PATH with the standard system dirs guaranteed present
+    (prepended), preserving any extra entries the activation env already had."""
+    extra = [p for p in current.split(os.pathsep) if p and p not in _SYSTEM_PATH]
+    return os.pathsep.join([*_SYSTEM_PATH, *extra])
+
+
 def main() -> int:
     # D-Bus activation gives us a minimal environment (no LANG/LC_*), so emerge
     # and the other tools fall back to the C locale and emit non-UTF-8 bytes for
     # accented/special characters. Force a UTF-8 locale so their output renders
     # correctly in the TUI.
     os.environ["LC_ALL"] = "C.UTF-8"
+    # Likewise the activation PATH can be empty/minimal, so emerge fails to find
+    # rsync/git/bzip2 and all syncs (and unpacking) break. Guarantee a sane PATH.
+    os.environ["PATH"] = _augmented_path(os.environ.get("PATH", ""))
     loop = GLib.MainLoop()
 
     def on_bus_acquired(conn, name):
