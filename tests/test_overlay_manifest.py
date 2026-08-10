@@ -10,6 +10,7 @@ Pure stdlib so it runs in the dependency-light CI subset (see .github/workflows)
 """
 
 import re
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 GEST_DIR = (Path(__file__).resolve().parent.parent
@@ -50,3 +51,11 @@ def test_live_ebuild_is_present_and_unmanifested():
     # gest-9999 tracks git (no distfile), so it must NOT appear in the Manifest.
     assert (GEST_DIR / "gest-9999.ebuild").exists()
     assert "9999" not in _manifest_versions()
+
+
+def test_metadata_xml_is_valid_and_has_a_maintainer():
+    # The authoritative overlay owns metadata.xml (synced to Amphitheater), so
+    # keep it well-formed with a maintainer contact.
+    root = ET.parse(GEST_DIR / "metadata.xml").getroot()
+    assert root.tag == "pkgmetadata"
+    assert root.findtext("maintainer/email"), "metadata.xml has no maintainer email"

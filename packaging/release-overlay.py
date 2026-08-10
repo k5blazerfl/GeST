@@ -162,13 +162,12 @@ def update_authoritative(ver: str, dist: str) -> None:
 
 
 def write_lean(dest_gest: Path, ver: str, dist: str, template: Path) -> None:
-    """Render Amphitheater's lean app-admin/gest/: latest release ebuild only.
+    """Render Amphitheater's lean app-admin/gest/ from the authoritative overlay.
 
-    Scope is deliberately the release artifacts — the versioned ebuild and its
-    single Manifest DIST line, with older release ebuilds pruned. ``gest-9999``
-    and ``metadata.xml`` are *preserved* if Amphitheater already has them (they
-    can carry overlay-specific content, e.g. a maintainer block) and only seeded
-    from the authoritative overlay when absent.
+    The authoritative overlay is the single source of truth, so everything here
+    is *derived* from it: the latest release ebuild (older release ebuilds are
+    pruned), a Manifest with only that release's DIST line, and the shared
+    ``gest-9999`` + ``metadata.xml`` copied over verbatim.
     """
     dest_gest.mkdir(parents=True, exist_ok=True)
     for p in list(dest_gest.glob("gest-*.ebuild")):
@@ -177,9 +176,10 @@ def write_lean(dest_gest: Path, ver: str, dist: str, template: Path) -> None:
     (dest_gest / f"gest-{ver}.ebuild").write_text(
         newest_ebuild_text(template), encoding="utf-8")
     for extra in ("gest-9999.ebuild", "metadata.xml"):
-        src, dst = template / extra, dest_gest / extra
-        if src.exists() and not dst.exists():
-            dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+        src = template / extra
+        if src.exists():
+            (dest_gest / extra).write_text(src.read_text(encoding="utf-8"),
+                                           encoding="utf-8")
     (dest_gest / "Manifest").write_text(dist + "\n", encoding="utf-8")
 
 

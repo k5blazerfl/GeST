@@ -110,8 +110,9 @@ packaging/release-overlay.py --push     # commit+push the GeST overlay AND Amphi
 It downloads `https://github.com/k5blazerfl/GeST/archive/refs/tags/vX.Y.Z.tar.gz`,
 computes the `DIST` (byte-identical to `pkgdev manifest`), writes the versioned
 ebuild + Manifest here (full history), and regenerates Amphitheater's lean
-`app-admin/gest/` (pruning older release ebuilds; `metadata.xml` and `gest-9999`
-are preserved if Amphitheater already has them).
+`app-admin/gest/` from this overlay (latest release ebuild only, older ones
+pruned; `metadata.xml` and `gest-9999` copied from here — this overlay is the
+single source of truth for all of them).
 
 ### Enabling the Amphitheater auto-sync (one-time)
 
