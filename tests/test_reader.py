@@ -18,6 +18,29 @@ def test_list_installed_returns_packages():
     assert p.installed is True
 
 
+def test_list_upgradable_is_a_subset_of_installed():
+    installed = reader.list_installed()
+    upgradable = reader.list_upgradable()
+    inst_cps = {p.cp for p in installed}
+    # every upgradable package is installed, carries a newer version string, and
+    # reports upgradable=True
+    for p in upgradable:
+        assert p.cp in inst_cps
+        assert p.installed
+        assert p.available_version
+        assert p.upgradable
+    # list_upgradable is exactly the upgradable slice of list_installed
+    assert {p.cp for p in upgradable} == {p.cp for p in installed if p.upgradable}
+
+
+def test_upgradable_requires_installed_and_available_version():
+    from gest.core.software.model import Package
+
+    assert not Package(cp="x/y", version="1", available_version="2").upgradable  # not installed
+    assert not Package(cp="x/y", version="1", installed=True).upgradable  # no newer version
+    assert Package(cp="x/y", version="1", installed=True, available_version="2").upgradable
+
+
 def test_counts_are_consistent():
     c = reader.counts()
     assert c["installed"] == len(reader.list_installed())

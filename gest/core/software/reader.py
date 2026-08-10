@@ -56,8 +56,14 @@ def _world_atoms() -> frozenset[str]:
 
 
 def _is_live(version: str) -> bool:
-    """A live/scm ebuild (version 9999...) — excluded from 'best available'."""
-    return version.startswith("9999")
+    """A live/scm ebuild — excluded from 'best available'.
+
+    Gentoo reserves a trailing ``9999`` version component for live ebuilds that
+    build from VCS HEAD (``9999``, ``1.9999``, ``5.0.9999`` …). These are
+    normally masked and must never be offered as an available "update".
+    """
+    base = version.split("-r", 1)[0].split("_", 1)[0]  # drop revision/suffix
+    return base == "9999" or base.endswith(".9999")
 
 
 def _best_available(cp: str) -> str:
@@ -92,8 +98,42 @@ def _installed_from_binary(cpv: str) -> bool:
     return bool(_VARDB.aux_get(cpv, ("BUILD_ID",))[0])
 
 
+def _slot_of(db, cpv: str) -> str:
+    """The slot (without subslot) of ``cpv`` in ``db``; "0" if unreadable."""
+    try:
+        return db.aux_get(cpv, ("SLOT",))[0].split("/", 1)[0]
+    except Exception:
+        return "0"
+
+
+def _available_upgrade(installed_cpv: str, slot: str) -> str:
+    """Newer available version for ``installed_cpv`` in ``slot``, else "".
+
+    Portage keeps versions of the same package but different slots side by side,
+    so an upgrade is only an upgrade *within the same slot* — a newer version in
+    another slot is a separate install, not a replacement. Returns the bare
+    version string of the best non-live ebuild that outranks what's installed.
+    """
+    inst_ver = cpv_getversion(installed_cpv)
+    best_cpv = ""
+    for cpv in _PORTDB.cp_list(cpv_getkey(installed_cpv)):
+        ver = cpv_getversion(cpv)
+        if _is_live(ver) or _slot_of(_PORTDB, cpv) != slot:
+            continue
+        if not best_cpv or portage.versions.vercmp(ver, cpv_getversion(best_cpv)) > 0:
+            best_cpv = cpv
+    if best_cpv and portage.versions.vercmp(cpv_getversion(best_cpv), inst_ver) > 0:
+        return cpv_getversion(best_cpv)
+    return ""
+
+
 def list_installed() -> list[Package]:
-    """Every installed package version, sorted by cp."""
+    """Every installed package version, sorted by cp.
+
+    Each package carries ``available_version`` (and thus ``upgradable``) when a
+    newer version exists in its slot, so callers can flag or filter pending
+    updates without a second pass over the tree.
+    """
     world = _world_atoms()
     packages: list[Package] = []
     for cpv in sorted(_VARDB.cpv_all()):
@@ -110,10 +150,16 @@ def list_installed() -> list[Package]:
                 installed=True,
                 from_binary=_installed_from_binary(cpv),
                 world_member=cp in world,
+                available_version=_available_upgrade(cpv, slot.split("/", 1)[0]),
                 use_flags=_parse_use_flags(iuse, use),
             )
         )
     return packages
+
+
+def list_upgradable() -> list[Package]:
+    """Installed packages that have a newer version available in their slot."""
+    return [p for p in list_installed() if p.upgradable]
 
 
 # Search-in fields that require reading package metadata → their aux_get key.

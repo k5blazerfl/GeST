@@ -47,7 +47,9 @@ def _fmt_size(n: int) -> str:
 
 
 _MENUS = [
-    ("view", "View", [("installed", "Installed packages", True)]),
+    ("view", "View", [
+        ("installed", "Installed packages", True),
+        ("upgradable", "Updates available", True)]),
     ("config", "Configuration", [
         ("use", "USE flags", True), ("keywords", "Keywords / mask", True)]),
     ("binary", "Binary packages", [
@@ -64,6 +66,7 @@ _VIEWS = [
     ("provides", "Provides (file)"),
     ("categories", "Categories"),
     ("installed", "Installed"),
+    ("upgradable", "Updates available"),
     ("world", "World set"),
 ]
 
@@ -98,6 +101,7 @@ class SoftwareScreen(Screen):
         self._cps: list[str] = []
         self._installed: list[bool] = []
         self._from_binary: list[bool] = []
+        self._upgradable: list[bool] = []
         self._summaries: list[str] = []
         self._categories: list[str] = []
         self._selection = Selection()
@@ -167,13 +171,15 @@ class SoftwareScreen(Screen):
             help_text=(
                 "Browse and manage Portage packages, YaST sw_single-style.\n\n"
                 "Filter (left): pick a view (Search / Provides / Categories / "
-                "Installed / World), a search mode, and which fields to search.\n"
+                "Installed / Updates available / World), a search mode, and which "
+                "fields to search.\n"
                 "Table: ↑/↓ move · Space cycles the mark (none → install →\n"
                 "binary-only → remove) · b jumps to binary-only · r jumps to\n"
                 "remove · c clear marks · a Actions (adds 'prefer binary') · u USE.\n"
                 "Status: i installed (from source) · ⓑ installed (from a binary "
-                "package). Marks: + install · b binary-only · B prefer-binary · "
-                "- remove.\n"
+                "package) · ↑ installed, a newer version is available (see the "
+                "'Updates available' view). Marks: u update · + install · b "
+                "binary-only · B prefer-binary · - remove.\n"
                 "Binary installs use emerge --getbinpkg (configure sources under "
                 "the Binary packages menu). F10 (Accept) applies all marks."
             ),
@@ -263,6 +269,8 @@ class SoftwareScreen(Screen):
             self._empty_table("Type a file path (e.g. /usr/bin/python), then Enter.")
         elif view == "categories":
             self.app.run_async(self._load_categories())
+        elif view == "upgradable":
+            self.app.run_async(self._load_upgradable())
         elif view == "world":
             self.app.run_async(self._load_world())
         else:
@@ -274,6 +282,7 @@ class SoftwareScreen(Screen):
         self._table_mode = "packages"
         self._cps, self._installed, self._summaries = [], [], []
         self._from_binary = []
+        self._upgradable = []
         self._walker[:] = [urwid.Text(f" {hint}")]
         self._detail.set_text("")
         self._set_count("0 package(s)")
@@ -282,8 +291,21 @@ class SoftwareScreen(Screen):
         pkgs = await self.app.run_blocking(reader.list_installed)
         self._fill([(p.cp, (p.description or "")[:60]) for p in pkgs],
                    [p.cp for p in pkgs], [True] * len(pkgs),
-                   [p.from_binary for p in pkgs])
-        self._set_count(f"{len(pkgs)} installed package(s)")
+                   [p.from_binary for p in pkgs], [p.upgradable for p in pkgs])
+        n_up = sum(p.upgradable for p in pkgs)
+        suffix = f" · {n_up} with updates" if n_up else ""
+        self._set_count(f"{len(pkgs)} installed package(s){suffix}")
+
+    async def _load_upgradable(self) -> None:
+        pkgs = await self.app.run_blocking(reader.list_upgradable)
+        self._fill(
+            [(p.cp, f"{p.version} → {p.available_version}  {(p.description or '')[:40]}")
+             for p in pkgs],
+            [p.cp for p in pkgs], [True] * len(pkgs),
+            [p.from_binary for p in pkgs], [True] * len(pkgs))
+        self._set_count(
+            f"{len(pkgs)} package(s) with updates available" if pkgs
+            else "no updates available — everything is up to date")
 
     async def _load_world(self) -> None:
         pkgs = await self.app.run_blocking(reader.list_installed)
@@ -343,14 +365,16 @@ class SoftwareScreen(Screen):
                    [r.cp for r in results], [r.installed for r in results])
         self._set_count(f"{len(results)} package(s) found")
 
-    def _fill(self, rows, cps, installed, from_binary=None) -> None:
+    def _fill(self, rows, cps, installed, from_binary=None, upgradable=None) -> None:
         self._table_mode = "packages"
         self._header.base_widget.set_text(_PKG_HEADER)
         self._cps = cps
         self._installed = installed
-        # Origin (source vs binary) is known only for installed listings; other
-        # views leave it False and rely on the detail pane's Origin line.
+        # Origin (source vs binary) and upgradable state are known only for the
+        # installed-derived listings; other views leave them False and rely on
+        # the detail pane's Version/Installed lines instead.
         self._from_binary = from_binary if from_binary is not None else [False] * len(cps)
+        self._upgradable = upgradable if upgradable is not None else [False] * len(cps)
         self._summaries = [summary for _cp, summary in rows]
         widgets = [_row(self._row_text(i, cp, summary))
                    for i, (cp, summary) in enumerate(rows)]
@@ -373,6 +397,8 @@ class SoftwareScreen(Screen):
         if mark == sel.REMOVE:
             return "-"
         if self._installed[i]:
+            if i < len(self._upgradable) and self._upgradable[i]:
+                return "↑"   # installed, newer version available in-slot
             return "ⓑ" if self._from_binary[i] else "i"   # ⓑ = from a binary pkg
         return " "
 
@@ -495,6 +521,8 @@ class SoftwareScreen(Screen):
             self._table_mode == "packages" and self._cps) else None
         if item_id == "installed":
             self._switch_view("installed")
+        elif item_id == "upgradable":
+            self._switch_view("upgradable")
         elif item_id == "use" and cp:
             self.app.push(UseFlagScreen(self.app, cp))
         elif item_id == "keywords" and cp:

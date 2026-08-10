@@ -34,7 +34,13 @@ class Package:
     installed: bool = False
     from_binary: bool = False   # installed from a binary package (VDB has BUILD_ID)
     world_member: bool = False
+    available_version: str = ""  # newer version available in this slot, if any
     use_flags: list[UseFlag] = field(default_factory=list)
+
+    @property
+    def upgradable(self) -> bool:
+        """Installed, with a newer version available in the same slot."""
+        return self.installed and bool(self.available_version)
 
     @property
     def cpv(self) -> str:
