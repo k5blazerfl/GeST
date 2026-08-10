@@ -6,6 +6,7 @@ suite rather than the dependency-light CI subset.
 
 import asyncio
 
+import pytest
 import urwid
 
 from gest.tui.runtime import App, Screen, ansi_markup, function_bar, strip_ansi
@@ -55,7 +56,6 @@ def test_menu_two_panes_and_category_navigation():
 
 
 def test_quit_is_top_level_only():
-    import pytest
     app = App()
     app._unhandled("q")          # a sub-screen's unhandled q must NOT quit
     menu = MenuScreen(app)
@@ -127,6 +127,33 @@ def _pump(app, cond, ticks=150):
             if cond():
                 return
     app.loop.run_until_complete(run())
+
+
+class _FakeSoftwareBackend:
+    """A no-op stand-in for the root backend, so TUI tests never touch the real
+    system D-Bus service. Records the repos a refresh-on-open would have synced."""
+
+    synced: list[list[str]] = []
+
+    async def connect(self):
+        return self
+
+    async def sync_repos(self, names):
+        _FakeSoftwareBackend.synced.append(list(names))
+        return (True, "")
+
+    async def close(self):
+        return None
+
+
+@pytest.fixture(autouse=True)
+def _isolate_software_backend(monkeypatch):
+    """Software Management syncs its refresh-on-open repos when it opens, which on
+    a host with flagged repos + a live backend would run real overlay syncs mid
+    test (slow, non-deterministic). Swap in a no-op backend for every TUI test."""
+    _FakeSoftwareBackend.synced.clear()
+    monkeypatch.setattr("gest.tui.screens.software.SoftwareBackend",
+                        _FakeSoftwareBackend)
 
 
 def test_menu_launches_services():
@@ -335,6 +362,19 @@ def test_software_two_pane_layout():
     assert "Filter" in out and "Packages" in out and "Detail" in out
     assert "Name" in out and "Summary" in out  # pinned column header
     assert "[Cancel]" in out and "[Accept]" in out  # YaST-style action bar
+
+
+def test_software_refreshes_only_flagged_non_main_repos_on_open(monkeypatch):
+    from gest.core.repos.reader import Repo
+    from gest.tui.screens import software as sw
+    repos = [Repo(name="gentoo", main=True, refresh=True, sync_uri="rsync://x"),
+             Repo(name="guru", refresh=True, sync_uri="https://h/guru"),
+             Repo(name="off", refresh=False, sync_uri="https://h/off")]
+    monkeypatch.setattr(sw.repos_reader, "enabled_repos", lambda: repos)
+    app = App()
+    _software(app)   # opens the screen (refresh-on-open runs before the load)
+    # only the flagged, non-main repo with a sync URI is refreshed
+    assert _FakeSoftwareBackend.synced == [["guru"]]
 
 
 def test_software_loads_marks_and_clears():
@@ -918,7 +958,6 @@ def test_repos_protects_main_repo():
 
 
 def test_repos_stages_changes_then_clears():
-    import pytest
     app = App()
     scr = ReposScreen(app)
     app._stack.append(scr)
@@ -964,7 +1003,6 @@ def test_repos_reenable_disabled_repo():
 
 
 def test_cleanup_lists_orphans_and_toggles_keep():
-    import pytest
     app = App()
     scr = CleanupScreen(app)
     app._stack.append(scr)
