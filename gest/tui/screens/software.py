@@ -551,7 +551,31 @@ class SoftwareScreen(Screen):
     def _after(self) -> None:
         self._selection.clear()
         reader.invalidate_caches()  # deps/world changed → rebuild cached indexes
-        self.app.run_async(self._load_installed())
+        self._reload_view()
+
+    def _reload_view(self) -> None:
+        """Reload the current view's data in place after a mutation, so the
+        listing — and the ↑ update flags — reflect what is now installed (a
+        just-updated package drops off 'Updates available' and is no longer
+        flagged ↑ elsewhere). Unlike _switch_view this keeps the view/focus."""
+        view = self._view
+        term = self._search.edit_text.strip()
+        if view == "upgradable":
+            self.app.run_async(self._load_upgradable())
+        elif view == "world":
+            self.app.run_async(self._load_world())
+        elif view == "categories":
+            if self._drilled:
+                self.app.run_async(self._load_category(self._drilled))
+            else:
+                self.app.run_async(self._load_categories())
+        elif view == "provides":
+            if term:
+                self.app.run_async(self._run_file_search(term))
+        elif view == "search" and term:
+            self.app.run_async(self._run_search(term))
+        else:
+            self.app.run_async(self._load_installed())
 
     # -- menu bar -----------------------------------------------------------
 

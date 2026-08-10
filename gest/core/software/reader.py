@@ -456,9 +456,20 @@ def reverse_dependencies(cp: str) -> list[str]:
 
 
 def invalidate_caches() -> None:
-    """Drop cached indexes after a mutation (merge/unmerge) so they rebuild."""
+    """Drop cached indexes after a mutation (merge/unmerge) so they rebuild.
+
+    Clears GeST's own derived indexes *and* Portage's in-memory vardb caches.
+    This TUI process is long-lived but the merge/unmerge ran in the separate
+    backend process, so our captured ``vardbapi`` still serves the pre-mutation
+    installed set (its cpv/aux/mtime caches). ``cpv_all``'s own mtime staleness
+    check is, in Portage's words, not to be trusted across a merge/unmerge — so
+    without this a just-updated package keeps computing ``upgradable`` and stays
+    flagged ↑ in the UI. ``_clear_cache`` empties mtdircache/matchcache/cpcache
+    and drops the aux-cache object, forcing a fresh read from /var/db/pkg."""
     _reverse_index.cache_clear()
     _world_atoms.cache_clear()
+    with contextlib.suppress(Exception):
+        _VARDB._clear_cache()
 
 
 def get_package_detail(cp: str) -> PackageDetail | None:
