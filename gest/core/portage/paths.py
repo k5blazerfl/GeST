@@ -54,3 +54,17 @@ def package_fragment(kind: str, name: str, root: str | None = None) -> str:
 def gest_fragment(kind: str, root: str | None = None) -> str:
     """The GeST-owned drop-in ``package.<kind>/gest``."""
     return package_fragment(kind, "gest", root)
+
+
+def gest_dir(root: str | None = None) -> str:
+    """The ``/etc/portage/gest/`` directory for GeST's own state files.
+
+    A GeST-private location that Portage does not read and other tools
+    (``eselect`` etc.) never touch — used for state that isn't Portage config.
+    """
+    return os.path.join(etc_portage(root), "gest")
+
+
+def gest_state(name: str, root: str | None = None) -> str:
+    """A GeST-owned state file, ``/etc/portage/gest/<name>``."""
+    return os.path.join(gest_dir(root), name)

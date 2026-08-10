@@ -47,6 +47,15 @@ def test_validate_binrepos_and_unknown_surface():
     assert svc._validate_content("/etc/portage/color.map", "anything") != ""
 
 
+def test_validate_gest_state_surface():
+    # GeST's own /etc/portage/gest/ list files: newline repo names + comments.
+    assert svc._validate_content(
+        "/etc/portage/gest/refresh", "# repos\nguru\namphitheater\n") == ""
+    assert svc._validate_content("/etc/portage/gest/refresh", "") == ""          # deletion
+    bad = svc._validate_content("/etc/portage/gest/refresh", "bad name\n")
+    assert "invalid repository name" in bad
+
+
 # --------------------------------------------------------------------------- #
 # path validation (containment + traversal)
 # --------------------------------------------------------------------------- #

@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import urwid
 
+from gest.core.repos import reader as repos_reader
 from gest.core.software import reader
 from gest.core.software import selection as sel
+from gest.core.software.backend_client import SoftwareBackend
 from gest.core.software.model import PackageDetail
 from gest.core.software.selection import Selection
 from gest.tui.menubar import MenuBar, _Dropdown
@@ -189,7 +191,7 @@ class SoftwareScreen(Screen):
         self._columns.focus_position = 0           # the sidebar
         self._sidebar.focus_position = self._SEARCH_W_IDX
         urwid.connect_signal(self._walker, "modified", self._on_focus)
-        app.run_async(self._load_installed())
+        app.run_async(self._open())
 
     # -- view selector ------------------------------------------------------
 
@@ -286,6 +288,40 @@ class SoftwareScreen(Screen):
         self._walker[:] = [urwid.Text(f" {hint}")]
         self._detail.set_text("")
         self._set_count("0 package(s)")
+
+    async def _open(self) -> None:
+        """First-open flow: refresh opted-in repos, then load the package list.
+
+        Runs only once, when the screen is pushed — switching views afterwards
+        calls the loaders directly and does not re-sync.
+        """
+        await self._refresh_repos()
+        await self._load_installed()
+
+    async def _refresh_repos(self) -> None:
+        """Silently sync the repos flagged for refresh-on-open (never the main
+        tree). Best-effort: a missing backend or denied auth just falls through
+        to loading the (possibly staler) list rather than blocking the screen.
+        """
+        repos = await self.app.run_blocking(repos_reader.enabled_repos)
+        names = [r.name for r in repos if r.refresh and not r.main and r.sync_uri]
+        if not names:
+            return
+        plural = "y" if len(names) == 1 else "ies"
+        self._set_count(f"Refreshing {len(names)} repositor{plural}…")
+        self.app.refresh()
+        backend = SoftwareBackend()
+        try:
+            await backend.connect()
+            ok, out = await backend.sync_repos(names)
+        except Exception as exc:
+            self.app.notify(f"Repository refresh skipped: {exc}", error=True)
+            await backend.close()
+            return
+        await backend.close()
+        if not ok:
+            tail = out.strip().splitlines()[-1] if out.strip() else "sync failed"
+            self.app.notify(f"Some repositories didn't refresh — {tail}", error=True)
 
     async def _load_installed(self) -> None:
         pkgs = await self.app.run_blocking(reader.list_installed)

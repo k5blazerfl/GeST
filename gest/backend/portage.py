@@ -37,6 +37,7 @@ from gest.backend.audit import audit
 from gest.backend.polkit import caller_uid, check_authorization
 from gest.core.portage import paths, write
 from gest.core.portage.codec import atomfile, ini, shell
+from gest.core.repos import commands as repo_commands
 from gest.ipc.interface import PORTAGE_IFACE, PORTAGE_PATH, PORTAGE_POLKIT
 
 _INTROSPECTION = f"""
@@ -89,6 +90,14 @@ def _validate_content(path: str, text: str) -> str:
         return ""
     if "/binrepos.conf/" in path or "/repos.conf/" in path:
         ini.parse(text)  # raises nothing; malformed lines are ignored
+        return ""
+    if os.path.basename(os.path.dirname(os.path.normpath(path))) == "gest":
+        # GeST's own state under /etc/portage/gest/ — a newline list of repo
+        # names (e.g. the refresh-on-open selection). Not Portage config.
+        for line in text.splitlines():
+            name = line.strip()
+            if name and not name.startswith("#") and not repo_commands.valid_name(name):
+                return f"invalid repository name: {name}"
         return ""
     return "not a writable Portage surface"
 

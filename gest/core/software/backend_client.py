@@ -94,6 +94,14 @@ class SoftwareBackend:
             self._iface.on_finished(on_finished)
         return await self._iface.call_sync()
 
+    async def sync_repos(self, names) -> tuple[bool, str]:
+        """Sync specific repositories (emaint sync --repo <name>) and wait.
+
+        Returns ``(ok, output)`` — ``ok`` is True only if every named repo
+        synced. Blocking (no streaming); used by the refresh-on-open step.
+        """
+        return await self._iface.call_sync_repos(list(names))
+
     async def depclean(self, atom: str = "", on_progress=None, on_finished=None) -> bool:
         """Remove packages via emerge --depclean [atom]; streams like install."""
         if on_progress is not None:

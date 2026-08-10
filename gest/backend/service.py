@@ -43,6 +43,7 @@ from gest.backend.repos import ReposService
 from gest.backend.services import ServicesService
 from gest.backend.system import SystemService
 from gest.backend.users import UsersService
+from gest.core.repos import commands as repo_commands
 from gest.core.software import news
 from gest.ipc.interface import BUS_NAME, SOFTWARE_IFACE, SOFTWARE_PATH, polkit_action
 
@@ -85,6 +86,11 @@ _INTROSPECTION = f"""
     <method name="Sync">
       <arg type="b" name="started" direction="out"/>
     </method>
+    <method name="SyncRepos">
+      <arg type="as" name="names" direction="in"/>
+      <arg type="b" name="ok" direction="out"/>
+      <arg type="s" name="output" direction="out"/>
+    </method>
     <method name="MarkNewsRead">
       <arg type="s" name="selector" direction="in"/>
       <arg type="b" name="ok" direction="out"/>
@@ -99,6 +105,7 @@ _INTROSPECTION = f"""
 # output clean for a TUI; --pretend is added only for the preview.
 _EMERGE = shutil.which("emerge") or "/usr/bin/emerge"
 _ESELECT = shutil.which("eselect") or "/usr/bin/eselect"
+_EMAINT = shutil.which("emaint") or "/usr/sbin/emaint"
 
 
 # Exit after this many idle seconds so a re-activation picks up new code and
@@ -187,6 +194,9 @@ class SoftwareService:
             self._depclean_multi(atoms, sender, invocation)
         elif method == "Sync":
             self._sync(sender, invocation)
+        elif method == "SyncRepos":
+            (names,) = params.unpack()
+            self._sync_repos(names, sender, invocation)
         elif method == "MarkNewsRead":
             (selector,) = params.unpack()
             self._mark_news_read(selector, sender, invocation)
@@ -329,6 +339,51 @@ class SoftwareService:
             return
         invocation.return_value(GLib.Variant("(b)", (True,)))
         self._spawn_streaming([_EMERGE, "--sync", "--color", "n"])
+
+    def _sync_repos(self, names, sender: str, invocation) -> None:
+        """Sync specific repositories by name (``emaint sync --repo <name>``).
+
+        Used by Software Management's refresh-on-open: it syncs only the small,
+        opted-in overlays, never the main tree (that's the Sync Portage Tree
+        tool). Runs synchronously and returns an aggregate ``(ok, output)`` so
+        the frontend can await it and surface any per-repo failure.
+        """
+        if not self._check_authorized(sender, polkit_action("sync")):
+            invocation.return_error_literal(
+                Gio.dbus_error_quark(), Gio.DBusError.ACCESS_DENIED,
+                "Not authorized to sync repositories")
+            return
+        names = list(names)
+        if not names or any(not repo_commands.valid_name(n) for n in names):
+            invocation.return_error_literal(
+                Gio.dbus_error_quark(), Gio.DBusError.INVALID_ARGS,
+                "invalid or empty repository name list")
+            return
+        self._active += 1  # don't idle-exit mid-sync
+        outputs: list[str] = []
+        ok_all = True
+        try:
+            for name in names:
+                try:
+                    proc = Gio.Subprocess.new(
+                        [_EMAINT, "sync", "--repo", name],
+                        Gio.SubprocessFlags.STDOUT_PIPE
+                        | Gio.SubprocessFlags.STDERR_MERGE)
+                    _ok, out, _err = proc.communicate_utf8(None, None)
+                    code = proc.get_exit_status() if proc.get_if_exited() else -1
+                except GLib.Error as exc:  # pragma: no cover - depends on live system
+                    out, code = exc.message, -1
+                if code != 0:
+                    ok_all = False
+                outputs.append(
+                    f"=== {name}: {'ok' if code == 0 else 'failed'} ===\n"
+                    f"{(out or '').strip()}")
+        finally:
+            self._active -= 1
+            self._touch()
+        audit("software.sync_repos", uid=caller_uid(self._conn, sender),
+              result="ok" if ok_all else "failed", detail=",".join(names))
+        invocation.return_value(GLib.Variant("(bs)", (ok_all, "\n".join(outputs))))
 
     # -- news mark-read ------------------------------------------------------
 

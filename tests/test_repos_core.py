@@ -2,7 +2,7 @@
 
 import pytest
 
-from gest.core.repos import commands, reader
+from gest.core.repos import commands, reader, refresh, writer
 
 _CONF_MAIN = (
     "[DEFAULT]\nmain-repo = gentoo\n\n"
@@ -51,3 +51,50 @@ def test_add_validates_type_and_uri():
         commands.add_argv("r", "Git", "https://h/r")     # bad type
     with pytest.raises(ValueError):
         commands.add_argv("r", "git", "has space")       # bad uri
+
+
+# -- refresh-on-open state (GeST-owned list file) ----------------------------
+
+def test_refresh_parse_ignores_blanks_and_comments():
+    text = "# my repos\nguru\n\n  amphitheater  \n"
+    assert refresh.parse(text) == {"guru", "amphitheater"}
+
+
+def test_refresh_render_is_sorted_and_empty_deletes():
+    assert refresh.render({"guru", "amphitheater"}) == "amphitheater\nguru\n"
+    assert refresh.render(set()) == ""                 # -> ConfigWrite deletes
+
+
+def test_refresh_toggle_round_trips():
+    names = refresh.toggle(set(), "guru", True)
+    assert names == {"guru"}
+    assert refresh.toggle(names, "guru", False) == set()
+    assert refresh.render(refresh.parse("guru\n")) == "guru\n"
+
+
+def test_reader_cross_references_state_file(tmp_path):
+    repos_conf = tmp_path / "repos.conf"
+    repos_conf.mkdir()
+    (repos_conf / "gentoo.conf").write_text(_CONF_MAIN)
+    (repos_conf / "eselect-repo.conf").write_text(_CONF_OVL)
+    (tmp_path / "gest").mkdir()
+    (tmp_path / "gest" / "refresh").write_text("amphitheater\n")
+    by = {r.name: r for r in reader.enabled_repos(str(repos_conf))}
+    assert by["amphitheater"].refresh is True
+    assert by["gentoo"].refresh is False
+
+
+def test_reader_no_state_file_means_no_refresh(tmp_path):
+    repos_conf = tmp_path / "repos.conf"
+    repos_conf.mkdir()
+    (repos_conf / "eselect-repo.conf").write_text(_CONF_OVL)
+    by = {r.name: r for r in reader.enabled_repos(str(repos_conf))}
+    assert by["amphitheater"].refresh is False
+
+
+def test_writer_builds_state_file_write(tmp_path):
+    target = tmp_path / "gest" / "refresh"
+    write = writer.set_refresh({"guru", "amphitheater"}, path=str(target))
+    assert write.path == str(target)
+    assert refresh.parse(write.text) == {"guru", "amphitheater"}
+    assert writer.set_refresh(set(), path=str(target)).text == ""  # deletes

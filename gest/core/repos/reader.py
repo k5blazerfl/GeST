@@ -14,6 +14,7 @@ from dataclasses import dataclass
 
 from gest.core.portage import paths
 from gest.core.portage.codec import ini
+from gest.core.repos import refresh as refresh_state
 
 REPOS_CONF = "/etc/portage/repos.conf"
 
@@ -27,6 +28,7 @@ class Repo:
     priority: str = ""
     auto_sync: str = ""
     main: bool = False
+    refresh: bool = False   # sync this repo when Software Management opens
 
 
 def enabled_repos(conf_dir: str | None = None) -> list[Repo]:
@@ -45,13 +47,15 @@ def enabled_repos(conf_dir: str | None = None) -> list[Repo]:
     for path in files:
         try:
             with open(path, encoding="utf-8") as fh:
-                defaults, sections = ini.parse(fh.read())
+                text = fh.read()
         except OSError:
             continue
+        defaults, sections = ini.parse(text)
         if defaults.get("main-repo"):
             main_repo = defaults["main-repo"]
         for sect in sections:
             merged[sect.name] = sect.entries
+    refresh_names = _refresh_names(conf_dir)
     repos = [
         Repo(
             name=name,
@@ -61,7 +65,23 @@ def enabled_repos(conf_dir: str | None = None) -> list[Repo]:
             priority=data.get("priority", ""),
             auto_sync=data.get("auto-sync", ""),
             main=(name == main_repo),
+            refresh=(name in refresh_names),
         )
         for name, data in merged.items()
     ]
     return sorted(repos, key=lambda r: (not r.main, r.name))
+
+
+def _refresh_names(conf_dir: str) -> set[str]:
+    """The set of repos flagged for refresh-on-open, read from GeST's state file.
+
+    The state file is ``<etc/portage>/gest/refresh`` — a sibling of ``conf_dir``
+    (``repos.conf``) — so it tracks whatever root ``conf_dir`` is under.
+    """
+    etc_portage = os.path.dirname(os.path.normpath(conf_dir))
+    path = os.path.join(etc_portage, "gest", refresh_state.STATE_NAME)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return refresh_state.parse(fh.read())
+    except OSError:
+        return set()
