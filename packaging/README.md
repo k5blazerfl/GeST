@@ -4,11 +4,15 @@ Ebuilds that install GeST system-wide — the **hardened** install: the root
 backend loads the *installed* package from system paths, not a working tree
 (unlike the dev `install-backend.sh`). Two are provided:
 
-- **`gest-0.49.6`** — the latest released version (urwid; depends only on
-  `::gentoo` packages), from the `v0.49.6` tag tarball (`~amd64`). Recommended —
-  the Sync screen now reports `emerge --sync` per repository, so a single failed
-  overlay reads as "Partially synced" (naming the culprit) instead of a flat
-  "Failure". Fixes `emerge --sync` (and merges) failing with "Command not found:
+- **`gest-0.49.7`** — the latest released version (urwid; depends only on
+  `::gentoo` packages), from the `v0.49.7` tag tarball (`~amd64`). Recommended —
+  Software Repositories gains a per-repo "Refresh" flag: flagged overlays sync
+  when Software Management opens (the main gentoo tree excluded), keeping their
+  package lists current without a full tree sync; the selection is stored in
+  GeST's own `/etc/portage/gest/refresh` file. The Sync screen reports
+  `emerge --sync` per repository, so a single failed overlay reads as
+  "Partially synced" (naming the culprit) instead of a flat "Failure". Fixes
+  `emerge --sync` (and merges) failing with "Command not found:
   rsync/git": the D-Bus–activated root backend now guarantees a sane PATH so
   emerge finds its sync/unpack helpers. Also fixes a failing install locking the TUI while memory
   climbed: the Apply screen now caps its on-screen log and spills the full log to
