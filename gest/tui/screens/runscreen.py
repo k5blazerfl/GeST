@@ -73,9 +73,10 @@ class RunScreen(StreamLog, Screen):
             title=self.TABLE_TITLE)
         body = urwid.Pile([
             ("pack", urwid.AttrMap(self._phase, "field")),
-            ("pack", self._bar),
             ("pack", urwid.Divider("─")),
             ("weight", 1, table),
+            ("pack", urwid.Divider("─")),
+            ("pack", self._bar),
         ])
         super().__init__(app, body, title=self.SCREEN_TITLE,
                          footer_keys=[("l", "View log"), ("Esc", "Back")],
