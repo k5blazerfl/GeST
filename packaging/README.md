@@ -68,11 +68,60 @@ Then just run `gest`. The backend bus-activates on first privileged action.
 `dev-python/dbus-next` may not be in `::gentoo`; if `emerge` can't find it,
 add an overlay that provides it (or it can be pip-installed for development).
 
+## The two overlays — one source of truth
+
+GeST is installed from a Gentoo overlay maintained in **two** places:
+
+- **`packaging/overlay/`** (this repo) — the **authoritative** overlay. Full
+  version history with a complete `Manifest`. Everything else is derived from it.
+- **[Amphitheater](https://github.com/k5blazerfl/Amphitheater)** — the **lean**
+  overlay Portage actually installs from (`/var/db/repos/amphitheater`). It
+  carries only the *latest* release ebuild + `gest-9999` + a `Manifest` with the
+  single current `DIST` line. It is **generated** from the authoritative overlay,
+  never hand-edited.
+
+The historical failure was drift: an ebuild bumped without its `Manifest` `DIST`
+digest, so `emerge` failed with "Insufficient data for checksum verification".
+Two guards now make that impossible to ship:
+
+- **`tests/test_overlay_manifest.py`** (runs in CI) fails if any `gest-X.Y.Z.ebuild`
+  in the authoritative overlay lacks a matching `DIST` line.
+- **`packaging/release-overlay.py`** generates both overlays from the tag tarball
+  in one step, so the ebuild and its `DIST` are always written together.
+
 ## Cutting a new release
 
-1. Bump `__version__` / `pyproject.toml`, merge, then tag: `git tag -a vX.Y.Z && git push origin vX.Y.Z`.
-2. Add `gest-X.Y.Z.ebuild` (copy the latest versioned ebuild) and regenerate
-   the `Manifest` from the tag tarball:
-   `cd packaging/overlay/app-admin/gest && pkgdev manifest`
-   (or compute the `DIST` line by hand from
-   `https://github.com/k5blazerfl/GeST/archive/refs/tags/vX.Y.Z.tar.gz`).
+1. Bump `__version__` + `pyproject.toml`, commit, then tag and push:
+   `git tag -a vX.Y.Z -m "…" && git push origin main vX.Y.Z`.
+2. The **Overlay sync** GitHub Action (`.github/workflows/overlay-sync.yml`) fires
+   on the tag: it adds `gest-X.Y.Z.ebuild` + the `Manifest` `DIST` to this repo,
+   and — once the deploy key is configured (below) — regenerates and pushes the
+   lean Amphitheater overlay. **With the Action enabled, do not hand-create the
+   packaging commit.**
+
+To do it by hand (or offline), run the same generator locally after tagging:
+
+```bash
+packaging/release-overlay.py            # dry run: shows what it would change
+packaging/release-overlay.py --push     # commit+push the GeST overlay AND Amphitheater
+# scope with --gest-only / --amphitheater-only; version defaults to pyproject
+```
+
+It downloads `https://github.com/k5blazerfl/GeST/archive/refs/tags/vX.Y.Z.tar.gz`,
+computes the `DIST` (byte-identical to `pkgdev manifest`), writes the versioned
+ebuild + Manifest here (full history), and regenerates Amphitheater's lean
+`app-admin/gest/` (pruning older release ebuilds; `metadata.xml` and `gest-9999`
+are preserved if Amphitheater already has them).
+
+### Enabling the Amphitheater auto-sync (one-time)
+
+The Action syncs Amphitheater only when it can push there. Add an SSH deploy key:
+
+1. `ssh-keygen -t ed25519 -f amphi_deploy -N ""` — no passphrase.
+2. Add `amphi_deploy.pub` to **Amphitheater → Settings → Deploy keys** with
+   **Allow write access**.
+3. Add the private key `amphi_deploy` as a **GeST** repo secret named
+   **`AMPHI_DEPLOY_KEY`** (Settings → Secrets and variables → Actions).
+
+Until the secret exists, the Action updates only the GeST overlay and logs that
+it skipped Amphitheater — the run still succeeds.
