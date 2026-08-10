@@ -4,12 +4,14 @@ Ebuilds that install GeST system-wide — the **hardened** install: the root
 backend loads the *installed* package from system paths, not a working tree
 (unlike the dev `install-backend.sh`). Two are provided:
 
-- **`gest-0.49.4`** — the latest released version (urwid; depends only on
-  `::gentoo` packages), from the `v0.49.4` tag tarball (`~amd64`). Recommended —
-  fixes a failing install locking the TUI while memory climbed: the Apply
-  screen now caps its on-screen log and spills the full log to a file, the
-  backend batches merge output instead of one signal per line, and a corrected
-  end-of-stream check stops the backend read loop from spinning. Software
+- **`gest-0.49.5`** — the latest released version (urwid; depends only on
+  `::gentoo` packages), from the `v0.49.5` tag tarball (`~amd64`). Recommended —
+  fixes `emerge --sync` (and merges) failing with "Command not found: rsync/git":
+  the D-Bus–activated root backend now guarantees a sane PATH so emerge finds its
+  sync/unpack helpers. Also fixes a failing install locking the TUI while memory
+  climbed: the Apply screen now caps its on-screen log and spills the full log to
+  a file, the backend batches merge output instead of one signal per line, and a
+  corrected end-of-stream check stops the backend read loop from spinning. Software
   Management gains an "Updates available" view and a `↑` flag marking
   installed packages with a newer in-slot version. The ebuild runs the pytest
   suite at build time (`FEATURES=test`) and the package uses a PEP 639 SPDX
