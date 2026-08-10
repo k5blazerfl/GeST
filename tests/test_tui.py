@@ -984,6 +984,31 @@ def test_cleanup_lists_orphans_and_toggles_keep():
     assert not scr._kept
 
 
+def test_cleanup_run_screen_tracks_removal_progress():
+    from gest.core.software.cleanup import Orphan
+    from gest.tui.screens.apply import depclean_plan
+    from gest.tui.screens.cleanup import CleanupRunScreen
+    app = App()
+    orphans = [Orphan("app-arch/innoextract", "1.10-r1", 1000),
+               Orphan("dev-libs/oldlib", "1.4.2", 500)]
+    # Constructing schedules _run(), but without pumping the loop it never
+    # executes — so no real emerge --depclean is triggered by this test.
+    scr = CleanupRunScreen(app, orphans, depclean_plan())
+    app._stack.append(scr)
+
+    scr._consume(">>> Unmerging (1 of 2) app-arch/innoextract-1.10-r1...")
+    assert scr._by_pf["app-arch/innoextract-1.10-r1"].status == "removing"
+    scr._consume(">>> Unmerging (2 of 2) dev-libs/oldlib-1.4.2...")
+    # the previous package flips to removed when the next Unmerging arrives
+    assert scr._by_pf["app-arch/innoextract-1.10-r1"].status == "removed"
+    assert scr._by_pf["dev-libs/oldlib-1.4.2"].status == "removing"
+    assert "▸" in _render(scr) and "✓" in _render(scr)
+
+    scr._finish(0, "")                          # emerge exited 0
+    assert all(ln.status == "removed" for ln in scr._lines)
+    assert scr._done
+
+
 def test_menu_launches_repos():
     app = App()
     menu = MenuScreen(app)

@@ -89,7 +89,48 @@ def remove_plan(atoms: list[str]) -> Plan:
                 lambda b, p, f: b.depclean_multi(atoms, p, f))
 
 
-class ApplyScreen(Screen):
+class StreamLog:
+    """Mixin: a lazily-created full on-disk log spill + coalesced redraws.
+
+    The host screen must initialise ``self._logfile = None``,
+    ``self._logpath = None`` and ``self._refresh_pending = False`` in its
+    ``__init__`` and expose ``self.app``. Shared by ApplyScreen and the Clean Up
+    removal-progress screen so streamed output is preserved on disk even when the
+    visible view is capped (ApplyScreen) or organized (Clean Up).
+    """
+
+    def _schedule_refresh(self) -> None:
+        """Collapse a burst of streamed lines into one redraw on the next tick."""
+        if self._refresh_pending:
+            return
+        self._refresh_pending = True
+        self.app.loop.call_soon(self._flush_refresh)
+
+    def _flush_refresh(self) -> None:
+        self._refresh_pending = False
+        self.app.refresh()
+
+    def _write_log(self, lines: list[str]) -> None:
+        """Append plain-text lines to the full on-disk log (created lazily).
+
+        The on-screen view may be capped or organized, so this file is the
+        complete record a failed removal/build can be debugged from.
+        """
+        if self._logfile is None:
+            fd, self._logpath = tempfile.mkstemp(prefix="gest-apply-", suffix=".log")
+            self._logfile = os.fdopen(fd, "w", buffering=1)
+        for line in lines:
+            with contextlib.suppress(Exception):
+                self._logfile.write(strip_ansi(line) + "\n")
+
+    def _close_log(self) -> None:
+        if self._logfile is not None:
+            with contextlib.suppress(Exception):
+                self._logfile.close()
+            self._logfile = None
+
+
+class ApplyScreen(StreamLog, Screen):
     def __init__(self, app: App, plans: list[Plan], *, verb: str = "Apply",
                  on_done=None) -> None:
         self._plans = plans
@@ -123,31 +164,6 @@ class ApplyScreen(Screen):
 
     def _set_phase(self, text: str, attr: str = "field") -> None:
         self._phase.set_text((attr, f" {text}"))
-
-    def _schedule_refresh(self) -> None:
-        """Coalesce redraws: collapse a burst of streamed lines into a single
-        draw on the next loop tick instead of one full redraw per line."""
-        if self._refresh_pending:
-            return
-        self._refresh_pending = True
-        self.app.loop.call_soon(self._flush_refresh)
-
-    def _flush_refresh(self) -> None:
-        self._refresh_pending = False
-        self.app.refresh()
-
-    def _write_log(self, lines: list[str]) -> None:
-        """Append plain-text lines to the full on-disk log (created lazily).
-
-        The on-screen scrollback is capped, so this file is the complete record
-        a build failure can be debugged from.
-        """
-        if self._logfile is None:
-            fd, self._logpath = tempfile.mkstemp(prefix="gest-apply-", suffix=".log")
-            self._logfile = os.fdopen(fd, "w", buffering=1)
-        for line in lines:
-            with contextlib.suppress(Exception):
-                self._logfile.write(strip_ansi(line) + "\n")
 
     def _update_progress(self, line: str) -> None:
         """Advance the bar/label from an emerge '(N of M)' marker (ignore else)."""
@@ -323,12 +339,6 @@ class ApplyScreen(Screen):
             self._finish("Failed", False,
                          f"A problem occurred — emerge exited {overall}. The changes "
                          "may be incomplete; review the log above for details.")
-
-    def _close_log(self) -> None:
-        if self._logfile is not None:
-            with contextlib.suppress(Exception):
-                self._logfile.close()
-            self._logfile = None
 
     def _finish(self, title: str, ok: bool, message: str) -> None:
         """Show an unmistakable success/failure prompt when the run ends."""

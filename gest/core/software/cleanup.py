@@ -142,6 +142,32 @@ def plan_cleanup(*, runner: Runner | None = None, vdb: str = _VDB) -> CleanupPla
     return CleanupPlan(orphans=orphans, counts=counts, ok=True)
 
 
+# A live removal marker, e.g. ">>> Unmerging (1 of 3) app-arch/innoextract-1.10-r1..."
+# The "(N of M)" counter is optional across portage versions.
+_UNMERGE_RE = re.compile(r">>> Unmerging (?:\((\d+) of (\d+)\)\s+)?(\S+?)\.\.\.")
+
+
+@dataclass(slots=True)
+class Unmerge:
+    """One package emerge is unmerging, parsed from a live removal line."""
+
+    atom: str                # category/name-version (any ::repo suffix stripped)
+    n: int | None = None     # position from the "(N of M)" counter, if present
+    total: int | None = None
+
+
+def parse_unmerge(line: str) -> Unmerge | None:
+    """Parse an emerge ``>>> Unmerging [(N of M)] <atom>...`` line, else None."""
+    m = _UNMERGE_RE.search(line)
+    if not m:
+        return None
+    return Unmerge(
+        atom=m.group(3).split("::", 1)[0],
+        n=int(m.group(1)) if m.group(1) else None,
+        total=int(m.group(2)) if m.group(2) else None,
+    )
+
+
 def human_size(n: int) -> str:
     """Format a byte count like '2.1 MiB' ('—' when unknown)."""
     if n <= 0:

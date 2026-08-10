@@ -91,3 +91,25 @@ def test_human_size():
     assert cleanup.human_size(0) == "—"
     assert cleanup.human_size(1010380) == "986.7 KiB"
     assert cleanup.human_size(512).endswith("B")
+
+
+def test_parse_unmerge_with_counter():
+    u = cleanup.parse_unmerge(
+        ">>> Unmerging (1 of 3) app-arch/innoextract-1.10_pre20250206-r1...")
+    assert u is not None
+    assert u.atom == "app-arch/innoextract-1.10_pre20250206-r1"
+    assert (u.n, u.total) == (1, 3)
+
+
+def test_parse_unmerge_without_counter():
+    u = cleanup.parse_unmerge(">>> Unmerging dev-libs/oldlib-1.4.2...")
+    assert u is not None
+    assert u.atom == "dev-libs/oldlib-1.4.2"
+    assert (u.n, u.total) == (None, None)
+
+
+def test_parse_unmerge_strips_repo_and_ignores_noise():
+    u = cleanup.parse_unmerge(">>> Unmerging (2 of 2) foo/bar-1.0::gentoo...")
+    assert u.atom == "foo/bar-1.0"                         # ::repo dropped
+    assert cleanup.parse_unmerge("Calculating dependencies  ... done!") is None
+    assert cleanup.parse_unmerge(">>> Emerging (1 of 2) x/y-1...") is None
