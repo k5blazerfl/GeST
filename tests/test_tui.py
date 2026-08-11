@@ -1149,6 +1149,22 @@ def test_accept_install_only_skips_housekeeping():
     assert isinstance(app._stack[-1], urwid.Overlay)   # no scan, no swap
 
 
+def test_run_screen_result_modal_offers_main_menu():
+    from gest.tui.screens.accept import AcceptRunScreen
+    app = App()
+    app._stack.append(urwid.Text("main menu"))
+    app._stack.append(urwid.Text("software list"))
+    scr = AcceptRunScreen(app, installs=["app-editors/vim"])
+    app._stack.append(scr)
+    scr._finish(0)                            # install complete → result modal
+    out = _render(app._stack[-1])
+    assert "Back" in out and "View log" in out and "Main menu" in out
+    # Main menu pops everything back to the root
+    app.pop()                                 # the modal
+    app.pop_to_root()
+    assert len(app._stack) == 1
+
+
 def test_cleanup_screen_accepts_preloaded_plan_without_rescanning():
     from gest.core.software.cleanup import CleanupPlan, Orphan
     plan = CleanupPlan(orphans=[Orphan("dev-libs/orphanlib", "1.2", 4096)],

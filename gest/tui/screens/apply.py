@@ -378,9 +378,14 @@ class ApplyScreen(StreamLog, Screen):
             self.app.pop()   # the result modal
             self.app.pop()   # the apply screen → back to the caller
 
+        def to_menu():
+            self.app.pop()   # the result modal
+            self.app.pop_to_root()   # back to the Control Center menu
+
         modal = Modal(self.app, title,
                       [urwid.Text(("ok" if ok else "error", message))],
-                      [("Back", back), ("View log", self.app.pop)])
+                      [("Back", back), ("View log", self.app.pop),
+                       ("Main menu", to_menu)])
         self.app.push_modal(modal, width=("relative", 62), height=("relative", 40))
 
     def handle_key(self, key):
