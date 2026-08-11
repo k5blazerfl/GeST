@@ -24,14 +24,15 @@ _IS_ROOT = os.geteuid() == 0
 # A Gentoo-purple palette (the brand's violet, cf. the neofetch logo). Entries
 # are 5-tuples — (name, fg16, bg16, mono, fg256, bg256) — so 256-colour terminals
 # get the exact Gentoo lavenders while 16-colour ones fall back to magenta.
-_BAR = "#546"      # deep Gentoo purple — top/bottom bars, menus, progress track
+_BAR = "#546"      # deep Gentoo purple — bottom bar, menus, progress track
+_HEADER = "#25a"   # blue — the top bar (kept blue within the purple theme)
 _ACCENT = "#a8f"   # lavender — titles, highlights, selection, filled progress
 _KEYS = "#aad"     # light lavender — footer / menu-bar key chips
 _TEXT = "#ccf"     # soft lavender text on the purple bars
 
 PALETTE = [
-    ("header", "white", "dark magenta", "", "white", _BAR),
-    ("header_mode", "yellow,bold", "dark magenta", "", "yellow,bold", _BAR),
+    ("header", "white", "dark blue", "", "white", _HEADER),
+    ("header_mode", "yellow,bold", "dark blue", "", "yellow,bold", _HEADER),
     ("footer", "light gray", "dark magenta", "", _TEXT, _BAR),
     ("footer_key", "black", "light gray", "", "black", _KEYS),
     ("title", "light magenta,bold", "default", "", f"{_ACCENT},bold", "default"),
