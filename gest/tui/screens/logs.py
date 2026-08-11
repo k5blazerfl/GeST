@@ -48,8 +48,17 @@ class LogsScreen(Screen):
                 "note instead of content — run GeST's viewer as root to see them."
             ),
         )
+        self.configure_pane_cycle(self._columns, [0, 1])   # Tab mirrors ←/→
+        self._refresh_footer()
         urwid.connect_signal(self._src_walker, "modified", self._on_source)
         app.run_async(self._load_sources())
+
+    def _footer_context(self):
+        if self._columns.focus_position == 0:              # sources
+            return [("Enter", "View"), ("→", "Pager"), ("r", "Refresh"),
+                    ("Esc", "Back")]
+        return [("↑↓", "Scroll"), ("←", "Sources"), ("r", "Refresh"),
+                ("Esc", "Back")]
 
     async def _load_sources(self) -> None:
         sources = await self.app.run_blocking(reader.list_sources)

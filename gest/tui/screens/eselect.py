@@ -36,8 +36,15 @@ class EselectScreen(Screen):
             app, self._columns, title="eselect",
             footer_keys=[("Enter", "Set"), ("→", "Targets"), ("Esc", "Back")],
         )
+        self.configure_pane_cycle(self._columns, [0, 1])   # Tab mirrors ←/→
+        self._refresh_footer()
         urwid.connect_signal(self._mod_walker, "modified", self._on_module)
         app.run_async(self._load_modules())
+
+    def _footer_context(self):
+        if self._columns.focus_position == 0:              # Modules
+            return [("Enter", "Targets"), ("→", "Targets"), ("Esc", "Back")]
+        return [("Enter", "Set"), ("←", "Modules"), ("Esc", "Back")]
 
     async def _load_modules(self) -> None:
         mods = await self.app.run_blocking(reader.list_modules)

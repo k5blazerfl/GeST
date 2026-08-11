@@ -858,6 +858,32 @@ def test_software_u_opens_use_editor():
     assert isinstance(app._stack[-1], UseFlagScreen)
 
 
+def test_eselect_footer_and_tab_track_the_focused_column():
+    app = App()
+    scr = EselectScreen(app)
+    app._stack.append(scr)
+    scr._columns.focus_position = 0
+    scr._refresh_footer()
+    assert any(lbl == "Targets" for _k, lbl in scr._footer_context())
+    scr.keypress(_SIZE, "tab")                    # Tab mirrors → : Modules -> Targets
+    assert scr._columns.focus_position == 1
+    assert any(lbl == "Modules" for _k, lbl in scr._footer_context())
+
+
+def test_users_footer_changes_per_tab():
+    app = App()
+    scr = _users_all(app)
+    scr._do_switch("users")
+    assert any(k == "f" for k, _lbl in scr._footer_context())   # filter on users
+    scr._do_switch("auth")                        # read-only tab
+    ctx = scr._footer_context()
+    assert not any(k in ("a", "e", "d") for k, _lbl in ctx)     # no edit keys
+    # a focused action button shows the activate key set
+    body = scr._frame.body
+    body.focus_position = scr._cycle_action_pos
+    assert any(lbl == "Activate" for _k, lbl in scr._footer_context())
+
+
 def test_eselect_lists_modules_and_targets():
     app = App()
     scr = EselectScreen(app)

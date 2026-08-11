@@ -7,7 +7,7 @@ import socket
 import urwid
 
 from gest import __version__
-from gest.tui.runtime import App, Screen, accel_label, boxed
+from gest.tui.runtime import App, NavPile, Screen, boxed, focusable_actions
 from gest.tui.screens.bootloader import BootloaderScreen
 from gest.tui.screens.cleanup import CleanupScreen
 from gest.tui.screens.datetime import DateTimeScreen
@@ -93,19 +93,15 @@ class MenuScreen(Screen):
         )
         title_box = boxed(
             urwid.Text(("cc_title", "GeST Control Center"), align="center"))
-        bottom = urwid.Columns([
-            ("pack", accel_label("Help")),
-            urwid.Text(""),                       # spacer pushes Run/Quit right
-            ("pack", accel_label("Run")),
-            ("pack", urwid.Text("  ")),
-            ("pack", accel_label("Quit")),
-        ])
-        body = urwid.Pile([
+        self._actions = focusable_actions([
+            ("Help", self.show_help), ("Run", self._run_focused),
+            ("Quit", app.quit)])
+        body = NavPile([
             ("pack", title_box),
             ("pack", urwid.Divider()),
             self._columns,
             ("pack", urwid.Divider()),
-            ("pack", bottom),
+            ("pack", self._actions),
         ])
         super().__init__(
             app, body, title=f"GeST v{__version__} — menu @ {socket.gethostname()}",
@@ -119,8 +115,19 @@ class MenuScreen(Screen):
                 "F9/Q   quit"
             ),
         )
+        self.configure_pane_cycle(body, [2], action_row=self._actions)
+        self._refresh_footer()
         urwid.connect_signal(self._cat_walker, "modified", self._on_cat_change)
         self._populate_modules(0)
+
+    def _footer_context(self):
+        if self._on_action_row():
+            return [("Enter", "Activate"), ("Tab", "Next"), ("F9", "Quit")]
+        if self._columns.focus_position == 0:
+            return [("Enter", "Open"), ("→", "Modules"), ("Tab", "Buttons"),
+                    ("F9", "Quit")]
+        return [("Enter", "Run"), ("Esc/←", "Categories"), ("Tab", "Buttons"),
+                ("F9", "Quit")]
 
     def _on_cat_change(self) -> None:
         self._populate_modules(self._cat_walker.focus)

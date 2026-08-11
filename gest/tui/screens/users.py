@@ -18,7 +18,7 @@ from gest.core.users import auth, commands, defaults, pending, reader
 from gest.core.users.backend_client import UsersBackend
 from gest.core.users.model import User
 from gest.core.users.pending import PendingChanges
-from gest.tui.runtime import App, Modal, Screen, accel_label, boxed
+from gest.tui.runtime import App, Modal, NavPile, Screen, boxed, focusable_actions
 
 # Column widths (characters); the last column takes the rest and is clipped.
 _U_LOGIN, _U_UID, _U_NAME = 18, 8, 24
@@ -90,12 +90,17 @@ class UsersScreen(Screen):
         self._tabbar = urwid.Text("")
         self._count = urwid.Text("")
         self._content = urwid.WidgetPlaceholder(self._list_box("users"))
-        body = urwid.Pile([
+        self._actions = focusable_actions([
+            ("Help", self.show_help),
+            ("Cancel", self._discard),
+            ("OK", lambda: self.app.run_async(self._apply())),
+        ])
+        body = NavPile([
             ("pack", urwid.AttrMap(self._tabbar, "menubar")),
             ("pack", urwid.Divider()),
             ("weight", 1, self._content),
             ("pack", self._count),
-            ("pack", self._action_bar()),
+            ("pack", self._actions),
         ])
         super().__init__(
             app, body, title="User and Group Administration",
@@ -123,21 +128,28 @@ class UsersScreen(Screen):
                 "(/etc/nsswitch.conf)."
             ),
         )
+        self.configure_pane_cycle(body, [2], action_row=self._actions)
         self._render_tabs()
         self._refresh_count()
+        self._refresh_footer()
         app.run_async(self._load())
 
     # -- chrome -------------------------------------------------------------
 
-    def _action_bar(self) -> urwid.Widget:
-        return urwid.Columns([
-            ("pack", accel_label("Help")),
-            ("weight", 1, urwid.Text("")),
-            ("pack", accel_label("Cancel")),
-            ("pack", urwid.Text("  ")),
-            ("pack", accel_label("OK")),
-            ("pack", urwid.Text(" ")),
-        ])
+    def _footer_context(self):
+        if self._on_action_row():
+            return [("Enter", "Activate"), ("Tab", "Next"), ("Esc", "Back")]
+        tabs, tail = ("←/→", "Tabs"), [("F10", "OK"), ("F9", "Cancel"),
+                                       ("Esc", "Back")]
+        if self._view == "users":
+            return [("f", "Filter"), ("a", "Add"), ("e", "Edit"), ("d", "Delete"),
+                    ("p", "Passwd"), ("m", "Member"), ("g", "Groups"), tabs, *tail]
+        if self._view == "groups":
+            return [("a", "Add"), ("e", "Edit"), ("d", "Delete"), ("m", "Member"),
+                    ("g", "Users"), tabs, *tail]
+        if self._view == "defaults":
+            return [("e", "Edit"), ("d", "Clear"), tabs, *tail]
+        return [tabs, ("Esc", "Back")]           # auth: read-only
 
     def _render_tabs(self) -> None:
         parts: list = [" "]
@@ -175,6 +187,7 @@ class UsersScreen(Screen):
     def _do_switch(self, new_view: str) -> None:
         self._view = new_view
         self._show_tab()
+        self._refresh_footer()          # each tab shows a different key set
 
     def _show_tab(self) -> None:
         self._render_tabs()

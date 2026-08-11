@@ -33,8 +33,15 @@ class HardwareScreen(Screen):
             app, self._columns, title="Hardware Information",
             footer_keys=[("→", "Details"), ("Esc", "Back")],
         )
+        self.configure_pane_cycle(self._columns, [0, 1])   # Tab mirrors ←/→
+        self._refresh_footer()
         urwid.connect_signal(self._cat_walker, "modified", self._on_section)
         app.run_async(self._load())
+
+    def _footer_context(self):
+        if self._columns.focus_position == 0:              # categories
+            return [("Enter", "Details"), ("→", "Details"), ("Esc", "Back")]
+        return [("←", "Categories"), ("Esc", "Back")]
 
     async def _load(self) -> None:
         sections = await self.app.run_blocking(reader.inventory)
