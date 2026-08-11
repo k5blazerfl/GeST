@@ -586,6 +586,29 @@ def test_software_accept_button_activates_accept():
     assert called == [1]
 
 
+def test_software_footer_is_context_sensitive():
+    app = App()
+    scr = _software(app)
+
+    def bar():
+        return scr._footer.contents[1][0].base_widget.text
+
+    # sidebar / search: only search-relevant keys, no package actions
+    scr._pile.focus_position = 1
+    scr._columns.focus_position = 0
+    scr._sidebar.focus_position = scr._SEARCH_W_IDX
+    scr._update_footer()
+    assert "Search" in bar() and "Mark" not in bar() and "Accept" not in bar()
+    # table: the package action keys appear
+    scr._columns.focus_position = 1
+    scr._update_footer()
+    assert "Mark" in bar() and "Accept" in bar()
+    # actions: just Activate
+    scr._pile.focus_position = 2
+    scr._update_footer()
+    assert "Activate" in bar() and "Mark" not in bar()
+
+
 def test_software_arrows_do_not_reach_menu_bar():
     app = App()
     scr = _software(app)

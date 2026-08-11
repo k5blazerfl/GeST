@@ -238,12 +238,21 @@ class Screen(urwid.WidgetWrap):
         if help_text and not any(label == "F1" for label, _desc in keys):
             keys = [("F1", "Help"), *keys]
         header = urwid.AttrMap(_header_row(title), "header")
-        footer = urwid.Pile([self._status, function_bar(keys)])
-        self._frame = urwid.Frame(body, header=header, footer=footer)
+        self._footer = urwid.Pile([self._status, function_bar(keys)])
+        self._frame = urwid.Frame(body, header=header, footer=self._footer)
         super().__init__(self._frame)
 
     def set_body(self, body: urwid.Widget) -> None:
         self._frame.body = body
+
+    def set_footer_keys(self, keys: list[tuple[str, str]]) -> None:
+        """Replace the displayed function-key bar (F1 Help is always kept), so a
+        screen can show only the keys relevant to the current focus."""
+        keys = list(keys)
+        if self._help_text and not any(k == "F1" for k, _ in keys):
+            keys = [("F1", "Help"), *keys]
+        self._footer.contents[1] = (function_bar(keys),
+                                    self._footer.contents[1][1])
 
     def set_status(self, text: str, attr: str = "hint") -> None:
         self._status.set_text((attr, f" {text}") if text else "")

@@ -218,6 +218,7 @@ class SoftwareScreen(Screen):
         self._columns.focus_position = 0           # the sidebar
         self._sidebar.focus_position = self._SEARCH_W_IDX
         urwid.connect_signal(self._walker, "modified", self._on_focus)
+        self._update_footer()          # start with the sidebar's key set
         if preloaded is not None:
             # the loading screen already refreshed repos and read the installed
             # set — show it straight away instead of loading a second time.
@@ -289,6 +290,7 @@ class SoftwareScreen(Screen):
         self._view = view
         self._drilled = None
         self._update_view_label()
+        self._update_footer()          # the view may change the table's key set
         if view == "search":
             self._columns.focus_position = 0
             self._sidebar.focus_position = self._SEARCH_W_IDX
@@ -319,6 +321,7 @@ class SoftwareScreen(Screen):
         self._walker[:] = [urwid.Text(f" {hint}")]
         self._detail.set_text("")
         self._set_count("0 package(s)")
+        self._update_footer()
 
     async def _open(self) -> None:
         """First-open flow: refresh opted-in repos, then load the package list.
@@ -408,6 +411,7 @@ class SoftwareScreen(Screen):
             self._walker.set_focus(0)
         self._detail.set_text("Enter a category to list its packages.")
         self._set_count(f"{len(cats)} categories")
+        self._update_footer()
 
     async def _load_category(self, category: str) -> None:
         results = await self.app.run_blocking(
@@ -461,6 +465,7 @@ class SoftwareScreen(Screen):
         self._walker[:] = widgets or [urwid.Text(" (no packages)")]
         if cps:
             self._walker.set_focus(0)
+        self._update_footer()
         self.app.refresh()
 
     def _row_text(self, i: int, cp: str, summary: str):
@@ -760,6 +765,41 @@ class SoftwareScreen(Screen):
         else:                                          # table -> Cancel
             self._pile.focus_position = 2
             self._actions.focus_position = 1
+
+    # -- context-sensitive footer -------------------------------------------
+
+    def keypress(self, size, key):
+        result = super().keypress(size, key)
+        self._update_footer()          # focus may have moved — refresh the keys
+        return result
+
+    def _update_footer(self) -> None:
+        self.set_footer_keys(self._footer_for_context())
+
+    def _footer_for_context(self) -> list[tuple[str, str]]:
+        """Only the keys that apply to whatever currently holds focus."""
+        in_menu, in_sidebar, in_table, sidebar_focus = self._context()
+        tail = [("Tab", "Pane"), ("Esc", "Back")]
+        if self._pile.focus_position == 2:                    # Cancel / Accept
+            return [("Enter", "Activate"), *tail]
+        if in_menu:
+            return [("←/→", "Menu"), ("Enter", "Open"), *tail]
+        if in_sidebar:
+            if sidebar_focus == self._VIEW_IDX:
+                return [("Enter", "Change view"), ("→", "Packages"), *tail]
+            if sidebar_focus == self._SEARCH_W_IDX:
+                return [("Enter", "Search"), ("→", "Packages"), *tail]
+            if sidebar_focus == self._MODE_IDX:
+                return [("Enter", "Match mode"), ("→", "Packages"), *tail]
+            return [("Space", "Toggle"), ("→", "Packages"), *tail]  # checkboxes
+        if in_table:
+            if self._table_mode == "categories":
+                return [("Enter", "Open"), ("←", "Filter"), *tail]
+            return [("Space", "Mark"), ("b", "Binary"), ("r", "Remove"),
+                    ("a", "Actions"), ("u", "USE"), ("k", "Keys"), ("c", "Clear"),
+                    ("Enter", "Install"), ("F10", "Accept"), ("←", "Filter"),
+                    *tail]
+        return tail
 
     def _repaint(self) -> None:
         for i, cp in enumerate(self._cps):
