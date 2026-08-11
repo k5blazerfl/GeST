@@ -1729,11 +1729,14 @@ def test_world_sets_browser_read_only(monkeypatch):
 
 
 def test_world_deselect_commits_via_backend(monkeypatch):
+    from gest.core.software.cleanup import CleanupPlan
     from gest.core.software.model import Package
     from gest.tui.screens import world as W
     _world_members(monkeypatch, [
         Package(cp="app-misc/neofetch", version="7.1.0", world_member=True)])
     monkeypatch.setattr(W.sets, "list_sets", lambda: [])
+    monkeypatch.setattr(W, "plan_cleanup",
+                        lambda: CleanupPlan(orphans=[], ok=True))   # no orphans
     app = App()
     scr = W.WorldScreen(app)
     app._stack.append(scr)
@@ -1742,6 +1745,30 @@ def test_world_deselect_commits_via_backend(monkeypatch):
     app.loop.run_until_complete(scr._commit())          # Apply
     assert _FakeSoftwareBackend.deselected == [["app-misc/neofetch"]]
     assert not scr._marked                              # cleared on success
+    assert app._stack[-1] is scr                        # no orphans → no Clean Up
+
+
+def test_world_deselect_triggers_cleanup_housekeeping(monkeypatch):
+    from gest.core.software.cleanup import CleanupPlan, Orphan
+    from gest.core.software.model import Package
+    from gest.tui.screens import world as W
+    from gest.tui.screens.cleanup import CleanupScreen
+    _world_members(monkeypatch, [
+        Package(cp="app-misc/neofetch", version="7.1.0", world_member=True)])
+    monkeypatch.setattr(W.sets, "list_sets", lambda: [])
+    plan = CleanupPlan(
+        orphans=[Orphan(cp="dev-libs/orphan", version="1.0", size=1024)], ok=True)
+    monkeypatch.setattr(W, "plan_cleanup", lambda: plan)   # deselect stranded an orphan
+    app = App()
+    scr = W.WorldScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: bool(scr._world_pkgs), ticks=200)
+    scr._marked = {"app-misc/neofetch"}
+    app.loop.run_until_complete(scr._commit())
+    assert _FakeSoftwareBackend.deselected == [["app-misc/neofetch"]]
+    top = app._stack[-1]
+    assert isinstance(top, CleanupScreen)               # the usual Clean Up kicked in
+    assert top._return_to is scr and top._preloaded     # returns to World, no re-scan
 
 
 def _world_with_sets(monkeypatch, app, custom):

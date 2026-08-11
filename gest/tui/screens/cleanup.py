@@ -49,14 +49,15 @@ class CleanupScreen(AutoAccept, Screen):
     _auto_action = "Cleaning up"
 
     def __init__(self, app: App, plan: cleanup.CleanupPlan | None = None,
-                 *, return_to=None) -> None:
+                 *, return_to=None, return_label="Package Manager") -> None:
         # ``plan`` lets a caller (e.g. post-uninstall housekeeping) hand over an
         # already-computed orphan scan so we don't depclean --pretend twice.
-        # ``return_to`` is the Package Manager screen to offer as a destination
-        # when this Clean Up was reached as post-uninstall housekeeping.
+        # ``return_to`` is the screen to offer as a destination when this Clean
+        # Up was reached as housekeeping; ``return_label`` names it in the modal.
         self._plan: cleanup.CleanupPlan | None = plan
         self._preloaded = plan is not None
         self._return_to = return_to
+        self._return_label = return_label
         self._kept: set[str] = set()   # cp of packages the user chose to keep
         self._walker = urwid.SimpleFocusListWalker([urwid.Text(" scanning …")])
         self._list = urwid.ListBox(self._walker)
@@ -261,7 +262,8 @@ class CleanupScreen(AutoAccept, Screen):
             plan = remove_plan([o.cp for o in selected])  # just the marked atoms
         self.app.push(CleanupRunScreen(self.app, selected, plan,
                                        on_done=reload_after,
-                                       return_to=self._return_to))
+                                       return_to=self._return_to,
+                                       return_label=self._return_label))
 
 
 class _Line:
@@ -298,10 +300,11 @@ class CleanupRunScreen(RunScreen):
     DONE_STATUS = "removed"
 
     def __init__(self, app: App, orphans: list[Orphan], plan, *, on_done=None,
-                 return_to=None):
+                 return_to=None, return_label="Package Manager"):
         self._orphans = orphans
         self._plan = plan
-        self._return_to = return_to        # Package Manager to offer, or None
+        self._return_to = return_to        # screen to offer as a destination, or None
+        self._return_label = return_label  # its label in the completion modal
         self._result: tuple | None = None  # (title, ok, message), for re-showing
         super().__init__(app, on_done=on_done)
 
@@ -364,7 +367,7 @@ class CleanupRunScreen(RunScreen):
 
         def to_pm():
             self.app.pop()                       # the completion modal
-            self.app.pop_to(self._return_to)     # back to the Package Manager
+            self.app.pop_to(self._return_to)     # back to the caller
             refresh = getattr(self._return_to, "refresh_packages", None)
             if refresh is not None:              # reflect the just-removed orphans
                 refresh()
@@ -381,7 +384,7 @@ class CleanupRunScreen(RunScreen):
                       [urwid.Text(("ok" if ok else "error", body)),
                        urwid.Divider(),
                        urwid.Text(("hint", "Where would you like to go?"))],
-                      [("Package Manager", to_pm), ("View logs", view),
+                      [(self._return_label, to_pm), ("View logs", view),
                        ("Main menu", to_menu)],
                       button_width=20)
         self.app.push_modal(modal, width=("relative", 70), height=("relative", 48))

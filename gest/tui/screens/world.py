@@ -24,8 +24,10 @@ from gest.core.portage.backend_client import PortageBackend
 from gest.core.portage.write import ConfigWrite
 from gest.core.software import reader, sets
 from gest.core.software.backend_client import SoftwareBackend
+from gest.core.software.cleanup import plan_cleanup
 from gest.core.software.model import Package
 from gest.tui.runtime import App, Modal, NavPile, Screen, boxed, focusable_actions
+from gest.tui.screens.cleanup import CleanupScreen
 from gest.tui.screens.runscreen import clip, row
 
 _MARK_W = 2
@@ -492,15 +494,33 @@ class WorldScreen(Screen):
             okw = await self._write(writes)
             ok = ok and okw
             msgs.append(f"{len(writes)} set change(s) {'ok' if okw else 'failed'}")
+        deselected = bool(self._marked)
+        deselect_ok = True
         if self._marked:
-            okd = await self._deselect(sorted(self._marked))
-            ok = ok and okd
-            msgs.append(f"deselect {'ok' if okd else 'failed'}")
+            deselect_ok = await self._deselect(sorted(self._marked))
+            ok = ok and deselect_ok
+            msgs.append(f"deselect {'ok' if deselect_ok else 'failed'}")
         self.app.notify(" · ".join(msgs) or "done", error=not ok)
         if ok:
             self._pending.clear()
             self._marked.clear()
         await self._load()
+        if deselected and deselect_ok:
+            await self._housekeep()
+
+    async def _housekeep(self) -> None:
+        # Deselecting drops packages from @world, which can strand them (and
+        # their deps) as orphans — offer the usual Clean Up, exactly like the
+        # post-uninstall housekeeping does.
+        plan = await self.app.run_blocking(plan_cleanup)
+        if (self.app._stack and self.app._stack[-1] is self
+                and plan is not None and plan.ok and plan.orphans):
+            self.app.push(CleanupScreen(self.app, plan, return_to=self,
+                                        return_label="World & Sets"))
+
+    def refresh_packages(self) -> None:
+        """Reload after returning from post-deselect Clean Up housekeeping."""
+        self.app.run_async(self._load())
 
     async def _run_backend(self, backend, op):
         """connect → op(backend) → close, notifying on failure. Returns op's
