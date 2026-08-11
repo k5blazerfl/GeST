@@ -20,6 +20,7 @@ from gest.core.repos import disabled as disabled_state
 from gest.core.repos.backend_client import ReposBackend
 from gest.core.repos.reader import Repo
 from gest.tui.runtime import App, Modal, Screen, action_bar
+from gest.tui.screens.deploykey import DeployKeyScreen
 from gest.tui.screens.mirrors import MirrorScreen
 
 # Table column widths (characters). Name leads (after the mark glyph); Sync URI
@@ -107,7 +108,8 @@ class ReposScreen(Screen):
             footer_keys=[
                 ("a", "Enable"), ("A", "Add"), ("e", "Edit"), ("d", "Disable"),
                 ("x", "Remove"), ("t", "Refresh"), ("m", "Mirror"),
-                ("F10", "Accept"), ("F9", "Cancel"), ("r", "Reload"), ("Esc", "Back"),
+                ("k", "SSH key"), ("F10", "Accept"), ("F9", "Cancel"),
+                ("r", "Reload"), ("Esc", "Back"),
             ],
             help_text=(
                 "Software repositories configured in /etc/portage/repos.conf.\n\n"
@@ -137,6 +139,7 @@ class ReposScreen(Screen):
                 "d  stage disabling (keeps files + saves info)    x  remove — on an\n"
                 "   enabled repo deletes its files; on a disabled one forgets it\n"
                 "t  toggle refresh-on-open    m  change ★ main-repo mirror\n"
+                "k  SSH deploy key — for syncing a private GitHub git overlay\n"
                 "F10 Accept    F9 Cancel    r  reload"
             ),
         )
@@ -282,6 +285,8 @@ class ReposScreen(Screen):
             self._edit()
         elif key in ("m", "M"):
             self._mirror()
+        elif key in ("k", "K"):
+            self.app.push(DeployKeyScreen(self.app))
         elif key in ("d", "x", "t"):
             self._mark(key)
         else:

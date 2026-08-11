@@ -47,6 +47,11 @@ BOOTLOADER_POLKIT = "org.gentoo.gest.bootloader.manage"
 REPOS_PATH = "/org/gentoo/gest/Repos"
 REPOS_IFACE = "org.gentoo.gest.Repos"
 
+# Root SSH deploy-key helper for private git repositories. Reuses the
+# portage.configure polkit action (it is repository sync setup).
+SSH_PATH = "/org/gentoo/gest/Ssh"
+SSH_IFACE = "org.gentoo.gest.Ssh"
+
 # Object path + interface for the unified Portage-configuration module.
 # One generic WriteConfig(a(ssu)) RPC applies files under /etc/portage/,
 # gated by the single portage.configure polkit action.

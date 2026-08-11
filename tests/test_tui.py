@@ -1143,6 +1143,51 @@ def test_repos_edit_applies_config_write(monkeypatch):
     assert "https://old" not in cw.text
 
 
+def test_deploy_key_screen_shows_then_generates(monkeypatch):
+    from gest.tui.screens import deploykey as dk
+
+    class _FakeSsh:
+        state = {"has": False, "pub": ""}
+
+        async def connect(self):
+            return self
+
+        async def deploy_key(self):
+            s = _FakeSsh.state
+            return (s["has"], s["pub"], "/root/.ssh/id_ed25519.pub")
+
+        async def ensure_deploy_key(self):
+            _FakeSsh.state = {"has": True,
+                              "pub": "ssh-ed25519 AAAAKEYDATA gest-deploy@box"}
+            return (True, _FakeSsh.state["pub"], "/root/.ssh/id_ed25519.pub",
+                    "Generated a new deploy key.")
+
+        async def close(self):
+            return None
+
+    _FakeSsh.state = {"has": False, "pub": ""}
+    monkeypatch.setattr(dk, "SshBackend", _FakeSsh)
+    app = App()
+    scr = dk.DeployKeyScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: "No key yet" in _render(scr), ticks=100)
+    assert "No key yet" in _render(scr)          # initial: none exists
+    assert "Deploy keys" in _render(scr)          # GitHub instructions shown
+    scr.keypress(_SIZE, "g")                       # generate (would prompt polkit)
+    _pump(app, lambda: "ssh-ed25519" in _render(scr), ticks=100)
+    assert "ssh-ed25519 AAAAKEYDATA" in _render(scr)
+
+
+def test_repos_deploy_key_key_opens_screen():
+    from gest.tui.screens.deploykey import DeployKeyScreen
+    app = App()
+    scr = ReposScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: len(scr._repos) > 0, ticks=200)
+    scr.keypress(_SIZE, "k")
+    assert isinstance(app._stack[-1], DeployKeyScreen)
+
+
 def test_repos_stages_changes_then_clears():
     app = App()
     scr = ReposScreen(app)

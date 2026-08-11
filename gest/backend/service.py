@@ -42,6 +42,7 @@ from gest.backend.polkit import (
 from gest.backend.portage import PortageService
 from gest.backend.repos import ReposService
 from gest.backend.services import ServicesService
+from gest.backend.ssh import SshService
 from gest.backend.system import SystemService
 from gest.backend.users import UsersService
 from gest.core.repos import commands as repo_commands
@@ -590,6 +591,7 @@ def main() -> int:
         EselectService(conn)
         BootloaderService(conn)
         ReposService(conn)
+        SshService(conn)
         PortageService(conn)
         DiskService(conn)
         DateTimeService(conn)
