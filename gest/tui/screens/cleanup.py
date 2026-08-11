@@ -17,7 +17,7 @@ import urwid
 
 from gest.core.software import cleanup
 from gest.core.software.cleanup import Orphan, human_size
-from gest.tui.runtime import App, Modal, Screen, action_bar, boxed
+from gest.tui.runtime import App, Modal, NavPile, Screen, boxed, focusable_actions
 from gest.tui.screens.apply import depclean_plan, remove_plan
 from gest.tui.screens.runscreen import RunScreen, clip, row
 
@@ -74,11 +74,13 @@ class CleanupScreen(Screen):
         details_box = boxed(self._details, title="Details")
         self._count = urwid.Text("")
 
-        body = urwid.Pile([
+        self._actions = focusable_actions([
+            ("Cancel", app.pop), ("Clean up", self._clean)])
+        body = NavPile([
             ("weight", 1, table),
             ("pack", details_box),
             ("pack", self._count),
-            ("pack", action_bar(["Cancel", "Clean up"])),
+            ("pack", self._actions),
         ])
         super().__init__(
             app, body, title="Clean Up Packages",
@@ -98,10 +100,16 @@ class CleanupScreen(Screen):
                 "Esc    back"
             ),
         )
+        self.configure_pane_cycle(body, [0], action_row=self._actions)
         if self._preloaded:
             self._rebuild()          # scan already done by the caller
         else:
             app.run_async(self._load())
+
+    def _footer_context(self):
+        if self._on_action_row():
+            return [("Enter", "Activate"), ("Tab", "Next"), ("Esc", "Back")]
+        return self._base_footer_keys
 
     async def _load(self) -> None:
         self._kept.clear()

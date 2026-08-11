@@ -19,7 +19,7 @@ import urwid
 from gest.core.repos import reader
 from gest.core.software import sync
 from gest.core.software.backend_client import SoftwareBackend
-from gest.tui.runtime import App, Modal, Screen, action_bar, boxed
+from gest.tui.runtime import App, Modal, NavPile, Screen, boxed, focusable_actions
 from gest.tui.screens.apply import RawLogScreen, StreamLog
 from gest.tui.screens.runscreen import clip, row
 
@@ -66,12 +66,15 @@ class SyncScreen(StreamLog, Screen):
             urwid.Pile([("pack", header), ("pack", urwid.Divider("─")),
                         ("weight", 1, self._list)]),
             title="Repositories")
-        body = urwid.Pile([
+        self._actions = focusable_actions([
+            ("Cancel", lambda: self._running or self.app.pop()),
+            ("Sync", self._start)])
+        body = NavPile([
             ("pack", urwid.AttrMap(self._phase, "field")),
             ("pack", self._bar),
             ("pack", urwid.Divider("─")),
             ("weight", 1, table),
-            ("pack", action_bar(["Cancel", "Sync"])),
+            ("pack", self._actions),
         ])
         super().__init__(
             app, body, title="Sync Portage Tree",
@@ -87,7 +90,14 @@ class SyncScreen(StreamLog, Screen):
                 "(the result names each). l views the raw emerge log; Esc goes back."
             ),
         )
+        self.configure_pane_cycle(body, [3], action_row=self._actions)
         app.run_async(self._load())
+
+    def _footer_context(self):
+        if self._on_action_row():
+            return [("Enter", "Activate"), ("l", "View log"),
+                    ("Tab", "Next"), ("Esc", "Back")]
+        return self._base_footer_keys
 
     async def _load(self) -> None:
         repos = await self.app.run_blocking(reader.enabled_repos)

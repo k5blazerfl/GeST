@@ -1257,6 +1257,50 @@ def test_repos_deploy_key_key_opens_screen():
     assert isinstance(app._stack[-1], DeployKeyScreen)
 
 
+def test_focusable_actions_activate_focused():
+    from gest.tui.runtime import focusable_actions
+    fired = []
+    row = focusable_actions([("Cancel", lambda: fired.append("c")),
+                             ("OK", lambda: fired.append("ok"))])
+    row.focus_position = row.button_position(1)     # focus the OK button
+    assert row.activate_focused() and fired == ["ok"]
+
+
+def test_repos_tab_reaches_action_buttons_and_activates():
+    app = App()
+    base = urwid.Text("home")
+    app._stack.append(base)
+    scr = ReposScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: len(scr._repos) > 0, ticks=200)
+    body = scr._frame.body
+    body.focus_position = 0                          # the repo list
+    scr.keypress(_SIZE, "tab")                       # list -> Cancel
+    assert scr._on_action_row() and scr._actions.focus is scr._actions.buttons[0]
+    scr.keypress(_SIZE, "tab")                       # Cancel -> Accept
+    assert scr._actions.focus is scr._actions.buttons[1]
+    scr.keypress(_SIZE, "tab")                       # Accept -> back to list
+    assert body.focus_position == 0
+    # footer switches to the action-row keys when a button is focused
+    body.focus_position = 0
+    scr.keypress(_SIZE, "tab")                        # onto Cancel
+    assert any(lbl == "Activate" for _k, lbl in scr._footer_context())
+    scr.keypress(_SIZE, "enter")                      # Cancel with no pending -> pop
+    assert app._stack[-1] is base
+
+
+def test_repos_arrows_stay_in_list():
+    app = App()
+    scr = ReposScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: len(scr._repos) > 0, ticks=200)
+    body = scr._frame.body
+    body.focus_position = 0
+    scr._walker.set_focus(len(scr._repos) - 1)        # bottom of the list
+    scr.keypress(_SIZE, "down")                        # must not jump to the actions
+    assert body.focus_position == 0
+
+
 def test_repos_stages_changes_then_clears():
     app = App()
     scr = ReposScreen(app)

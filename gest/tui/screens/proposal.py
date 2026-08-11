@@ -14,7 +14,7 @@ import urwid
 
 from gest.core.software import cleanup, preview, update
 from gest.core.software.update import human_size
-from gest.tui.runtime import App, Screen, action_bar, boxed
+from gest.tui.runtime import App, NavPile, Screen, boxed, focusable_actions
 from gest.tui.screens.accept import AcceptRunScreen
 from gest.tui.screens.runscreen import clip, row
 
@@ -85,12 +85,14 @@ class ProposalScreen(Screen):
             title="Proposal")
         self._phase = urwid.Text(("dim", " Resolving …"))
         self._totals = urwid.Text("")
-        body = urwid.Pile([
+        self._actions = focusable_actions([
+            ("Cancel", app.pop), ("Apply", self._apply)])
+        body = NavPile([
             ("pack", urwid.AttrMap(self._phase, "field")),
             ("pack", urwid.Divider("─")),
             ("weight", 1, table),
             ("pack", self._totals),
-            ("pack", action_bar(["Cancel", "Apply"])),
+            ("pack", self._actions),
         ])
         super().__init__(
             app, body, title="Software Management",
@@ -101,7 +103,13 @@ class ProposalScreen(Screen):
                 "packages removed as a consequence.\n\n"
                 "Lead glyph:  + new   ↑ update   ⟳ rebuild   - remove.\n"
                 "F10 applies the proposal; Esc cancels back to the package list."))
+        self.configure_pane_cycle(body, [2], action_row=self._actions)
         app.run_async(self._compute())
+
+    def _footer_context(self):
+        if self._on_action_row():
+            return [("Enter", "Activate"), ("Tab", "Next"), ("Esc", "Cancel")]
+        return self._base_footer_keys
 
     # -- resolve ------------------------------------------------------------
 

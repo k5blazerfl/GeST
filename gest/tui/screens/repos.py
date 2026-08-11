@@ -19,7 +19,7 @@ from gest.core.repos import commands, edit, pending, reader, writer
 from gest.core.repos import disabled as disabled_state
 from gest.core.repos.backend_client import ReposBackend
 from gest.core.repos.reader import Repo
-from gest.tui.runtime import App, Modal, Screen, action_bar, boxed
+from gest.tui.runtime import App, Modal, NavPile, Screen, boxed, focusable_actions
 from gest.tui.screens.deploykey import DeployKeyScreen
 from gest.tui.screens.mirrors import MirrorScreen
 
@@ -94,11 +94,15 @@ class ReposScreen(Screen):
         props_box = boxed(self._props, title="Properties")
         self._count = urwid.Text("")
 
-        body = urwid.Pile([
+        self._actions = focusable_actions([
+            ("Cancel", self._leave),
+            ("Accept", lambda: self.app.run_async(self._accept())),
+        ])
+        body = NavPile([
             ("weight", 1, table),
             ("pack", props_box),
             ("pack", self._count),
-            ("pack", action_bar(["Cancel", "Accept"])),
+            ("pack", self._actions),
         ])
         urwid.connect_signal(self._walker, "modified", self._on_focus)
 
@@ -143,7 +147,14 @@ class ReposScreen(Screen):
                 "F10 Accept    F9 Cancel    r  reload"
             ),
         )
+        # Tab cycles: repo list → Cancel → Accept. Arrows stay in the list.
+        self.configure_pane_cycle(body, [0], action_row=self._actions)
         app.run_async(self._load())
+
+    def _footer_context(self):
+        if self._on_action_row():
+            return [("Enter", "Activate"), ("Tab", "Next"), ("Esc", "Back")]
+        return self._base_footer_keys
 
     async def _load(self) -> None:
         enabled = await self.app.run_blocking(reader.enabled_repos)

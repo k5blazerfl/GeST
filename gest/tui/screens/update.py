@@ -15,7 +15,7 @@ import urwid
 
 from gest.core.software import update
 from gest.core.software.update import Change, human_size
-from gest.tui.runtime import App, Screen, action_bar, boxed
+from gest.tui.runtime import App, NavPile, Screen, boxed, focusable_actions
 from gest.tui.screens.apply import world_plan
 from gest.tui.screens.runscreen import RunScreen, clip, row
 
@@ -71,11 +71,13 @@ class UpdateScreen(Screen):
         details_box = boxed(self._details, title="Details")
         self._count = urwid.Text("")
 
-        body = urwid.Pile([
+        self._actions = focusable_actions([
+            ("Cancel", app.pop), ("Update", self._update)])
+        body = NavPile([
             ("weight", 1, table),
             ("pack", details_box),
             ("pack", self._count),
-            ("pack", action_bar(["Cancel", "Update"])),
+            ("pack", self._actions),
         ])
         super().__init__(
             app, body, title="System Update",
@@ -90,7 +92,13 @@ class UpdateScreen(Screen):
                 "F10 runs emerge -uDN @world.   r reloads the plan.   Esc goes back."
             ),
         )
+        self.configure_pane_cycle(body, [0], action_row=self._actions)
         app.run_async(self._load())
+
+    def _footer_context(self):
+        if self._on_action_row():
+            return [("Enter", "Activate"), ("Tab", "Next"), ("Esc", "Back")]
+        return self._base_footer_keys
 
     async def _load(self) -> None:
         self._plan = await self.app.run_blocking(update.plan_update)

@@ -204,6 +204,69 @@ def _header_row(title: str) -> urwid.Widget:
     ])
 
 
+class NavPile(urwid.Pile):
+    """A Pile whose arrow keys never move focus between its items — pane
+    switching is Tab-only (see ``Screen.configure_pane_cycle``), so up/down
+    can't wander from one pane into another (a list, a menu bar, an action row).
+
+    ``porous_from`` names widget types that a *downward* move is allowed to
+    leave (e.g. a filter ``Edit`` above a list): pressing Down in one of those
+    drops into the next pane as usual, but Up/Down inside the list won't jump
+    back out.
+    """
+
+    def __init__(self, widget_list, *, porous_from: tuple[type, ...] = ()):
+        super().__init__(widget_list)
+        self._porous_from = porous_from
+
+    def keypress(self, size, key):
+        before = self.focus_position
+        result = super().keypress(size, key)
+        if result is None and key in ("up", "down") and self.focus_position != before:
+            leaving = self.contents[before][0].base_widget
+            if key == "down" and isinstance(leaving, self._porous_from):
+                return None                       # allow Down to leave (e.g. Edit)
+            self.focus_position = before          # otherwise undo the arrow move
+            return key
+        return result
+
+
+class ActionRow(urwid.Columns):
+    """A right-aligned row of focusable ``[Label]`` buttons that own their
+    callbacks. Tab lands on each; Enter/Space on the focused one fires it. Used
+    for Cancel/Accept-style action bars (replaces the visual-only action_bar)."""
+
+    def __init__(self, actions: list[tuple[str, Callable[[], None]]]):
+        self.buttons: list[urwid.Widget] = []
+        self._cb: dict[int, Callable[[], None]] = {}
+        cols: list = [urwid.Text("")]                 # spacer → right-align
+        for label, cb in actions:
+            markup = ["[", ("cc_title", label[:1]), f"{label[1:]}]"]
+            btn = urwid.AttrMap(urwid.SelectableIcon(markup, 0), None,
+                                focus_map="focus")
+            self.buttons.append(btn)
+            self._cb[id(btn)] = cb
+            cols += [("pack", btn), ("pack", urwid.Text("  "))]
+        super().__init__(cols)
+
+    def button_position(self, index: int) -> int:
+        """The Columns focus_position of the ``index``-th button (after the
+        leading spacer, buttons sit at odd positions 1, 3, …)."""
+        return 1 + index * 2
+
+    def activate_focused(self) -> bool:
+        cb = self._cb.get(id(self.focus))
+        if cb is not None:
+            cb()
+            return True
+        return False
+
+
+def focusable_actions(actions: list[tuple[str, Callable[[], None]]]) -> ActionRow:
+    """A Tab-reachable Cancel/Accept-style action row (see :class:`ActionRow`)."""
+    return ActionRow(actions)
+
+
 class Screen(urwid.WidgetWrap):
     """Base screen: a framed widget with a title header and a footer holding a
     transient status line above the function-key bar.
@@ -229,6 +292,14 @@ class Screen(urwid.WidgetWrap):
         self._title = title
         self._status = urwid.Text("")
         keys = list(footer_keys or [])
+        # context-sensitive footer + Tab pane-cycle state (opt-in; the defaults
+        # below leave simple single-pane screens behaving exactly as before).
+        self._base_footer_keys = list(footer_keys or [])   # the default context
+        self._shown_footer_keys: list | None = None        # cache: skip rebuilds
+        self._cycle_container = None                        # set via configure_pane_cycle
+        self._cycle_positions: list = []
+        self._cycle_action_row: ActionRow | None = None
+        self._cycle_action_pos: int | None = None
         # Every screen gets an F1 help overlay. When a screen doesn't supply its
         # own help_text, synthesise one from its function-key list so help is
         # always available and consistent.
@@ -268,15 +339,96 @@ class Screen(urwid.WidgetWrap):
 
     def keypress(self, size, key):
         key = super().keypress(size, key)
-        if key is None:
-            return None
+        if key is not None:
+            key = self._nav_keypress(key)      # Tab / action-button Enter
         if key == "f1" and self._help_text:
             self.show_help()
-            return None
-        return self.handle_key(key)
+            key = None
+        elif key is not None:
+            key = self.handle_key(key)
+        self._refresh_footer()                 # focus may have moved
+        return key
 
     def handle_key(self, key):  # override
         return key
+
+    # -- Tab pane-cycle + context footer (opt-in) ---------------------------
+
+    def configure_pane_cycle(self, container, positions, *,
+                             action_row: ActionRow | None = None) -> None:
+        """Declare the ordered focus stops for Tab. ``container`` is the top
+        Pile/Columns; ``positions`` its focus_positions that are stops; each
+        button of ``action_row`` (already a child of ``container``) becomes a
+        trailing stop. Enables Tab/Shift-Tab cycling and button activation."""
+        self._cycle_container = container
+        self._cycle_positions = list(positions)
+        self._cycle_action_row = action_row
+        self._cycle_action_pos = None
+        if action_row is not None:
+            for i, (w, _opts) in enumerate(container.contents):
+                if w is action_row:
+                    self._cycle_action_pos = i
+                    break
+
+    def _nav_keypress(self, key):
+        if self._cycle_container is None:
+            return key                          # not configured → unchanged
+        if key == "tab":
+            self._cycle_pane(1)
+            return None
+        if key == "shift tab":
+            self._cycle_pane(-1)
+            return None
+        if (key in ("enter", " ") and self._on_action_row()
+                and self._cycle_action_row.activate_focused()):
+            return None
+        return key
+
+    def _on_action_row(self) -> bool:
+        return (self._cycle_action_pos is not None
+                and self._cycle_container.focus_position == self._cycle_action_pos)
+
+    def _cycle_stops(self):
+        stops = [("pane", p) for p in self._cycle_positions]
+        if self._cycle_action_row is not None:
+            stops += [("btn", i) for i in range(len(self._cycle_action_row.buttons))]
+        return stops
+
+    def _current_stop(self, stops) -> int:
+        pos = self._cycle_container.focus_position
+        if self._on_action_row():
+            btn = (self._cycle_action_row.focus_position - 1) // 2
+            for i, (kind, val) in enumerate(stops):
+                if kind == "btn" and val == btn:
+                    return i
+            return 0
+        for i, (kind, val) in enumerate(stops):
+            if kind == "pane" and val == pos:
+                return i
+        return 0
+
+    def _cycle_pane(self, delta: int) -> None:
+        stops = self._cycle_stops()
+        if not stops:
+            return
+        kind, val = stops[(self._current_stop(stops) + delta) % len(stops)]
+        if kind == "pane":
+            self._cycle_container.focus_position = val
+        else:
+            self._cycle_container.focus_position = self._cycle_action_pos
+            self._cycle_action_row.focus_position = \
+                self._cycle_action_row.button_position(val)
+
+    def _footer_context(self) -> list[tuple[str, str]]:
+        """Keys applicable to the current focus. Default: the static footer_keys
+        (so simple screens are unchanged). Override for multi-context screens."""
+        return self._base_footer_keys
+
+    def _refresh_footer(self) -> None:
+        keys = self._footer_context()
+        if keys != self._shown_footer_keys:     # no-op unless the context changed
+            self._shown_footer_keys = keys
+            self.set_footer_keys(keys)
 
 
 class Modal(urwid.WidgetWrap):

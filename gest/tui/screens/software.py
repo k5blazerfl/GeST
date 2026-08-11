@@ -20,7 +20,7 @@ from gest.core.software.backend_client import SoftwareBackend
 from gest.core.software.model import PackageDetail
 from gest.core.software.selection import Selection
 from gest.tui.menubar import MenuBar, _Dropdown
-from gest.tui.runtime import App, Screen, boxed
+from gest.tui.runtime import App, NavPile, Screen, boxed
 from gest.tui.screens.binhost import BinhostScreen
 from gest.tui.screens.config import KeywordsScreen, UseFlagScreen
 from gest.tui.screens.news import NewsScreen
@@ -89,20 +89,6 @@ _ACTIONS = [
 
 _PKG_HEADER = f"   {'Name':<32} Summary"
 _CAT_HEADER = "   Category"
-
-
-class _NavPile(urwid.Pile):
-    """A Pile whose arrow keys never move focus between its items — pane
-    switching is Tab-only (SoftwareScreen._cycle_pane), so up/down can't wander
-    from the package list into the menu bar or the action bar."""
-
-    def keypress(self, size, key):
-        before = self.focus_position
-        result = super().keypress(size, key)
-        if result is None and key in ("up", "down") and self.focus_position != before:
-            self.focus_position = before      # undo the Pile's arrow focus move
-            return key
-        return result
 
 
 class SoftwareScreen(Screen):
@@ -185,7 +171,7 @@ class SoftwareScreen(Screen):
             ("pack", self._accept_btn),
             ("pack", urwid.Text(" ")),
         ])
-        pile = _NavPile([
+        pile = NavPile([
             ("pack", self._menubar),
             self._columns,
             ("pack", self._actions),
@@ -768,15 +754,10 @@ class SoftwareScreen(Screen):
 
     # -- context-sensitive footer -------------------------------------------
 
-    def keypress(self, size, key):
-        result = super().keypress(size, key)
-        self._update_footer()          # focus may have moved — refresh the keys
-        return result
-
     def _update_footer(self) -> None:
-        self.set_footer_keys(self._footer_for_context())
+        self._refresh_footer()
 
-    def _footer_for_context(self) -> list[tuple[str, str]]:
+    def _footer_context(self) -> list[tuple[str, str]]:
         """Only the keys that apply to whatever currently holds focus."""
         in_menu, in_sidebar, in_table, sidebar_focus = self._context()
         tail = [("Tab", "Pane"), ("Esc", "Back")]
