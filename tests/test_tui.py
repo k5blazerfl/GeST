@@ -1895,6 +1895,23 @@ def test_update_screen_empty_state(monkeypatch):
     assert "up to date" in _render(scr)
 
 
+def test_update_loading_resolves_then_hands_off(monkeypatch):
+    from gest.core.software import update as core_update
+    from gest.core.software.update import Change, UpdatePlan
+    from gest.tui.screens.update import UpdateLoadingScreen, UpdateScreen
+    fake = UpdatePlan(changes=[
+        Change("app-arch/gzip", "1.13", "1.14", "update", False, 430080)], ok=True)
+    monkeypatch.setattr(core_update, "plan_update", lambda: fake)
+    app = App()
+    scr = UpdateLoadingScreen(app)
+    app._stack.append(scr)
+    assert "#+#" in _render(scr)                     # branded loading screen (logo)
+    _pump(app, lambda: isinstance(app._stack[-1], UpdateScreen), ticks=200)
+    top = app._stack[-1]
+    assert top._plan is fake                         # preloaded, no re-resolve
+    assert "gzip" in _render(top)
+
+
 def _update_with_changes(monkeypatch, app, mode="timer"):
     """An UpdateScreen scanned to one change in ``mode``; ``_update`` is spied."""
     from gest.core.software import update as core_update

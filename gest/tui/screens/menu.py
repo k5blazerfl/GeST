@@ -26,7 +26,7 @@ from gest.tui.screens.services import ServicesScreen
 from gest.tui.screens.software import SoftwareLoadingScreen
 from gest.tui.screens.sync import SyncScreen
 from gest.tui.screens.system import HostnameScreen, LocaleScreen, TimezoneScreen
-from gest.tui.screens.update import UpdateScreen
+from gest.tui.screens.update import UpdateLoadingScreen
 from gest.tui.screens.users import UsersScreen
 from gest.tui.screens.world import WorldScreen
 
@@ -154,7 +154,7 @@ class MenuScreen(Screen):
         elif key == "world":
             self.app.push(WorldScreen(self.app))
         elif key == "update":
-            self.app.push(UpdateScreen(self.app))
+            self.app.push(UpdateLoadingScreen(self.app))
         elif key == "depclean":
             self.app.push(CleanupScreen(self.app))
         elif key == "sync":

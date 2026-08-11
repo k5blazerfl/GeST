@@ -23,10 +23,11 @@ from gest.tui.menubar import MenuBar, _Dropdown
 from gest.tui.runtime import App, NavPile, Screen, boxed
 from gest.tui.screens.binhost import BinhostScreen
 from gest.tui.screens.config import KeywordsScreen, UseFlagScreen
+from gest.tui.screens.loading import _STEP_ATTR, _STEP_GLYPH, LoadingScreen
 from gest.tui.screens.news import NewsScreen
 from gest.tui.screens.proposal import ProposalScreen
 from gest.tui.screens.sync import SyncScreen
-from gest.tui.screens.update import UpdateScreen
+from gest.tui.screens.update import UpdateLoadingScreen
 
 
 def _row(text: str) -> urwid.Widget:
@@ -630,7 +631,7 @@ class SoftwareScreen(Screen):
         elif item_id == "binhost":
             self.app.push(BinhostScreen(self.app))
         elif item_id == "update":
-            self.app.push(UpdateScreen(self.app))
+            self.app.push(UpdateLoadingScreen(self.app))
         elif item_id == "sync":
             self.app.push(SyncScreen(self.app))
         elif item_id == "news":
@@ -804,119 +805,45 @@ class SoftwareScreen(Screen):
             self._walker[i].base_widget.set_text(self._row_text(i, cp, self._summaries[i]))
 
 
-_STEP_GLYPH = {"pending": "·", "active": "▸", "done": "✓",
-               "skipped": "⊘", "failed": "✗"}
-_STEP_ATTR = {"pending": "dim", "active": "field", "done": "ok",
-              "skipped": "dim", "failed": "error"}
-
-# GeST ASCII logo (from Art/ascii-logo.txt) shown on the startup screen —
-# the top three lines in Gentoo blue, the bottom four in Gentoo purple.
-_LOGO_LINES = [
-    "      ::::::::  :::::::::: :::::::: :::::::::::",
-    "    :+:    :+: :+:       :+:    :+:    :+:",
-    "   +:+        +:+       +:+           +:+",
-    "  :#:        +#++:++#  +#++:++#++    +#+",
-    " +#+   +#+# +#+              +#+    +#+",
-    "#+#    #+# #+#       #+#    #+#    #+#",
-    "########  ########## ########     ###",
-]
-_LOGO_W = max(len(line) for line in _LOGO_LINES)
-_LOGO_MARKUP = [
-    ("box_title", "\n".join(_LOGO_LINES[:3]) + "\n"),   # top 3: Gentoo blue
-    ("title", "\n".join(_LOGO_LINES[3:])),              # bottom 4: Gentoo purple
-]
-
-
-class SoftwareLoadingScreen(Screen):
+class SoftwareLoadingScreen(LoadingScreen):
     """Fullscreen startup for Package Management.
 
     Opening the package manager takes a moment — it refreshes the repositories
     flagged for refresh-on-open (one at a time) and reads the whole installed
-    set. Instead of a blank pane, show what it is doing: a step list with a
-    phase line and a progress bar, then hand the loaded data straight to
-    :class:`SoftwareScreen` so it appears ready.
+    set. Instead of a blank pane, show what it is doing (a step list with the
+    per-repo refresh below it, a phase line and a progress bar), then hand the
+    loaded data straight to :class:`SoftwareScreen` so it appears ready.
     """
 
     def __init__(self, app: App) -> None:
-        self._steps = [
-            {"key": "refresh", "label": "Refresh repositories",
-             "status": "pending", "detail": ""},
-            {"key": "load", "label": "Load installed packages",
-             "status": "pending", "detail": ""},
-        ]
         self._failed: list[str] = []
         self._repos: list[dict] = []   # per-repo refresh rows: {name, status}
-        self._steps_text = urwid.Text("")
-        self._phase = urwid.Text(("dim", " Starting …"))
-        self._bar = urwid.ProgressBar("pb_normal", "pb_complete", 0, 1)
-
-        logo = urwid.Padding(
-            urwid.Text(_LOGO_MARKUP, wrap="clip"),
-            align="center", width=_LOGO_W)
-        panel = boxed(
-            urwid.Pile([
-                ("pack", urwid.Divider(" ")),      # one line of top spacing
-                ("pack", logo),
-                ("pack", urwid.Divider(" ")),
-                ("pack", urwid.Text(("dim", "Starting Package Management"),
-                                    align="center")),
-                ("pack", urwid.Divider(" ")),
-                ("pack", self._steps_text),
-                ("pack", urwid.Divider(" ")),
-                ("pack", self._bar),
-                ("pack", urwid.AttrMap(self._phase, "field")),
-            ]),
-            title="Software Management")
-        body = urwid.Filler(
-            urwid.Padding(panel, align="center", width=("relative", 62),
-                          min_width=_LOGO_W + 6),
-            valign="middle", height="pack")
         super().__init__(
-            app, body, title="Software Management",
-            footer_keys=[("Esc", "Cancel")],
+            app,
+            [{"key": "refresh", "label": "Refresh repositories",
+              "status": "pending", "detail": ""},
+             {"key": "load", "label": "Load installed packages",
+              "status": "pending", "detail": ""}],
+            title="Software Management",
+            subtitle="Starting Package Management",
             help_text=(
                 "Preparing the package database. Repositories flagged for\n"
                 "refresh-on-open are synced first (one at a time), then the\n"
                 "installed package set is read. Esc cancels and returns to the\n"
                 "main menu."))
-        self._render()
-        app.run_async(self._run())
 
-    # -- rendering ----------------------------------------------------------
-
-    def _render(self) -> None:
-        markup = []
-        for st in self._steps:
-            glyph = _STEP_GLYPH[st["status"]]
-            line = f"  {glyph}  {st['label']}"
-            if st["detail"]:
-                line += f"   ({st['detail']})"
-            markup.append((_STEP_ATTR[st["status"]], line + "\n"))
-            if st["key"] == "refresh":          # list each repo under the step
-                for r in self._repos:
-                    g = _STEP_GLYPH[r["status"]]
-                    markup.append((_STEP_ATTR[r["status"]],
-                                   f"        {g}  {r['name']}\n"))
-        self._steps_text.set_text(markup)
-        self.app.refresh()
-
-    def _set_step(self, key: str, status: str, detail: str = "") -> None:
-        for st in self._steps:
-            if st["key"] == key:
-                st["status"] = status
-                if detail:
-                    st["detail"] = detail
-        self._render()
+    def _sub_rows(self, step: dict) -> list:
+        if step["key"] != "refresh":
+            return []
+        return [(_STEP_ATTR[r["status"]],
+                 f"        {_STEP_GLYPH[r['status']]}  {r['name']}\n")
+                for r in self._repos]
 
     def _set_repo(self, name: str, status: str) -> None:
         for r in self._repos:
             if r["name"] == name:
                 r["status"] = status
         self._render()
-
-    def _set_phase(self, text: str, attr: str = "field") -> None:
-        self._phase.set_text((attr, f" {text}"))
-        self.app.refresh()
 
     # -- run ----------------------------------------------------------------
 

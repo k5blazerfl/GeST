@@ -18,6 +18,7 @@ from gest.core.software.update import Change, human_size
 from gest.tui.runtime import App, NavPile, Screen, boxed, focusable_actions
 from gest.tui.screens.apply import world_plan
 from gest.tui.screens.autoaccept import AutoAccept
+from gest.tui.screens.loading import LoadingScreen
 from gest.tui.screens.runscreen import RunScreen, clip, row
 
 _GLYPH_W = 2
@@ -55,8 +56,10 @@ def _row_line(c: Change) -> str:
 class UpdateScreen(AutoAccept, Screen):
     _auto_action = "Updating"
 
-    def __init__(self, app: App) -> None:
-        self._plan: update.UpdatePlan | None = None
+    def __init__(self, app: App, preloaded: update.UpdatePlan | None = None) -> None:
+        # ``preloaded`` lets UpdateLoadingScreen hand over an already-resolved
+        # plan so we don't run emerge --pretend @world twice.
+        self._plan: update.UpdatePlan | None = preloaded
         self._armed = False
         self._walker = urwid.SimpleFocusListWalker(
             [urwid.Text(" computing the update plan …  (this can take a while)")])
@@ -97,7 +100,14 @@ class UpdateScreen(AutoAccept, Screen):
             ),
         )
         self.configure_pane_cycle(body, [0], action_row=self._actions)
-        app.run_async(self._load())
+        if preloaded is not None:
+            self._rebuild()                         # plan already resolved
+            app.run_async(self._arm_when_ready())   # after the caller pushes us
+        else:
+            app.run_async(self._load())
+
+    async def _arm_when_ready(self) -> None:
+        self._maybe_arm()
 
     def _footer_context(self):
         if self._timer_running:
@@ -283,3 +293,42 @@ class UpdateRunScreen(RunScreen):
             "   ✗ failed\n"
             "The full raw emerge log is kept on disk — press l (or View log on\n"
             "failure) to read it. Esc returns when the update finishes.")
+
+
+class UpdateLoadingScreen(LoadingScreen):
+    """Fullscreen startup for System Update.
+
+    Resolving a world update (``emerge --pretend -uDN @world``) can take a
+    while on a large system. Instead of a blank pane, show the branded loading
+    screen while it resolves, then hand the plan straight to
+    :class:`UpdateScreen` so it appears ready.
+    """
+
+    def __init__(self, app: App) -> None:
+        super().__init__(
+            app,
+            [{"key": "resolve", "label": "Resolve the world update",
+              "status": "pending", "detail": ""}],
+            title="System Update",
+            subtitle="Computing the system update",
+            help_text=(
+                "Resolving what a full @world update would do "
+                "(emerge --pretend -uDN\n@world) — this can take a while on a "
+                "large system.\nEsc cancels and returns to the main menu."))
+
+    async def _run(self) -> None:
+        self._set_step("resolve", "active")
+        self._set_phase("Running emerge --pretend -uDN @world …  "
+                        "(this can take a while)")
+        plan = await self.app.run_blocking(update.plan_update)
+        self._bar.set_completion(1)
+        if plan is not None and plan.ok:
+            n = len(plan.changes)
+            self._set_step("resolve", "done",
+                           f"{n} change{'s' if n != 1 else ''}")
+            self._set_phase("Ready.", "ok")
+        else:
+            self._set_step("resolve", "failed")
+            self._set_phase("Could not resolve the update plan.", "error")
+        if self.app._stack and self.app._stack[-1] is self:   # not cancelled
+            self.app.replace(UpdateScreen(self.app, preloaded=plan))
