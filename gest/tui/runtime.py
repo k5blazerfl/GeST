@@ -305,6 +305,16 @@ class App:
             self.main.widget = self._stack[-1]
             self.refresh()
 
+    def replace(self, widget: urwid.Widget) -> None:
+        """Swap the top screen for ``widget`` in a single redraw, so the screen
+        beneath never flashes (used to hand a finished flow straight to the next
+        one, e.g. an uninstall into Clean Up)."""
+        if len(self._stack) > 1:
+            self._stack.pop()
+        self._stack.append(widget)
+        self.main.widget = widget
+        self.refresh()
+
     def push_modal(self, modal: urwid.Widget, *, width=64, height=None) -> None:
         overlay = urwid.Overlay(
             urwid.LineBox(modal),

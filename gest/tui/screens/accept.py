@@ -11,10 +11,11 @@ the full raw log is kept on demand (l / View log).
 
 from __future__ import annotations
 
-from gest.core.software.cleanup import parse_unmerge
+from gest.core.software.cleanup import parse_unmerge, plan_cleanup
 from gest.core.software.update import parse_merge_progress, split_cpv
 from gest.tui.runtime import App
 from gest.tui.screens.apply import install_binary_plan, install_plan, remove_plan
+from gest.tui.screens.cleanup import CleanupScreen
 from gest.tui.screens.runscreen import RunScreen, clip
 
 _STATUS_W = 2
@@ -61,12 +62,11 @@ class AcceptRunScreen(RunScreen):
     DONE_STATUS = "done"
 
     def __init__(self, app: App, *, installs=(), binpkgs=(), binprefs=(),
-                 removes=(), verb: str = "Accept", on_done=None, on_removed=None):
+                 removes=(), verb: str = "Accept", on_done=None):
         self._installs = list(installs)
         self._binpkgs = list(binpkgs)
         self._binprefs = list(binprefs)
         self._removes = list(removes)
-        self._on_removed = on_removed
         self._plans = []
         if self._installs:
             self._plans.append(install_plan(self._installs))
@@ -135,12 +135,31 @@ class AcceptRunScreen(RunScreen):
         return "Failed", False, (
             f"emerge exited {code}. The changes may be incomplete; see the log.")
 
-    def _after_back(self) -> None:
-        # Housekeeping: a successful uninstall can strand dependencies as
-        # orphans. Hand back to the caller to scan for them (and offer Clean Up
-        # only if any exist). Installs, failures and aborts skip this.
-        if self._removes and self._code == 0 and self._on_removed is not None:
-            self._on_removed()
+    def _present_result(self, title: str, ok: bool, message: str) -> None:
+        # A successful uninstall can strand dependencies as orphans. Rather than
+        # bounce back to the package list and pop Clean Up seconds later, do the
+        # depclean --pretend scan right here on the finished removal screen, then
+        # hand straight over to Clean Up when there's something to clean.
+        # Installs, failures and aborts conclude with the normal result modal.
+        if self._removes and self._code == 0:
+            self._set_phase("Checking for orphaned dependencies …")
+            self.app.run_async(self._housekeep(message))
+        else:
+            super()._present_result(title, ok, message)
+
+    async def _housekeep(self, message: str) -> None:
+        plan = await self.app.run_blocking(plan_cleanup)
+        if self.app._stack[-1] is not self:
+            return                              # user stepped away during the scan
+        if plan is not None and plan.ok and plan.orphans:
+            # swap this finished removal screen for Clean Up in one redraw — no
+            # flash of the package list in between. Esc from Clean Up returns
+            # there directly.
+            self.app.replace(CleanupScreen(self.app, plan))
+        else:
+            self._result_modal(
+                "Completed", True,
+                f"{message}\nNo orphaned dependencies were left behind.")
 
     def _help_text(self) -> str:
         return (

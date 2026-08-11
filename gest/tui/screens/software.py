@@ -12,7 +12,6 @@ from __future__ import annotations
 import urwid
 
 from gest.core.repos import reader as repos_reader
-from gest.core.software import cleanup as cleanup_core
 from gest.core.software import reader
 from gest.core.software import selection as sel
 from gest.core.software.backend_client import SoftwareBackend
@@ -22,7 +21,6 @@ from gest.tui.menubar import MenuBar, _Dropdown
 from gest.tui.runtime import App, Screen, action_bar
 from gest.tui.screens.accept import AcceptRunScreen
 from gest.tui.screens.binhost import BinhostScreen
-from gest.tui.screens.cleanup import CleanupScreen
 from gest.tui.screens.config import KeywordsScreen, UseFlagScreen
 from gest.tui.screens.news import NewsScreen
 from gest.tui.screens.sync import SyncScreen
@@ -548,8 +546,7 @@ class SoftwareScreen(Screen):
             return
         self.app.push(AcceptRunScreen(
             self.app, installs=installs, binpkgs=binpkgs, binprefs=binprefs,
-            removes=removes, on_done=self._after,
-            on_removed=self._housekeep_orphans))
+            removes=removes, on_done=self._after))
 
     def _after(self) -> None:
         self._selection.clear()
@@ -579,26 +576,6 @@ class SoftwareScreen(Screen):
             self.app.run_async(self._run_search(term))
         else:
             self.app.run_async(self._load_installed())
-
-    def _housekeep_orphans(self) -> None:
-        """Post-uninstall housekeeping: removing packages can strand their
-        dependencies as orphans. Scan for them and — only if any are found —
-        open Clean Up Packages to review them. Silent when nothing is orphaned."""
-        # The depclean --pretend scan takes a few seconds; say so up front so the
-        # gap before Clean Up appears (or the quiet 'all clear') isn't mistaken
-        # for nothing happening.
-        self.app.notify("Checking for orphaned dependencies …")
-        self.app.run_async(self._scan_orphans())
-
-    async def _scan_orphans(self) -> None:
-        plan = await self.app.run_blocking(cleanup_core.plan_cleanup)
-        if plan is None or not plan.ok or not plan.orphans:
-            self.app.notify("No orphaned dependencies — nothing to clean up.")
-            return                     # nothing stranded → stay on the list
-        n = len(plan.orphans)
-        self.app.notify(f"{n} orphaned dependenc{'y' if n == 1 else 'ies'} "
-                        "left by the removal — review to clean up.")
-        self.app.push(CleanupScreen(self.app, plan))
 
     # -- menu bar -----------------------------------------------------------
 

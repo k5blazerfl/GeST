@@ -57,7 +57,6 @@ class RunScreen(StreamLog, Screen):
         self._on_done = on_done
         self._done = False
         self._code: int | None = None   # emerge exit code, once finished
-        self._returned = False          # guard: _after_back runs at most once
         self._logfile = None
         self._logpath: str | None = None
         self._refresh_pending = False
@@ -205,7 +204,13 @@ class RunScreen(StreamLog, Screen):
             title, ok, msg = self._summary(code)
         prefix = f"{self.RESULT_VERB}: " if self.RESULT_VERB else ""
         self._set_phase(f"{prefix}{title.lower()}", "ok" if ok else "error")
-        self._result_modal(title, ok, msg)
+        self._present_result(title, ok, msg)
+
+    def _present_result(self, title: str, ok: bool, message: str) -> None:
+        """How a finished run concludes. Default shows the result modal; a
+        subclass may override to insert a follow-up step first (e.g. an
+        uninstall handing straight over to Clean Up)."""
+        self._result_modal(title, ok, message)
 
     def _result_modal(self, title: str, ok: bool, message: str) -> None:
         self.app.notify(title.lower(), error=not ok)
@@ -214,7 +219,7 @@ class RunScreen(StreamLog, Screen):
 
         def back():
             self.app.pop()   # the result modal
-            self._return_to_caller()
+            self.app.pop()   # the run screen → back to the caller
 
         def view():
             self.app.pop()
@@ -225,24 +230,12 @@ class RunScreen(StreamLog, Screen):
                       [("Back", back), ("View log", view)])
         self.app.push_modal(modal, width=("relative", 62), height=("relative", 40))
 
-    def _return_to_caller(self) -> None:
-        """Pop this run screen back to its caller, then run the _after_back
-        hook exactly once (whether the user left via the modal or Esc)."""
-        self.app.pop()   # the run screen → back to the caller
-        if not self._returned:
-            self._returned = True
-            self._after_back()
-
-    def _after_back(self) -> None:
-        """Hook: runs once after this screen returns to its caller. Override to
-        chain a follow-up step (e.g. post-uninstall orphan housekeeping)."""
-
     def _view_log(self) -> None:
         self.app.push(RawLogScreen(self.app, self._logpath))
 
     def handle_key(self, key):
         if key == "esc" and self._done:
-            self._return_to_caller()
+            self.app.pop()
         elif key in ("l", "L"):
             self._view_log()
         else:

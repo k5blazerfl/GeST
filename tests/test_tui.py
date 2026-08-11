@@ -1105,42 +1105,48 @@ def test_accept_run_screen_tracks_install_and_remove():
     assert scr._done
 
 
-def test_accept_after_back_offers_housekeeping_only_after_successful_removal():
+def test_accept_removal_hands_straight_to_cleanup_when_orphans(monkeypatch):
+    from gest.core.software.cleanup import CleanupPlan, Orphan
+    from gest.tui.screens import accept as accept_mod
     from gest.tui.screens.accept import AcceptRunScreen
+    plan = CleanupPlan(orphans=[Orphan("dev-libs/orphanlib", "1.0", 0)], ok=True)
+    monkeypatch.setattr(accept_mod, "plan_cleanup", lambda: plan)
     app = App()
-    calls = []
-    # a successful removal → housekeeping is offered
-    rm = AcceptRunScreen(app, removes=["app-arch/oldpkg"],
-                         on_removed=lambda: calls.append("removed"))
-    rm._code = 0
-    rm._after_back()
-    assert calls == ["removed"]
-    # install-only run → nothing was removed, no housekeeping
-    inst = AcceptRunScreen(app, installs=["app-editors/vim"],
-                           on_removed=lambda: calls.append("install"))
-    inst._code = 0
-    inst._after_back()
-    # a failed removal → don't chase orphans after an incomplete unmerge
-    fail = AcceptRunScreen(app, removes=["app-arch/oldpkg"],
-                           on_removed=lambda: calls.append("failed"))
-    fail._code = 1
-    fail._after_back()
-    assert calls == ["removed"]
-
-
-def test_run_screen_return_to_caller_pops_once_and_fires_after_back():
-    from gest.tui.screens.accept import AcceptRunScreen
-    app = App()
-    app._stack.append(urwid.Text("caller"))
-    fired = []
-    scr = AcceptRunScreen(app, removes=["app-arch/oldpkg"],
-                          on_removed=lambda: fired.append(1))
-    scr._code = 0
+    app._stack.append(urwid.Text("software list"))
+    scr = AcceptRunScreen(app, removes=["app-arch/oldpkg"])
     app._stack.append(scr)
-    scr._return_to_caller()                   # user leaves via Back / Esc
-    assert fired == [1] and len(app._stack) == 1
-    scr._return_to_caller()                   # idempotent — no second fire
-    assert fired == [1]
+    scr._finish(0)                            # successful removal → scan then swap
+    _pump(app, lambda: isinstance(app._stack[-1], CleanupScreen))
+    top = app._stack[-1]
+    assert isinstance(top, CleanupScreen) and top._preloaded
+    # the finished removal screen was swapped out, not left underneath
+    assert not any(isinstance(w, AcceptRunScreen) for w in app._stack)
+    assert "orphanlib" in _render(top)
+
+
+def test_accept_removal_shows_all_clear_when_no_orphans(monkeypatch):
+    from gest.core.software.cleanup import CleanupPlan
+    from gest.tui.screens import accept as accept_mod
+    from gest.tui.screens.accept import AcceptRunScreen
+    monkeypatch.setattr(accept_mod, "plan_cleanup",
+                        lambda: CleanupPlan(orphans=[], ok=True))
+    app = App()
+    app._stack.append(urwid.Text("software list"))
+    scr = AcceptRunScreen(app, removes=["app-arch/oldpkg"])
+    app._stack.append(scr)
+    scr._finish(0)
+    _pump(app, lambda: isinstance(app._stack[-1], urwid.Overlay))
+    assert "orphaned dependencies" in _render(app._stack[-1]).lower()
+
+
+def test_accept_install_only_skips_housekeeping():
+    from gest.tui.screens.accept import AcceptRunScreen
+    app = App()
+    app._stack.append(urwid.Text("software list"))
+    scr = AcceptRunScreen(app, installs=["app-editors/vim"])
+    app._stack.append(scr)
+    scr._finish(0)                            # install-only → result modal at once
+    assert isinstance(app._stack[-1], urwid.Overlay)   # no scan, no swap
 
 
 def test_cleanup_screen_accepts_preloaded_plan_without_rescanning():
