@@ -21,29 +21,36 @@ import urwid
 # root; it never changes during a run, so compute it once.
 _IS_ROOT = os.geteuid() == 0
 
-# A restrained, YaST-ish blue palette.
+# A Gentoo-purple palette (the brand's violet, cf. the neofetch logo). Entries
+# are 5-tuples — (name, fg16, bg16, mono, fg256, bg256) — so 256-colour terminals
+# get the exact Gentoo lavenders while 16-colour ones fall back to magenta.
+_BAR = "#546"      # deep Gentoo purple — top/bottom bars, menus, progress track
+_ACCENT = "#a8f"   # lavender — titles, highlights, selection, filled progress
+_KEYS = "#aad"     # light lavender — footer / menu-bar key chips
+_TEXT = "#ccf"     # soft lavender text on the purple bars
+
 PALETTE = [
-    ("header", "white", "dark blue"),
-    ("header_mode", "yellow,bold", "dark blue"),  # "User Mode" banner (non-root)
-    ("footer", "light gray", "dark blue"),
-    ("footer_key", "black", "light gray"),
-    ("title", "light cyan,bold", "default"),
-    ("hint", "dark gray", "default"),
-    ("focus", "black", "light cyan"),
-    ("reversed", "standout", "default"),
-    ("ok", "light cyan", "default"),
-    ("error", "light red", "default"),
-    ("pane_title", "light cyan,bold", "default"),
-    ("field", "white,bold", "default"),
-    ("cc_title", "brown", "default"),   # YaST-style amber for the Control Center
-    ("menubar", "black", "light gray"),
-    ("menu_title", "black", "light gray"),
-    ("menu_focus", "white", "dark blue"),
-    ("menu_drop", "black", "light gray"),
-    ("dim", "dark gray", "default"),
-    ("update", "light green,bold", "default"),   # ↑ "update available" flag
-    ("pb_normal", "white", "dark blue"),        # progress bar: unfilled
-    ("pb_complete", "black", "light cyan"),      # progress bar: filled
+    ("header", "white", "dark magenta", "", "white", _BAR),
+    ("header_mode", "yellow,bold", "dark magenta", "", "yellow,bold", _BAR),
+    ("footer", "light gray", "dark magenta", "", _TEXT, _BAR),
+    ("footer_key", "black", "light gray", "", "black", _KEYS),
+    ("title", "light magenta,bold", "default", "", f"{_ACCENT},bold", "default"),
+    ("hint", "dark gray", "default", "", "#88a", "default"),
+    ("focus", "black", "light magenta", "", "black", _ACCENT),
+    ("reversed", "standout", "default", "", "standout", "default"),
+    ("ok", "light magenta", "default", "", _ACCENT, "default"),
+    ("error", "light red", "default", "", "#f66", "default"),
+    ("pane_title", "light magenta,bold", "default", "", f"{_ACCENT},bold", "default"),
+    ("field", "white,bold", "default", "", "white,bold", "default"),
+    ("cc_title", "light magenta,bold", "default", "", f"{_ACCENT},bold", "default"),
+    ("menubar", "black", "light gray", "", "black", _KEYS),
+    ("menu_title", "black", "light gray", "", "black", _KEYS),
+    ("menu_focus", "white", "dark magenta", "", "white", _BAR),
+    ("menu_drop", "black", "light gray", "", "black", _KEYS),
+    ("dim", "dark gray", "default", "", "g50", "default"),
+    ("update", "light green,bold", "default", "", "#8f8,bold", "default"),  # ↑ flag
+    ("pb_normal", "white", "dark magenta", "", "white", _BAR),   # progress: unfilled
+    ("pb_complete", "black", "light magenta", "", "black", _ACCENT),  # filled
 ]
 
 # ANSI SGR foreground colours (normal and bold/bright) mapped to urwid names.
@@ -292,6 +299,10 @@ class App:
             unhandled_input=self._unhandled,
             pop_ups=True,
         )
+        # Ask for 256 colours so the Gentoo-purple high-colour values render;
+        # terminals that can't fall back to the 16-colour magenta in each entry.
+        with contextlib.suppress(Exception):
+            self.main.screen.set_terminal_properties(colors=256)
 
     # -- screen stack -------------------------------------------------------
 
