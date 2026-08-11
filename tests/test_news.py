@@ -40,3 +40,28 @@ def test_mark_read_argv_rejects_bad_selectors():
     for bad in ("", "0", "-1", "foo", "3; rm -rf /", "all news", "1.2"):
         with pytest.raises(ValueError):
             news.mark_read_argv(bad)
+
+
+def test_parse_content_splits_headers_and_body():
+    raw = (
+        "2018-08-07-openssh-ldap-migration\n"
+        "  Title      Migration required for OpenSSH with LDAP\n"
+        "  Author     Thomas Deutschmann <whissi@gentoo.org>\n"
+        "  Posted     2018-08-07\n"
+        "  Revision   1\n"
+        "\n"
+        "If your sshd authenticates against LDAP, migrate.\n"
+        "\n"
+        "[1] https://wiki.gentoo.org/wiki/SSH/LDAP_migration\n"
+        "\n\n"
+    )
+    c = news.parse_content(raw)
+    assert c.headers[0] == ("Title", "Migration required for OpenSSH with LDAP")
+    assert dict(c.headers)["Author"] == "Thomas Deutschmann <whissi@gentoo.org>"
+    assert c.body[0].startswith("If your sshd")
+    assert c.body[-1].startswith("[1] https://")   # trailing blanks trimmed
+
+
+def test_parse_content_malformed_is_all_body():
+    c = news.parse_content("just text\nmore text")
+    assert c.headers == [] and c.body == ["just text", "more text"]

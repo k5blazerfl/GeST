@@ -103,12 +103,72 @@ def test_news_loads_items():
     async def _pump():
         for _ in range(100):
             await asyncio.sleep(0.02)
-            if news._numbers:
+            if news._items:
                 return
 
     app.loop.run_until_complete(_pump())
-    assert news._numbers  # the live host has Portage news
-    assert "[1]" in _render(news)
+    assert news._items  # the live host has Portage news
+    focused = news._items[news._item_walker.focus].number
+    assert f"[{focused}]" in _render(news)   # the focused item is visible
+
+
+def _news_screen(monkeypatch, items, content="Body paragraph."):
+    from gest.tui.screens import news as N
+    monkeypatch.setattr(N.news, "list_news", lambda: items)
+    monkeypatch.setattr(N.news, "read_news", lambda n: content)
+    app = App()
+    scr = N.NewsScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: bool(scr._items), ticks=200)
+    return app, scr
+
+
+def test_news_unread_count_and_auto_select(monkeypatch):
+    from gest.core.software.news import NewsItem
+    items = [NewsItem(1, "-", "2018-01-01", "Old read"),
+             NewsItem(2, "N", "2019-01-01", "New unread")]
+    _, scr = _news_screen(monkeypatch, items)
+    assert scr._item_walker.focus == 1                  # landed on first unread
+    out = _render(scr)
+    assert "1 unread" in out and "●" in out
+
+
+def test_news_mark_focused_read(monkeypatch):
+    from gest.core.software.news import NewsItem
+    items = [NewsItem(1, "N", "2019-01-01", "Unread")]
+    app, scr = _news_screen(monkeypatch, items)
+    scr._item_walker.set_focus(0)
+    scr.keypress(_SIZE, "r")
+    _pump(app, lambda: bool(_FakeSoftwareBackend.news_read), ticks=200)
+    assert _FakeSoftwareBackend.news_read == ["1"]
+    assert not items[0].unread                          # ● cleared
+    assert "all read" in _render(scr)
+
+
+def test_news_mark_all_read(monkeypatch):
+    from gest.core.software.news import NewsItem
+    items = [NewsItem(1, "N", "2019-01-01", "a"),
+             NewsItem(2, "N", "2019-02-01", "b")]
+    app, scr = _news_screen(monkeypatch, items)
+    scr.keypress(_SIZE, "a")
+    _pump(app, lambda: bool(_FakeSoftwareBackend.news_read), ticks=200)
+    assert _FakeSoftwareBackend.news_read == ["all"]
+    assert all(not it.unread for it in items)
+
+
+def test_news_read_styles_content_and_marks_read(monkeypatch):
+    from gest.core.software.news import NewsItem
+    content = ("  Title    Hello World\n  Author   Someone\n\n"
+               "Body paragraph here.\n\n[1] https://example.org")
+    items = [NewsItem(1, "N", "2019-01-01", "Hello World")]
+    app, scr = _news_screen(monkeypatch, items, content=content)
+    scr._item_walker.set_focus(0)
+    scr.keypress(_SIZE, "enter")
+    _pump(app, lambda: len(scr._content_walker) > 1, ticks=200)
+    out = _render(scr)
+    assert "Hello World" in out and "Body paragraph here." in out
+    _pump(app, lambda: bool(_FakeSoftwareBackend.news_read), ticks=200)
+    assert _FakeSoftwareBackend.news_read == ["1"]       # Enter also marked read
 
 
 def test_screen_status_line():
@@ -136,6 +196,7 @@ class _FakeSoftwareBackend:
 
     synced: list[list[str]] = []
     deselected: list[list[str]] = []
+    news_read: list[str] = []
 
     async def connect(self):
         return self
@@ -147,6 +208,10 @@ class _FakeSoftwareBackend:
     async def deselect(self, atoms):
         _FakeSoftwareBackend.deselected.append(list(atoms))
         return (True, "")
+
+    async def mark_news_read(self, selector):
+        _FakeSoftwareBackend.news_read.append(selector)
+        return True
 
     async def _stream(self, on_progress=None, on_finished=None):
         if on_finished is not None:
@@ -173,7 +238,8 @@ def _isolate_software_backend(monkeypatch):
     every TUI test so nothing touches the real system, regardless of host state."""
     _FakeSoftwareBackend.synced.clear()
     _FakeSoftwareBackend.deselected.clear()
-    for mod in ("software", "sync", "update", "cleanup", "accept", "world"):
+    _FakeSoftwareBackend.news_read.clear()
+    for mod in ("software", "sync", "update", "cleanup", "accept", "world", "news"):
         monkeypatch.setattr(f"gest.tui.screens.{mod}.SoftwareBackend",
                             _FakeSoftwareBackend, raising=False)
 
