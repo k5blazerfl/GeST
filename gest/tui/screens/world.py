@@ -6,7 +6,8 @@ under /etc/portage/sets. Right: the members of the focused set.
 
 Edits are **transactional**: marking @world packages to deselect, and adding /
 removing atoms or creating / deleting custom sets, all *stage* the change (shown
-inline — ✓ deselect, + add, - remove, and a modified marker in the sidebar).
+inline — a red ``-`` for a deselect/removal, ``+`` for an add, and a modified
+marker in the sidebar).
 Nothing is written until **F10 (Apply)**, which commits everything at once:
 custom-set edits through the Portage backend and deselects via
 ``emerge --deselect``. @system / @profile are read-only. Deselecting unmerges
@@ -84,9 +85,9 @@ class WorldScreen(Screen):
                 "Browse Portage's package sets and manage @world and custom sets.\n"
                 "Left pane: the sets; right pane: the focused set's members.\n\n"
                 "Edits are staged and applied together with F10 (Apply):\n"
-                "  World set   Space marks a package to deselect (✓)\n"
+                "  World set   Space marks a package to deselect (red -)\n"
                 "  Custom set  a add an atom · x remove/restore · d delete · c new\n"
-                "Inline markers show staged changes: ✓ deselect · + add · - remove.\n"
+                "Inline markers show staged changes: - deselect/remove · + add.\n"
                 "Deselecting unmerges nothing — it drops the @world record so a\n"
                 "later Clean Up may reclaim the package. @system / @profile are\n"
                 "read-only.\n\n"
@@ -256,11 +257,13 @@ class WorldScreen(Screen):
         if not self._world_pkgs:
             self._walker[:] = [urwid.Text(("dim", " The World set is empty."))]
             return
-        self._walker[:] = [
-            row(_fmt("✓" if p.cp in self._marked else "",
-                     p.category, p.name, p.version),
-                None if p.cp in self._marked else "dim")
-            for p in self._world_pkgs]
+        self._walker[:] = [self._world_row(p) for p in self._world_pkgs]
+
+    def _world_row(self, p: Package) -> urwid.Widget:
+        # Marked for deselect → red row led by '-'; otherwise dim and unmarked.
+        marked = p.cp in self._marked
+        return row(_fmt("-" if marked else "", p.category, p.name, p.version),
+                   "error" if marked else "dim")
 
     def _render_builtin_members(self, s) -> None:
         self._member_header.base_widget.set_text(f"{s.name} — {s.description}")
@@ -390,10 +393,8 @@ class WorldScreen(Screen):
             return
         p = self._world_pkgs[i]
         self._marked.discard(p.cp) if p.cp in self._marked else self._marked.add(p.cp)
-        marked = p.cp in self._marked
-        self._walker[i] = row(_fmt("✓" if marked else "", p.category, p.name,
-                                   p.version), None if marked else "dim")
-        self._refresh_count()                                 # patch one row, not all
+        self._walker[i] = self._world_row(p)                  # patch one row, not all
+        self._refresh_count()
         self.app.refresh()
 
     # -- staged custom-set edits --------------------------------------------

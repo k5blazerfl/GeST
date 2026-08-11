@@ -1699,7 +1699,7 @@ def test_world_lists_members_and_marks(monkeypatch):
     scr._walker.set_focus(0)
     scr.keypress(_SIZE, " ")                            # mark the first World-set pkg
     assert scr._marked == {"app-misc/neofetch"}
-    assert "✓" in _render(scr)
+    assert "- app-misc" in _render(scr)                # marked row led by '-'
     scr.keypress(_SIZE, "a")                            # mark all
     assert scr._marked == {"app-misc/neofetch", "dev-lang/python"}
     scr.keypress(_SIZE, "n")                            # unmark all
