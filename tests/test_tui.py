@@ -1105,6 +1105,54 @@ def test_accept_run_screen_tracks_install_and_remove():
     assert scr._done
 
 
+def test_accept_after_back_offers_housekeeping_only_after_successful_removal():
+    from gest.tui.screens.accept import AcceptRunScreen
+    app = App()
+    calls = []
+    # a successful removal → housekeeping is offered
+    rm = AcceptRunScreen(app, removes=["app-arch/oldpkg"],
+                         on_removed=lambda: calls.append("removed"))
+    rm._code = 0
+    rm._after_back()
+    assert calls == ["removed"]
+    # install-only run → nothing was removed, no housekeeping
+    inst = AcceptRunScreen(app, installs=["app-editors/vim"],
+                           on_removed=lambda: calls.append("install"))
+    inst._code = 0
+    inst._after_back()
+    # a failed removal → don't chase orphans after an incomplete unmerge
+    fail = AcceptRunScreen(app, removes=["app-arch/oldpkg"],
+                           on_removed=lambda: calls.append("failed"))
+    fail._code = 1
+    fail._after_back()
+    assert calls == ["removed"]
+
+
+def test_run_screen_return_to_caller_pops_once_and_fires_after_back():
+    from gest.tui.screens.accept import AcceptRunScreen
+    app = App()
+    app._stack.append(urwid.Text("caller"))
+    fired = []
+    scr = AcceptRunScreen(app, removes=["app-arch/oldpkg"],
+                          on_removed=lambda: fired.append(1))
+    scr._code = 0
+    app._stack.append(scr)
+    scr._return_to_caller()                   # user leaves via Back / Esc
+    assert fired == [1] and len(app._stack) == 1
+    scr._return_to_caller()                   # idempotent — no second fire
+    assert fired == [1]
+
+
+def test_cleanup_screen_accepts_preloaded_plan_without_rescanning():
+    from gest.core.software.cleanup import CleanupPlan, Orphan
+    plan = CleanupPlan(orphans=[Orphan("dev-libs/orphanlib", "1.2", 4096)],
+                       counts={"to_remove": 1}, ok=True)
+    app = App()
+    scr = CleanupScreen(app, plan)
+    assert scr._plan is plan and scr._preloaded
+    assert "orphanlib" in _render(scr)
+
+
 def test_update_run_screen_tracks_progress():
     from gest.core.software.update import Change
     from gest.tui.screens.apply import world_plan

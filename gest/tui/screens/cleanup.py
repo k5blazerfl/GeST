@@ -45,8 +45,11 @@ def _orphan_line(o: Orphan, keep: bool) -> str:
 
 
 class CleanupScreen(Screen):
-    def __init__(self, app: App) -> None:
-        self._plan: cleanup.CleanupPlan | None = None
+    def __init__(self, app: App, plan: cleanup.CleanupPlan | None = None) -> None:
+        # ``plan`` lets a caller (e.g. post-uninstall housekeeping) hand over an
+        # already-computed orphan scan so we don't depclean --pretend twice.
+        self._plan: cleanup.CleanupPlan | None = plan
+        self._preloaded = plan is not None
         self._kept: set[str] = set()   # cp of packages the user chose to keep
         self._walker = urwid.SimpleFocusListWalker([urwid.Text(" scanning …")])
         self._list = urwid.ListBox(self._walker)
@@ -91,7 +94,10 @@ class CleanupScreen(Screen):
                 "Esc    back"
             ),
         )
-        app.run_async(self._load())
+        if self._preloaded:
+            self._rebuild()          # scan already done by the caller
+        else:
+            app.run_async(self._load())
 
     async def _load(self) -> None:
         self._kept.clear()

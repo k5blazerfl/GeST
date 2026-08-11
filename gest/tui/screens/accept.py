@@ -61,11 +61,12 @@ class AcceptRunScreen(RunScreen):
     DONE_STATUS = "done"
 
     def __init__(self, app: App, *, installs=(), binpkgs=(), binprefs=(),
-                 removes=(), verb: str = "Accept", on_done=None):
+                 removes=(), verb: str = "Accept", on_done=None, on_removed=None):
         self._installs = list(installs)
         self._binpkgs = list(binpkgs)
         self._binprefs = list(binprefs)
         self._removes = list(removes)
+        self._on_removed = on_removed
         self._plans = []
         if self._installs:
             self._plans.append(install_plan(self._installs))
@@ -133,6 +134,13 @@ class AcceptRunScreen(RunScreen):
                 f"Done — {', '.join(parts) or 'no changes'} package(s).")
         return "Failed", False, (
             f"emerge exited {code}. The changes may be incomplete; see the log.")
+
+    def _after_back(self) -> None:
+        # Housekeeping: a successful uninstall can strand dependencies as
+        # orphans. Hand back to the caller to scan for them (and offer Clean Up
+        # only if any exist). Installs, failures and aborts skip this.
+        if self._removes and self._code == 0 and self._on_removed is not None:
+            self._on_removed()
 
     def _help_text(self) -> str:
         return (

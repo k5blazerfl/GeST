@@ -56,6 +56,8 @@ class RunScreen(StreamLog, Screen):
     def __init__(self, app: App, *, on_done=None):
         self._on_done = on_done
         self._done = False
+        self._code: int | None = None   # emerge exit code, once finished
+        self._returned = False          # guard: _after_back runs at most once
         self._logfile = None
         self._logpath: str | None = None
         self._refresh_pending = False
@@ -181,6 +183,7 @@ class RunScreen(StreamLog, Screen):
 
     def _finish(self, code: int | None) -> None:
         self._done = True
+        self._code = code
         if code == 0:
             for it in self._items:
                 if it.status == "pending" or it.status in self.ACTIVE_STATUSES:
@@ -211,7 +214,7 @@ class RunScreen(StreamLog, Screen):
 
         def back():
             self.app.pop()   # the result modal
-            self.app.pop()   # the run screen → back to the caller
+            self._return_to_caller()
 
         def view():
             self.app.pop()
@@ -222,12 +225,24 @@ class RunScreen(StreamLog, Screen):
                       [("Back", back), ("View log", view)])
         self.app.push_modal(modal, width=("relative", 62), height=("relative", 40))
 
+    def _return_to_caller(self) -> None:
+        """Pop this run screen back to its caller, then run the _after_back
+        hook exactly once (whether the user left via the modal or Esc)."""
+        self.app.pop()   # the run screen → back to the caller
+        if not self._returned:
+            self._returned = True
+            self._after_back()
+
+    def _after_back(self) -> None:
+        """Hook: runs once after this screen returns to its caller. Override to
+        chain a follow-up step (e.g. post-uninstall orphan housekeeping)."""
+
     def _view_log(self) -> None:
         self.app.push(RawLogScreen(self.app, self._logpath))
 
     def handle_key(self, key):
         if key == "esc" and self._done:
-            self.app.pop()
+            self._return_to_caller()
         elif key in ("l", "L"):
             self._view_log()
         else:
