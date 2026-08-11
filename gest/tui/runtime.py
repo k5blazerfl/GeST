@@ -246,15 +246,16 @@ class Modal(urwid.WidgetWrap):
     ``buttons`` is ``[(label, callback), …]``; Esc cancels (pops the overlay).
     """
 
-    def __init__(self, app: App, title: str, rows: list, buttons: list):
+    def __init__(self, app: App, title: str, rows: list, buttons: list,
+                 *, button_width: int = 16):
         self.app = app
         button_widgets = [
             urwid.AttrMap(urwid.Button(label, on_press=lambda _b, cb=cb: cb()),
                           None, focus_map="focus")
             for label, cb in buttons
         ]
-        grid = urwid.GridFlow(button_widgets, cell_width=16, h_sep=2, v_sep=1,
-                              align="center")
+        grid = urwid.GridFlow(button_widgets, cell_width=button_width, h_sep=2,
+                              v_sep=1, align="center")
         pile = urwid.Pile(
             [urwid.Text(("title", title)), urwid.Divider(), *rows,
              urwid.Divider(), grid]
@@ -313,6 +314,19 @@ class App:
             self._stack.pop()
         self._stack.append(widget)
         self.main.widget = widget
+        self.refresh()
+
+    def pop_to(self, widget: urwid.Widget) -> None:
+        """Pop screens until ``widget`` is on top (or only the root remains)."""
+        while len(self._stack) > 1 and self._stack[-1] is not widget:
+            self._stack.pop()
+        self.main.widget = self._stack[-1]
+        self.refresh()
+
+    def pop_to_root(self) -> None:
+        """Pop every screen back to the root (the Control Center main menu)."""
+        del self._stack[1:]
+        self.main.widget = self._stack[-1]
         self.refresh()
 
     def push_modal(self, modal: urwid.Widget, *, width=64, height=None) -> None:

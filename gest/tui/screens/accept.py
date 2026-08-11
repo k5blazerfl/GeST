@@ -153,9 +153,11 @@ class AcceptRunScreen(RunScreen):
             return                              # user stepped away during the scan
         if plan is not None and plan.ok and plan.orphans:
             # swap this finished removal screen for Clean Up in one redraw — no
-            # flash of the package list in between. Esc from Clean Up returns
-            # there directly.
-            self.app.replace(CleanupScreen(self.app, plan))
+            # flash of the package list in between. The Package Manager sits
+            # just beneath us; hand it over so Clean Up can offer it (and the
+            # main menu) as a destination once housekeeping finishes.
+            pm = self.app._stack[-2] if len(self.app._stack) >= 2 else None
+            self.app.replace(CleanupScreen(self.app, plan, return_to=pm))
         else:
             self._result_modal(
                 "Completed", True,

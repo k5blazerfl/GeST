@@ -17,7 +17,7 @@ import urwid
 
 from gest.core.software import cleanup
 from gest.core.software.cleanup import Orphan, human_size
-from gest.tui.runtime import App, Screen, action_bar
+from gest.tui.runtime import App, Modal, Screen, action_bar
 from gest.tui.screens.apply import depclean_plan, remove_plan
 from gest.tui.screens.runscreen import RunScreen, clip, row
 
@@ -45,11 +45,15 @@ def _orphan_line(o: Orphan, keep: bool) -> str:
 
 
 class CleanupScreen(Screen):
-    def __init__(self, app: App, plan: cleanup.CleanupPlan | None = None) -> None:
+    def __init__(self, app: App, plan: cleanup.CleanupPlan | None = None,
+                 *, return_to=None) -> None:
         # ``plan`` lets a caller (e.g. post-uninstall housekeeping) hand over an
         # already-computed orphan scan so we don't depclean --pretend twice.
+        # ``return_to`` is the Package Manager screen to offer as a destination
+        # when this Clean Up was reached as post-uninstall housekeeping.
         self._plan: cleanup.CleanupPlan | None = plan
         self._preloaded = plan is not None
+        self._return_to = return_to
         self._kept: set[str] = set()   # cp of packages the user chose to keep
         self._walker = urwid.SimpleFocusListWalker([urwid.Text(" scanning …")])
         self._list = urwid.ListBox(self._walker)
@@ -210,7 +214,8 @@ class CleanupScreen(Screen):
         else:
             plan = remove_plan([o.cp for o in selected])  # just the marked atoms
         self.app.push(CleanupRunScreen(self.app, selected, plan,
-                                       on_done=reload_after))
+                                       on_done=reload_after,
+                                       return_to=self._return_to))
 
 
 class _Line:
@@ -246,9 +251,12 @@ class CleanupRunScreen(RunScreen):
     ACTIVE_STATUSES = ("removing",)
     DONE_STATUS = "removed"
 
-    def __init__(self, app: App, orphans: list[Orphan], plan, *, on_done=None):
+    def __init__(self, app: App, orphans: list[Orphan], plan, *, on_done=None,
+                 return_to=None):
         self._orphans = orphans
         self._plan = plan
+        self._return_to = return_to        # Package Manager to offer, or None
+        self._result: tuple | None = None  # (title, ok, message), for re-showing
         super().__init__(app, on_done=on_done)
 
     def _build_items(self):
@@ -290,6 +298,60 @@ class CleanupRunScreen(RunScreen):
         return "Failed", False, (
             f"emerge exited {code}. Some packages may not have been removed; "
             "see the log.")
+
+    def _present_result(self, title: str, ok: bool, message: str) -> None:
+        # Reached as post-uninstall housekeeping (return_to set): don't strand
+        # the user here — ask where to go next (Package Manager / logs / menu).
+        # Reached from the menu: conclude with the normal Back / View log modal.
+        if self._return_to is None:
+            super()._present_result(title, ok, message)
+            return
+        self._result = (title, ok, message)
+        self._completion_modal()
+
+    def _completion_modal(self) -> None:
+        title, ok, message = self._result
+        self.app.notify(title.lower(), error=not ok)
+        body = message
+        if self._logpath:
+            body = f"{message}\n\nFull log: {self._logpath}"
+
+        def to_pm():
+            self.app.pop()                       # the completion modal
+            self.app.pop_to(self._return_to)     # back to the Package Manager
+            refresh = getattr(self._return_to, "refresh_packages", None)
+            if refresh is not None:              # reflect the just-removed orphans
+                refresh()
+
+        def to_menu():
+            self.app.pop()                       # the completion modal
+            self.app.pop_to_root()               # back to the Control Center menu
+
+        def view():
+            self.app.pop()                       # the completion modal
+            self._view_log()                     # Esc from the log re-offers this
+
+        modal = Modal(self.app, title,
+                      [urwid.Text(("ok" if ok else "error", body)),
+                       urwid.Divider(),
+                       urwid.Text(("hint", "Where would you like to go?"))],
+                      [("Package Manager", to_pm), ("View logs", view),
+                       ("Main menu", to_menu)],
+                      button_width=20)
+        self.app.push_modal(modal, width=("relative", 70), height=("relative", 48))
+
+    def handle_key(self, key):
+        # In the housekeeping flow there is no plain "back": the user chooses a
+        # destination. Esc (and returning from the log) re-offers the choices.
+        if self._return_to is not None and self._done:
+            if key == "esc":
+                self._completion_modal()
+                return None
+            if key in ("l", "L"):
+                self._view_log()
+                return None
+            return key
+        return super().handle_key(key)
 
     def _help_text(self) -> str:
         return (

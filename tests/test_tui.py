@@ -1159,6 +1159,52 @@ def test_cleanup_screen_accepts_preloaded_plan_without_rescanning():
     assert "orphanlib" in _render(scr)
 
 
+def test_app_pop_to_and_pop_to_root():
+    app = App()
+    a, b, c, d = (urwid.Text(x) for x in "abcd")
+    for w in (a, b, c, d):
+        app._stack.append(w)
+    app.pop_to(b)                             # pop c, d
+    assert app._stack[-1] is b and len(app._stack) == 2
+    app.pop_to_root()                         # back to the root only
+    assert app._stack == [a]
+
+
+def test_cleanup_run_screen_offers_destinations_in_housekeeping():
+    from gest.core.software.cleanup import Orphan
+    from gest.tui.screens.apply import depclean_plan
+    from gest.tui.screens.cleanup import CleanupRunScreen
+    app = App()
+    app._stack.append(urwid.Text("main menu"))
+    pm = urwid.Text("package manager")
+    app._stack.append(pm)
+    scr = CleanupRunScreen(app, [Orphan("dev-libs/orphan", "1.0", 0)],
+                           depclean_plan(), return_to=pm)
+    app._stack.append(scr)
+    scr._finish(0)                            # cleanup complete → destination prompt
+    top = app._stack[-1]
+    assert isinstance(top, urwid.Overlay)     # the completion modal
+    out = _render(top)
+    assert "Package Manager" in out and "View logs" in out and "Main menu" in out
+    # Esc re-offers the choices rather than dropping back to the review
+    scr._result = ("Completed", True, "done")
+    assert scr.handle_key("esc") is None
+
+
+def test_cleanup_run_screen_menu_launched_keeps_plain_result_modal():
+    from gest.core.software.cleanup import Orphan
+    from gest.tui.screens.apply import depclean_plan
+    from gest.tui.screens.cleanup import CleanupRunScreen
+    app = App()
+    app._stack.append(urwid.Text("menu"))
+    scr = CleanupRunScreen(app, [Orphan("dev-libs/orphan", "1.0", 0)],
+                           depclean_plan())    # no return_to → menu flow
+    app._stack.append(scr)
+    scr._finish(0)
+    out = _render(app._stack[-1])
+    assert "Back" in out and "Package Manager" not in out
+
+
 def test_update_run_screen_tracks_progress():
     from gest.core.software.update import Change
     from gest.tui.screens.apply import world_plan

@@ -577,6 +577,12 @@ class SoftwareScreen(Screen):
         else:
             self.app.run_async(self._load_installed())
 
+    def refresh_packages(self) -> None:
+        """Public: re-read installed packages after an external mutation (e.g.
+        returning here from the post-uninstall Clean Up) and repaint the view."""
+        reader.invalidate_caches()
+        self._reload_view()
+
     # -- menu bar -----------------------------------------------------------
 
     def _on_menu(self, menu_id: str, item_id: str) -> None:
