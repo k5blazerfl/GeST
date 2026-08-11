@@ -37,3 +37,42 @@ def test_unknown_stored_value_falls_back_to_default(tmp_path):
     p = tmp_path / "prefs.ini"
     p.write_text("[ui]\naccept_mode = bogus\n")
     assert prefs.accept_mode(str(p)) == prefs.TIMER
+
+
+# -- timer length -----------------------------------------------------------
+
+def test_timer_default_is_five(tmp_path):
+    assert prefs.timer_seconds(str(tmp_path / "prefs.ini")) == 5
+
+
+def test_timer_roundtrip(tmp_path):
+    p = str(tmp_path / "prefs.ini")
+    prefs.set_timer_seconds(12, p)
+    assert prefs.timer_seconds(p) == 12
+
+
+def test_timer_out_of_range_rejected(tmp_path):
+    p = str(tmp_path / "prefs.ini")
+    with pytest.raises(ValueError):
+        prefs.set_timer_seconds(prefs.TIMER_MIN - 1, p)
+    with pytest.raises(ValueError):
+        prefs.set_timer_seconds(prefs.TIMER_MAX + 1, p)
+
+
+def test_timer_stored_value_clamped_to_range(tmp_path):
+    p = tmp_path / "prefs.ini"
+    p.write_text("[ui]\ntimer_seconds = 999\n")
+    assert prefs.timer_seconds(str(p)) == prefs.TIMER_MAX
+
+
+def test_timer_non_numeric_falls_back(tmp_path):
+    p = tmp_path / "prefs.ini"
+    p.write_text("[ui]\ntimer_seconds = soon\n")
+    assert prefs.timer_seconds(str(p)) == 5
+
+
+def test_accept_mode_and_timer_coexist(tmp_path):
+    p = str(tmp_path / "prefs.ini")
+    prefs.set_accept_mode(prefs.IMMEDIATE, p)
+    prefs.set_timer_seconds(9, p)
+    assert prefs.accept_mode(p) == prefs.IMMEDIATE and prefs.timer_seconds(p) == 9

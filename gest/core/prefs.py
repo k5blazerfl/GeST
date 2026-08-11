@@ -25,6 +25,11 @@ IMMEDIATE = "immediate"
 ACCEPT_MODES = (MANUAL, TIMER, IMMEDIATE)
 _DEFAULT_MODE = TIMER
 
+# Countdown length (seconds) for the ``timer`` mode, and its allowed range.
+TIMER_MIN = 1
+TIMER_MAX = 30
+_DEFAULT_TIMER = 5
+
 # Human label + one-line description per mode, in display order.
 ACCEPT_LABELS: dict[str, tuple[str, str]] = {
     MANUAL: ("Click to accept",
@@ -50,6 +55,17 @@ def _read(path: str | None) -> configparser.ConfigParser:
     return cp
 
 
+def _write(key: str, value: str, path: str | None) -> None:
+    target = _prefs_path(path)
+    cp = _read(path)
+    if not cp.has_section("ui"):
+        cp.add_section("ui")
+    cp.set("ui", key, value)
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    with open(target, "w", encoding="utf-8") as fh:
+        cp.write(fh)
+
+
 def accept_mode(path: str | None = None) -> str:
     """The configured accept mode, or the default if unset/invalid."""
     mode = _read(path).get("ui", "accept_mode", fallback=_DEFAULT_MODE)
@@ -60,11 +76,23 @@ def set_accept_mode(mode: str, path: str | None = None) -> None:
     """Persist the accept mode. Raises :class:`ValueError` on an unknown mode."""
     if mode not in ACCEPT_MODES:
         raise ValueError(f"invalid accept mode: {mode!r}")
-    target = _prefs_path(path)
-    cp = _read(path)
-    if not cp.has_section("ui"):
-        cp.add_section("ui")
-    cp.set("ui", "accept_mode", mode)
-    os.makedirs(os.path.dirname(target), exist_ok=True)
-    with open(target, "w", encoding="utf-8") as fh:
-        cp.write(fh)
+    _write("accept_mode", mode, path)
+
+
+def timer_seconds(path: str | None = None) -> int:
+    """The countdown length for ``timer`` mode, clamped to the allowed range."""
+    raw = _read(path).get("ui", "timer_seconds", fallback=str(_DEFAULT_TIMER))
+    try:
+        val = int(raw)
+    except (TypeError, ValueError):
+        return _DEFAULT_TIMER                   # non-numeric → default
+    return min(max(val, TIMER_MIN), TIMER_MAX)
+
+
+def set_timer_seconds(seconds: int, path: str | None = None) -> None:
+    """Persist the countdown length. Raises :class:`ValueError` out of range."""
+    seconds = int(seconds)
+    if not TIMER_MIN <= seconds <= TIMER_MAX:
+        raise ValueError(f"timer seconds out of range [{TIMER_MIN}, {TIMER_MAX}]: "
+                         f"{seconds}")
+    _write("timer_seconds", str(seconds), path)

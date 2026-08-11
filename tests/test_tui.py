@@ -180,10 +180,11 @@ def _isolate_software_backend(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _default_accept_manual(monkeypatch):
-    """Pin the accept mode for tests: never read the developer's real prefs, and
+    """Pin the accept prefs for tests: never read the developer's real prefs, and
     default to manual so review screens don't arm a countdown (or auto-fire mid
     test) unless a test explicitly opts into timer/immediate."""
     monkeypatch.setattr("gest.core.prefs.accept_mode", lambda *a, **k: "manual")
+    monkeypatch.setattr("gest.core.prefs.timer_seconds", lambda *a, **k: 5)
 
 
 def test_menu_launches_services():
@@ -803,8 +804,7 @@ def test_proposal_esc_stops_timer_then_cancels(monkeypatch):
 
 def test_proposal_countdown_auto_applies(monkeypatch):
     from gest.tui.screens.accept import AcceptRunScreen
-    from gest.tui.screens.proposal import ProposalScreen
-    monkeypatch.setattr(ProposalScreen, "_auto_secs", 1)   # keep the test fast
+    monkeypatch.setattr("gest.core.prefs.timer_seconds", lambda *a, **k: 1)  # fast
     app = App()
     app._stack.append(urwid.Text("software list"))
     _resolved_proposal(monkeypatch, app)
@@ -889,6 +889,27 @@ def test_preferences_screen_selects_and_saves(monkeypatch):
     scr.keypress(_SIZE, "enter")                    # select it (saves)
     assert store["v"] == prefs.TIMER
     assert "(•) Countdown timer" in _render(scr)
+
+
+def test_preferences_screen_adjusts_timer_length(monkeypatch):
+    from gest.core import prefs
+    from gest.tui.screens.preferences import PreferencesScreen
+    store = {"mode": prefs.TIMER, "secs": 5}
+    monkeypatch.setattr("gest.core.prefs.accept_mode", lambda *a, **k: store["mode"])
+    monkeypatch.setattr("gest.core.prefs.timer_seconds", lambda *a, **k: store["secs"])
+    monkeypatch.setattr("gest.core.prefs.set_timer_seconds",
+                        lambda s, *a, **k: store.__setitem__("secs", s))
+    app = App()
+    scr = PreferencesScreen(app)
+    app._stack.append(scr)
+    scr._walker.set_focus(len(scr._items) - 1)      # the Timer length row
+    assert ("←/→", "Adjust") in scr._footer_context()
+    assert "5 seconds" in _render(scr)
+    scr.keypress(_SIZE, "right")                    # 5 -> 6
+    scr.keypress(_SIZE, "right")                    # 6 -> 7
+    assert store["secs"] == 7 and "7 seconds" in _render(scr)
+    scr.keypress(_SIZE, "left")                     # 7 -> 6
+    assert store["secs"] == 6
 
 
 

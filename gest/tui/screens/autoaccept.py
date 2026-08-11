@@ -26,7 +26,6 @@ _SUBSTEPS = 10         # bar updates per second (smoothness)
 
 
 class AutoAccept:
-    _auto_secs = 5                 # countdown length for the ``timer`` mode
     _auto_action = "Applying"      # verb shown in the countdown line
     _timer_running = False
 
@@ -41,7 +40,7 @@ class AutoAccept:
         # manual: nothing — the host waits for F10/Enter
 
     async def _auto_countdown(self) -> None:
-        total = self._auto_secs
+        total = prefs.timer_seconds()
         steps = max(total * _SUBSTEPS, 1)
         self._refresh_footer()                   # show the timer's Enter/Esc keys
         for step in range(steps):

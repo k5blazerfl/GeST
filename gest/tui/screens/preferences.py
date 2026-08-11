@@ -1,9 +1,10 @@
 """GeST preferences (urwid): user-level UI options.
 
-Currently just the *accept mode* — how GeST confirms applying software changes
-(install / remove / clean up): review-and-click, a countdown timer, or apply as
-soon as the plan resolves. Stored per-user via :mod:`gest.core.prefs`; no
-backend or root involved, so selecting a mode saves immediately.
+The *accept mode* — how GeST confirms applying software changes (install /
+remove / clean up): review-and-click, a countdown timer, or apply as soon as the
+plan resolves — plus the countdown length used by the timer mode. Stored
+per-user via :mod:`gest.core.prefs`; no backend or root involved, so every
+change saves immediately.
 """
 
 from __future__ import annotations
@@ -22,6 +23,10 @@ class PreferencesScreen(Screen):
     def __init__(self, app: App) -> None:
         self._modes = list(prefs.ACCEPT_MODES)
         self._current = prefs.accept_mode()
+        self._timer = prefs.timer_seconds()
+        # Focusable items, in walker order: the mode radios, then the timer row.
+        self._items: list[tuple[str, str | None]] = (
+            [("mode", m) for m in self._modes] + [("timer", None)])
         self._walker = urwid.SimpleFocusListWalker([])
         self._list = urwid.ListBox(self._walker)
         super().__init__(
@@ -30,15 +35,25 @@ class PreferencesScreen(Screen):
             footer_keys=[("Enter", "Select"), ("Esc", "Back")],
             help_text=(
                 "How GeST confirms applying software changes — installs, removals\n"
-                "and clean-ups all share this setting:\n\n"
+                "and clean-ups all share these settings:\n\n"
                 "Click to accept   review, then F10 / Enter — no timer\n"
                 "Countdown timer   auto-apply after a few seconds (Esc stops it,\n"
                 "                  Enter applies now)\n"
                 "As soon as ready  apply the moment the plan resolves\n\n"
-                "Enter / Space selects the highlighted mode (saved at once).\n"
-                "Esc goes back."),
+                "Enter / Space selects the highlighted mode.\n"
+                "On Timer length, ←/→ (or -/+) adjusts the countdown seconds.\n"
+                "Every change saves at once. Esc goes back."),
         )
         self._rebuild()
+
+    def _kind(self) -> str:
+        i = self._walker.focus or 0
+        return self._items[i][0] if 0 <= i < len(self._items) else "mode"
+
+    def _footer_context(self):
+        if self._kind() == "timer":
+            return [("←/→", "Adjust"), ("Esc", "Back")]
+        return [("Enter", "Select"), ("Esc", "Back")]
 
     def _rebuild(self) -> None:
         focus = self._walker.focus or 0
@@ -51,6 +66,13 @@ class PreferencesScreen(Screen):
                 (None, f"{label:<18}"),
                 ("dim", f"  {desc}"),
             ]))
+        unit = "second" if self._timer == 1 else "seconds"
+        note = "" if self._current == prefs.TIMER else "   (Countdown timer mode)"
+        rows.append(_row([
+            (None, "     Timer length   "),
+            ("ok", f"{self._timer} {unit}"),
+            ("dim", f"   ←/→ adjust{note}"),
+        ]))
         self._walker[:] = rows
         self._walker.set_focus(min(focus, len(rows) - 1))
         self.app.refresh()
@@ -59,8 +81,16 @@ class PreferencesScreen(Screen):
         if key == "esc":
             self.app.pop()
             return None
-        if key in ("enter", " "):
-            self._select(self._modes[self._walker.focus])
+        kind, value = self._items[self._walker.focus]
+        if kind == "mode":
+            if key in ("enter", " "):
+                self._select(value)
+                return None
+        elif key in ("left", "-", "h"):
+            self._adjust(-1)
+            return None
+        elif key in ("right", "+", "l"):
+            self._adjust(+1)
             return None
         return key
 
@@ -75,3 +105,15 @@ class PreferencesScreen(Screen):
         self._current = mode
         self._rebuild()
         self.app.notify(f"Accept mode: {prefs.ACCEPT_LABELS[mode][0]}")
+
+    def _adjust(self, delta: int) -> None:
+        new = max(prefs.TIMER_MIN, min(prefs.TIMER_MAX, self._timer + delta))
+        if new == self._timer:
+            return
+        try:
+            prefs.set_timer_seconds(new)
+        except (OSError, ValueError) as exc:
+            self.app.notify(f"Could not save preference: {exc}", error=True)
+            return
+        self._timer = new
+        self._rebuild()
