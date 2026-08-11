@@ -41,6 +41,7 @@ PALETTE = [
     # selected row: blue text (no background bar)
     ("focus", "light blue,bold", "default", "", "#5af,bold", "default"),
     ("boxline", "dark magenta", "default", "", _OUTLINE, "default"),  # box outline
+    ("boxline_focus", "light blue", "default", "", "#5af", "default"),  # focused pane
     ("body", "default", "default", "", "default", "default"),     # shields box content
     ("reversed", "standout", "default", "", "standout", "default"),
     ("ok", "light magenta", "default", "", _ACCENT, "default"),
@@ -175,12 +176,15 @@ def boxed(widget: urwid.Widget, title: str = "", **kw) -> urwid.Widget:
     """A LineBox with a Gentoo-purple outline and a lavender title.
 
     The content is shielded (its unattributed cells map to ``body`` = default)
-    so the outer purple attr colours only the frame, never the inner text.
+    so the outer purple attr colours only the frame, never the inner text. When
+    the pane holds focus the outline turns blue (``boxline_focus``).
     """
     kw.setdefault("title_attr", "pane_title")
     shielded = urwid.AttrMap(widget, {None: "body"})
+    # focus_map lights the outline blue when this pane holds focus.
     return urwid.AttrMap(
-        urwid.LineBox(shielded, title=title, **kw), {None: "boxline"})
+        urwid.LineBox(shielded, title=title, **kw),
+        {None: "boxline"}, {None: "boxline_focus"})
 
 
 def _header_row(title: str) -> urwid.Widget:
