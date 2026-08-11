@@ -1669,6 +1669,12 @@ def _world_members(monkeypatch, pkgs):
     monkeypatch.setattr(reader, "list_installed", lambda: pkgs)
 
 
+def _focus_set(scr, idx):
+    """Focus sidebar entry ``idx``; the walker's "modified" signal syncs members."""
+    scr._focus_pane("sets")
+    scr._set_walker.set_focus(idx)
+
+
 def test_world_lists_members_and_marks(monkeypatch):
     from gest.core.software.model import Package
     from gest.core.software.sets import PackageSet
@@ -1688,7 +1694,7 @@ def test_world_lists_members_and_marks(monkeypatch):
     out = _render(scr)
     assert "neofetch" in out and "python" in out        # World-set members (default)
     assert "World set" in out and "@system" in out      # sidebar lists the sets
-    assert "[Cancel]" in out and "[Deselect]" in out    # action bar
+    assert "[Cancel]" in out and "[Apply]" in out       # one unified Apply action
     scr._focus_pane("members")
     scr._walker.set_focus(0)
     scr.keypress(_SIZE, " ")                            # mark the first World-set pkg
@@ -1709,23 +1715,20 @@ def test_world_sets_browser_read_only(monkeypatch):
     monkeypatch.setattr(W.sets, "list_sets", lambda: [
         PackageSet(name="@system", atoms=["sys-apps/baselayout", "sys-libs/glibc"],
                    description="Core system", kind="builtin"),
-        PackageSet(name="@mydesktop", atoms=["x11-wm/i3"], description="Custom",
-                   kind="custom"),
     ])
     app = App()
     scr = W.WorldScreen(app)
     app._stack.append(scr)
-    _pump(app, lambda: bool(scr._sets), ticks=200)
-    scr._focus_pane("sets")
-    scr._set_walker.set_focus(1)                        # @system
+    _pump(app, lambda: bool(scr._sidebar), ticks=200)
+    _focus_set(scr, 1)                                  # @system (builtin)
     out = _render(scr)
     assert "@system" in out and "sys-apps/baselayout" in out and "read-only" in out
-    assert not scr._is_world()
-    scr._deselect()                                     # only the World set is editable
-    assert _FakeSoftwareBackend.deselected == []        # no backend call for @system
+    assert scr._focused_custom() is None and not scr._is_world()
+    scr._apply()                                        # nothing staged → no-op
+    assert _FakeSoftwareBackend.deselected == []
 
 
-def test_world_deselect_calls_backend(monkeypatch):
+def test_world_deselect_commits_via_backend(monkeypatch):
     from gest.core.software.model import Package
     from gest.tui.screens import world as W
     _world_members(monkeypatch, [
@@ -1735,8 +1738,8 @@ def test_world_deselect_calls_backend(monkeypatch):
     scr = W.WorldScreen(app)
     app._stack.append(scr)
     _pump(app, lambda: bool(scr._world_pkgs), ticks=200)
-    scr._marked = {"app-misc/neofetch"}
-    app.loop.run_until_complete(scr._call(["app-misc/neofetch"]))
+    scr._marked = {"app-misc/neofetch"}                 # staged deselect
+    app.loop.run_until_complete(scr._commit())          # Apply
     assert _FakeSoftwareBackend.deselected == [["app-misc/neofetch"]]
     assert not scr._marked                              # cleared on success
 
@@ -1765,44 +1768,57 @@ def _world_with_sets(monkeypatch, app, custom):
     monkeypatch.setattr(W, "PortageBackend", _FakePortage)
     scr = W.WorldScreen(app)
     app._stack.append(scr)
-    _pump(app, lambda: bool(scr._sets), ticks=200)
+    _pump(app, lambda: bool(scr._sidebar), ticks=200)
     return scr, writes
 
 
-def test_world_write_set_saves_via_backend(monkeypatch):
+def test_world_set_edit_is_staged_then_committed(monkeypatch):
     from gest.core.software.sets import PackageSet
     app = App()
-    app._stack.append(urwid.Text("x"))
     scr, writes = _world_with_sets(monkeypatch, app, [
         PackageSet(name="@media", atoms=["media-video/mpv"], kind="custom")])
-    scr._write_set("media", ["media-video/mpv", "x11-wm/i3"], "ok")
-    _pump(app, lambda: bool(writes), ticks=200)
+    scr._stage("media", ["media-video/mpv", "x11-wm/i3"])   # add an atom (staged)
+    assert scr._edits == {"media": ["media-video/mpv", "x11-wm/i3"]}
+    assert writes == []                                     # nothing written yet
+    assert scr._has_pending()
+    app.loop.run_until_complete(scr._commit())              # Apply
+    assert len(writes) == 1
     path, text = writes[0]
     assert path == "/etc/portage/sets/media"
-    assert "media-video/mpv" in text and "x11-wm/i3" in text
-    assert text.startswith("# GeST")                    # header keeps the file non-empty
+    assert "x11-wm/i3" in text and text.startswith("# GeST")
+    assert scr._edits == {}                                 # cleared after apply
 
 
-def test_world_delete_set_writes_empty(monkeypatch):
+def test_world_stage_delete_commits_empty(monkeypatch):
     from gest.core.software.sets import PackageSet
     app = App()
-    app._stack.append(urwid.Text("x"))
     scr, writes = _world_with_sets(monkeypatch, app, [
         PackageSet(name="@media", atoms=["media-video/mpv"], kind="custom")])
-    scr._delete_set_file("media", "ok")
-    _pump(app, lambda: bool(writes), ticks=200)
-    assert writes[0] == ("/etc/portage/sets/media", "")   # empty text = delete
+    _focus_set(scr, 1)                                      # @media
+    scr._toggle_delete("media")                            # stage delete
+    assert scr._edits == {"media": None}
+    assert writes == []                                     # not written until Apply
+    app.loop.run_until_complete(scr._commit())
+    assert writes == [("/etc/portage/sets/media", "")]      # empty text = delete
+
+
+def test_world_new_set_toggle_delete_cancels_it(monkeypatch):
+    app = App()
+    scr, _ = _world_with_sets(monkeypatch, app, [])
+    scr._edits["mydesktop"] = []                            # a staged new (empty) set
+    scr._populate_sidebar()
+    assert scr._is_new("mydesktop")
+    scr._toggle_delete("mydesktop")                        # deleting an unsaved new = cancel
+    assert "mydesktop" not in scr._edits
 
 
 def test_world_custom_set_keys_open_editors(monkeypatch):
     from gest.core.software.sets import PackageSet
     app = App()
-    app._stack.append(urwid.Text("x"))
     scr, _ = _world_with_sets(monkeypatch, app, [
         PackageSet(name="@media", atoms=["media-video/mpv"], kind="custom")])
-    scr._focus_pane("sets")
-    scr._set_walker.set_focus(1)                          # @media (custom)
-    assert scr._focused_is_custom()
+    _focus_set(scr, 1)                                     # @media (custom)
+    assert scr._focused_custom() == "media"
     keys = [k for k, _label in scr._footer_context()]
     assert "c" in keys and "a" in keys and "d" in keys    # create/add/delete offered
     depth = len(app._stack)
@@ -1812,6 +1828,13 @@ def test_world_custom_set_keys_open_editors(monkeypatch):
     app.pop()
     scr.keypress(_SIZE, "c")                              # New set → modal overlay
     assert isinstance(app._stack[-1], urwid.Overlay)
+
+
+def test_world_apply_with_nothing_pending_is_noop(monkeypatch):
+    app = App()
+    scr, writes = _world_with_sets(monkeypatch, app, [])
+    scr._apply()
+    assert writes == [] and _FakeSoftwareBackend.deselected == []
 
 
 def test_update_screen_lists_changes(monkeypatch):
