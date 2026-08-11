@@ -27,6 +27,7 @@ import gi
 gi.require_version("Gio", "2.0")
 from gi.repository import Gio, GLib
 
+import gest
 from gest.backend.audit import audit
 from gest.backend.bootloader import BootloaderService
 from gest.backend.datetime import DateTimeService
@@ -109,9 +110,30 @@ _EMAINT = shutil.which("emaint") or "/usr/sbin/emaint"
 
 
 # Exit after this many idle seconds so a re-activation picks up new code and
-# the root service doesn't linger. Never exits while a merge is streaming.
+# the root service doesn't linger. Never exits while a merge is streaming. Also
+# exit promptly (at the next check) once the installed code changes under us —
+# an ``emerge gest`` upgrade — so the stale root service is replaced without a
+# manual ``pkill``; the next D-Bus call re-activates the new code.
 _IDLE_TIMEOUT = 120
-_IDLE_CHECK = 30
+_IDLE_CHECK = 10
+
+# The version this process started with, and the package's __init__ on disk. When
+# they diverge, GeST was updated while we were running.
+_RUNNING_VERSION = gest.__version__
+_GEST_INIT = gest.__file__
+
+
+def _code_changed() -> bool:
+    """True when GeST on disk has a different ``__version__`` than the running
+    backend — i.e. it was upgraded since activation, so we should exit and let
+    the next call start the new code."""
+    try:
+        with open(_GEST_INIT, encoding="utf-8") as fh:
+            text = fh.read()
+    except OSError:
+        return False
+    m = re.search(r'^__version__\s*=\s*["\']([^"\']+)["\']', text, re.M)
+    return bool(m) and m.group(1) != _RUNNING_VERSION
 
 # Coalesce streamed output into one D-Bus signal per flush so a large (e.g.
 # failing) build can't emit a signal per line and storm the frontend. Flush when
@@ -152,12 +174,15 @@ class SoftwareService:
         self._last_activity = GLib.get_monotonic_time()
 
     @staticmethod
-    def _should_exit(active: int, idle_seconds: float, timeout: float) -> bool:
-        return active == 0 and idle_seconds >= timeout
+    def _should_exit(active: int, idle_seconds: float, timeout: float,
+                     code_changed: bool = False) -> bool:
+        if active != 0:                       # never bail out mid-merge
+            return False
+        return code_changed or idle_seconds >= timeout
 
     def _idle_check(self) -> bool:
         idle = (GLib.get_monotonic_time() - self._last_activity) / 1_000_000
-        if self._should_exit(self._active, idle, _IDLE_TIMEOUT):
+        if self._should_exit(self._active, idle, _IDLE_TIMEOUT, _code_changed()):
             if self._on_idle:
                 self._on_idle()
             return False  # stop polling; the loop is quitting

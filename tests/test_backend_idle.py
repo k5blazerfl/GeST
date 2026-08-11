@@ -13,6 +13,27 @@ def test_should_exit_only_when_idle_and_no_active_ops():
     assert SoftwareService._should_exit(3, 999, 120) is False
 
 
+def test_should_exit_on_code_change_even_when_not_idle_enough():
+    # an upgrade under a running backend: exit at the next check (when idle),
+    # without waiting out the full idle timeout...
+    assert SoftwareService._should_exit(0, 1, 120, code_changed=True) is True
+    # ...but never mid-merge, even if the code changed
+    assert SoftwareService._should_exit(2, 999, 120, code_changed=True) is False
+
+
+def test_code_changed_detects_version_drift(tmp_path, monkeypatch):
+    from gest.backend import service
+    init = tmp_path / "__init__.py"
+    init.write_text('"""doc"""\n__version__ = "9.9.9"\n')
+    monkeypatch.setattr(service, "_GEST_INIT", str(init))
+    monkeypatch.setattr(service, "_RUNNING_VERSION", "0.0.0")
+    assert service._code_changed() is True                      # disk != running
+    monkeypatch.setattr(service, "_RUNNING_VERSION", "9.9.9")
+    assert service._code_changed() is False                     # matches → stay
+    monkeypatch.setattr(service, "_GEST_INIT", str(tmp_path / "missing"))
+    assert service._code_changed() is False                     # unreadable → stay
+
+
 def test_augmented_path_guarantees_system_dirs():
     """D-Bus activation can hand the backend an empty/minimal PATH; emerge then
     can't find rsync/git/bzip2 and every sync fails. PATH must always include the
