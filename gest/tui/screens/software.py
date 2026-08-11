@@ -809,17 +809,22 @@ _STEP_GLYPH = {"pending": "·", "active": "▸", "done": "✓",
 _STEP_ATTR = {"pending": "dim", "active": "field", "done": "ok",
               "skipped": "dim", "failed": "error"}
 
-# GeST ASCII logo (from Art/ascii-logo.txt) shown on the startup screen.
-_LOGO = (
-    "      ::::::::  :::::::::: :::::::: :::::::::::\n"
-    "    :+:    :+: :+:       :+:    :+:    :+:\n"
-    "   +:+        +:+       +:+           +:+\n"
-    "  :#:        +#++:++#  +#++:++#++    +#+\n"
-    " +#+   +#+# +#+              +#+    +#+\n"
-    "#+#    #+# #+#       #+#    #+#    #+#\n"
-    "########  ########## ########     ###"
-)
-_LOGO_W = max(len(line) for line in _LOGO.splitlines())
+# GeST ASCII logo (from Art/ascii-logo.txt) shown on the startup screen —
+# the top three lines in Gentoo blue, the bottom four in Gentoo purple.
+_LOGO_LINES = [
+    "      ::::::::  :::::::::: :::::::: :::::::::::",
+    "    :+:    :+: :+:       :+:    :+:    :+:",
+    "   +:+        +:+       +:+           +:+",
+    "  :#:        +#++:++#  +#++:++#++    +#+",
+    " +#+   +#+# +#+              +#+    +#+",
+    "#+#    #+# #+#       #+#    #+#    #+#",
+    "########  ########## ########     ###",
+]
+_LOGO_W = max(len(line) for line in _LOGO_LINES)
+_LOGO_MARKUP = [
+    ("box_title", "\n".join(_LOGO_LINES[:3]) + "\n"),   # top 3: Gentoo blue
+    ("title", "\n".join(_LOGO_LINES[3:])),              # bottom 4: Gentoo purple
+]
 
 
 class SoftwareLoadingScreen(Screen):
@@ -846,7 +851,7 @@ class SoftwareLoadingScreen(Screen):
         self._bar = urwid.ProgressBar("pb_normal", "pb_complete", 0, 1)
 
         logo = urwid.Padding(
-            urwid.Text(("title", _LOGO), wrap="clip"),
+            urwid.Text(_LOGO_MARKUP, wrap="clip"),
             align="center", width=_LOGO_W)
         panel = boxed(
             urwid.Pile([
