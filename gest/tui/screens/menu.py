@@ -6,6 +6,7 @@ import socket
 
 import urwid
 
+from gest import __version__
 from gest.tui.runtime import App, Screen, accel_label
 from gest.tui.screens.bootloader import BootloaderScreen
 from gest.tui.screens.cleanup import CleanupScreen
@@ -107,7 +108,7 @@ class MenuScreen(Screen):
             ("pack", bottom),
         ])
         super().__init__(
-            app, body, title=f"GeST — menu @ {socket.gethostname()}",
+            app, body, title=f"GeST v{__version__} — menu @ {socket.gethostname()}",
             footer_keys=[("F9", "Quit")],
             help_text=(
                 "GeST Control Center — a YaST-style front-end for Gentoo.\n\n"
