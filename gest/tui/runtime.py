@@ -42,6 +42,8 @@ PALETTE = [
     ("focus", "light blue,bold", "default", "", "#5af,bold", "default"),
     ("boxline", "dark magenta", "default", "", _OUTLINE, "default"),  # box outline
     ("boxline_focus", "light blue", "default", "", "#5af", "default"),  # focused pane
+    ("box_title", "light blue,bold", "default", "", "#5af,bold", "default"),  # box title
+
     ("body", "default", "default", "", "default", "default"),     # shields box content
     ("reversed", "standout", "default", "", "standout", "default"),
     ("ok", "light magenta", "default", "", _ACCENT, "default"),
@@ -179,7 +181,7 @@ def boxed(widget: urwid.Widget, title: str = "", **kw) -> urwid.Widget:
     so the outer purple attr colours only the frame, never the inner text. When
     the pane holds focus the outline turns blue (``boxline_focus``).
     """
-    kw.setdefault("title_attr", "pane_title")
+    kw.setdefault("title_attr", "box_title")
     shielded = urwid.AttrMap(widget, {None: "body"})
     # focus_map lights the outline blue when this pane holds focus.
     return urwid.AttrMap(
