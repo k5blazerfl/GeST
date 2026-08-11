@@ -1499,22 +1499,27 @@ def _world_members(monkeypatch, pkgs):
 
 def test_world_lists_members_and_marks(monkeypatch):
     from gest.core.software.model import Package
-    from gest.tui.screens.world import WorldScreen
+    from gest.core.software.sets import PackageSet
+    from gest.tui.screens import world as W
     _world_members(monkeypatch, [
         Package(cp="app-misc/neofetch", version="7.1.0", world_member=True),
         Package(cp="dev-lang/python", version="3.11.9", world_member=True),
         Package(cp="sys-libs/glibc", version="2.39", world_member=False),
     ])
+    monkeypatch.setattr(W.sets, "list_sets", lambda: [
+        PackageSet(name="@system", atoms=["sys-libs/glibc"], description="Core")])
     app = App()
-    scr = WorldScreen(app)
+    scr = W.WorldScreen(app)
     app._stack.append(scr)
-    _pump(app, lambda: bool(scr._members), ticks=200)
-    assert len(scr._members) == 2                       # dependency-only excluded
+    _pump(app, lambda: bool(scr._world_pkgs), ticks=200)
+    assert len(scr._world_pkgs) == 2                    # dependency-only excluded
     out = _render(scr)
-    assert "neofetch" in out and "python" in out and "glibc" not in out
+    assert "neofetch" in out and "python" in out        # World-set members (default)
+    assert "World set" in out and "@system" in out      # sidebar lists the sets
     assert "[Cancel]" in out and "[Deselect]" in out    # action bar
+    scr._focus_pane("members")
     scr._walker.set_focus(0)
-    scr.keypress(_SIZE, " ")                            # mark the first
+    scr.keypress(_SIZE, " ")                            # mark the first World-set pkg
     assert scr._marked == {"app-misc/neofetch"}
     assert "✓" in _render(scr)
     scr.keypress(_SIZE, "a")                            # mark all
@@ -1523,15 +1528,41 @@ def test_world_lists_members_and_marks(monkeypatch):
     assert not scr._marked
 
 
-def test_world_deselect_calls_backend(monkeypatch):
+def test_world_sets_browser_read_only(monkeypatch):
     from gest.core.software.model import Package
-    from gest.tui.screens.world import WorldScreen
+    from gest.core.software.sets import PackageSet
+    from gest.tui.screens import world as W
     _world_members(monkeypatch, [
         Package(cp="app-misc/neofetch", version="7.1.0", world_member=True)])
+    monkeypatch.setattr(W.sets, "list_sets", lambda: [
+        PackageSet(name="@system", atoms=["sys-apps/baselayout", "sys-libs/glibc"],
+                   description="Core system", kind="builtin"),
+        PackageSet(name="@mydesktop", atoms=["x11-wm/i3"], description="Custom",
+                   kind="custom"),
+    ])
     app = App()
-    scr = WorldScreen(app)
+    scr = W.WorldScreen(app)
     app._stack.append(scr)
-    _pump(app, lambda: bool(scr._members), ticks=200)
+    _pump(app, lambda: bool(scr._sets), ticks=200)
+    scr._focus_pane("sets")
+    scr._set_walker.set_focus(1)                        # @system
+    out = _render(scr)
+    assert "@system" in out and "sys-apps/baselayout" in out and "read-only" in out
+    assert not scr._is_world()
+    scr._deselect()                                     # only the World set is editable
+    assert _FakeSoftwareBackend.deselected == []        # no backend call for @system
+
+
+def test_world_deselect_calls_backend(monkeypatch):
+    from gest.core.software.model import Package
+    from gest.tui.screens import world as W
+    _world_members(monkeypatch, [
+        Package(cp="app-misc/neofetch", version="7.1.0", world_member=True)])
+    monkeypatch.setattr(W.sets, "list_sets", lambda: [])
+    app = App()
+    scr = W.WorldScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: bool(scr._world_pkgs), ticks=200)
     scr._marked = {"app-misc/neofetch"}
     app.loop.run_until_complete(scr._call(["app-misc/neofetch"]))
     assert _FakeSoftwareBackend.deselected == [["app-misc/neofetch"]]

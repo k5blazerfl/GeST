@@ -1,8 +1,8 @@
-"""Pure tests for the @world deselect helpers (no Portage, no D-Bus)."""
+"""Pure tests for the @world deselect + package-set helpers (no Portage/D-Bus)."""
 
 import pytest
 
-from gest.core.software import world
+from gest.core.software import sets, world
 
 
 def test_deselect_argv_builds_emerge_command():
@@ -40,3 +40,31 @@ def test_valid_atom_rejects_unsafe(atom):
 def test_deselect_argv_rejects_bad_input(atoms):
     with pytest.raises(ValueError):
         world.deselect_argv(atoms)
+
+
+# -- package sets -----------------------------------------------------------
+
+def test_read_set_file_skips_blanks_and_comments(tmp_path):
+    f = tmp_path / "myset"
+    f.write_text("# a comment\nx11-wm/i3\n\napp-editors/neovim\n")
+    assert sets.read_set_file(str(f)) == ["x11-wm/i3", "app-editors/neovim"]
+
+
+def test_read_set_file_missing_is_empty(tmp_path):
+    assert sets.read_set_file(str(tmp_path / "nope")) == []
+
+
+def test_custom_sets_lists_files_as_named_sets(tmp_path):
+    (tmp_path / "desktop").write_text("x11-wm/i3\n")
+    (tmp_path / "media").write_text("media-video/mpv\napp-misc/foo\n")
+    (tmp_path / ".hidden").write_text("ignored\n")   # dotfiles skipped
+    (tmp_path / "sub").mkdir()                        # directories skipped
+    result = sets.custom_sets(str(tmp_path))
+    assert [(s.name, s.atoms, s.kind) for s in result] == [
+        ("@desktop", ["x11-wm/i3"], "custom"),
+        ("@media", ["media-video/mpv", "app-misc/foo"], "custom"),
+    ]
+
+
+def test_custom_sets_missing_dir_is_empty():
+    assert sets.custom_sets("/nonexistent/portage/sets") == []
