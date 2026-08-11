@@ -17,6 +17,7 @@ from gest.core.software import update
 from gest.core.software.update import Change, human_size
 from gest.tui.runtime import App, NavPile, Screen, boxed, focusable_actions
 from gest.tui.screens.apply import world_plan
+from gest.tui.screens.autoaccept import AutoAccept
 from gest.tui.screens.runscreen import RunScreen, clip, row
 
 _GLYPH_W = 2
@@ -51,9 +52,12 @@ def _row_line(c: Change) -> str:
                _change_text(c), human_size(c.size))
 
 
-class UpdateScreen(Screen):
+class UpdateScreen(AutoAccept, Screen):
+    _auto_action = "Updating"
+
     def __init__(self, app: App) -> None:
         self._plan: update.UpdatePlan | None = None
+        self._armed = False
         self._walker = urwid.SimpleFocusListWalker(
             [urwid.Text(" computing the update plan …  (this can take a while)")])
         self._list = urwid.ListBox(self._walker)
@@ -96,13 +100,33 @@ class UpdateScreen(Screen):
         app.run_async(self._load())
 
     def _footer_context(self):
+        if self._timer_running:
+            return [("Enter", "Update now"), ("Esc", "Stop")]
         if self._on_action_row():
             return [("Enter", "Activate"), ("Tab", "Next"), ("Esc", "Back")]
         return self._base_footer_keys
 
+    # -- auto-accept (AutoAccept hooks) -------------------------------------
+
+    def _auto_apply(self) -> None:
+        self._update()
+
+    def _auto_set_status(self, markup) -> None:
+        self._count.set_text(markup)
+
+    def _maybe_arm(self) -> None:
+        # Arm once, only when there's actually something to update. An empty or
+        # failed plan is reviewed manually; reloads (r) don't re-arm.
+        if self._armed:
+            return
+        if self._plan is not None and self._plan.ok and self._changes():
+            self._armed = True
+            self.arm_auto_accept()
+
     async def _load(self) -> None:
         self._plan = await self.app.run_blocking(update.plan_update)
         self._rebuild()
+        self._maybe_arm()
 
     # -- rendering ----------------------------------------------------------
 
@@ -150,6 +174,16 @@ class UpdateScreen(Screen):
     # -- keys ---------------------------------------------------------------
 
     def handle_key(self, key):
+        outcome = self._auto_key(key)            # Enter/F10 update now · Esc stop
+        if outcome == "applied":
+            return None
+        if outcome == "stopped":                 # keep reviewing, back to manual
+            self._refresh_count()
+            self._refresh_footer()
+            return None
+        if self._timer_running and key == "r":
+            self._timer_running = False          # recomputing → cancel the auto-run
+            self._refresh_footer()
         if key == "esc":
             self.app.pop()
         elif key == "r":

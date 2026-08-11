@@ -2,10 +2,11 @@
 
 These settings belong to the software system they govern (installs, removals and
 clean-ups), so they live under the Software category rather than a global bucket.
-The *accept mode* — how GeST confirms applying a change: review-and-click, a
-countdown timer, or apply as soon as the plan resolves — plus the countdown
-length used by the timer mode. Stored per-user via :mod:`gest.core.prefs`; no
-backend or root involved, so every change saves immediately.
+The *accept mode* — how GeST confirms applying a change (installs, removals,
+updates and clean-ups): review-and-click, a countdown timer, or apply as soon as
+the plan resolves — plus the countdown length used by the timer mode. Stored
+per-user via :mod:`gest.core.prefs`; no backend or root involved, so every change
+saves immediately.
 """
 
 from __future__ import annotations
@@ -35,8 +36,8 @@ class PreferencesScreen(Screen):
             title="Software Preferences",
             footer_keys=[("Enter", "Select"), ("Esc", "Back")],
             help_text=(
-                "How GeST confirms applying software changes — installs, removals\n"
-                "and clean-ups all share these settings:\n\n"
+                "How GeST confirms applying software changes — installs, removals,\n"
+                "updates and clean-ups all share these settings:\n\n"
                 "Click to accept   review, then F10 / Enter — no timer\n"
                 "Countdown timer   auto-apply after a few seconds (Esc stops it,\n"
                 "                  Enter applies now)\n"

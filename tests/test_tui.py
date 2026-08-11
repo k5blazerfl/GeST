@@ -1771,6 +1771,52 @@ def test_update_screen_empty_state(monkeypatch):
     assert "up to date" in _render(scr)
 
 
+def _update_with_changes(monkeypatch, app, mode="timer"):
+    """An UpdateScreen scanned to one change in ``mode``; ``_update`` is spied."""
+    from gest.core.software import update as core_update
+    from gest.core.software.update import Change, UpdatePlan
+    from gest.tui.screens.update import UpdateScreen
+    fake = UpdatePlan(changes=[
+        Change("app-arch/gzip", "1.13", "1.14", "update", False, 430080)], ok=True)
+    monkeypatch.setattr(core_update, "plan_update", lambda: fake)
+    monkeypatch.setattr("gest.core.prefs.accept_mode", lambda *a, **k: mode)
+    updated: list = []
+    monkeypatch.setattr(UpdateScreen, "_update", lambda self: updated.append(True))
+    scr = UpdateScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: scr._armed, ticks=300)
+    return scr, updated
+
+
+def test_update_arms_timer_and_enter_updates(monkeypatch):
+    app = App()
+    app._stack.append(urwid.Text("menu"))
+    scr, updated = _update_with_changes(monkeypatch, app, mode="timer")
+    assert scr._timer_running                        # countdown armed after scan
+    assert ("Enter", "Update now") in scr._footer_context()
+    scr.keypress(_SIZE, "enter")                     # bypass → update now
+    assert updated == [True] and not scr._timer_running
+
+
+def test_update_esc_stops_timer_without_leaving(monkeypatch):
+    app = App()
+    caller = urwid.Text("menu")
+    app._stack.append(caller)
+    scr, updated = _update_with_changes(monkeypatch, app, mode="timer")
+    scr.keypress(_SIZE, "esc")                       # first Esc: stop the countdown
+    assert not scr._timer_running and updated == []
+    assert app._stack[-1] is scr                     # stays on System Update
+    scr.keypress(_SIZE, "esc")                       # second Esc: back to menu
+    assert app._stack[-1] is caller
+
+
+def test_update_immediate_mode_updates_at_once(monkeypatch):
+    app = App()
+    app._stack.append(urwid.Text("menu"))
+    scr, updated = _update_with_changes(monkeypatch, app, mode="immediate")
+    assert updated == [True] and not scr._timer_running
+
+
 def test_sync_screen_lists_repos_and_tracks_progress():
     from gest.tui.screens.sync import SyncScreen
     app = App()
