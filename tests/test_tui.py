@@ -206,6 +206,44 @@ def test_services_list_and_detail():
     assert isinstance(app._stack[-1], ServicesScreen)
 
 
+def test_services_runlevel_manager_toggles(monkeypatch):
+    from gest.core.services.model import Service
+    from gest.tui.screens import services as S
+
+    class _FakeServicesBackend:
+        calls: list = []
+
+        async def connect(self):
+            return self
+
+        async def set_enabled(self, name, enabled, runlevel):
+            _FakeServicesBackend.calls.append((name, enabled, runlevel))
+            return (True, "")
+
+        async def close(self):
+            return None
+
+    fake = [Service(name="sshd", status="started", runlevels=["default"])]
+    monkeypatch.setattr(S.reader, "list_services", lambda: fake)
+    monkeypatch.setattr(S, "ServicesBackend", _FakeServicesBackend)
+    app = App()
+    scr = S.ServicesScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: bool(scr._order))
+    scr._walker.set_focus(0)
+    scr.keypress(_SIZE, "l")                       # open the runlevel manager
+    rl = app._stack[-1]
+    assert isinstance(rl, S.ServiceRunlevelsScreen)
+    out = _render(rl)
+    assert "[✓] default" in out and "[ ] boot" in out and "shutdown" in out
+    rl._walker.set_focus(1)                        # boot
+    rl.keypress(_SIZE, " ")                        # add sshd to boot
+    _pump(app, lambda: bool(_FakeServicesBackend.calls))
+    assert _FakeServicesBackend.calls == [("sshd", True, "boot")]
+    assert "boot" in fake[0].runlevels             # shared Service updated
+    assert "[✓] boot" in _render(rl)               # re-rendered with the new mark
+
+
 def test_hostname_screen_prefills_current():
     app = App()
     scr = HostnameScreen(app)
