@@ -121,8 +121,8 @@ class ProposalScreen(AutoAccept, Screen):
     def _auto_apply(self) -> None:
         self._apply()
 
-    def _auto_set_phase(self, text: str, attr: str) -> None:
-        self._set_phase(text, attr)
+    def _auto_set_status(self, markup) -> None:
+        self._phase.set_text(markup)
 
     # -- resolve ------------------------------------------------------------
 

@@ -771,7 +771,9 @@ def test_proposal_arms_autoapply_timer(monkeypatch):
     scr = _resolved_proposal(monkeypatch, app)
     assert scr._timer_running                       # countdown armed once resolved
     _pump(app, lambda: "applying in" in scr._phase.get_text()[0], ticks=100)
-    assert "applying in" in scr._phase.get_text()[0]      # visible countdown
+    line = scr._phase.get_text()[0]
+    assert "applying in" in line                    # visible countdown
+    assert "░" in line or "█" in line               # with a progress bar
     assert ("Enter", "Apply now") in scr._footer_context()
 
 

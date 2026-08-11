@@ -7,18 +7,22 @@ identical for the install/remove proposal and for the Clean Up review, so it
 lives here as a mixin rather than being copy-pasted.
 
 A host screen mixes this in, sets ``self.app``, implements ``_auto_apply`` (the
-irreversible action) and ``_auto_set_phase`` (show a status line), then calls
-``arm_auto_accept()`` once its plan is resolved and non-empty. The countdown is
-flag-driven (not task cancellation) so ``stop`` is instant and the coroutine
-unwinds on its own. Hosts route keys through ``_auto_key`` and consult
-``_timer_running`` in their footer.
+irreversible action) and ``_auto_set_status`` (render a status markup — the
+countdown line with its progress bar), then calls ``arm_auto_accept()`` once its
+plan is resolved and non-empty. The countdown is flag-driven (not task
+cancellation) so ``stop`` is instant and the coroutine unwinds on its own. Hosts
+route keys through ``_auto_key`` and consult ``_timer_running`` in their footer.
 """
 
 from __future__ import annotations
 
 import asyncio
+import math
 
 from gest.core import prefs
+
+_BAR_W = 22            # countdown progress-bar width, in cells
+_SUBSTEPS = 10         # bar updates per second (smoothness)
 
 
 class AutoAccept:
@@ -37,17 +41,23 @@ class AutoAccept:
         # manual: nothing — the host waits for F10/Enter
 
     async def _auto_countdown(self) -> None:
-        for remaining in range(self._auto_secs, 0, -1):
+        total = self._auto_secs
+        steps = max(total * _SUBSTEPS, 1)
+        self._refresh_footer()                   # show the timer's Enter/Esc keys
+        for step in range(steps):
             if not self._timer_running:
-                return                          # stopped mid-count
-            self._auto_set_phase(
-                f"{self._auto_action} in {remaining}s …   "
-                "Enter apply now · Esc stop", "ok")
-            self._refresh_footer()               # show the timer's Enter/Esc keys
+                return                           # stopped mid-count
+            remaining = math.ceil(total - step / _SUBSTEPS)
+            filled = round(step / steps * _BAR_W)
+            self._auto_set_status([
+                ("ok", f" {self._auto_action} in {remaining}s   "),
+                ("ok", "█" * filled),
+                ("dim", "░" * (_BAR_W - filled)),
+            ])
             self.app.refresh()
-            await asyncio.sleep(1)
+            await asyncio.sleep(1 / _SUBSTEPS)
         # Re-check the flag and that we're still the top screen: a stop in the
-        # final second wins, and we never fire after the user has moved on.
+        # final moment wins, and we never fire after the user has moved on.
         if self._timer_running and self.app._stack and self.app._stack[-1] is self:
             self._timer_running = False
             self._auto_apply()

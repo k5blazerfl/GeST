@@ -123,9 +123,8 @@ class CleanupScreen(AutoAccept, Screen):
     def _auto_apply(self) -> None:
         self._clean()
 
-    def _auto_set_phase(self, text: str, attr: str) -> None:
-        self._count.set_text((attr, f" {text}"))
-        self.app.refresh()
+    def _auto_set_status(self, markup) -> None:
+        self._count.set_text(markup)
 
     async def _arm_when_ready(self) -> None:
         self._maybe_arm()
