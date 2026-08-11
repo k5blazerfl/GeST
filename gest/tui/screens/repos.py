@@ -19,6 +19,7 @@ from gest.core.repos import pending, reader, writer
 from gest.core.repos.backend_client import ReposBackend
 from gest.core.repos.reader import Repo
 from gest.tui.runtime import App, Modal, Screen, action_bar
+from gest.tui.screens.mirrors import MirrorScreen
 
 # Table column widths (characters). Name leads (after the mark glyph); Sync URI
 # takes the remaining width and is clipped. The Properties panel shows the full
@@ -103,8 +104,8 @@ class ReposScreen(Screen):
             title="Repositories",
             footer_keys=[
                 ("a", "Enable"), ("A", "Add"), ("d", "Disable"), ("x", "Remove"),
-                ("t", "Refresh"), ("F10", "Accept"), ("F9", "Cancel"),
-                ("r", "Reload"), ("Esc", "Back"),
+                ("t", "Refresh"), ("m", "Mirror"), ("F10", "Accept"),
+                ("F9", "Cancel"), ("r", "Reload"), ("Esc", "Back"),
             ],
             help_text=(
                 "Software repositories configured in /etc/portage/repos.conf.\n\n"
@@ -120,7 +121,9 @@ class ReposScreen(Screen):
                 "can re-enable it without retyping the URI (press a on the D row; x\n"
                 "forgets it).\n\n"
                 "The main (default) repository is flagged ★ and is protected — it\n"
-                "can't be disabled, removed, or refreshed-on-open.\n\n"
+                "can't be disabled, removed, or refreshed-on-open. Its rsync mirror\n"
+                "can be changed though: focus the ★ row and press m to pick a\n"
+                "geographically near Gentoo rotation (or a custom rsync URI).\n\n"
                 "Columns:  Name · AutoSync (in emerge --sync) · Refresh (sync on\n"
                 "open) · Type · Sync URI. Refresh: when on (x), GeST syncs that repo\n"
                 "each time Software Management opens; the ★ main tree is excluded —\n"
@@ -130,7 +133,8 @@ class ReposScreen(Screen):
                 "A  stage adding a custom repository (name / sync type / URI)\n"
                 "d  stage disabling (keeps files + saves info)    x  remove — on an\n"
                 "   enabled repo deletes its files; on a disabled one forgets it\n"
-                "t  toggle refresh-on-open    F10 Accept    F9 Cancel    r  reload"
+                "t  toggle refresh-on-open    m  change ★ main-repo mirror\n"
+                "F10 Accept    F9 Cancel    r  reload"
             ),
         )
         app.run_async(self._load())
@@ -267,11 +271,27 @@ class ReposScreen(Screen):
                 self._enable()
         elif key == "A":
             self._add()
+        elif key in ("m", "M"):
+            self._mirror()
         elif key in ("d", "x", "t"):
             self._mark(key)
         else:
             return key
         return None
+
+    def _mirror(self) -> None:
+        repo = self._current()
+        if repo is None or not repo.main:
+            self.app.notify("Select the ★ main repository to change its mirror.",
+                            error=True)
+            return
+        if not self._pending.is_empty:
+            self.app.notify("Apply or discard pending changes first (F10 / F9).",
+                            error=True)
+            return
+        self.app.push(MirrorScreen(
+            self.app, repo=repo.name, current=repo.sync_uri,
+            on_done=lambda: self.app.run_async(self._load())))
 
     def _leave(self) -> None:
         if self._pending.is_empty:

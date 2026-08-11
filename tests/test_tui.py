@@ -1026,6 +1026,67 @@ def test_repos_protects_main_repo():
     assert isinstance(app._stack[-1], ReposScreen)
 
 
+def _focus_main(scr):
+    for i, r in enumerate(scr._repos):
+        if r.main:
+            scr._walker.set_focus(i)
+            return r
+    return None
+
+
+def test_repos_mirror_opens_only_for_main_repo():
+    from gest.tui.screens.mirrors import MirrorScreen
+    app = App()
+    scr = ReposScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: len(scr._repos) > 0, ticks=200)
+    # a non-main repo: m is rejected
+    non_main = next((i for i, r in enumerate(scr._repos) if not r.main), None)
+    if non_main is not None:
+        scr._walker.set_focus(non_main)
+        scr.keypress(_SIZE, "m")
+        assert isinstance(app._stack[-1], ReposScreen)
+    # the ★ main repo: m opens the mirror picker
+    _focus_main(scr)
+    scr.keypress(_SIZE, "m")
+    assert isinstance(app._stack[-1], MirrorScreen)
+    out = _render(app._stack[-1])
+    assert "rsync mirrors" in out and "Germany" in out
+
+
+def test_mirror_screen_applies_selection(monkeypatch):
+    from gest.tui.screens import mirrors as mirror_screen
+    from gest.tui.screens.mirrors import MirrorScreen
+    captured = {}
+
+    class _FakePortageBackend:
+        async def connect(self):
+            return self
+
+        async def write_config(self, writes):
+            captured["writes"] = list(writes)
+            return True
+
+        async def close(self):
+            return None
+
+    monkeypatch.setattr(mirror_screen, "PortageBackend", _FakePortageBackend)
+    monkeypatch.setattr(mirror_screen, "_read_text",
+                        lambda _p: "[gentoo]\nsync-uri = rsync://old/gentoo-portage\n")
+    app = App()
+    caller = urwid.Text("repos")
+    app._stack.append(caller)
+    scr = MirrorScreen(app, repo="gentoo", current="rsync://old/gentoo-portage")
+    app._stack.append(scr)
+    scr._choose("rsync://rsync.de.gentoo.org/gentoo-portage")
+    _pump(app, lambda: "writes" in captured, ticks=100)
+    cw = captured["writes"][0]
+    assert cw.path.endswith("repos.conf/gentoo.conf")
+    assert "sync-uri = rsync://rsync.de.gentoo.org/gentoo-portage" in cw.text
+    assert "rsync://old" not in cw.text
+    assert app._stack[-1] is caller          # returned to the caller after applying
+
+
 def test_repos_stages_changes_then_clears():
     app = App()
     scr = ReposScreen(app)
