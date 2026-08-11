@@ -20,7 +20,7 @@ from gest.core.software.backend_client import SoftwareBackend
 from gest.core.software.model import PackageDetail
 from gest.core.software.selection import Selection
 from gest.tui.menubar import MenuBar, _Dropdown
-from gest.tui.runtime import App, Screen, action_bar, boxed
+from gest.tui.runtime import App, Screen, boxed
 from gest.tui.screens.binhost import BinhostScreen
 from gest.tui.screens.config import KeywordsScreen, UseFlagScreen
 from gest.tui.screens.news import NewsScreen
@@ -91,6 +91,20 @@ _PKG_HEADER = f"   {'Name':<32} Summary"
 _CAT_HEADER = "   Category"
 
 
+class _NavPile(urwid.Pile):
+    """A Pile whose arrow keys never move focus between its items — pane
+    switching is Tab-only (SoftwareScreen._cycle_pane), so up/down can't wander
+    from the package list into the menu bar or the action bar."""
+
+    def keypress(self, size, key):
+        before = self.focus_position
+        result = super().keypress(size, key)
+        if result is None and key in ("up", "down") and self.focus_position != before:
+            self.focus_position = before      # undo the Pile's arrow focus move
+            return key
+        return result
+
+
 class SoftwareScreen(Screen):
     # sidebar widget indices
     _VIEW_IDX = 0
@@ -158,10 +172,23 @@ class SoftwareScreen(Screen):
         self._columns = urwid.Columns(
             [(34, sidebar_box), right], dividechars=1)
         self._menubar = MenuBar(app, _MENUS, self._on_menu, top=2)
-        pile = urwid.Pile([
+        # Focusable Cancel / Accept — Tab reaches them; Enter/Space activates the
+        # highlighted one (blue focus text via focus_map).
+        self._cancel_btn = urwid.AttrMap(
+            urwid.SelectableIcon("[Cancel]", 0), None, focus_map="focus")
+        self._accept_btn = urwid.AttrMap(
+            urwid.SelectableIcon("[Accept]", 0), None, focus_map="focus")
+        self._actions = urwid.Columns([
+            urwid.Text(""),                       # spacer pushes the buttons right
+            ("pack", self._cancel_btn),
+            ("pack", urwid.Text("  ")),
+            ("pack", self._accept_btn),
+            ("pack", urwid.Text(" ")),
+        ])
+        pile = _NavPile([
             ("pack", self._menubar),
             self._columns,
-            ("pack", action_bar(["Cancel", "Accept"])),
+            ("pack", self._actions),
         ])
         super().__init__(
             app, pile, title="Software Management",
@@ -630,9 +657,11 @@ class SoftwareScreen(Screen):
     # -- keys ---------------------------------------------------------------
 
     def _context(self):
-        in_menu = self._pile.focus_position == 0
-        in_sidebar = (not in_menu) and self._columns.focus_position == 0
-        in_table = (not in_menu) and self._columns.focus_position == 1
+        pos = self._pile.focus_position          # 0 menu · 1 columns · 2 actions
+        in_menu = pos == 0
+        in_cols = pos == 1
+        in_sidebar = in_cols and self._columns.focus_position == 0
+        in_table = in_cols and self._columns.focus_position == 1
         sidebar_focus = self._sidebar.focus_position if in_sidebar else None
         return in_menu, in_sidebar, in_table, sidebar_focus
 
@@ -644,6 +673,12 @@ class SoftwareScreen(Screen):
 
         if key == "tab":
             self._cycle_pane()
+            return None
+        if self._pile.focus_position == 2 and key in ("enter", " "):
+            if self._actions.focus is self._accept_btn:
+                self._accept()
+            else:
+                self.app.pop()               # Cancel
             return None
         if key == "esc":
             if in_table and self._view == "categories" and self._drilled is not None:
@@ -711,13 +746,16 @@ class SoftwareScreen(Screen):
         return key
 
     def _cycle_pane(self) -> None:
-        if self._pile.focus_position == 0:            # menu -> sidebar
+        pos = self._pile.focus_position               # 0 menu · 1 columns · 2 actions
+        if pos == 0:                                   # menu -> sidebar
             self._pile.focus_position = 1
             self._columns.focus_position = 0
-        elif self._columns.focus_position == 0:       # sidebar -> table
-            self._columns.focus_position = 1
-        else:                                          # table -> menu
+        elif pos == 2:                                 # actions -> menu
             self._pile.focus_position = 0
+        elif self._columns.focus_position == 0:        # sidebar -> table
+            self._columns.focus_position = 1
+        else:                                          # table -> actions
+            self._pile.focus_position = 2
 
     def _repaint(self) -> None:
         for i, cp in enumerate(self._cps):

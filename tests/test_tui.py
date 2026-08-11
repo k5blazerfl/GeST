@@ -553,6 +553,47 @@ def test_software_accept_opens_proposal():
     assert isinstance(app._stack[-1], ProposalScreen)
 
 
+def test_software_tab_reaches_action_buttons():
+    app = App()
+    base = urwid.Text("home")
+    app._stack.append(base)
+    scr = _software(app)
+    # start on the columns (sidebar); Tab: sidebar -> table -> actions
+    scr._pile.focus_position = 1
+    scr._columns.focus_position = 0
+    scr.handle_key("tab")                        # sidebar -> table
+    scr.handle_key("tab")                        # table -> actions
+    assert scr._pile.focus_position == 2          # the Cancel/Accept row
+    # Enter on the Cancel button pops back
+    scr._actions.focus_position = 1               # Cancel
+    scr.handle_key("enter")
+    assert app._stack[-1] is base
+
+
+def test_software_accept_button_activates_accept():
+    app = App()
+    scr = _software(app)
+    called = []
+    scr._accept = lambda: called.append(1)
+    scr._pile.focus_position = 2
+    scr._actions.focus_position = 3               # Accept
+    scr.handle_key(" ")
+    assert called == [1]
+
+
+def test_software_arrows_do_not_reach_menu_bar():
+    app = App()
+    scr = _software(app)
+    scr._pile.focus_position = 1
+    scr._columns.focus_position = 1               # the package table
+    scr._walker.set_focus(0)
+    scr.keypress(_SIZE, "up")                      # up at the top of the list
+    assert scr._pile.focus_position == 1          # stayed on the columns, not menu
+    scr._walker.set_focus(len(scr._cps) - 1)
+    scr.keypress(_SIZE, "down")                    # down at the bottom of the list
+    assert scr._pile.focus_position == 1          # not the action bar either
+
+
 def test_proposal_resolves_then_applies(monkeypatch):
     from gest.core.software.preview import PreviewResult
     from gest.tui.screens import proposal as proposal_mod
