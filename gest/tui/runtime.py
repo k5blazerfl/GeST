@@ -153,27 +153,6 @@ def function_bar(keys: list[tuple[str, str]]) -> urwid.Widget:
     return urwid.AttrMap(urwid.Text(markup or ""), "footer")
 
 
-def accel_label(label: str) -> urwid.Widget:
-    """A YaST-style ``[Label]`` with the first (accelerator) letter highlighted."""
-    return urwid.Text(["[", ("cc_title", label[0]), f"{label[1:]}]"])
-
-
-def action_bar(labels: list[str]) -> urwid.Widget:
-    """A right-aligned row of ``[Label]`` action buttons (visual; key-driven)."""
-    cols: list = [urwid.Text("")]  # left spacer pushes actions right
-    for label in labels:
-        cols.append(("pack", accel_label(label)))
-        cols.append(("pack", urwid.Text("  ")))
-    return urwid.Columns(cols)
-
-
-class BracketButton(urwid.Button):
-    """A urwid Button rendered YaST-style as ``[Label]``."""
-
-    button_left = urwid.Text("[")
-    button_right = urwid.Text("]")
-
-
 def boxed(widget: urwid.Widget, title: str = "", **kw) -> urwid.Widget:
     """A LineBox with a Gentoo-purple outline and a lavender title.
 
