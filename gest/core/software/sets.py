@@ -120,3 +120,107 @@ def set_path(name: str, sets_dir: str = SETS_DIR) -> str:
 def render_set(atoms) -> str:
     """The file body for a custom set holding ``atoms`` (always non-empty)."""
     return "\n".join([SET_HEADER, *atoms]) + "\n"
+
+
+# -- staged custom-set edits (mark now, apply on Accept) --------------------
+
+NEW = "new"
+MODIFY = "modify"
+DELETE = "delete"
+
+
+@dataclass(slots=True, frozen=True)
+class SetEdit:
+    """One staged custom-set change. ``kind`` is NEW / MODIFY / DELETE; ``atoms``
+    is the desired member list (empty for a delete)."""
+
+    name: str
+    kind: str
+    atoms: list[str] = field(default_factory=list)
+
+
+class PendingSets:
+    """Staged custom-set edits over an on-disk baseline (pure, CI-testable).
+
+    Mirrors :mod:`gest.core.repos.pending`: edits accumulate here and are applied
+    together on Accept. ``disk`` maps a set name → its on-disk atoms. An edit
+    either sets a name's atoms (a *create* if the name isn't on disk, else a
+    *modify*) or deletes an on-disk set. Editing a set back to its baseline
+    clears the change; deleting a never-saved staged set just drops it — so the
+    store only ever holds genuine, minimal differences from disk.
+    """
+
+    def __init__(self, disk: dict[str, list[str]] | None = None) -> None:
+        self._disk: dict[str, list[str]] = disk or {}
+        self._atoms: dict[str, list[str]] = {}    # staged create / modify
+        self._deleted: set[str] = set()           # staged deletions
+
+    def rebase(self, disk: dict[str, list[str]]) -> None:
+        """Point at a fresh on-disk snapshot, keeping the staged edits."""
+        self._disk = disk
+
+    # -- queries ------------------------------------------------------------
+
+    def is_empty(self) -> bool:
+        return not self._atoms and not self._deleted
+
+    def count(self) -> int:
+        return len(self._atoms) + len(self._deleted)
+
+    def all_names(self) -> list[str]:
+        """Every custom set to display: on-disk plus staged-new, sorted."""
+        return sorted(set(self._disk) | set(self._atoms) | self._deleted)
+
+    def exists(self, name: str) -> bool:
+        return name in self._disk or name in self._atoms
+
+    def is_new(self, name: str) -> bool:
+        return name in self._atoms and name not in self._disk
+
+    def is_deleted(self, name: str) -> bool:
+        return name in self._deleted
+
+    def is_modified(self, name: str) -> bool:
+        return name in self._atoms or name in self._deleted
+
+    def base_atoms(self, name: str) -> list[str]:
+        return self._disk.get(name, [])
+
+    def working_atoms(self, name: str) -> list[str] | None:
+        """Atoms after staged edits — ``None`` if the set is staged for delete."""
+        if name in self._deleted:
+            return None
+        return self._atoms.get(name) or self._disk.get(name, [])
+
+    # -- mutations ----------------------------------------------------------
+
+    def set_atoms(self, name: str, atoms: list[str]) -> None:
+        """Stage ``name`` to hold ``atoms`` (create or modify)."""
+        self._deleted.discard(name)               # editing un-deletes
+        if name in self._disk and atoms == self._disk[name]:
+            self._atoms.pop(name, None)           # back to unmodified
+        else:
+            self._atoms[name] = list(atoms)
+
+    def toggle_delete(self, name: str) -> None:
+        """Stage/unstage deletion. Deleting a never-saved new set cancels it."""
+        if name in self._deleted:
+            self._deleted.discard(name)
+        elif self.is_new(name):
+            self._atoms.pop(name, None)           # cancel the staged create
+        elif name in self._disk:
+            self._atoms.pop(name, None)
+            self._deleted.add(name)
+
+    def clear(self) -> None:
+        self._atoms.clear()
+        self._deleted.clear()
+
+    # -- apply --------------------------------------------------------------
+
+    def edits(self) -> list[SetEdit]:
+        """The staged changes as :class:`SetEdit`\\ s, sorted by name."""
+        out = [SetEdit(n, NEW if n not in self._disk else MODIFY, list(a))
+               for n, a in self._atoms.items()]
+        out += [SetEdit(n, DELETE) for n in self._deleted]
+        return sorted(out, key=lambda e: e.name)

@@ -107,3 +107,52 @@ def test_render_empty_set_is_a_nonempty_file(tmp_path):
     p = tmp_path / "empty"
     p.write_text(body)
     assert sets.read_set_file(str(p)) == []
+
+
+# -- PendingSets (staged edits) ---------------------------------------------
+
+def test_pending_starts_empty():
+    p = sets.PendingSets({"media": ["media-video/mpv"]})
+    assert p.is_empty() and p.count() == 0
+    assert p.working_atoms("media") == ["media-video/mpv"]   # falls back to disk
+    assert not p.is_modified("media")
+
+
+def test_pending_modify_and_normalize():
+    p = sets.PendingSets({"media": ["a/b"]})
+    p.set_atoms("media", ["a/b", "c/d"])
+    assert p.is_modified("media") and not p.is_new("media")
+    assert p.working_atoms("media") == ["a/b", "c/d"]
+    assert [(e.name, e.kind, e.atoms) for e in p.edits()] == [
+        ("media", sets.MODIFY, ["a/b", "c/d"])]
+    p.set_atoms("media", ["a/b"])                            # back to baseline
+    assert not p.is_modified("media") and p.is_empty()
+
+
+def test_pending_create_and_delete():
+    p = sets.PendingSets({"media": ["a/b"]})
+    p.set_atoms("newset", ["x/y"])                          # create
+    p.toggle_delete("media")                                # delete existing
+    assert p.is_new("newset") and p.is_deleted("media")
+    assert p.working_atoms("media") is None                 # deleted → None
+    assert p.count() == 2
+    kinds = {e.name: e.kind for e in p.edits()}
+    assert kinds == {"newset": sets.NEW, "media": sets.DELETE}
+
+
+def test_pending_toggle_delete_cancels_new_and_restores_existing():
+    p = sets.PendingSets({"media": ["a/b"]})
+    p.set_atoms("newset", ["x/y"])
+    p.toggle_delete("newset")                               # delete an unsaved new = cancel
+    assert not p.is_modified("newset")
+    p.toggle_delete("media")
+    p.toggle_delete("media")                                # un-delete
+    assert not p.is_deleted("media") and p.is_empty()
+
+
+def test_pending_exists_and_clear():
+    p = sets.PendingSets({"media": ["a/b"]})
+    p.set_atoms("newset", ["x/y"])
+    assert p.exists("media") and p.exists("newset") and not p.exists("nope")
+    p.clear()
+    assert p.is_empty() and not p.exists("newset")

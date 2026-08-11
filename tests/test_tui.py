@@ -1778,7 +1778,8 @@ def test_world_set_edit_is_staged_then_committed(monkeypatch):
     scr, writes = _world_with_sets(monkeypatch, app, [
         PackageSet(name="@media", atoms=["media-video/mpv"], kind="custom")])
     scr._stage("media", ["media-video/mpv", "x11-wm/i3"])   # add an atom (staged)
-    assert scr._edits == {"media": ["media-video/mpv", "x11-wm/i3"]}
+    assert scr._pending.working_atoms("media") == ["media-video/mpv", "x11-wm/i3"]
+    assert scr._pending.is_modified("media")
     assert writes == []                                     # nothing written yet
     assert scr._has_pending()
     app.loop.run_until_complete(scr._commit())              # Apply
@@ -1786,7 +1787,7 @@ def test_world_set_edit_is_staged_then_committed(monkeypatch):
     path, text = writes[0]
     assert path == "/etc/portage/sets/media"
     assert "x11-wm/i3" in text and text.startswith("# GeST")
-    assert scr._edits == {}                                 # cleared after apply
+    assert scr._pending.is_empty()                          # cleared after apply
 
 
 def test_world_stage_delete_commits_empty(monkeypatch):
@@ -1796,7 +1797,7 @@ def test_world_stage_delete_commits_empty(monkeypatch):
         PackageSet(name="@media", atoms=["media-video/mpv"], kind="custom")])
     _focus_set(scr, 1)                                      # @media
     scr._toggle_delete("media")                            # stage delete
-    assert scr._edits == {"media": None}
+    assert scr._pending.is_deleted("media")
     assert writes == []                                     # not written until Apply
     app.loop.run_until_complete(scr._commit())
     assert writes == [("/etc/portage/sets/media", "")]      # empty text = delete
@@ -1805,11 +1806,11 @@ def test_world_stage_delete_commits_empty(monkeypatch):
 def test_world_new_set_toggle_delete_cancels_it(monkeypatch):
     app = App()
     scr, _ = _world_with_sets(monkeypatch, app, [])
-    scr._edits["mydesktop"] = []                            # a staged new (empty) set
+    scr._pending.set_atoms("mydesktop", [])                 # a staged new (empty) set
     scr._populate_sidebar()
-    assert scr._is_new("mydesktop")
+    assert scr._pending.is_new("mydesktop")
     scr._toggle_delete("mydesktop")                        # deleting an unsaved new = cancel
-    assert "mydesktop" not in scr._edits
+    assert not scr._pending.is_modified("mydesktop")
 
 
 def test_world_custom_set_keys_open_editors(monkeypatch):

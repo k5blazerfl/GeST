@@ -47,8 +47,7 @@ class WorldScreen(Screen):
         self._world_pkgs: list[Package] = []
         self._marked: set[str] = set()             # @world cp's to deselect
         self._sets: list = []                      # on-disk sets (built-ins + custom)
-        self._disk: dict[str, list[str]] = {}      # on-disk custom sets (cached on load)
-        self._edits: dict[str, list[str] | None] = {}   # name → atoms, or None = delete
+        self._pending = sets.PendingSets()         # staged custom-set edits
         self._sidebar: list[tuple[str, object]] = []    # (kind, payload) per row
         self._member_atoms: list[str] = []         # custom member index → atom
         self._focus_name: str | None = None        # set to focus after a rebuild
@@ -150,40 +149,20 @@ class WorldScreen(Screen):
         self._world_pkgs = sorted((p for p in pkgs if p.world_member),
                                   key=lambda p: p.cp)
         self._sets = await self.app.run_blocking(sets.list_sets)
-        # The on-disk custom sets are invariant between loads, so snapshot them
-        # once rather than rescanning self._sets in every predicate.
-        self._disk = {s.name[1:]: list(s.atoms)
-                      for s in self._sets if s.kind == "custom"}
+        # Re-base the staged edits on the fresh on-disk snapshot (invariant
+        # between loads), keeping any pending changes.
+        self._pending.rebase({s.name[1:]: list(s.atoms)
+                              for s in self._sets if s.kind == "custom"})
         self._marked &= {p.cp for p in self._world_pkgs}      # drop stale marks
         self._populate_sidebar()
 
-    def _custom_names(self) -> list[str]:
-        return sorted(set(self._disk) | set(self._edits))
-
-    def _base_atoms(self, name: str) -> list[str]:
-        return self._disk.get(name, [])
-
-    def _working_atoms(self, name: str) -> list[str] | None:
-        return self._edits[name] if name in self._edits else self._base_atoms(name)
-
-    def _deleted(self, name: str) -> bool:
-        return name in self._edits and self._edits[name] is None
-
-    def _is_new(self, name: str) -> bool:
-        return name not in self._disk and self._edits.get(name) is not None
-
-    def _modified(self, name: str) -> bool:
-        # In _edits and differing from disk — covers add/remove (list != disk),
-        # delete (None != disk atoms), and a staged new set (value != absent).
-        return name in self._edits and self._edits[name] != self._disk.get(name)
-
     def _has_pending(self) -> bool:
-        return bool(self._marked) or bool(self._edits)
+        return bool(self._marked) or not self._pending.is_empty()
 
     def _populate_sidebar(self) -> None:
         self._sidebar = [("world", None)]
         self._sidebar += [("builtin", s) for s in self._sets if s.kind == "builtin"]
-        self._sidebar += [("custom", n) for n in self._custom_names()]
+        self._sidebar += [("custom", n) for n in self._pending.all_names()]
         prev = self._set_walker.focus or 0
         self._set_walker[:] = [self._sidebar_row(e) for e in self._sidebar]
         idx = (self._sidebar_index(self._focus_name)
@@ -202,14 +181,14 @@ class WorldScreen(Screen):
             return row(f" {payload.name:<20}{len(payload.atoms):>4}")
         name = payload
         marker, attr = self._custom_marker(name)
-        working = self._working_atoms(name)
+        working = self._pending.working_atoms(name)
         cnt = "" if working is None else str(len(working))
         return row(f"{marker}@{name:<19}{cnt:>4}", attr)
 
     def _custom_marker(self, name: str) -> tuple[str, str | None]:
-        if self._deleted(name):
+        if self._pending.is_deleted(name):
             return ("-", "error")
-        if self._modified(name):
+        if self._pending.is_modified(name):
             return ("*", "ok")
         return (" ", None)
 
@@ -287,17 +266,17 @@ class WorldScreen(Screen):
                            if s.atoms else [urwid.Text(("dim", " (empty set)"))])
 
     def _render_custom_members(self, name: str) -> None:
-        working = self._working_atoms(name)
+        working = self._pending.working_atoms(name)
         if working is None:                                   # staged delete
             self._member_header.base_widget.set_text(f"@{name} — will be deleted")
             self._walker[:] = [
                 urwid.Text(("error", " (set will be deleted on Apply)"))]
             return
         header = f"@{name}"
-        if self._modified(name):
+        if self._pending.is_modified(name):
             header += "   • modified (F10 to apply)"
         self._member_header.base_widget.set_text(header)
-        base = self._base_atoms(name)
+        base = self._pending.base_atoms(name)
         rows: list[urwid.Widget] = []
         atoms: list[str] = []
         for a in base:                                        # kept / staged-remove
@@ -325,7 +304,7 @@ class WorldScreen(Screen):
         elif kind == "builtin":
             parts = [("dim", f" {e[1].name} — {len(e[1].atoms)} atoms · read-only")]
         elif kind == "custom":
-            working = self._working_atoms(e[1])
+            working = self._pending.working_atoms(e[1])
             parts = ([("error", f" @{e[1]} — will be deleted")] if working is None
                      else [("dim", f" @{e[1]} — {len(working)} atoms")])
         else:
@@ -339,7 +318,7 @@ class WorldScreen(Screen):
         bits = []
         if self._marked:
             bits.append(f"deselect {len(self._marked)}")
-        n = len(self._edits)
+        n = self._pending.count()
         if n:
             bits.append(f"{n} set change{'s' if n != 1 else ''}")
         return " · ".join(bits)
@@ -400,7 +379,7 @@ class WorldScreen(Screen):
         return key
 
     def _reload(self) -> None:
-        self._edits.clear()                                   # discard staged edits
+        self._pending.clear()                                 # discard staged edits
         self.app.run_async(self._load())
 
     def _toggle_mark(self) -> None:
@@ -418,10 +397,7 @@ class WorldScreen(Screen):
     # -- staged custom-set edits --------------------------------------------
 
     def _stage(self, name: str, atoms: list[str]) -> None:
-        if name in self._disk and atoms == self._disk[name]:
-            self._edits.pop(name, None)                       # back to unmodified
-        else:
-            self._edits[name] = atoms
+        self._pending.set_atoms(name, atoms)
         self._rebuild_members()
         self._update_sidebar_row(name)
 
@@ -434,10 +410,10 @@ class WorldScreen(Screen):
             if not sets.valid_set_name(name):
                 self.app.notify("Invalid set name.", error=True)
                 return
-            if name in self._disk or self._is_new(name):
+            if self._pending.exists(name):
                 self.app.notify(f"@{name} already exists.", error=True)
                 return
-            self._edits[name] = []                            # stage an empty new set
+            self._pending.set_atoms(name, [])                 # stage an empty new set
             self._focus_name = name
             self._populate_sidebar()
             self.app.notify(f"Staged new set @{name} — F10 to apply")
@@ -447,7 +423,7 @@ class WorldScreen(Screen):
         self.app.push_modal(modal, width=("relative", 60))
 
     def _add_atom(self, name: str) -> None:
-        working = self._working_atoms(name)
+        working = self._pending.working_atoms(name)
         if working is None:
             self.app.notify("Set is staged for deletion.", error=True)
             return
@@ -469,7 +445,7 @@ class WorldScreen(Screen):
         self.app.push_modal(modal, width=("relative", 60))
 
     def _toggle_atom(self, name: str) -> None:
-        working = self._working_atoms(name)
+        working = self._pending.working_atoms(name)
         atom = (self._member_atoms[self._walker.focus]
                 if 0 <= self._walker.focus < len(self._member_atoms) else None)
         if working is None or atom is None:
@@ -479,10 +455,7 @@ class WorldScreen(Screen):
         self._stage(name, new)
 
     def _toggle_delete(self, name: str) -> None:
-        if self._deleted(name) or self._is_new(name):
-            self._edits.pop(name, None)                       # un-delete / cancel new
-        else:
-            self._edits[name] = None                          # stage delete
+        self._pending.toggle_delete(name)
         self._populate_sidebar()
 
     # -- apply (commit everything staged) -----------------------------------
@@ -491,17 +464,13 @@ class WorldScreen(Screen):
         if not self._has_pending():
             self.app.notify("Nothing to apply.")
             return
+        verb = {sets.NEW: "Create", sets.MODIFY: "Update", sets.DELETE: "Delete"}
         lines = []
         if self._marked:
             lines.append(f"Deselect {len(self._marked)} package(s) from @world")
-        for name in sorted(self._edits):
-            v = self._edits[name]
-            if v is None:
-                lines.append(f"Delete set @{name}")
-            elif name not in self._disk:
-                lines.append(f"Create set @{name} ({len(v)} atom(s))")
-            else:
-                lines.append(f"Update set @{name} ({len(v)} atom(s))")
+        for e in self._pending.edits():
+            detail = "" if e.kind == sets.DELETE else f" ({len(e.atoms)} atom(s))"
+            lines.append(f"{verb[e.kind]} set @{e.name}{detail}")
         body = [urwid.Text(("hint", f" • {line}")) for line in lines]
         modal = Modal(self.app, "Apply staged changes?", body,
                       [("Apply", self._run_apply), ("Cancel", self.app.pop)])
@@ -514,10 +483,12 @@ class WorldScreen(Screen):
     async def _commit(self) -> None:
         ok = True
         msgs: list[str] = []
-        if self._edits:
-            writes = [ConfigWrite(sets.set_path(n),
-                                  "" if v is None else sets.render_set(v))
-                      for n, v in self._edits.items()]
+        edits = self._pending.edits()
+        if edits:
+            writes = [ConfigWrite(sets.set_path(e.name),
+                                  "" if e.kind == sets.DELETE
+                                  else sets.render_set(e.atoms))
+                      for e in edits]
             okw = await self._write(writes)
             ok = ok and okw
             msgs.append(f"{len(writes)} set change(s) {'ok' if okw else 'failed'}")
@@ -527,7 +498,7 @@ class WorldScreen(Screen):
             msgs.append(f"deselect {'ok' if okd else 'failed'}")
         self.app.notify(" · ".join(msgs) or "done", error=not ok)
         if ok:
-            self._edits.clear()
+            self._pending.clear()
             self._marked.clear()
         await self._load()
 
