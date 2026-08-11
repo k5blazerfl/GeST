@@ -700,12 +700,29 @@ def test_apply_sync_outcome_partial_is_not_flat_failure():
 
 
 def test_menu_launches_software():
+    from gest.tui.screens.software import SoftwareLoadingScreen
     app = App()
     menu = MenuScreen(app)
     app._stack.append(menu)
     menu.keypress(_SIZE, "enter")  # Software category -> modules (Software Mgmt first)
     menu.keypress(_SIZE, "enter")  # launch
+    # the fullscreen loading screen opens first, then hands off to SoftwareScreen
+    assert isinstance(app._stack[-1], SoftwareLoadingScreen)
+    _pump(app, lambda: isinstance(app._stack[-1], SoftwareScreen), ticks=400)
     assert isinstance(app._stack[-1], SoftwareScreen)
+
+
+def test_software_loading_screen_shows_steps_and_hands_off():
+    from gest.tui.screens.software import SoftwareLoadingScreen
+    app = App()
+    scr = SoftwareLoadingScreen(app)
+    app._stack.append(scr)
+    out = _render(scr)
+    assert "Starting Package Management" in out
+    assert "Refresh repositories" in out and "Load installed packages" in out
+    _pump(app, lambda: isinstance(app._stack[-1], SoftwareScreen), ticks=400)
+    handed = app._stack[-1]
+    assert isinstance(handed, SoftwareScreen) and handed._cps  # loaded + handed over
 
 
 def test_useflag_editor_loads_and_cycles():

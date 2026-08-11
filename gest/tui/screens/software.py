@@ -9,6 +9,8 @@ AcceptRunScreen.
 
 from __future__ import annotations
 
+import contextlib
+
 import urwid
 
 from gest.core.repos import reader as repos_reader
@@ -95,7 +97,7 @@ class SoftwareScreen(Screen):
     _SEARCH_W_IDX = 2
     _MODE_IDX = 3
 
-    def __init__(self, app: App) -> None:
+    def __init__(self, app: App, preloaded=None) -> None:
         self._cps: list[str] = []
         self._installed: list[bool] = []
         self._from_binary: list[bool] = []
@@ -189,7 +191,12 @@ class SoftwareScreen(Screen):
         self._columns.focus_position = 0           # the sidebar
         self._sidebar.focus_position = self._SEARCH_W_IDX
         urwid.connect_signal(self._walker, "modified", self._on_focus)
-        app.run_async(self._open())
+        if preloaded is not None:
+            # the loading screen already refreshed repos and read the installed
+            # set — show it straight away instead of loading a second time.
+            self._apply_installed(preloaded)
+        else:
+            app.run_async(self._open())
 
     # -- view selector ------------------------------------------------------
 
@@ -327,6 +334,10 @@ class SoftwareScreen(Screen):
 
     async def _load_installed(self) -> None:
         pkgs = await self.app.run_blocking(reader.list_installed)
+        self._apply_installed(pkgs)
+
+    def _apply_installed(self, pkgs) -> None:
+        """Fill the installed view from an already-read package list."""
         self._note_upgradable(pkgs)
         self._fill([(p.cp, (p.description or "")[:60]) for p in pkgs],
                    [p.cp for p in pkgs], [True] * len(pkgs),
@@ -711,3 +722,150 @@ class SoftwareScreen(Screen):
     def _repaint(self) -> None:
         for i, cp in enumerate(self._cps):
             self._walker[i].base_widget.set_text(self._row_text(i, cp, self._summaries[i]))
+
+
+_STEP_GLYPH = {"pending": "·", "active": "▸", "done": "✓",
+               "skipped": "⊘", "failed": "✗"}
+_STEP_ATTR = {"pending": "dim", "active": "field", "done": "ok",
+              "skipped": "dim", "failed": "error"}
+
+
+class SoftwareLoadingScreen(Screen):
+    """Fullscreen startup for Package Management.
+
+    Opening the package manager takes a moment — it refreshes the repositories
+    flagged for refresh-on-open (one at a time) and reads the whole installed
+    set. Instead of a blank pane, show what it is doing: a step list with a
+    phase line and a progress bar, then hand the loaded data straight to
+    :class:`SoftwareScreen` so it appears ready.
+    """
+
+    def __init__(self, app: App) -> None:
+        self._steps = [
+            {"key": "refresh", "label": "Refresh repositories",
+             "status": "pending", "detail": ""},
+            {"key": "load", "label": "Load installed packages",
+             "status": "pending", "detail": ""},
+        ]
+        self._failed: list[str] = []
+        self._repos: list[dict] = []   # per-repo refresh rows: {name, status}
+        self._steps_text = urwid.Text("")
+        self._phase = urwid.Text(("dim", " Starting …"))
+        self._bar = urwid.ProgressBar("pb_normal", "pb_complete", 0, 1)
+
+        panel = urwid.LineBox(
+            urwid.Pile([
+                ("pack", urwid.Text(("title", "Starting Package Management"),
+                                    align="center")),
+                ("pack", urwid.Divider(" ")),
+                ("pack", self._steps_text),
+                ("pack", urwid.Divider(" ")),
+                ("pack", self._bar),
+                ("pack", urwid.AttrMap(self._phase, "field")),
+            ]),
+            title="Software Management")
+        body = urwid.Filler(
+            urwid.Padding(panel, align="center", width=("relative", 60),
+                          min_width=48),
+            valign="middle", height="pack")
+        super().__init__(
+            app, body, title="Software Management",
+            footer_keys=[("Esc", "Cancel")],
+            help_text=(
+                "Preparing the package database. Repositories flagged for\n"
+                "refresh-on-open are synced first (one at a time), then the\n"
+                "installed package set is read. Esc cancels and returns to the\n"
+                "main menu."))
+        self._render()
+        app.run_async(self._run())
+
+    # -- rendering ----------------------------------------------------------
+
+    def _render(self) -> None:
+        markup = []
+        for st in self._steps:
+            glyph = _STEP_GLYPH[st["status"]]
+            line = f"  {glyph}  {st['label']}"
+            if st["detail"]:
+                line += f"   ({st['detail']})"
+            markup.append((_STEP_ATTR[st["status"]], line + "\n"))
+            if st["key"] == "refresh":          # list each repo under the step
+                for r in self._repos:
+                    g = _STEP_GLYPH[r["status"]]
+                    markup.append((_STEP_ATTR[r["status"]],
+                                   f"        {g}  {r['name']}\n"))
+        self._steps_text.set_text(markup)
+        self.app.refresh()
+
+    def _set_step(self, key: str, status: str, detail: str = "") -> None:
+        for st in self._steps:
+            if st["key"] == key:
+                st["status"] = status
+                if detail:
+                    st["detail"] = detail
+        self._render()
+
+    def _set_repo(self, name: str, status: str) -> None:
+        for r in self._repos:
+            if r["name"] == name:
+                r["status"] = status
+        self._render()
+
+    def _set_phase(self, text: str, attr: str = "field") -> None:
+        self._phase.set_text((attr, f" {text}"))
+        self.app.refresh()
+
+    # -- run ----------------------------------------------------------------
+
+    async def _run(self) -> None:
+        repos = await self.app.run_blocking(repos_reader.enabled_repos)
+        names = [r.name for r in repos if r.refresh and not r.main and r.sync_uri]
+        self._bar.done = max(len(names) + 1, 1)     # each repo + the load step
+
+        if names:
+            self._repos = [{"name": n, "status": "pending"} for n in names]
+            await self._refresh(names)
+        else:
+            self._set_step("refresh", "skipped", "none opted in")
+
+        self._set_step("load", "active")
+        self._set_phase("Reading installed packages …")
+        pkgs = await self.app.run_blocking(reader.list_installed)
+        self._bar.set_completion(self._bar.done)
+        self._set_step("load", "done", f"{len(pkgs)} packages")
+        self._set_phase("Ready.", "ok")
+
+        if self.app._stack and self.app._stack[-1] is self:   # not cancelled
+            self.app.replace(SoftwareScreen(self.app, preloaded=pkgs))
+
+    async def _refresh(self, names: list[str]) -> None:
+        self._set_step("refresh", "active")
+        backend = SoftwareBackend()
+        try:
+            await backend.connect()
+            for i, name in enumerate(names, 1):
+                self._set_repo(name, "active")
+                self._set_phase(f"Refreshing {name} …  ({i} of {len(names)})")
+                ok, _out = await backend.sync_repos([name])
+                self._set_repo(name, "done" if ok else "failed")
+                if not ok:
+                    self._failed.append(name)
+                self._bar.set_completion(i)
+            await backend.close()
+        except Exception as exc:
+            with contextlib.suppress(Exception):
+                await backend.close()
+            self.app.notify(f"Repository refresh skipped: {exc}", error=True)
+            self._set_step("refresh", "skipped", "backend unavailable")
+            return
+        n = len(names)
+        if self._failed:
+            self._set_step("refresh", "failed", f"{n - len(self._failed)} of {n}")
+        else:
+            self._set_step("refresh", "done", f"{n} refreshed")
+
+    def handle_key(self, key):
+        if key == "esc":
+            self.app.pop()          # cancel startup → back to the main menu
+            return None
+        return key

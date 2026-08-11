@@ -21,7 +21,7 @@ from gest.tui.screens.network import NetworkScreen
 from gest.tui.screens.news import NewsScreen
 from gest.tui.screens.repos import ReposScreen
 from gest.tui.screens.services import ServicesScreen
-from gest.tui.screens.software import SoftwareScreen
+from gest.tui.screens.software import SoftwareLoadingScreen
 from gest.tui.screens.sync import SyncScreen
 from gest.tui.screens.system import HostnameScreen, LocaleScreen, TimezoneScreen
 from gest.tui.screens.update import UpdateScreen
@@ -139,7 +139,7 @@ class MenuScreen(Screen):
         if key == "news":
             self.app.push(NewsScreen(self.app))
         elif key == "software":
-            self.app.push(SoftwareScreen(self.app))
+            self.app.push(SoftwareLoadingScreen(self.app))
         elif key == "update":
             self.app.push(UpdateScreen(self.app))
         elif key == "depclean":
