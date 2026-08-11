@@ -20,6 +20,7 @@ from gest.core.software.cleanup import Orphan, human_size
 from gest.tui.runtime import App, Modal, NavPile, Screen, boxed, focusable_actions
 from gest.tui.screens.apply import depclean_plan, remove_plan
 from gest.tui.screens.autoaccept import AutoAccept
+from gest.tui.screens.loading import LoadingScreen
 from gest.tui.screens.runscreen import RunScreen, clip, row
 
 _MARK_W = 2   # ✓ = will be removed
@@ -409,3 +410,42 @@ class CleanupRunScreen(RunScreen):
             "   ✗ failed\n"
             "The full raw emerge log is kept on disk — press l (or View log on\n"
             "failure) to read it. Esc returns when the removal finishes.")
+
+
+class CleanupLoadingScreen(LoadingScreen):
+    """Fullscreen startup for Clean Up Packages.
+
+    Scanning for orphans (``emerge --pretend --depclean``) can take a while.
+    Show the branded loading screen while it scans, then hand the plan straight
+    to :class:`CleanupScreen` so it appears ready. (The post-uninstall and
+    post-deselect housekeeping flows already have a plan, so they skip this.)
+    """
+
+    def __init__(self, app: App) -> None:
+        super().__init__(
+            app,
+            [{"key": "scan", "label": "Scan for orphaned packages",
+              "status": "pending", "detail": ""}],
+            title="Clean Up Packages",
+            subtitle="Scanning for orphaned packages",
+            help_text=(
+                "Looking for packages no longer required by anything installed "
+                "or by\nyour @world set (emerge --pretend --depclean) — this can "
+                "take a while.\nEsc cancels and returns to the main menu."))
+
+    async def _run(self) -> None:
+        self._set_step("scan", "active")
+        self._set_phase("Running emerge --pretend --depclean …  "
+                        "(this can take a while)")
+        plan = await self.app.run_blocking(cleanup.plan_cleanup)
+        self._bar.set_completion(1)
+        if plan is not None and plan.ok:
+            n = len(plan.orphans)
+            self._set_step("scan", "done",
+                           f"{n} orphan{'s' if n != 1 else ''}")
+            self._set_phase("Ready.", "ok")
+        else:
+            self._set_step("scan", "failed")
+            self._set_phase("Could not compute a clean-up plan.", "error")
+        if self.app._stack and self.app._stack[-1] is self:   # not cancelled
+            self.app.replace(CleanupScreen(self.app, plan))

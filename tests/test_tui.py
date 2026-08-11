@@ -1912,6 +1912,23 @@ def test_update_loading_resolves_then_hands_off(monkeypatch):
     assert "gzip" in _render(top)
 
 
+def test_cleanup_loading_scans_then_hands_off(monkeypatch):
+    from gest.core.software import cleanup as core_cleanup
+    from gest.core.software.cleanup import CleanupPlan, Orphan
+    from gest.tui.screens.cleanup import CleanupLoadingScreen, CleanupScreen
+    plan = CleanupPlan(
+        orphans=[Orphan(cp="dev-libs/leftover", version="2.0", size=2048)], ok=True)
+    monkeypatch.setattr(core_cleanup, "plan_cleanup", lambda: plan)
+    app = App()
+    scr = CleanupLoadingScreen(app)
+    app._stack.append(scr)
+    assert "#+#" in _render(scr)                      # branded loading screen (logo)
+    _pump(app, lambda: isinstance(app._stack[-1], CleanupScreen), ticks=200)
+    top = app._stack[-1]
+    assert top._preloaded and top._plan is plan       # handed over, no re-scan
+    assert "leftover" in _render(top)
+
+
 def _update_with_changes(monkeypatch, app, mode="timer"):
     """An UpdateScreen scanned to one change in ``mode``; ``_update`` is spied."""
     from gest.core.software import update as core_update

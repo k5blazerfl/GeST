@@ -9,7 +9,7 @@ import urwid
 from gest import __version__
 from gest.tui.runtime import App, NavPile, Screen, boxed, focusable_actions
 from gest.tui.screens.bootloader import BootloaderScreen
-from gest.tui.screens.cleanup import CleanupScreen
+from gest.tui.screens.cleanup import CleanupLoadingScreen
 from gest.tui.screens.datetime import DateTimeScreen
 from gest.tui.screens.disk import DiskScreen
 from gest.tui.screens.eselect import EselectScreen
@@ -156,7 +156,7 @@ class MenuScreen(Screen):
         elif key == "update":
             self.app.push(UpdateLoadingScreen(self.app))
         elif key == "depclean":
-            self.app.push(CleanupScreen(self.app))
+            self.app.push(CleanupLoadingScreen(self.app))
         elif key == "sync":
             self.app.push(SyncScreen(self.app))
         elif key == "repositories":
