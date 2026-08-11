@@ -94,8 +94,7 @@ class MenuScreen(Screen):
         title_box = boxed(
             urwid.Text(("cc_title", "GeST Control Center"), align="center"))
         self._actions = focusable_actions([
-            ("Help", self.show_help), ("Run", self._run_focused),
-            ("Quit", app.quit)])
+            ("Help", self.show_help), ("Quit", app.quit)])
         body = NavPile([
             ("pack", title_box),
             ("pack", urwid.Divider()),

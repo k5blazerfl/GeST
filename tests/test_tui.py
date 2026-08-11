@@ -48,7 +48,7 @@ def test_menu_two_panes_and_category_navigation():
     app._stack.append(menu)
     out = _render(menu)
     assert "GeST Control Center" in out           # centered title box
-    assert "[Help]" in out and "[Run]" in out and "[Quit]" in out
+    assert "[Help]" in out and "[Quit]" in out and "[Run]" not in out
     assert "Software" in out and "Software Management" in out  # both panes
     menu.keypress(_SIZE, "down")         # move to the System category
     out2 = _render(menu)
