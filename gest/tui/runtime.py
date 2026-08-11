@@ -26,7 +26,8 @@ _IS_ROOT = os.geteuid() == 0
 # get the exact Gentoo lavenders while 16-colour ones fall back to magenta.
 _BAR = "#546"      # deep Gentoo purple — bottom bar, menus, progress track
 _BLUE = "#25a"     # Gentoo blue — top bar and the selection highlight
-_ACCENT = "#a8f"   # lavender — titles, box outlines, filled progress
+_ACCENT = "#a8f"   # lavender — titles, filled progress
+_OUTLINE = "#639"  # dark Gentoo purple — box outlines (Filter/Packages/Detail…)
 _KEYS = "#aad"     # light lavender — footer / menu-bar key chips
 _TEXT = "#ccf"     # soft lavender text on the purple bars
 
@@ -38,7 +39,7 @@ PALETTE = [
     ("title", "light magenta,bold", "default", "", f"{_ACCENT},bold", "default"),
     ("hint", "dark gray", "default", "", "#88a", "default"),
     ("focus", "white", "dark blue", "", "white", _BLUE),          # selection bar
-    ("boxline", "light magenta", "default", "", _ACCENT, "default"),  # box outline
+    ("boxline", "dark magenta", "default", "", _OUTLINE, "default"),  # box outline
     ("body", "default", "default", "", "default", "default"),     # shields box content
     ("reversed", "standout", "default", "", "standout", "default"),
     ("ok", "light magenta", "default", "", _ACCENT, "default"),
