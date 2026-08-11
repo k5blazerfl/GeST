@@ -41,6 +41,7 @@ CATEGORIES: list[tuple[str, list[tuple[str, str, bool]]]] = [
         ("sync", "Sync Portage Tree", True),
         ("news", "Portage News", True),
         ("licenses", "Package Licenses", True),
+        ("prefs", "Preferences", True),
     ]),
     ("System", [
         ("hostname", "Hostname", True),
@@ -69,7 +70,6 @@ CATEGORIES: list[tuple[str, list[tuple[str, str, bool]]]] = [
     ]),
     ("Miscellaneous", [
         ("logs", "System Logs", True),
-        ("prefs", "Preferences", True),
     ]),
 ]
 

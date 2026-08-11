@@ -1977,3 +1977,19 @@ def test_menu_launches_repos():
     menu.keypress(_SIZE, "down")           # -> Software Repositories
     menu.keypress(_SIZE, "enter")
     assert isinstance(app._stack[-1], ReposScreen)
+
+
+def test_preferences_lives_under_software():
+    from gest.tui.screens.menu import CATEGORIES
+    from gest.tui.screens.preferences import PreferencesScreen
+    by_cat = {cat: [k for k, _label, _impl in mods] for cat, mods in CATEGORIES}
+    assert "prefs" in by_cat["Software"]                 # software-scoped setting
+    assert "prefs" not in by_cat["Miscellaneous"]        # not a global bucket
+    app = App()
+    menu = MenuScreen(app)
+    app._stack.append(menu)
+    menu.keypress(_SIZE, "enter")                        # into Software modules
+    for _ in range(by_cat["Software"].index("prefs")):
+        menu.keypress(_SIZE, "down")                     # walk down to Preferences
+    menu.keypress(_SIZE, "enter")
+    assert isinstance(app._stack[-1], PreferencesScreen)
