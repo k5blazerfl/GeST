@@ -89,7 +89,7 @@ def test_menu_launches_news():
     menu = MenuScreen(app)
     app._stack.append(menu)
     menu.keypress(_SIZE, "enter")        # focus the modules pane (Software)
-    for _ in range(4):
+    for _ in range(5):
         menu.keypress(_SIZE, "down")     # to "Portage News"
     menu.keypress(_SIZE, "enter")        # launch
     assert isinstance(app._stack[-1], NewsScreen)
@@ -1323,7 +1323,6 @@ def test_menu_launches_repos():
     menu = MenuScreen(app)
     app._stack.append(menu)
     menu.keypress(_SIZE, "enter")          # Software category, focus modules
-    for _ in range(5):
-        menu.keypress(_SIZE, "down")       # ...news -> repositories (6th item)
+    menu.keypress(_SIZE, "down")           # Software Management -> Software Repositories
     menu.keypress(_SIZE, "enter")
     assert isinstance(app._stack[-1], ReposScreen)

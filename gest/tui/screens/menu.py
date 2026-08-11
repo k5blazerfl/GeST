@@ -31,11 +31,11 @@ from gest.tui.screens.users import UsersScreen
 CATEGORIES: list[tuple[str, list[tuple[str, str, bool]]]] = [
     ("Software", [
         ("software", "Software Management", True),
+        ("repositories", "Software Repositories", True),
         ("update", "System Update", True),
         ("depclean", "Clean Up Packages", True),
         ("sync", "Sync Portage Tree", True),
         ("news", "Portage News", True),
-        ("repositories", "Software Repositories", True),
         ("licenses", "Package Licenses", True),
     ]),
     ("System", [
