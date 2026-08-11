@@ -13,7 +13,7 @@ import urwid
 from gest.core.binhost import reader, writer
 from gest.core.binhost.model import GETBINPKG, REQUIRE_SIGNATURE, Binhost, FeaturesState
 from gest.core.portage.backend_client import PortageBackend
-from gest.tui.runtime import App, Modal, Screen
+from gest.tui.runtime import App, Modal, Screen, boxed
 
 _HEADER_ROWS = 3  # two FEATURES status lines + a divider precede the host list
 
@@ -33,7 +33,7 @@ class BinhostScreen(Screen):
         self._walker = urwid.SimpleFocusListWalker([urwid.Text(" loading …")])
         self._list = urwid.ListBox(self._walker)
         super().__init__(
-            app, urwid.LineBox(self._list, title="Binary package hosts"),
+            app, boxed(self._list, title="Binary package hosts"),
             title="Binhost",
             footer_keys=[
                 ("A", "Add"), ("Enter", "Edit"), ("x", "Remove"),

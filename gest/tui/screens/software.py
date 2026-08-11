@@ -20,7 +20,7 @@ from gest.core.software.backend_client import SoftwareBackend
 from gest.core.software.model import PackageDetail
 from gest.core.software.selection import Selection
 from gest.tui.menubar import MenuBar, _Dropdown
-from gest.tui.runtime import App, Screen, action_bar
+from gest.tui.runtime import App, Screen, action_bar, boxed
 from gest.tui.screens.binhost import BinhostScreen
 from gest.tui.screens.config import KeywordsScreen, UseFlagScreen
 from gest.tui.screens.news import NewsScreen
@@ -136,7 +136,7 @@ class SoftwareScreen(Screen):
             ("pack", self._license_cb),
             ("pack", self._description_cb),
         ])
-        sidebar_box = urwid.LineBox(
+        sidebar_box = boxed(
             urwid.Filler(self._sidebar, valign="top"), title="Filter")
 
         # -- right: table (with header) + count + detail -------------------
@@ -146,10 +146,10 @@ class SoftwareScreen(Screen):
         self._table_frame = urwid.Frame(self._table, header=self._header)
         self._count = urwid.Text(" loading …")
         self._detail = urwid.Text("")
-        detail_box = urwid.LineBox(
+        detail_box = boxed(
             urwid.Filler(self._detail, valign="top"), title="Detail")
         right = urwid.Pile([
-            ("weight", 3, urwid.LineBox(self._table_frame, title="Packages")),
+            ("weight", 3, boxed(self._table_frame, title="Packages")),
             ("pack", self._count),
             ("pack", urwid.Text(("hint", " [ Actions ▾ ]  press a")), ),
             ("weight", 2, detail_box),
@@ -753,7 +753,7 @@ class SoftwareLoadingScreen(Screen):
         self._phase = urwid.Text(("dim", " Starting …"))
         self._bar = urwid.ProgressBar("pb_normal", "pb_complete", 0, 1)
 
-        panel = urwid.LineBox(
+        panel = boxed(
             urwid.Pile([
                 ("pack", urwid.Text(("title", "Starting Package Management"),
                                     align="center")),

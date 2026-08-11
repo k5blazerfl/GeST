@@ -13,7 +13,7 @@ import urwid
 from gest.core.portage.backend_client import PortageBackend
 from gest.core.software import pkgconfig as pc
 from gest.core.software import useflags
-from gest.tui.runtime import App, Screen
+from gest.tui.runtime import App, Screen, boxed
 from gest.tui.screens.apply import ApplyScreen, rebuild_plan
 
 _USE_NEXT = {useflags.DEFAULT: useflags.ON, useflags.ON: useflags.OFF,
@@ -43,7 +43,7 @@ class UseFlagScreen(Screen):
         self._walker = urwid.SimpleFocusListWalker([urwid.Text(" loading …")])
         self._list = urwid.ListBox(self._walker)
         super().__init__(
-            app, urwid.LineBox(self._list, title=f"USE flags — {cp}"),
+            app, boxed(self._list, title=f"USE flags — {cp}"),
             title=f"USE · {cp}",
             footer_keys=[("Space", "Cycle"), ("a/F10", "Apply"), ("Esc", "Back")],
         )
@@ -103,7 +103,7 @@ class KeywordsScreen(Screen):
         self._walker = urwid.SimpleFocusListWalker([])
         self._list = urwid.ListBox(self._walker)
         super().__init__(
-            app, urwid.LineBox(self._list, title=f"Keywords / mask — {cp}"),
+            app, boxed(self._list, title=f"Keywords / mask — {cp}"),
             title=f"Keywords · {cp}",
             footer_keys=[("Space", "Cycle"), ("a/F10", "Apply"), ("Esc", "Back")],
         )

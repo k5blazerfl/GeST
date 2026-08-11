@@ -14,7 +14,7 @@ import urwid
 
 from gest.core.software import cleanup, preview, update
 from gest.core.software.update import human_size
-from gest.tui.runtime import App, Screen, action_bar
+from gest.tui.runtime import App, Screen, action_bar, boxed
 from gest.tui.screens.accept import AcceptRunScreen
 from gest.tui.screens.runscreen import clip, row
 
@@ -79,7 +79,7 @@ class ProposalScreen(Screen):
         header = urwid.AttrMap(
             urwid.Text(_fmt("", "Category", "Package", "Change", "Size"),
                        wrap="clip"), "pane_title")
-        table = urwid.LineBox(
+        table = boxed(
             urwid.Pile([("pack", header), ("pack", urwid.Divider("─")),
                         ("weight", 1, self._list)]),
             title="Proposal")

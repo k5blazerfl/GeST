@@ -19,7 +19,7 @@ import urwid
 from gest.core.repos import reader
 from gest.core.software import sync
 from gest.core.software.backend_client import SoftwareBackend
-from gest.tui.runtime import App, Modal, Screen, action_bar
+from gest.tui.runtime import App, Modal, Screen, action_bar, boxed
 from gest.tui.screens.apply import RawLogScreen, StreamLog
 from gest.tui.screens.runscreen import clip, row
 
@@ -62,7 +62,7 @@ class SyncScreen(StreamLog, Screen):
 
         header = urwid.AttrMap(
             urwid.Text(_fmt("", "Name", "Type", "Sync URI"), wrap="clip"), "pane_title")
-        table = urwid.LineBox(
+        table = boxed(
             urwid.Pile([("pack", header), ("pack", urwid.Divider("─")),
                         ("weight", 1, self._list)]),
             title="Repositories")

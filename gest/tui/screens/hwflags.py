@@ -11,7 +11,7 @@ import urwid
 
 from gest.core.hwflags import detect, reader, writer
 from gest.core.portage.backend_client import PortageBackend
-from gest.tui.runtime import App, Modal, Screen
+from gest.tui.runtime import App, Modal, Screen, boxed
 
 # (row key, display name) for the two USE_EXPAND vars this screen manages.
 _VARS = [("cpu", "CPU_FLAGS_X86"), ("video", "VIDEO_CARDS")]
@@ -32,7 +32,7 @@ class HwFlagsScreen(Screen):
         self._walker = urwid.SimpleFocusListWalker([urwid.Text(" detecting …")])
         self._list = urwid.ListBox(self._walker)
         super().__init__(
-            app, urwid.LineBox(self._list, title="CPU & Video flags"),
+            app, boxed(self._list, title="CPU & Video flags"),
             title="CPU/Video flags",
             footer_keys=[
                 ("a/Enter", "Apply detected"), ("e", "Edit"),

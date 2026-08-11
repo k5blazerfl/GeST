@@ -17,7 +17,7 @@ import urwid
 from gest.core.portage.backend_client import PortageBackend
 from gest.core.portage.write import ConfigWrite
 from gest.core.repos import commands, mirrors
-from gest.tui.runtime import App, Modal, Screen
+from gest.tui.runtime import App, Modal, Screen, boxed
 
 
 def _read_text(path: str) -> str:
@@ -53,7 +53,7 @@ class MirrorScreen(Screen):
                 urwid.Text(f" Current: {self._current or '— (Portage default)'}",
                            wrap="clip"), "field")),
             ("pack", urwid.Divider("─")),
-            ("weight", 1, urwid.LineBox(self._list, title="rsync mirrors")),
+            ("weight", 1, boxed(self._list, title="rsync mirrors")),
             ("pack", self._status),
         ])
         super().__init__(

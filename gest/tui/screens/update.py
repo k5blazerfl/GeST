@@ -15,7 +15,7 @@ import urwid
 
 from gest.core.software import update
 from gest.core.software.update import Change, human_size
-from gest.tui.runtime import App, Screen, action_bar
+from gest.tui.runtime import App, Screen, action_bar, boxed
 from gest.tui.screens.apply import world_plan
 from gest.tui.screens.runscreen import RunScreen, clip, row
 
@@ -62,13 +62,13 @@ class UpdateScreen(Screen):
             urwid.Text(_fmt("", "Category", "Package", "Change", "Download"),
                        wrap="clip"),
             "pane_title")
-        table = urwid.LineBox(
+        table = boxed(
             urwid.Pile([("pack", header), ("pack", urwid.Divider("─")),
                         ("weight", 1, self._list)]),
             title="Packages to update")
 
         self._details = urwid.Pile([urwid.Text("")])
-        details_box = urwid.LineBox(self._details, title="Details")
+        details_box = boxed(self._details, title="Details")
         self._count = urwid.Text("")
 
         body = urwid.Pile([

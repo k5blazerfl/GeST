@@ -10,7 +10,7 @@ import urwid
 
 from gest.core.logs import reader
 from gest.core.logs.model import LogSource
-from gest.tui.runtime import App, Screen, ansi_markup
+from gest.tui.runtime import App, Screen, ansi_markup, boxed
 
 
 def _src_row(text: str) -> urwid.Widget:
@@ -31,8 +31,8 @@ class LogsScreen(Screen):
         self._view_walker = urwid.SimpleFocusListWalker([])
         self._right = urwid.ListBox(self._view_walker)
         self._columns = urwid.Columns(
-            [(30, urwid.LineBox(self._left, title="Logs")),
-             urwid.LineBox(self._right, title="View")],
+            [(30, boxed(self._left, title="Logs")),
+             boxed(self._right, title="View")],
             dividechars=1,
         )
         super().__init__(

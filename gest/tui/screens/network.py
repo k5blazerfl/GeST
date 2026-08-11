@@ -11,7 +11,7 @@ import urwid
 from gest.core.network import netifrc, reader
 from gest.core.network.backend_client import NetworkBackend
 from gest.core.network.model import Interface
-from gest.tui.runtime import App, Modal, Screen
+from gest.tui.runtime import App, Modal, Screen, boxed
 
 
 def _row(text: str) -> urwid.Widget:
@@ -25,7 +25,7 @@ class NetworkScreen(Screen):
         self._walker = urwid.SimpleFocusListWalker([urwid.Text(" loading …")])
         self._list = urwid.ListBox(self._walker)
         super().__init__(
-            app, urwid.LineBox(self._list, title="Network interfaces"),
+            app, boxed(self._list, title="Network interfaces"),
             title="Network",
             footer_keys=[
                 ("u", "Up"), ("d", "Down"), ("c", "Configure"),

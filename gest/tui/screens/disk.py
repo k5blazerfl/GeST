@@ -15,7 +15,7 @@ from gest.core.disk import fstab, reader
 from gest.core.disk.backend_client import DiskBackend
 from gest.core.disk.fstab import FstabEntry
 from gest.core.disk.model import BlockDevice
-from gest.tui.runtime import App, Modal, Screen
+from gest.tui.runtime import App, Modal, Screen, boxed
 
 
 def _row(text: str) -> urwid.Widget:
@@ -41,8 +41,8 @@ class DiskScreen(Screen):
         self._fstab_walker = urwid.SimpleFocusListWalker([urwid.Text(" loading …")])
         self._fstab_list = urwid.ListBox(self._fstab_walker)
         self._pile = urwid.Pile([
-            (12, urwid.LineBox(self._dev_list, title="Block Devices")),
-            urwid.LineBox(self._fstab_list, title="/etc/fstab  (🔒 = protected)"),
+            (12, boxed(self._dev_list, title="Block Devices")),
+            boxed(self._fstab_list, title="/etc/fstab  (🔒 = protected)"),
         ])
         super().__init__(
             app, self._pile, title="Disks & Mounts",

@@ -11,7 +11,7 @@ import urwid
 from gest.core.eselect import reader
 from gest.core.eselect.backend_client import EselectBackend
 from gest.core.eselect.model import Module, Target
-from gest.tui.runtime import App, Screen
+from gest.tui.runtime import App, Screen, boxed
 
 
 def _row(text: str) -> urwid.Widget:
@@ -28,8 +28,8 @@ class EselectScreen(Screen):
         self._tgt_walker = urwid.SimpleFocusListWalker([])
         self._right = urwid.ListBox(self._tgt_walker)
         self._columns = urwid.Columns(
-            [(28, urwid.LineBox(self._left, title="Modules")),
-             urwid.LineBox(self._right, title="Targets")],
+            [(28, boxed(self._left, title="Modules")),
+             boxed(self._right, title="Targets")],
             dividechars=1,
         )
         super().__init__(

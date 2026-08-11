@@ -26,7 +26,7 @@ import contextlib
 import urwid
 
 from gest.core.software.backend_client import SoftwareBackend
-from gest.tui.runtime import App, Modal, Screen
+from gest.tui.runtime import App, Modal, Screen, boxed
 from gest.tui.screens.apply import RawLogScreen, StreamLog
 
 
@@ -68,7 +68,7 @@ class RunScreen(StreamLog, Screen):
         self._phase = urwid.Text(("dim", " Preparing …"))
         self._bar = urwid.ProgressBar("pb_normal", "pb_complete", 0, max(self._total, 1))
         header = urwid.AttrMap(urwid.Text(self.HEADER, wrap="clip"), "pane_title")
-        table = urwid.LineBox(
+        table = boxed(
             urwid.Pile([("pack", header), ("pack", urwid.Divider("─")),
                         ("weight", 1, self._list)]),
             title=self.TABLE_TITLE)

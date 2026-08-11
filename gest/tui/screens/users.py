@@ -18,7 +18,7 @@ from gest.core.users import auth, commands, defaults, pending, reader
 from gest.core.users.backend_client import UsersBackend
 from gest.core.users.model import User
 from gest.core.users.pending import PendingChanges
-from gest.tui.runtime import App, Modal, Screen, accel_label
+from gest.tui.runtime import App, Modal, Screen, accel_label, boxed
 
 # Column widths (characters); the last column takes the rest and is clipped.
 _U_LOGIN, _U_UID, _U_NAME = 18, 8, 24
@@ -182,12 +182,12 @@ class UsersScreen(Screen):
             self._content.original_widget = self._list_box(self._view)
             self.app.run_async(self._load())
         elif self._view == "defaults":
-            self._content.original_widget = urwid.LineBox(
+            self._content.original_widget = boxed(
                 urwid.ListBox(urwid.SimpleListWalker([urwid.Text(" loading …")])),
                 title="Defaults for New Users")
             self.app.run_async(self._load_defaults())
         else:
-            self._content.original_widget = urwid.LineBox(
+            self._content.original_widget = boxed(
                 urwid.ListBox(urwid.SimpleListWalker([urwid.Text(" loading …")])),
                 title="Authentication settings")
             self.app.run_async(self._load_auth())
@@ -203,7 +203,7 @@ class UsersScreen(Screen):
         inner = urwid.Pile([
             ("pack", hdr), ("pack", urwid.Divider("─")), ("weight", 1, self._list),
         ])
-        return urwid.LineBox(inner, title=title)
+        return boxed(inner, title=title)
 
     # -- loading (projects staged changes over live state) ------------------
 
@@ -302,7 +302,7 @@ class UsersScreen(Screen):
         if not readable:
             rows.append(urwid.Text(("dim", " /etc/default/useradd is root-only; "
                                           "current values need root to read.")))
-        self._content.original_widget = urwid.LineBox(
+        self._content.original_widget = boxed(
             urwid.ListBox(urwid.SimpleListWalker(rows)),
             title="Defaults for New Users")
         self.app.refresh()
@@ -327,7 +327,7 @@ class UsersScreen(Screen):
             urwid.Text(("dim", " Read-only status. Configuring NIS/LDAP/SSSD/"
                                "Winbind isn't supported in GeST yet.")),
         ]
-        self._content.original_widget = urwid.LineBox(
+        self._content.original_widget = boxed(
             urwid.ListBox(urwid.SimpleListWalker(rows)),
             title="Authentication settings")
         self.app.refresh()

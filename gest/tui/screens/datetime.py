@@ -12,7 +12,7 @@ import urwid
 from gest.core.datetime import commands, reader
 from gest.core.datetime.backend_client import DateTimeBackend
 from gest.core.services.backend_client import ServicesBackend
-from gest.tui.runtime import App, Modal, Screen
+from gest.tui.runtime import App, Modal, Screen, boxed
 
 
 class DateTimeScreen(Screen):
@@ -20,7 +20,7 @@ class DateTimeScreen(Screen):
         self._info = None
         self._text = urwid.Text(" loading …")
         super().__init__(
-            app, urwid.LineBox(urwid.Filler(self._text, valign="top"),
+            app, boxed(urwid.Filler(self._text, valign="top"),
                                title="Date & Time"),
             title="Date & Time",
             footer_keys=[("s", "Set clock"), ("n", "NTP sync"),

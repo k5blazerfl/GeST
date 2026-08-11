@@ -25,19 +25,21 @@ _IS_ROOT = os.geteuid() == 0
 # are 5-tuples — (name, fg16, bg16, mono, fg256, bg256) — so 256-colour terminals
 # get the exact Gentoo lavenders while 16-colour ones fall back to magenta.
 _BAR = "#546"      # deep Gentoo purple — bottom bar, menus, progress track
-_HEADER = "#25a"   # blue — the top bar (kept blue within the purple theme)
-_ACCENT = "#a8f"   # lavender — titles, highlights, selection, filled progress
+_BLUE = "#25a"     # Gentoo blue — top bar and the selection highlight
+_ACCENT = "#a8f"   # lavender — titles, box outlines, filled progress
 _KEYS = "#aad"     # light lavender — footer / menu-bar key chips
 _TEXT = "#ccf"     # soft lavender text on the purple bars
 
 PALETTE = [
-    ("header", "white", "dark blue", "", "white", _HEADER),
-    ("header_mode", "yellow,bold", "dark blue", "", "yellow,bold", _HEADER),
+    ("header", "white", "dark blue", "", "white", _BLUE),
+    ("header_mode", "yellow,bold", "dark blue", "", "yellow,bold", _BLUE),
     ("footer", "light gray", "dark magenta", "", _TEXT, _BAR),
     ("footer_key", "black", "light gray", "", "black", _KEYS),
     ("title", "light magenta,bold", "default", "", f"{_ACCENT},bold", "default"),
     ("hint", "dark gray", "default", "", "#88a", "default"),
-    ("focus", "black", "light magenta", "", "black", _ACCENT),
+    ("focus", "white", "dark blue", "", "white", _BLUE),          # selection bar
+    ("boxline", "light magenta", "default", "", _ACCENT, "default"),  # box outline
+    ("body", "default", "default", "", "default", "default"),     # shields box content
     ("reversed", "standout", "default", "", "standout", "default"),
     ("ok", "light magenta", "default", "", _ACCENT, "default"),
     ("error", "light red", "default", "", "#f66", "default"),
@@ -46,7 +48,7 @@ PALETTE = [
     ("cc_title", "light magenta,bold", "default", "", f"{_ACCENT},bold", "default"),
     ("menubar", "black", "light gray", "", "black", _KEYS),
     ("menu_title", "black", "light gray", "", "black", _KEYS),
-    ("menu_focus", "white", "dark magenta", "", "white", _BAR),
+    ("menu_focus", "white", "dark blue", "", "white", _BLUE),
     ("menu_drop", "black", "light gray", "", "black", _KEYS),
     ("dim", "dark gray", "default", "", "g50", "default"),
     ("update", "light green,bold", "default", "", "#8f8,bold", "default"),  # ↑ flag
@@ -165,6 +167,18 @@ class BracketButton(urwid.Button):
 
     button_left = urwid.Text("[")
     button_right = urwid.Text("]")
+
+
+def boxed(widget: urwid.Widget, title: str = "", **kw) -> urwid.Widget:
+    """A LineBox with a Gentoo-purple outline and a lavender title.
+
+    The content is shielded (its unattributed cells map to ``body`` = default)
+    so the outer purple attr colours only the frame, never the inner text.
+    """
+    kw.setdefault("title_attr", "pane_title")
+    shielded = urwid.AttrMap(widget, {None: "body"})
+    return urwid.AttrMap(
+        urwid.LineBox(shielded, title=title, **kw), {None: "boxline"})
 
 
 def _header_row(title: str) -> urwid.Widget:
@@ -343,7 +357,7 @@ class App:
 
     def push_modal(self, modal: urwid.Widget, *, width=64, height=None) -> None:
         overlay = urwid.Overlay(
-            urwid.LineBox(modal),
+            boxed(modal),
             self._stack[-1],
             align="center", width=width, min_width=24,
             valign="middle", height=("pack" if height is None else height),

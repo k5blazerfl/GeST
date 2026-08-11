@@ -7,7 +7,7 @@ import socket
 import urwid
 
 from gest import __version__
-from gest.tui.runtime import App, Screen, accel_label
+from gest.tui.runtime import App, Screen, accel_label, boxed
 from gest.tui.screens.bootloader import BootloaderScreen
 from gest.tui.screens.cleanup import CleanupScreen
 from gest.tui.screens.datetime import DateTimeScreen
@@ -86,12 +86,12 @@ class MenuScreen(Screen):
 
         self._columns = urwid.Columns(
             [
-                (30, urwid.LineBox(self._left)),
-                urwid.LineBox(self._right),
+                (30, boxed(self._left)),
+                boxed(self._right),
             ],
             dividechars=1,
         )
-        title_box = urwid.LineBox(
+        title_box = boxed(
             urwid.Text(("cc_title", "GeST Control Center"), align="center"))
         bottom = urwid.Columns([
             ("pack", accel_label("Help")),

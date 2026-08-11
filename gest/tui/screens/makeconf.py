@@ -11,7 +11,7 @@ import urwid
 from gest.core.makeconf import reader, writer
 from gest.core.makeconf.reader import Var
 from gest.core.portage.backend_client import PortageBackend
-from gest.tui.runtime import App, Modal, Screen
+from gest.tui.runtime import App, Modal, Screen, boxed
 
 
 def _row(text: str) -> urwid.Widget:
@@ -24,7 +24,7 @@ class MakeconfScreen(Screen):
         self._walker = urwid.SimpleFocusListWalker([urwid.Text(" loading …")])
         self._list = urwid.ListBox(self._walker)
         super().__init__(
-            app, urwid.LineBox(self._list, title="/etc/portage/make.conf"),
+            app, boxed(self._list, title="/etc/portage/make.conf"),
             title="make.conf",
             footer_keys=[("Enter", "Edit"), ("a", "Add"), ("Esc", "Back")],
         )

@@ -19,7 +19,7 @@ from gest.core.repos import commands, edit, pending, reader, writer
 from gest.core.repos import disabled as disabled_state
 from gest.core.repos.backend_client import ReposBackend
 from gest.core.repos.reader import Repo
-from gest.tui.runtime import App, Modal, Screen, action_bar
+from gest.tui.runtime import App, Modal, Screen, action_bar, boxed
 from gest.tui.screens.deploykey import DeployKeyScreen
 from gest.tui.screens.mirrors import MirrorScreen
 
@@ -82,7 +82,7 @@ class ReposScreen(Screen):
             urwid.Text(_fmt("", "Name", "AutoSync", "Refresh", "Type", "Sync URI"),
                        wrap="clip"),
             "pane_title")
-        table = urwid.LineBox(
+        table = boxed(
             urwid.Pile([
                 ("pack", header),
                 ("pack", urwid.Divider("─")),
@@ -91,7 +91,7 @@ class ReposScreen(Screen):
             title="Configured software repositories")
 
         self._props = urwid.Pile([urwid.Text("")])
-        props_box = urwid.LineBox(self._props, title="Properties")
+        props_box = boxed(self._props, title="Properties")
         self._count = urwid.Text("")
 
         body = urwid.Pile([

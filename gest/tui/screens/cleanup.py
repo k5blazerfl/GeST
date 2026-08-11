@@ -17,7 +17,7 @@ import urwid
 
 from gest.core.software import cleanup
 from gest.core.software.cleanup import Orphan, human_size
-from gest.tui.runtime import App, Modal, Screen, action_bar
+from gest.tui.runtime import App, Modal, Screen, action_bar, boxed
 from gest.tui.screens.apply import depclean_plan, remove_plan
 from gest.tui.screens.runscreen import RunScreen, clip, row
 
@@ -62,7 +62,7 @@ class CleanupScreen(Screen):
             urwid.Text(_fmt("", "Category", "Package", "Version", "Size"),
                        wrap="clip"),
             "pane_title")
-        table = urwid.LineBox(
+        table = boxed(
             urwid.Pile([
                 ("pack", header),
                 ("pack", urwid.Divider("─")),
@@ -71,7 +71,7 @@ class CleanupScreen(Screen):
             title="Orphaned packages")
 
         self._details = urwid.Pile([urwid.Text("")])
-        details_box = urwid.LineBox(self._details, title="Details")
+        details_box = boxed(self._details, title="Details")
         self._count = urwid.Text("")
 
         body = urwid.Pile([

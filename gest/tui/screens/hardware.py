@@ -10,7 +10,7 @@ import urwid
 
 from gest.core.hardware import reader
 from gest.core.hardware.model import Section
-from gest.tui.runtime import App, Screen
+from gest.tui.runtime import App, Screen, boxed
 
 
 def _row(text: str) -> urwid.Widget:
@@ -25,8 +25,8 @@ class HardwareScreen(Screen):
         self._detail_walker = urwid.SimpleFocusListWalker([])
         self._right = urwid.ListBox(self._detail_walker)
         self._columns = urwid.Columns(
-            [(24, urwid.LineBox(self._left, title="Hardware")),
-             urwid.LineBox(self._right, title="Details")],
+            [(24, boxed(self._left, title="Hardware")),
+             boxed(self._right, title="Details")],
             dividechars=1,
         )
         super().__init__(

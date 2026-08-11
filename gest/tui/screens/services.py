@@ -12,7 +12,7 @@ import urwid
 from gest.core.services import reader
 from gest.core.services.backend_client import ServicesBackend
 from gest.core.services.model import Service
-from gest.tui.runtime import App, Screen
+from gest.tui.runtime import App, Screen, boxed
 
 
 def _row(text: str) -> urwid.Widget:
@@ -26,7 +26,7 @@ class ServicesScreen(Screen):
         self._walker = urwid.SimpleFocusListWalker([urwid.Text(" loading …")])
         self._list = urwid.ListBox(self._walker)
         super().__init__(
-            app, urwid.LineBox(self._list, title="Services (OpenRC)"),
+            app, boxed(self._list, title="Services (OpenRC)"),
             title="Services",
             footer_keys=[
                 ("Enter", "Detail"), ("s", "Start"), ("x", "Stop"),
@@ -110,7 +110,7 @@ class ServiceDetailScreen(Screen):
         self._walker = urwid.SimpleFocusListWalker([urwid.Text(" reading …")])
         body = urwid.ListBox(self._walker)
         super().__init__(
-            app, urwid.LineBox(body, title=service.name),
+            app, boxed(body, title=service.name),
             title=f"Service · {service.name}",
             footer_keys=[("Esc", "Back")],
         )

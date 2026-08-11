@@ -13,7 +13,7 @@ import urwid
 from gest.core.licenses import reader, writer
 from gest.core.licenses.model import LicenseEntry
 from gest.core.portage.backend_client import PortageBackend
-from gest.tui.runtime import App, Modal, Screen
+from gest.tui.runtime import App, Modal, Screen, boxed
 
 _HEADER_ROWS = 2  # global ACCEPT_LICENSE line + a divider precede the list
 
@@ -29,7 +29,7 @@ class LicensesScreen(Screen):
         self._walker = urwid.SimpleFocusListWalker([urwid.Text(" loading …")])
         self._list = urwid.ListBox(self._walker)
         super().__init__(
-            app, urwid.LineBox(self._list, title="License acceptance"),
+            app, boxed(self._list, title="License acceptance"),
             title="Licenses",
             footer_keys=[
                 ("A", "Add"), ("Enter", "Edit"), ("x", "Remove"),

@@ -5,7 +5,7 @@ from __future__ import annotations
 import urwid
 
 from gest.core.software import news
-from gest.tui.runtime import App, Screen, ansi_markup
+from gest.tui.runtime import App, Screen, ansi_markup, boxed
 
 
 def _line(text: str) -> urwid.Widget:
@@ -22,8 +22,8 @@ class NewsScreen(Screen):
         )
         self._content = urwid.ListBox(self._content_walker)
         self._pile = urwid.Pile([
-            ("weight", 2, urwid.LineBox(self._list, title="Portage news")),
-            ("weight", 1, urwid.LineBox(self._content, title="Content")),
+            ("weight", 2, boxed(self._list, title="Portage news")),
+            ("weight", 1, boxed(self._content, title="Content")),
         ])
         super().__init__(
             app, self._pile, title="Portage News",

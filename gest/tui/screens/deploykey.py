@@ -14,7 +14,7 @@ import urwid
 
 from gest.core.repos import sshkey
 from gest.core.repos.backend_client import SshBackend
-from gest.tui.runtime import App, Screen
+from gest.tui.runtime import App, Screen, boxed
 
 _STEPS = (
     "Use this key to sync a private GitHub ebuild overlay over SSH:\n"
@@ -36,7 +36,7 @@ class DeployKeyScreen(Screen):
         body = urwid.Pile([
             ("pack", urwid.Text(_STEPS)),
             ("pack", urwid.Divider("─")),
-            ("pack", urwid.LineBox(self._key, title="root SSH public key")),
+            ("pack", boxed(self._key, title="root SSH public key")),
             ("pack", self._status),
         ])
         super().__init__(

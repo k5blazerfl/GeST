@@ -11,7 +11,7 @@ from gest.core.system import hostname as hostname_core
 from gest.core.system import locale as locale_core
 from gest.core.system import timezone as timezone_core
 from gest.core.system.backend_client import SystemBackend
-from gest.tui.runtime import App, Screen
+from gest.tui.runtime import App, Screen, boxed
 
 
 def _choice(text: str) -> urwid.Widget:
@@ -48,7 +48,7 @@ class HostnameScreen(Screen):
             valign="top",
         )
         super().__init__(
-            app, urwid.LineBox(body, title="Hostname"), title="System · Hostname",
+            app, boxed(body, title="Hostname"), title="System · Hostname",
             footer_keys=[("Enter", "Apply"), ("Esc", "Back")],
         )
 
@@ -81,7 +81,7 @@ class _ChoiceScreen(Screen):
         body = urwid.Pile([
             ("pack", self._current_text),
             ("pack", self._filter),
-            ("weight", 1, urwid.LineBox(self._list, title=self._TITLE)),
+            ("weight", 1, boxed(self._list, title=self._TITLE)),
         ])
         super().__init__(
             app, body, title=f"System · {self._TITLE}",

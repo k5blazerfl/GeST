@@ -12,7 +12,7 @@ from collections.abc import Callable
 
 import urwid
 
-from gest.tui.runtime import App
+from gest.tui.runtime import App, boxed
 
 MenuSpec = list
 
@@ -49,7 +49,7 @@ class _Dropdown(urwid.WidgetWrap):
                 self._walker.set_focus(i)
                 break
         listbox = urwid.ListBox(self._walker)
-        super().__init__(urwid.AttrMap(urwid.LineBox(listbox), "menu_drop"))
+        super().__init__(urwid.AttrMap(boxed(listbox), "menu_drop"))
 
     def keypress(self, size, key):
         key = super().keypress(size, key)

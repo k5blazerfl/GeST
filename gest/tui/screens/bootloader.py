@@ -10,7 +10,7 @@ import urwid
 
 from gest.core.bootloader import reader
 from gest.core.bootloader.backend_client import BootloaderBackend
-from gest.tui.runtime import App, Screen
+from gest.tui.runtime import App, Screen, boxed
 
 
 class BootloaderScreen(Screen):
@@ -24,7 +24,7 @@ class BootloaderScreen(Screen):
         pile = urwid.Pile([
             ("pack", self._info),
             ("pack", urwid.Divider()),
-            ("weight", 1, urwid.LineBox(self._log, title="Output")),
+            ("weight", 1, boxed(self._log, title="Output")),
         ])
         super().__init__(
             app, pile, title="Bootloader & Kernel",

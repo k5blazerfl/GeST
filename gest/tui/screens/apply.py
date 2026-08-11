@@ -18,7 +18,7 @@ import urwid
 
 from gest.core.software import preview
 from gest.core.software.backend_client import SoftwareBackend
-from gest.tui.runtime import App, Modal, Screen, ansi_markup, strip_ansi
+from gest.tui.runtime import App, Modal, Screen, ansi_markup, boxed, strip_ansi
 
 # emerge's per-package progress markers, e.g.
 #   >>> Emerging (2 of 5) app-editors/vim-9.1::gentoo
@@ -147,7 +147,7 @@ class RawLogScreen(Screen):
             [urwid.Text(ln, wrap="clip") for ln in lines])
         walker.set_focus(len(walker) - 1)   # tail of the log
         super().__init__(
-            app, urwid.LineBox(urwid.ListBox(walker), title="emerge log"),
+            app, boxed(urwid.ListBox(walker), title="emerge log"),
             title="emerge log", footer_keys=[("Esc", "Back")])
 
     def handle_key(self, key):
@@ -184,7 +184,7 @@ class ApplyScreen(StreamLog, Screen):
             ("weight", 1, self._log),
         ])
         super().__init__(
-            app, urwid.LineBox(body, title=verb), title=verb,
+            app, boxed(body, title=verb), title=verb,
             footer_keys=[("F10", verb), ("Esc", "Back")],
         )
         app.run_async(self._preview())
