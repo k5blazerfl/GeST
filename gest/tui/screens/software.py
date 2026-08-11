@@ -750,12 +750,16 @@ class SoftwareScreen(Screen):
         if pos == 0:                                   # menu -> sidebar
             self._pile.focus_position = 1
             self._columns.focus_position = 0
-        elif pos == 2:                                 # actions -> menu
-            self._pile.focus_position = 0
+        elif pos == 2:                                 # within actions:
+            if self._actions.focus is self._cancel_btn:
+                self._actions.focus_position = 3       #   Cancel -> Accept
+            else:
+                self._pile.focus_position = 0          #   Accept -> menu
         elif self._columns.focus_position == 0:        # sidebar -> table
             self._columns.focus_position = 1
-        else:                                          # table -> actions
+        else:                                          # table -> Cancel
             self._pile.focus_position = 2
+            self._actions.focus_position = 1
 
     def _repaint(self) -> None:
         for i, cp in enumerate(self._cps):

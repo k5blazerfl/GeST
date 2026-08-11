@@ -562,9 +562,14 @@ def test_software_tab_reaches_action_buttons():
     scr._pile.focus_position = 1
     scr._columns.focus_position = 0
     scr.handle_key("tab")                        # sidebar -> table
-    scr.handle_key("tab")                        # table -> actions
-    assert scr._pile.focus_position == 2          # the Cancel/Accept row
+    scr.handle_key("tab")                        # table -> Cancel
+    assert scr._pile.focus_position == 2 and scr._actions.focus is scr._cancel_btn
+    scr.handle_key("tab")                        # Cancel -> Accept (Tab within actions)
+    assert scr._actions.focus is scr._accept_btn
+    scr.handle_key("tab")                        # Accept -> menu
+    assert scr._pile.focus_position == 0
     # Enter on the Cancel button pops back
+    scr._pile.focus_position = 2
     scr._actions.focus_position = 1               # Cancel
     scr.handle_key("enter")
     assert app._stack[-1] is base
