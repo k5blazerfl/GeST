@@ -38,7 +38,8 @@ PALETTE = [
     ("footer_key", "black", "light gray", "", "black", _KEYS),
     ("title", "light magenta,bold", "default", "", f"{_ACCENT},bold", "default"),
     ("hint", "dark gray", "default", "", "#88a", "default"),
-    ("focus", "white", "dark blue", "", "white", _BLUE),          # selection bar
+    # selected row: blue text (no background bar)
+    ("focus", "light blue,bold", "default", "", "#5af,bold", "default"),
     ("boxline", "dark magenta", "default", "", _OUTLINE, "default"),  # box outline
     ("body", "default", "default", "", "default", "default"),     # shields box content
     ("reversed", "standout", "default", "", "standout", "default"),
