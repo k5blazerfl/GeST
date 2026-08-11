@@ -863,6 +863,7 @@ def test_software_loading_screen_shows_steps_and_hands_off():
     app._stack.append(scr)
     out = _render(scr)
     assert "Starting Package Management" in out
+    assert "########" in out                      # the ASCII GeST logo
     assert "Refresh repositories" in out and "Load installed packages" in out
     _pump(app, lambda: isinstance(app._stack[-1], SoftwareScreen), ticks=400)
     handed = app._stack[-1]

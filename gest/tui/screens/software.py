@@ -809,6 +809,18 @@ _STEP_GLYPH = {"pending": "·", "active": "▸", "done": "✓",
 _STEP_ATTR = {"pending": "dim", "active": "field", "done": "ok",
               "skipped": "dim", "failed": "error"}
 
+# GeST ASCII logo (from Art/ascii-logo.txt) shown on the startup screen.
+_LOGO = (
+    "      ::::::::  :::::::::: :::::::: :::::::::::\n"
+    "    :+:    :+: :+:       :+:    :+:    :+:\n"
+    "   +:+        +:+       +:+           +:+\n"
+    "  :#:        +#++:++#  +#++:++#++    +#+\n"
+    " +#+   +#+# +#+              +#+    +#+\n"
+    "#+#    #+# #+#       #+#    #+#    #+#\n"
+    "########  ########## ########     ###"
+)
+_LOGO_W = max(len(line) for line in _LOGO.splitlines())
+
 
 class SoftwareLoadingScreen(Screen):
     """Fullscreen startup for Package Management.
@@ -833,9 +845,14 @@ class SoftwareLoadingScreen(Screen):
         self._phase = urwid.Text(("dim", " Starting …"))
         self._bar = urwid.ProgressBar("pb_normal", "pb_complete", 0, 1)
 
+        logo = urwid.Padding(
+            urwid.Text(("title", _LOGO), wrap="clip"),
+            align="center", width=_LOGO_W)
         panel = boxed(
             urwid.Pile([
-                ("pack", urwid.Text(("title", "Starting Package Management"),
+                ("pack", logo),
+                ("pack", urwid.Divider(" ")),
+                ("pack", urwid.Text(("dim", "Starting Package Management"),
                                     align="center")),
                 ("pack", urwid.Divider(" ")),
                 ("pack", self._steps_text),
@@ -845,8 +862,8 @@ class SoftwareLoadingScreen(Screen):
             ]),
             title="Software Management")
         body = urwid.Filler(
-            urwid.Padding(panel, align="center", width=("relative", 60),
-                          min_width=48),
+            urwid.Padding(panel, align="center", width=("relative", 62),
+                          min_width=_LOGO_W + 6),
             valign="middle", height="pack")
         super().__init__(
             app, body, title="Software Management",
