@@ -46,7 +46,7 @@ from gest.backend.ssh import SshService
 from gest.backend.system import SystemService
 from gest.backend.users import UsersService
 from gest.core.repos import commands as repo_commands
-from gest.core.software import news
+from gest.core.software import news, world
 from gest.ipc.interface import BUS_NAME, SOFTWARE_IFACE, SOFTWARE_PATH, polkit_action
 
 # D-Bus introspection describing the surface above.
@@ -96,6 +96,11 @@ _INTROSPECTION = f"""
     <method name="MarkNewsRead">
       <arg type="s" name="selector" direction="in"/>
       <arg type="b" name="ok" direction="out"/>
+    </method>
+    <method name="Deselect">
+      <arg type="as" name="atoms" direction="in"/>
+      <arg type="b" name="ok" direction="out"/>
+      <arg type="s" name="output" direction="out"/>
     </method>
     <signal name="Progress"><arg type="as" name="lines"/></signal>
     <signal name="Finished"><arg type="i" name="exit_code"/></signal>
@@ -226,6 +231,9 @@ class SoftwareService:
         elif method == "MarkNewsRead":
             (selector,) = params.unpack()
             self._mark_news_read(selector, sender, invocation)
+        elif method == "Deselect":
+            (atoms,) = params.unpack()
+            self._deselect(atoms, sender, invocation)
         else:
             invocation.return_error_literal(
                 Gio.dbus_error_quark(),
@@ -410,6 +418,44 @@ class SoftwareService:
         audit("software.sync_repos", uid=caller_uid(self._conn, sender),
               result="ok" if ok_all else "failed", detail=",".join(names))
         invocation.return_value(GLib.Variant("(bs)", (ok_all, "\n".join(outputs))))
+
+    def _deselect(self, atoms, sender: str, invocation) -> None:
+        """Drop packages from the @world set (``emerge --deselect``).
+
+        Unmerges nothing — it only removes the explicit-install record so a
+        later depclean may reclaim them once no other package needs them. Runs
+        synchronously (it just rewrites the world file) and returns
+        ``(ok, output)`` so the frontend can await it and report the result.
+        """
+        if not self._check_authorized(sender, polkit_action("remove")):
+            invocation.return_error_literal(
+                Gio.dbus_error_quark(), Gio.DBusError.ACCESS_DENIED,
+                "Not authorized to deselect packages")
+            return
+        atoms = list(atoms)
+        try:
+            argv = world.deselect_argv(atoms, _EMERGE)
+        except ValueError:
+            invocation.return_error_literal(
+                Gio.dbus_error_quark(), Gio.DBusError.INVALID_ARGS,
+                "invalid or empty package atom list")
+            return
+        self._active += 1  # don't idle-exit mid-op
+        try:
+            proc = Gio.Subprocess.new(
+                argv,
+                Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_MERGE)
+            _ok, out, _err = proc.communicate_utf8(None, None)
+            code = proc.get_exit_status() if proc.get_if_exited() else -1
+        except GLib.Error as exc:  # pragma: no cover - depends on live system
+            out, code = exc.message, -1
+        finally:
+            self._active -= 1
+            self._touch()
+        ok = code == 0
+        audit("software.deselect", uid=caller_uid(self._conn, sender),
+              result="ok" if ok else "failed", detail=",".join(atoms))
+        invocation.return_value(GLib.Variant("(bs)", (ok, (out or "").strip())))
 
     # -- news mark-read ------------------------------------------------------
 

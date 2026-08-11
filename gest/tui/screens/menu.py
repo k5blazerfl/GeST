@@ -27,11 +27,13 @@ from gest.tui.screens.sync import SyncScreen
 from gest.tui.screens.system import HostnameScreen, LocaleScreen, TimezoneScreen
 from gest.tui.screens.update import UpdateScreen
 from gest.tui.screens.users import UsersScreen
+from gest.tui.screens.world import WorldScreen
 
 # Category → [(module_key, label, implemented)]. All modules are implemented.
 CATEGORIES: list[tuple[str, list[tuple[str, str, bool]]]] = [
     ("Software", [
         ("software", "Software Management", True),
+        ("world", "World & Package Sets", True),
         ("repositories", "Software Repositories", True),
         ("update", "System Update", True),
         ("depclean", "Clean Up Packages", True),
@@ -147,6 +149,8 @@ class MenuScreen(Screen):
             self.app.push(NewsScreen(self.app))
         elif key == "software":
             self.app.push(SoftwareLoadingScreen(self.app))
+        elif key == "world":
+            self.app.push(WorldScreen(self.app))
         elif key == "update":
             self.app.push(UpdateScreen(self.app))
         elif key == "depclean":

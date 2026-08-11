@@ -122,6 +122,14 @@ class SoftwareBackend:
         """Mark Portage news read (polkit-gated). selector: "all"/"new"/number."""
         return await self._iface.call_mark_news_read(selector)
 
+    async def deselect(self, atoms) -> tuple[bool, str]:
+        """Drop packages from @world (emerge --deselect); waits for the result.
+
+        Returns ``(ok, output)``. Unmerges nothing — only removes the explicit
+        record so a later depclean can reclaim them. Polkit-gated (remove).
+        """
+        return await self._iface.call_deselect(list(atoms))
+
     async def depclean_multi(self, atoms, on_progress=None, on_finished=None) -> bool:
         """Remove several atoms in one emerge --depclean; streams like install."""
         if on_progress is not None:

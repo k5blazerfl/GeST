@@ -89,7 +89,7 @@ def test_menu_launches_news():
     menu = MenuScreen(app)
     app._stack.append(menu)
     menu.keypress(_SIZE, "enter")        # focus the modules pane (Software)
-    for _ in range(5):
+    for _ in range(6):
         menu.keypress(_SIZE, "down")     # to "Portage News"
     menu.keypress(_SIZE, "enter")        # launch
     assert isinstance(app._stack[-1], NewsScreen)
@@ -135,12 +135,17 @@ class _FakeSoftwareBackend:
     ops just report success; refresh-on-open records what it would have synced."""
 
     synced: list[list[str]] = []
+    deselected: list[list[str]] = []
 
     async def connect(self):
         return self
 
     async def sync_repos(self, names):
         _FakeSoftwareBackend.synced.append(list(names))
+        return (True, "")
+
+    async def deselect(self, atoms):
+        _FakeSoftwareBackend.deselected.append(list(atoms))
         return (True, "")
 
     async def _stream(self, on_progress=None, on_finished=None):
@@ -167,7 +172,8 @@ def _isolate_software_backend(monkeypatch):
     service and run real emerge operations mid test. Swap in a no-op backend for
     every TUI test so nothing touches the real system, regardless of host state."""
     _FakeSoftwareBackend.synced.clear()
-    for mod in ("software", "sync", "update", "cleanup", "accept"):
+    _FakeSoftwareBackend.deselected.clear()
+    for mod in ("software", "sync", "update", "cleanup", "accept", "world"):
         monkeypatch.setattr(f"gest.tui.screens.{mod}.SoftwareBackend",
                             _FakeSoftwareBackend, raising=False)
 
@@ -1448,6 +1454,52 @@ def test_cleanup_lists_orphans_and_toggles_keep():
     assert not scr._kept
 
 
+def _world_members(monkeypatch, pkgs):
+    from gest.core.software import reader
+    monkeypatch.setattr(reader, "list_installed", lambda: pkgs)
+
+
+def test_world_lists_members_and_marks(monkeypatch):
+    from gest.core.software.model import Package
+    from gest.tui.screens.world import WorldScreen
+    _world_members(monkeypatch, [
+        Package(cp="app-misc/neofetch", version="7.1.0", world_member=True),
+        Package(cp="dev-lang/python", version="3.11.9", world_member=True),
+        Package(cp="sys-libs/glibc", version="2.39", world_member=False),
+    ])
+    app = App()
+    scr = WorldScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: bool(scr._members), ticks=200)
+    assert len(scr._members) == 2                       # dependency-only excluded
+    out = _render(scr)
+    assert "neofetch" in out and "python" in out and "glibc" not in out
+    assert "[Cancel]" in out and "[Deselect]" in out    # action bar
+    scr._walker.set_focus(0)
+    scr.keypress(_SIZE, " ")                            # mark the first
+    assert scr._marked == {"app-misc/neofetch"}
+    assert "✓" in _render(scr)
+    scr.keypress(_SIZE, "a")                            # mark all
+    assert scr._marked == {"app-misc/neofetch", "dev-lang/python"}
+    scr.keypress(_SIZE, "n")                            # unmark all
+    assert not scr._marked
+
+
+def test_world_deselect_calls_backend(monkeypatch):
+    from gest.core.software.model import Package
+    from gest.tui.screens.world import WorldScreen
+    _world_members(monkeypatch, [
+        Package(cp="app-misc/neofetch", version="7.1.0", world_member=True)])
+    app = App()
+    scr = WorldScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: bool(scr._members), ticks=200)
+    scr._marked = {"app-misc/neofetch"}
+    app.loop.run_until_complete(scr._call(["app-misc/neofetch"]))
+    assert _FakeSoftwareBackend.deselected == [["app-misc/neofetch"]]
+    assert not scr._marked                              # cleared on success
+
+
 def test_update_screen_lists_changes(monkeypatch):
     from gest.core.software import update as core_update
     from gest.core.software.update import Change, UpdatePlan
@@ -1680,6 +1732,7 @@ def test_menu_launches_repos():
     menu = MenuScreen(app)
     app._stack.append(menu)
     menu.keypress(_SIZE, "enter")          # Software category, focus modules
-    menu.keypress(_SIZE, "down")           # Software Management -> Software Repositories
+    menu.keypress(_SIZE, "down")           # Software Management -> World & Package Sets
+    menu.keypress(_SIZE, "down")           # -> Software Repositories
     menu.keypress(_SIZE, "enter")
     assert isinstance(app._stack[-1], ReposScreen)
