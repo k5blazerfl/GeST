@@ -855,6 +855,8 @@ class SoftwareLoadingScreen(Screen):
             align="center", width=_LOGO_W)
         panel = boxed(
             urwid.Pile([
+                ("pack", urwid.Divider(" ")),      # two lines of top spacing
+                ("pack", urwid.Divider(" ")),
                 ("pack", logo),
                 ("pack", urwid.Divider(" ")),
                 ("pack", urwid.Text(("dim", "Starting Package Management"),
