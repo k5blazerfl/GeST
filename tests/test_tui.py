@@ -591,6 +591,30 @@ def test_software_tab_reaches_action_buttons():
     assert app._stack[-1] is base
 
 
+def test_software_shift_tab_backtracks():
+    app = App()
+    scr = _software(app)
+    scr._pile.focus_position = 1
+    scr._columns.focus_position = 1               # the table
+    scr.keypress(_SIZE, "shift tab")              # table -> sidebar (reverse)
+    assert scr._current_pane() == "sidebar"
+    scr.keypress(_SIZE, "shift tab")              # sidebar -> menu
+    assert scr._current_pane() == "menu"
+    scr.keypress(_SIZE, "shift tab")              # menu -> accept (wraps)
+    assert scr._current_pane() == "accept"
+
+
+def test_repos_shift_tab_backtracks():
+    app = App()
+    scr = ReposScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: len(scr._repos) > 0, ticks=200)
+    body = scr._frame.body
+    body.focus_position = 0                        # the repo list
+    scr.keypress(_SIZE, "shift tab")               # list -> Accept (reverse wrap)
+    assert scr._on_action_row() and scr._actions.focus is scr._actions.buttons[1]
+
+
 def test_software_accept_button_activates_accept():
     app = App()
     scr = _software(app)

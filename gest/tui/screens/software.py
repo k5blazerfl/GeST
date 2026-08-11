@@ -663,7 +663,10 @@ class SoftwareScreen(Screen):
         on_mode = in_sidebar and sidebar_focus == self._MODE_IDX
 
         if key == "tab":
-            self._cycle_pane()
+            self._cycle_pane(1)
+            return None
+        if key == "shift tab":
+            self._cycle_pane(-1)
             return None
         if self._pile.focus_position == 2 and key in ("enter", " "):
             if self._actions.focus is self._accept_btn:
@@ -736,21 +739,35 @@ class SoftwareScreen(Screen):
                 return None
         return key
 
-    def _cycle_pane(self) -> None:
+    _PANES = ("menu", "sidebar", "table", "cancel", "accept")
+
+    def _cycle_pane(self, delta: int = 1) -> None:
+        i = self._PANES.index(self._current_pane())
+        self._focus_pane(self._PANES[(i + delta) % len(self._PANES)])
+
+    def _current_pane(self) -> str:
         pos = self._pile.focus_position               # 0 menu · 1 columns · 2 actions
-        if pos == 0:                                   # menu -> sidebar
+        if pos == 0:
+            return "menu"
+        if pos == 2:
+            return "cancel" if self._actions.focus is self._cancel_btn else "accept"
+        return "sidebar" if self._columns.focus_position == 0 else "table"
+
+    def _focus_pane(self, name: str) -> None:
+        if name == "menu":
+            self._pile.focus_position = 0
+        elif name == "sidebar":
             self._pile.focus_position = 1
             self._columns.focus_position = 0
-        elif pos == 2:                                 # within actions:
-            if self._actions.focus is self._cancel_btn:
-                self._actions.focus_position = 3       #   Cancel -> Accept
-            else:
-                self._pile.focus_position = 0          #   Accept -> menu
-        elif self._columns.focus_position == 0:        # sidebar -> table
+        elif name == "table":
+            self._pile.focus_position = 1
             self._columns.focus_position = 1
-        else:                                          # table -> Cancel
+        elif name == "cancel":
             self._pile.focus_position = 2
             self._actions.focus_position = 1
+        else:                                          # accept
+            self._pile.focus_position = 2
+            self._actions.focus_position = 3
 
     # -- context-sensitive footer -------------------------------------------
 
