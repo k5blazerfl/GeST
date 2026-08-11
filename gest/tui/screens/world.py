@@ -8,7 +8,7 @@ Edits are **transactional**: marking @world packages to deselect, and adding /
 removing atoms or creating / deleting custom sets, all *stage* the change (shown
 inline — a red ``-`` for a deselect/removal, ``+`` for an add, and a modified
 marker in the sidebar).
-Nothing is written until **F10 (Apply)**, which commits everything at once:
+Nothing is written until **F10 (Deselect)**, which commits everything at once:
 custom-set edits through the Portage backend and deselects via
 ``emerge --deselect``. @system / @profile are read-only. Deselecting unmerges
 nothing — it only drops the explicit-install record so a later Clean Up may
@@ -72,7 +72,7 @@ class WorldScreen(Screen):
         self._columns = urwid.Columns([(30, left), right], dividechars=1)
         self._count = urwid.Text("")
         self._actions = focusable_actions([
-            ("Cancel", app.pop), ("Apply", self._apply)])
+            ("Cancel", app.pop), ("Deselect", self._apply)])
         self._pile = NavPile([
             ("weight", 1, self._columns),
             ("pack", self._count),
@@ -84,7 +84,7 @@ class WorldScreen(Screen):
             help_text=(
                 "Browse Portage's package sets and manage @world and custom sets.\n"
                 "Left pane: the sets; right pane: the focused set's members.\n\n"
-                "Edits are staged and applied together with F10 (Apply):\n"
+                "Edits are staged and applied together with F10 (Deselect):\n"
                 "  World set   Space marks a package to deselect (red -)\n"
                 "  Custom set  a add an atom · x remove/restore · d delete · c new\n"
                 "Inline markers show staged changes: - deselect/remove · + add.\n"
@@ -128,7 +128,7 @@ class WorldScreen(Screen):
     def _footer_context(self):
         pane = self._current_pane()
         tail = [("Tab", "Pane"), ("Esc", "Back")]
-        apply = [("F10", "Apply")] if self._has_pending() else []
+        apply = [("F10", "Deselect")] if self._has_pending() else []
         if pane in ("cancel", "apply"):
             return [("Enter", "Activate"), *tail]
         custom = self._focused_custom() is not None
@@ -316,7 +316,7 @@ class WorldScreen(Screen):
             parts = [("dim", "")]
         summary = self._pending_summary()
         if summary:
-            parts.append(("ok", f"   ·   {summary} · F10 Apply"))
+            parts.append(("ok", f"   ·   {summary} · F10 Deselect"))
         self._count.set_text(parts)
 
     def _pending_summary(self) -> str:
@@ -476,7 +476,7 @@ class WorldScreen(Screen):
             lines.append(f"{verb[e.kind]} set @{e.name}{detail}")
         body = [urwid.Text(("hint", f" • {line}")) for line in lines]
         modal = Modal(self.app, "Apply staged changes?", body,
-                      [("Apply", self._run_apply), ("Cancel", self.app.pop)])
+                      [("Deselect", self._run_apply), ("Cancel", self.app.pop)])
         self.app.push_modal(modal, width=("relative", 64))
 
     def _run_apply(self) -> None:

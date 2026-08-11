@@ -2,7 +2,7 @@
 
 Left: a Filter sidebar (view selector + search phrase + search-in fields).
 Right: a package table with a pinned column header, a count line, and a live
-detail pane. Mark packages (Space install/update, r remove), then Accept applies
+detail pane. Mark packages (Space install/update, r remove), then Emerge applies
 them — reviewed first in a resolved ProposalScreen, then applied installs-first
 (followed by a depclean pass) through the organized per-package AcceptRunScreen.
 """
@@ -163,7 +163,7 @@ class SoftwareScreen(Screen):
         self._cancel_btn = urwid.AttrMap(
             urwid.SelectableIcon("[Cancel]", 0), None, focus_map="focus")
         self._accept_btn = urwid.AttrMap(
-            urwid.SelectableIcon("[Accept]", 0), None, focus_map="focus")
+            urwid.SelectableIcon("[Emerge]", 0), None, focus_map="focus")
         self._actions = urwid.Columns([
             urwid.Text(""),                       # spacer pushes the buttons right
             ("pack", self._cancel_btn),
@@ -181,7 +181,7 @@ class SoftwareScreen(Screen):
             footer_keys=[
                 ("Enter", "Search/Install"), ("Space", "Mark"), ("b", "Binary"),
                 ("r", "Remove"), ("a", "Actions"), ("Tab", "Pane"), ("u", "USE"),
-                ("k", "Keys"), ("F10", "Accept"), ("Esc", "Back"),
+                ("k", "Keys"), ("F10", "Emerge"), ("Esc", "Back"),
             ],
             help_text=(
                 "Browse and manage Portage packages, YaST sw_single-style.\n\n"
@@ -196,7 +196,7 @@ class SoftwareScreen(Screen):
                 "'Updates available' view). Marks: u update · + install · b "
                 "binary-only · B prefer-binary · - remove.\n"
                 "Binary installs use emerge --getbinpkg (configure sources under "
-                "the Binary packages menu). F10 (Accept) applies all marks."
+                "the Binary packages menu). F10 (Emerge) applies all marks."
             ),
         )
         self._pile = pile
@@ -521,7 +521,7 @@ class SoftwareScreen(Screen):
     def _set_count(self, text: str) -> None:
         summary = self._selection.summary()
         if not self._selection.is_empty:
-            text += f"   ·   {summary} (F10 Accept · c clear)"
+            text += f"   ·   {summary} (F10 Emerge · c clear)"
         self._count.set_text(f" {text}")
         self._base_count = text
         self.app.refresh()
@@ -795,7 +795,7 @@ class SoftwareScreen(Screen):
                 return [("Enter", "Open"), ("←", "Filter"), *tail]
             return [("Space", "Mark"), ("b", "Binary"), ("r", "Remove"),
                     ("a", "Actions"), ("u", "USE"), ("k", "Keys"), ("c", "Clear"),
-                    ("Enter", "Install"), ("F10", "Accept"), ("←", "Filter"),
+                    ("Enter", "Install"), ("F10", "Emerge"), ("←", "Filter"),
                     *tail]
         return tail
 

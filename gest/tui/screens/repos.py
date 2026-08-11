@@ -1,9 +1,9 @@
-"""Software repositories (urwid): stage enable/add/disable/remove/refresh, then Accept.
+"""Software repositories (urwid): stage enable/add/disable/remove/refresh, then Apply.
 
 A YaST-style layout consistent with the other transactional modules (Software,
 Users): a columnar table over a Properties panel, a pending-count line, and a
-[Cancel] [Accept] action bar. Changes are *staged* — shown as a mark glyph in the
-row, not applied — until F10 Accept runs `eselect repository` (via the polkit-gated
+[Cancel] [Apply] action bar. Changes are *staged* — shown as a mark glyph in the
+row, not applied — until F10 Apply runs `eselect repository` (via the polkit-gated
 ReposBackend) and writes the refresh-state file (via the Portage backend). F9
 discards. Staged marks reuse the shared vocabulary: + add/enable · ~ disable ·
 - remove.
@@ -96,7 +96,7 @@ class ReposScreen(Screen):
 
         self._actions = focusable_actions([
             ("Cancel", self._leave),
-            ("Accept", lambda: self.app.run_async(self._accept())),
+            ("Apply", lambda: self.app.run_async(self._accept())),
         ])
         body = NavPile([
             ("weight", 1, table),
@@ -112,7 +112,7 @@ class ReposScreen(Screen):
             footer_keys=[
                 ("a", "Enable"), ("A", "Add"), ("e", "Edit"), ("d", "Disable"),
                 ("x", "Remove"), ("t", "Refresh"), ("m", "Mirror"),
-                ("k", "SSH key"), ("F10", "Accept"), ("F9", "Cancel"),
+                ("k", "SSH key"), ("F10", "Apply"), ("F9", "Cancel"),
                 ("r", "Reload"), ("Esc", "Back"),
             ],
             help_text=(
@@ -121,8 +121,8 @@ class ReposScreen(Screen):
                 "immediately —\n"
                 "  +  enable / add    *  edit    ~  disable    -  remove\n"
                 "shown in the leftmost column (a staged refresh shows + / - in the\n"
-                "Refresh column). The count line and [Accept] button sit below the\n"
-                "list. F10 (Accept) applies every staged change; F9 (Cancel)\n"
+                "Refresh column). The count line and [Apply] button sit below the\n"
+                "list. F10 (Apply) applies every staged change; F9 (Cancel)\n"
                 "discards them; a key pressed twice on a row clears its mark.\n\n"
                 "Disabled repositories stay in the list, greyed out and flagged D in\n"
                 "the leftmost column — GeST saves a disabled repo's sync info so you\n"
@@ -144,7 +144,7 @@ class ReposScreen(Screen):
                 "   enabled repo deletes its files; on a disabled one forgets it\n"
                 "t  toggle refresh-on-open    m  change ★ main-repo mirror\n"
                 "k  SSH deploy key — for syncing a private GitHub git overlay\n"
-                "F10 Accept    F9 Cancel    r  reload"
+                "F10 Apply    F9 Cancel    r  reload"
             ),
         )
         # Tab cycles: repo list → Cancel → Accept. Arrows stay in the list.
@@ -222,7 +222,7 @@ class ReposScreen(Screen):
             n = self._pending.count()
             self._count.set_text([
                 ("ok", f" {n} pending change{'s' if n != 1 else ''}"),
-                ("dim", "   ·   F10 Accept · F9 Cancel"),
+                ("dim", "   ·   F10 Apply · F9 Cancel"),
             ])
 
     # -- properties panel ---------------------------------------------------

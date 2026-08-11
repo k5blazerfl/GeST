@@ -79,7 +79,7 @@ class CleanupScreen(AutoAccept, Screen):
         self._count = urwid.Text("")
 
         self._actions = focusable_actions([
-            ("Cancel", app.pop), ("Clean up", self._clean)])
+            ("Cancel", app.pop), ("Depclean", self._clean)])
         body = NavPile([
             ("weight", 1, table),
             ("pack", details_box),
@@ -90,7 +90,7 @@ class CleanupScreen(AutoAccept, Screen):
             app, body, title="Clean Up Packages",
             footer_keys=[
                 ("Space", "Keep/Remove"), ("a", "All"), ("n", "None"),
-                ("F10", "Clean up"), ("Esc", "Back"),
+                ("F10", "Depclean"), ("Esc", "Back"),
             ],
             help_text=(
                 "Orphaned packages — installed but no longer required by any other\n"
@@ -100,7 +100,7 @@ class CleanupScreen(AutoAccept, Screen):
                 "A ✓ marks a package for removal (all are marked by default).\n\n"
                 "Space  keep / remove the highlighted package\n"
                 "a      mark all for removal      n  keep all\n"
-                "F10    clean up the marked packages (runs emerge --depclean)\n"
+                "F10    depclean the marked packages (runs emerge --depclean)\n"
                 "Esc    back"
             ),
         )
@@ -202,7 +202,7 @@ class CleanupScreen(AutoAccept, Screen):
                  else f"{len(selected)} of {total} packages")
         self._count.set_text([
             ("ok", f" Clean up {scope}"),
-            ("dim", f"   ·   {size} reclaimable   ·   F10 Clean up"),
+            ("dim", f"   ·   {size} reclaimable   ·   F10 Depclean"),
         ])
 
     # -- keys ---------------------------------------------------------------

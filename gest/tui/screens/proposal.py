@@ -1,6 +1,6 @@
 """Software Management proposal (urwid): a YaST-style resolved review before Accept.
 
-Pressing F10 (Accept) doesn't apply the marks straight away — it first resolves
+Pressing F10 (Emerge) doesn't apply the marks straight away — it first resolves
 what emerge would actually do (``emerge --pretend`` for the installs, and the
 depclean pass for the removals), then shows the full plan: every package to
 install/update (including dependencies pulled in) and to remove, with the
@@ -87,7 +87,7 @@ class ProposalScreen(AutoAccept, Screen):
         self._phase = urwid.Text(("dim", " Resolving …"))
         self._totals = urwid.Text("")
         self._actions = focusable_actions([
-            ("Cancel", app.pop), ("Apply", self._apply)])
+            ("Cancel", app.pop), ("Emerge", self._apply)])
         body = NavPile([
             ("pack", urwid.AttrMap(self._phase, "field")),
             ("pack", urwid.Divider("─")),
@@ -97,7 +97,7 @@ class ProposalScreen(AutoAccept, Screen):
         ])
         super().__init__(
             app, body, title="Software Management",
-            footer_keys=[("F10", "Apply"), ("Esc", "Cancel")],
+            footer_keys=[("F10", "Emerge"), ("Esc", "Cancel")],
             help_text=(
                 "The resolved proposal — what emerge would actually do for the\n"
                 "packages you marked, including dependencies pulled in and any\n"
