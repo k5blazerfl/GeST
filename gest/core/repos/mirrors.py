@@ -16,6 +16,7 @@ from __future__ import annotations
 import os
 
 from gest.core.portage import paths
+from gest.core.repos import edit
 
 # The rsync module every Gentoo rotation exposes the tree under.
 _MODULE = "/gentoo-portage"
@@ -63,47 +64,11 @@ def gentoo_conf_path(conf_dir: str | None = None) -> str:
     return os.path.join(conf_dir or paths.repos_conf_dir(), "gentoo.conf")
 
 
-def _is_sync_uri(line: str) -> bool:
-    stripped = line.strip()
-    return "=" in stripped and stripped.split("=", 1)[0].strip().lower() == "sync-uri"
-
-
 def set_sync_uri(text: str, repo: str, uri: str) -> str:
     """Return ``gentoo.conf`` content with ``[repo]``'s ``sync-uri`` set to ``uri``.
 
-    Every other line is preserved verbatim — only the ``sync-uri`` value under
-    the main repo's section changes (verification keys, location and auto-sync
-    are untouched). If the section has no ``sync-uri`` line it is inserted; if
-    the section (or the whole file) is absent, a minimal override fragment is
-    appended, which Portage merges over its built-in default.
+    Only the ``sync-uri`` value under the main repo's section changes —
+    verification keys, location and auto-sync are preserved (the single-key case
+    of :func:`gest.core.repos.edit.set_fields`).
     """
-    header = f"[{repo}]"
-    out: list[str] = []
-    in_section = False
-    replaced = False
-
-    for line in text.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("[") and stripped.endswith("]"):
-            if in_section and not replaced:          # leaving target w/o a sync-uri
-                out.append(f"sync-uri = {uri}")
-                replaced = True
-            in_section = stripped == header
-            out.append(line)
-            continue
-        if in_section and _is_sync_uri(line):
-            out.append(f"sync-uri = {uri}")
-            replaced = True
-            continue
-        out.append(line)
-
-    if in_section and not replaced:                   # target section ran to EOF
-        out.append(f"sync-uri = {uri}")
-        replaced = True
-
-    if not replaced:                                  # no such section anywhere
-        if out and out[-1].strip():
-            out.append("")
-        out += [header, f"sync-uri = {uri}"]
-
-    return "\n".join(out).rstrip("\n") + "\n"
+    return edit.set_fields(text, repo, {"sync-uri": uri})

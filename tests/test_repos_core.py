@@ -138,6 +138,22 @@ def test_pending_add_and_cancel():
     assert p.is_empty
 
 
+def test_pending_edit_stages_and_counts():
+    p = pending.Pending()
+    p.edit("guru", "git", "https://h/guru.git", "50")
+    assert not p.is_empty and p.count() == 1
+    assert p.edit_of("guru") == pending.EditSpec("git", "https://h/guru.git", "50")
+    p.cancel("guru")
+    assert p.is_empty and p.edit_of("guru") is None
+
+
+def test_pending_remove_drops_staged_edit():
+    p = pending.Pending()
+    p.edit("guru", "git", "https://h/guru.git", "")
+    p.mark_state("guru", pending.REMOVE)
+    assert p.edit_of("guru") is None and p.state_of("guru") == pending.REMOVE
+
+
 def test_pending_ordered_ops_adds_and_enables_before_removes():
     p = pending.Pending()
     p.mark_state("old", pending.REMOVE)

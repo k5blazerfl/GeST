@@ -1087,6 +1087,62 @@ def test_mirror_screen_applies_selection(monkeypatch):
     assert app._stack[-1] is caller          # returned to the caller after applying
 
 
+def test_repos_edit_opens_form_for_enabled_repo():
+    app = App()
+    scr = ReposScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: len(scr._repos) > 0, ticks=200)
+    idx = next((i for i, r in enumerate(scr._repos) if r.enabled), None)
+    if idx is None:
+        pytest.skip("no enabled repository configured on this host")
+    scr._walker.set_focus(idx)
+    scr.keypress(_SIZE, "e")
+    assert isinstance(app._stack[-1], urwid.Overlay)   # the edit form modal
+    out = _render(app._stack[-1])
+    assert "Edit repository" in out and "Sync URI" in out and "Priority" in out
+
+
+def test_repos_edit_applies_config_write(monkeypatch):
+    from gest.core.repos.reader import Repo
+    from gest.tui.screens import repos as repos_mod
+    captured = {}
+
+    class _FakePortageBackend:
+        async def connect(self):
+            return self
+
+        async def write_config(self, writes):
+            captured["writes"] = list(writes)
+            return True
+
+        async def close(self):
+            return None
+
+    monkeypatch.setattr(repos_mod, "PortageBackend", _FakePortageBackend)
+    monkeypatch.setattr(
+        repos_mod.edit, "locate",
+        lambda _conf, name: (f"/etc/portage/repos.conf/{name}.conf",
+                             f"[{name}]\nsync-type = git\n"
+                             f"sync-uri = https://old/{name}.git\n"))
+    app = App()
+    scr = ReposScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: len(scr._repos) > 0, ticks=200)
+    # inject a known enabled repo + stage an edit on it (host-independent)
+    scr._repos = [Repo(name="guru", sync_type="git",
+                       sync_uri="https://old/guru.git", enabled=True)]
+    scr._disabled = []
+    scr._pending.edit("guru", "git", "https://new/guru.git", "80")
+    scr._rebuild()
+    assert "*" in _render(scr)                          # staged-edit mark
+    app.loop.run_until_complete(scr._accept())
+    cw = captured["writes"][0]
+    assert cw.path.endswith("repos.conf/guru.conf")
+    assert "sync-uri = https://new/guru.git" in cw.text
+    assert "priority = 80" in cw.text
+    assert "https://old" not in cw.text
+
+
 def test_repos_stages_changes_then_clears():
     app = App()
     scr = ReposScreen(app)

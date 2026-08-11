@@ -14,8 +14,9 @@ from __future__ import annotations
 import urwid
 
 from gest.core.portage.backend_client import PortageBackend
+from gest.core.portage.write import ConfigWrite
+from gest.core.repos import commands, edit, pending, reader, writer
 from gest.core.repos import disabled as disabled_state
-from gest.core.repos import pending, reader, writer
 from gest.core.repos.backend_client import ReposBackend
 from gest.core.repos.reader import Repo
 from gest.tui.runtime import App, Modal, Screen, action_bar
@@ -35,6 +36,7 @@ _TRUTHY = {"yes", "true", "1", "on"}
 # Staged-change glyphs — the shared vocabulary (cf. Users: + add · ~ edit · - del).
 _STATE_GLYPH = {pending.ENABLE: "+", pending.ADD: "+",
                 pending.DISABLE: "~", pending.REMOVE: "-"}
+_EDIT_GLYPH = "*"   # a staged edit of an existing repo's fields
 
 
 def _fmt(mark: str, name: str, auto: str, refresh: str,
@@ -103,15 +105,15 @@ class ReposScreen(Screen):
             app, body,
             title="Repositories",
             footer_keys=[
-                ("a", "Enable"), ("A", "Add"), ("d", "Disable"), ("x", "Remove"),
-                ("t", "Refresh"), ("m", "Mirror"), ("F10", "Accept"),
-                ("F9", "Cancel"), ("r", "Reload"), ("Esc", "Back"),
+                ("a", "Enable"), ("A", "Add"), ("e", "Edit"), ("d", "Disable"),
+                ("x", "Remove"), ("t", "Refresh"), ("m", "Mirror"),
+                ("F10", "Accept"), ("F9", "Cancel"), ("r", "Reload"), ("Esc", "Back"),
             ],
             help_text=(
                 "Software repositories configured in /etc/portage/repos.conf.\n\n"
                 "Editing is transactional: changes are STAGED as a mark, not applied\n"
                 "immediately —\n"
-                "  +  enable / add    ~  disable    -  remove\n"
+                "  +  enable / add    *  edit    ~  disable    -  remove\n"
                 "shown in the leftmost column (a staged refresh shows + / - in the\n"
                 "Refresh column). The count line and [Accept] button sit below the\n"
                 "list. F10 (Accept) applies every staged change; F9 (Cancel)\n"
@@ -131,6 +133,7 @@ class ReposScreen(Screen):
                 "a  enable — on a greyed (disabled) repo, re-enables it; otherwise\n"
                 "   stage enabling a known repository by name (from the eselect list)\n"
                 "A  stage adding a custom repository (name / sync type / URI)\n"
+                "e  stage editing an enabled repo's sync type / URI / priority\n"
                 "d  stage disabling (keeps files + saves info)    x  remove — on an\n"
                 "   enabled repo deletes its files; on a disabled one forgets it\n"
                 "t  toggle refresh-on-open    m  change ★ main-repo mirror\n"
@@ -182,7 +185,11 @@ class ReposScreen(Screen):
     def _mark_for(self, r: Repo) -> str:
         """Leading mark glyph for a staged change on this repo, else ''."""
         op = self._pending.state_of(r.name)
-        return _STATE_GLYPH.get(op, "") if op else ""
+        if op:
+            return _STATE_GLYPH.get(op, "")
+        if self._pending.edit_of(r.name) is not None:
+            return _EDIT_GLYPH
+        return ""
 
     def _refresh_cell(self, r: Repo) -> str:
         if not r.enabled:
@@ -271,6 +278,8 @@ class ReposScreen(Screen):
                 self._enable()
         elif key == "A":
             self._add()
+        elif key in ("e", "E"):
+            self._edit()
         elif key in ("m", "M"):
             self._mirror()
         elif key in ("d", "x", "t"):
@@ -278,6 +287,43 @@ class ReposScreen(Screen):
         else:
             return key
         return None
+
+    def _edit(self) -> None:
+        repo = self._current()
+        if repo is None or not repo.enabled:
+            self.app.notify("Select an enabled repository to edit.", error=True)
+            return
+        staged = self._pending.edit_of(repo.name)
+        sync_type = urwid.Edit("Sync type: ",
+                               staged.sync_type if staged else repo.sync_type)
+        uri = urwid.Edit("Sync URI:  ", staged.uri if staged else repo.sync_uri)
+        priority = urwid.Edit("Priority:  ",
+                              staged.priority if staged else repo.priority)
+
+        def save():
+            st = sync_type.edit_text.strip()
+            u = uri.edit_text.strip()
+            pr = priority.edit_text.strip()
+            if not commands.valid_type(st):
+                self.app.notify("A valid sync type is required (e.g. rsync, git).",
+                                error=True)
+                return
+            if not commands.valid_uri(u):
+                self.app.notify("A valid sync URI is required.", error=True)
+                return
+            if pr and not pr.isdigit():
+                self.app.notify("Priority must be a whole number.", error=True)
+                return
+            self.app.pop()
+            self._pending.edit(repo.name, st, u, pr)
+            self._rebuild()
+
+        modal = Modal(
+            self.app, f"Edit repository “{repo.name}”",
+            [urwid.Text(("hint", f" {repo.name}  ·  name is fixed")),
+             urwid.Divider(), sync_type, uri, priority],
+            [("Stage", save), ("Cancel", self.app.pop)])
+        self.app.push_modal(modal, width=("relative", 75), height=("relative", 60))
 
     def _mirror(self) -> None:
         repo = self._current()
@@ -466,7 +512,7 @@ class ReposScreen(Screen):
         return ok, final_disabled
 
     async def _write_state(self, initial, final_disabled, results: list) -> None:
-        """Persist the disabled record and refresh file (one batched WriteConfig)."""
+        """Persist disabled/refresh state plus any repo edits (one batched write)."""
         def key(rows):
             return sorted((d.name, d.sync_type, d.sync_uri, d.priority) for d in rows)
 
@@ -478,9 +524,16 @@ class ReposScreen(Screen):
                           if r.refresh and r.enabled and not r.main}
             final = self._pending.resolved_refresh(current_on)
             builders.append(("refresh-on-open", lambda: writer.set_refresh(final)))
-        if not builders:
-            return
         writes = [await self.app.run_blocking(fn) for _label, fn in builders]
+        labels = [label for label, _fn in builders]
+        for name, spec in self._pending.edits.items():           # existing-repo edits
+            path, text = await self.app.run_blocking(edit.locate, None, name)
+            fields = {"sync-type": spec.sync_type, "sync-uri": spec.uri,
+                      "priority": spec.priority}
+            writes.append(ConfigWrite(path, edit.set_fields(text, name, fields)))
+            labels.append(f"{name} (edit)")
+        if not writes:
+            return
         backend = PortageBackend()
         try:
             await backend.connect()
@@ -489,7 +542,7 @@ class ReposScreen(Screen):
             ok = False
         else:
             await backend.close()
-        results += [(label, ok) for label, _fn in builders]
+        results += [(label, ok) for label in labels]
 
     def _report(self, results: list[tuple[str, bool]]) -> None:
         failed = [name for name, ok in results if not ok]
