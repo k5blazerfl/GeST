@@ -584,11 +584,16 @@ class SoftwareScreen(Screen):
         """Post-uninstall housekeeping: removing packages can strand their
         dependencies as orphans. Scan for them and — only if any are found —
         open Clean Up Packages to review them. Silent when nothing is orphaned."""
+        # The depclean --pretend scan takes a few seconds; say so up front so the
+        # gap before Clean Up appears (or the quiet 'all clear') isn't mistaken
+        # for nothing happening.
+        self.app.notify("Checking for orphaned dependencies …")
         self.app.run_async(self._scan_orphans())
 
     async def _scan_orphans(self) -> None:
         plan = await self.app.run_blocking(cleanup_core.plan_cleanup)
         if plan is None or not plan.ok or not plan.orphans:
+            self.app.notify("No orphaned dependencies — nothing to clean up.")
             return                     # nothing stranded → stay on the list
         n = len(plan.orphans)
         self.app.notify(f"{n} orphaned dependenc{'y' if n == 1 else 'ies'} "
