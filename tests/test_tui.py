@@ -446,7 +446,7 @@ def test_software_two_pane_layout():
     out = _render(scr)
     assert "Filter" in out and "Packages" in out and "Detail" in out
     assert "Name" in out and "Summary" in out  # pinned column header
-    assert "[Cancel]" in out and "[Emerge]" in out  # YaST-style action bar
+    assert "[Cancel]" in out and "[Accept]" in out  # YaST-style action bar
 
 
 def test_software_refreshes_only_flagged_non_main_repos_on_open(monkeypatch):
@@ -471,7 +471,7 @@ def test_software_loads_marks_and_clears():
     scr.keypress(_SIZE, " ")      # mark install (installed pkg shows "u")
     assert len(scr._selection) == 1
     assert scr._walker[0].base_widget.text[0] in ("+", "u")
-    assert "Emerge" in scr._count.text
+    assert "Accept" in scr._count.text
     scr.keypress(_SIZE, "c")      # clear
     assert scr._selection.is_empty
     assert scr._walker[0].base_widget.text[0] == "i"
@@ -691,11 +691,11 @@ def test_software_footer_is_context_sensitive():
     scr._columns.focus_position = 0
     scr._sidebar.focus_position = scr._SEARCH_W_IDX
     scr._update_footer()
-    assert "Search" in bar() and "Mark" not in bar() and "Emerge" not in bar()
+    assert "Search" in bar() and "Mark" not in bar() and "Accept" not in bar()
     # table: the package action keys appear
     scr._columns.focus_position = 1
     scr._update_footer()
-    assert "Mark" in bar() and "Emerge" in bar()
+    assert "Mark" in bar() and "Accept" in bar()
     # actions: just Activate
     scr._pile.focus_position = 2
     scr._update_footer()
@@ -1694,7 +1694,7 @@ def test_world_lists_members_and_marks(monkeypatch):
     out = _render(scr)
     assert "neofetch" in out and "python" in out        # World-set members (default)
     assert "World set" in out and "@system" in out      # sidebar lists the sets
-    assert "[Cancel]" in out and "[Deselect]" in out    # one unified action
+    assert "[Cancel]" in out and "[Accept]" in out       # one unified action
     scr._focus_pane("members")
     scr._walker.set_focus(0)
     scr.keypress(_SIZE, " ")                            # mark the first World-set pkg

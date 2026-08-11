@@ -76,7 +76,7 @@ class UpdateScreen(AutoAccept, Screen):
         self._count = urwid.Text("")
 
         self._actions = focusable_actions([
-            ("Cancel", app.pop), ("Update", self._update)])
+            ("Cancel", app.pop), ("Accept", self._update)])
         body = NavPile([
             ("weight", 1, table),
             ("pack", details_box),
@@ -85,7 +85,7 @@ class UpdateScreen(AutoAccept, Screen):
         ])
         super().__init__(
             app, body, title="System Update",
-            footer_keys=[("F10", "Update"), ("r", "Reload"), ("Esc", "Back")],
+            footer_keys=[("F10", "Accept"), ("r", "Reload"), ("Esc", "Back")],
             help_text=(
                 "A full system update — everything reachable from @world that has a\n"
                 "newer version (or changed USE), updated together (deep, new-use).\n\n"
@@ -168,7 +168,7 @@ class UpdateScreen(AutoAccept, Screen):
         self._count.set_text([
             ("ok", f" {n} package{'s' if n != 1 else ''} to update"),
             ("dim", f"   ·   {human_size(self._plan.total_download)} download"
-                    "   ·   F10 Update"),
+                    "   ·   F10 Accept"),
         ])
 
     # -- keys ---------------------------------------------------------------
