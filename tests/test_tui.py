@@ -543,14 +543,49 @@ def test_software_provides_view_resolves_file_owner():
     assert "app-shells/bash" in scr._cps
 
 
-def test_software_accept_opens_run_screen():
-    from gest.tui.screens.accept import AcceptRunScreen
+def test_software_accept_opens_proposal():
+    from gest.tui.screens.proposal import ProposalScreen
     app = App()
     scr = _software(app)
     scr.keypress(_SIZE, "tab")    # focus table
     scr.keypress(_SIZE, " ")      # mark one
-    scr.keypress(_SIZE, "f10")    # Accept
+    scr.keypress(_SIZE, "f10")    # Accept → resolved proposal first
+    assert isinstance(app._stack[-1], ProposalScreen)
+
+
+def test_proposal_resolves_then_applies(monkeypatch):
+    from gest.core.software.preview import PreviewResult
+    from gest.tui.screens import proposal as proposal_mod
+    from gest.tui.screens.accept import AcceptRunScreen
+    from gest.tui.screens.proposal import ProposalScreen
+    # canned emerge --pretend output: one new package pulling in one dependency
+    monkeypatch.setattr(
+        proposal_mod.preview, "preview_install_many",
+        lambda atoms, **kw: PreviewResult(" ".join(atoms), 0,
+            "[ebuild  N     ] app-editors/vim-9.1  5,000 KiB\n"
+            "[ebuild  N     ] dev-libs/libfoo-1.2  1,000 KiB\n"))
+    app = App()
+    app._stack.append(urwid.Text("software list"))
+    scr = ProposalScreen(app, installs=["app-editors/vim"])
+    app._stack.append(scr)
+    _pump(app, lambda: scr._ready, ticks=200)
+    assert scr._ready and scr._n_install == 2      # target + pulled-in dep
+    out = _render(scr)
+    assert "vim" in out and "libfoo" in out and "Install 2" in out
+    scr.keypress(_SIZE, "f10")                      # apply the proposal
     assert isinstance(app._stack[-1], AcceptRunScreen)
+    assert not any(isinstance(w, ProposalScreen) for w in app._stack)  # swapped out
+
+
+def test_proposal_cancel_returns_to_list():
+    from gest.tui.screens.proposal import ProposalScreen
+    app = App()
+    caller = urwid.Text("software list")
+    app._stack.append(caller)
+    scr = ProposalScreen(app, installs=["app-editors/vim"])
+    app._stack.append(scr)
+    scr.keypress(_SIZE, "esc")                      # cancel before/after resolving
+    assert app._stack[-1] is caller
 
 
 def test_apply_progress_parses_emerge_markers():

@@ -3,8 +3,8 @@
 Left: a Filter sidebar (view selector + search phrase + search-in fields).
 Right: a package table with a pinned column header, a count line, and a live
 detail pane. Mark packages (Space install/update, r remove), then Accept applies
-them — installs first, then a depclean pass — through the organized per-package
-AcceptRunScreen.
+them — reviewed first in a resolved ProposalScreen, then applied installs-first
+(followed by a depclean pass) through the organized per-package AcceptRunScreen.
 """
 
 from __future__ import annotations
@@ -21,10 +21,10 @@ from gest.core.software.model import PackageDetail
 from gest.core.software.selection import Selection
 from gest.tui.menubar import MenuBar, _Dropdown
 from gest.tui.runtime import App, Screen, action_bar
-from gest.tui.screens.accept import AcceptRunScreen
 from gest.tui.screens.binhost import BinhostScreen
 from gest.tui.screens.config import KeywordsScreen, UseFlagScreen
 from gest.tui.screens.news import NewsScreen
+from gest.tui.screens.proposal import ProposalScreen
 from gest.tui.screens.sync import SyncScreen
 from gest.tui.screens.update import UpdateScreen
 
@@ -555,7 +555,7 @@ class SoftwareScreen(Screen):
         if not installs and not binpkgs and not binprefs and not removes:
             self.app.notify("Mark packages with Space or r first.", error=True)
             return
-        self.app.push(AcceptRunScreen(
+        self.app.push(ProposalScreen(
             self.app, installs=installs, binpkgs=binpkgs, binprefs=binprefs,
             removes=removes, on_done=self._after))
 
@@ -676,9 +676,9 @@ class SoftwareScreen(Screen):
             elif in_table and self._table_mode == "categories" and self._categories:
                 self.app.run_async(self._load_category(self._categories[self._walker.focus]))
             elif in_table and self._cps:
-                self.app.push(AcceptRunScreen(
+                self.app.push(ProposalScreen(
                     self.app, installs=[self._cps[self._walker.focus]],
-                    verb="Install", on_done=self._after))
+                    on_done=self._after))
             return None
         if key == "left" and in_table:
             self._columns.focus_position = 0
