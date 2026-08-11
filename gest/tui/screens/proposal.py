@@ -16,6 +16,7 @@ from gest.core.software import cleanup, preview, update
 from gest.core.software.update import human_size
 from gest.tui.runtime import App, NavPile, Screen, boxed, focusable_actions
 from gest.tui.screens.accept import AcceptRunScreen
+from gest.tui.screens.autoaccept import AutoAccept
 from gest.tui.screens.runscreen import clip, row
 
 _G_W, _CAT_W, _PKG_W, _CHG_W, _SZ_W = 2, 16, 24, 22, 11
@@ -55,7 +56,7 @@ def _from_orphan(o) -> _Item:
     return _Item("-", "error", o.category, o.package, o.version, o.size)
 
 
-class ProposalScreen(Screen):
+class ProposalScreen(AutoAccept, Screen):
     """Resolved review of the marked changes, shown before they are applied."""
 
     def __init__(self, app: App, *, installs=(), binpkgs=(), binprefs=(),
@@ -107,9 +108,21 @@ class ProposalScreen(Screen):
         app.run_async(self._compute())
 
     def _footer_context(self):
+        if self._timer_running:
+            return [("Enter", "Apply now"), ("Esc", "Stop")]
         if self._on_action_row():
             return [("Enter", "Activate"), ("Tab", "Next"), ("Esc", "Cancel")]
         return self._base_footer_keys
+
+    # -- auto-accept (AutoAccept hooks) -------------------------------------
+
+    _auto_action = "Proposal ready — applying"
+
+    def _auto_apply(self) -> None:
+        self._apply()
+
+    def _auto_set_phase(self, text: str, attr: str) -> None:
+        self._set_phase(text, attr)
 
     # -- resolve ------------------------------------------------------------
 
@@ -153,6 +166,11 @@ class ProposalScreen(Screen):
         self._error = "  ·  ".join(e for e in errors if e)
         self._ready = True
         self._render()
+        # Hand off to the accept-mode policy — but only when there is something
+        # to apply and it resolved cleanly. On an error or an empty plan the user
+        # reviews and dismisses it manually (no surprise run).
+        if self._items and not self._error:
+            self.arm_auto_accept()
 
     # -- render -------------------------------------------------------------
 
@@ -194,6 +212,13 @@ class ProposalScreen(Screen):
     # -- keys ---------------------------------------------------------------
 
     def handle_key(self, key):
+        outcome = self._auto_key(key)            # Enter/F10 apply now · Esc stop
+        if outcome == "applied":
+            return None
+        if outcome == "stopped":                 # keep reviewing, back to manual
+            self._set_phase("Proposal ready — F10 to apply, Esc to cancel.", "ok")
+            self._refresh_footer()
+            return None
         if key == "esc":
             self.app.pop()                       # cancel → back to the package list
             return None

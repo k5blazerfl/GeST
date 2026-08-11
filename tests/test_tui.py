@@ -178,6 +178,14 @@ def _isolate_software_backend(monkeypatch):
                             _FakeSoftwareBackend, raising=False)
 
 
+@pytest.fixture(autouse=True)
+def _default_accept_manual(monkeypatch):
+    """Pin the accept mode for tests: never read the developer's real prefs, and
+    default to manual so review screens don't arm a countdown (or auto-fire mid
+    test) unless a test explicitly opts into timer/immediate."""
+    monkeypatch.setattr("gest.core.prefs.accept_mode", lambda *a, **k: "manual")
+
+
 def test_menu_launches_services():
     app = App()
     menu = MenuScreen(app)
@@ -739,6 +747,147 @@ def test_proposal_cancel_returns_to_list():
     app._stack.append(scr)
     scr.keypress(_SIZE, "esc")                      # cancel before/after resolving
     assert app._stack[-1] is caller
+
+
+def _resolved_proposal(monkeypatch, app, mode="timer"):
+    """A ProposalScreen (one install) pumped past resolution, in ``mode``."""
+    from gest.core.software.preview import PreviewResult
+    from gest.tui.screens import proposal as proposal_mod
+    from gest.tui.screens.proposal import ProposalScreen
+    monkeypatch.setattr("gest.core.prefs.accept_mode", lambda *a, **k: mode)
+    monkeypatch.setattr(
+        proposal_mod.preview, "preview_install_many",
+        lambda atoms, **kw: PreviewResult(" ".join(atoms), 0,
+            "[ebuild  N     ] app-editors/vim-9.1  5,000 KiB\n"))
+    scr = ProposalScreen(app, installs=["app-editors/vim"])
+    app._stack.append(scr)
+    _pump(app, lambda: scr._ready, ticks=200)
+    return scr
+
+
+def test_proposal_arms_autoapply_timer(monkeypatch):
+    app = App()
+    app._stack.append(urwid.Text("software list"))
+    scr = _resolved_proposal(monkeypatch, app)
+    assert scr._timer_running                       # countdown armed once resolved
+    _pump(app, lambda: "applying in" in scr._phase.get_text()[0], ticks=100)
+    assert "applying in" in scr._phase.get_text()[0]      # visible countdown
+    assert ("Enter", "Apply now") in scr._footer_context()
+
+
+def test_proposal_enter_bypasses_timer_and_applies(monkeypatch):
+    from gest.tui.screens.accept import AcceptRunScreen
+    from gest.tui.screens.proposal import ProposalScreen
+    app = App()
+    app._stack.append(urwid.Text("software list"))
+    scr = _resolved_proposal(monkeypatch, app)
+    scr.keypress(_SIZE, "enter")                    # bypass the countdown, apply now
+    assert isinstance(app._stack[-1], AcceptRunScreen)
+    assert not any(isinstance(w, ProposalScreen) for w in app._stack)
+
+
+def test_proposal_esc_stops_timer_then_cancels(monkeypatch):
+    app = App()
+    caller = urwid.Text("software list")
+    app._stack.append(caller)
+    scr = _resolved_proposal(monkeypatch, app)
+    scr.keypress(_SIZE, "esc")                      # first Esc: stop the countdown
+    assert not scr._timer_running
+    assert app._stack[-1] is scr                    # stays on the proposal
+    assert ("Esc", "Cancel") in scr._footer_context()   # back to manual review
+    scr.keypress(_SIZE, "esc")                      # second Esc: cancel back
+    assert app._stack[-1] is caller
+
+
+def test_proposal_countdown_auto_applies(monkeypatch):
+    from gest.tui.screens.accept import AcceptRunScreen
+    from gest.tui.screens.proposal import ProposalScreen
+    monkeypatch.setattr(ProposalScreen, "_auto_secs", 1)   # keep the test fast
+    app = App()
+    app._stack.append(urwid.Text("software list"))
+    _resolved_proposal(monkeypatch, app)
+    _pump(app, lambda: isinstance(app._stack[-1], AcceptRunScreen), ticks=300)
+    assert isinstance(app._stack[-1], AcceptRunScreen)     # applied on its own
+
+
+def test_proposal_immediate_mode_applies_without_timer(monkeypatch):
+    from gest.tui.screens.accept import AcceptRunScreen
+    app = App()
+    app._stack.append(urwid.Text("software list"))
+    _resolved_proposal(monkeypatch, app, mode="immediate")
+    assert isinstance(app._stack[-1], AcceptRunScreen)     # applied at once
+
+
+def _cleanup_with_orphans(monkeypatch, app, mode="timer"):
+    """A CleanupScreen scanned to one orphan in ``mode``; ``_clean`` is spied.
+
+    Returns ``(screen, cleaned)`` where ``cleaned`` records _clean() calls, so a
+    test can assert the run was launched without actually starting emerge."""
+    from gest.core.software import cleanup as core_cleanup
+    from gest.core.software.cleanup import CleanupPlan, Orphan
+    from gest.tui.screens.cleanup import CleanupScreen
+    plan = CleanupPlan(
+        orphans=[Orphan(cp="games-board/freecell", version="1.0", size=1024)],
+        counts={"installed": 1}, ok=True)
+    monkeypatch.setattr(core_cleanup, "plan_cleanup", lambda **kw: plan)
+    monkeypatch.setattr("gest.core.prefs.accept_mode", lambda *a, **k: mode)
+    cleaned: list = []
+    monkeypatch.setattr(CleanupScreen, "_clean", lambda self: cleaned.append(True))
+    scr = CleanupScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: scr._armed, ticks=300)
+    return scr, cleaned
+
+
+def test_cleanup_arms_timer_and_enter_cleans(monkeypatch):
+    app = App()
+    app._stack.append(urwid.Text("menu"))
+    scr, cleaned = _cleanup_with_orphans(monkeypatch, app, mode="timer")
+    assert scr._timer_running                       # countdown armed after scan
+    assert ("Enter", "Clean up now") in scr._footer_context()
+    scr.keypress(_SIZE, "enter")                    # bypass → clean now
+    assert cleaned == [True] and not scr._timer_running
+
+
+def test_cleanup_esc_stops_timer_without_leaving(monkeypatch):
+    app = App()
+    caller = urwid.Text("menu")
+    app._stack.append(caller)
+    scr, cleaned = _cleanup_with_orphans(monkeypatch, app, mode="timer")
+    scr.keypress(_SIZE, "esc")                      # first Esc: stop the countdown
+    assert not scr._timer_running and cleaned == []
+    assert app._stack[-1] is scr                    # stays on Clean Up
+    scr.keypress(_SIZE, "esc")                      # second Esc: back to menu
+    assert app._stack[-1] is caller
+
+
+def test_cleanup_immediate_mode_cleans_at_once(monkeypatch):
+    app = App()
+    app._stack.append(urwid.Text("menu"))
+    scr, cleaned = _cleanup_with_orphans(monkeypatch, app, mode="immediate")
+    assert cleaned == [True]                         # cleaned without a countdown
+    assert not scr._timer_running
+
+
+def test_preferences_screen_selects_and_saves(monkeypatch):
+    from gest.core import prefs
+    from gest.tui.screens.preferences import PreferencesScreen
+    store = {"v": prefs.MANUAL}
+    monkeypatch.setattr("gest.core.prefs.accept_mode", lambda *a, **k: store["v"])
+    monkeypatch.setattr("gest.core.prefs.set_accept_mode",
+                        lambda mode, *a, **k: store.__setitem__("v", mode))
+    app = App()
+    scr = PreferencesScreen(app)
+    app._stack.append(scr)
+    out = _render(scr)
+    assert all(s in out for s in
+               ("Click to accept", "Countdown timer", "As soon as ready"))
+    assert "(•) Click to accept" in out             # current = manual
+    scr._walker.set_focus(1)                        # Countdown timer
+    scr.keypress(_SIZE, "enter")                    # select it (saves)
+    assert store["v"] == prefs.TIMER
+    assert "(•) Countdown timer" in _render(scr)
+
 
 
 def test_apply_progress_parses_emerge_markers():

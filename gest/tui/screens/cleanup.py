@@ -19,6 +19,7 @@ from gest.core.software import cleanup
 from gest.core.software.cleanup import Orphan, human_size
 from gest.tui.runtime import App, Modal, NavPile, Screen, boxed, focusable_actions
 from gest.tui.screens.apply import depclean_plan, remove_plan
+from gest.tui.screens.autoaccept import AutoAccept
 from gest.tui.screens.runscreen import RunScreen, clip, row
 
 _MARK_W = 2   # ✓ = will be removed
@@ -44,7 +45,9 @@ def _orphan_line(o: Orphan, keep: bool) -> str:
     return _fmt(mark, o.category, o.package, o.version, human_size(o.size))
 
 
-class CleanupScreen(Screen):
+class CleanupScreen(AutoAccept, Screen):
+    _auto_action = "Cleaning up"
+
     def __init__(self, app: App, plan: cleanup.CleanupPlan | None = None,
                  *, return_to=None) -> None:
         # ``plan`` lets a caller (e.g. post-uninstall housekeeping) hand over an
@@ -101,20 +104,46 @@ class CleanupScreen(Screen):
             ),
         )
         self.configure_pane_cycle(body, [0], action_row=self._actions)
+        self._armed = False
         if self._preloaded:
             self._rebuild()          # scan already done by the caller
+            app.run_async(self._arm_when_ready())   # after the caller pushes us
         else:
             app.run_async(self._load())
 
     def _footer_context(self):
+        if self._timer_running:
+            return [("Enter", "Clean up now"), ("Esc", "Stop")]
         if self._on_action_row():
             return [("Enter", "Activate"), ("Tab", "Next"), ("Esc", "Back")]
         return self._base_footer_keys
+
+    # -- auto-accept (AutoAccept hooks) -------------------------------------
+
+    def _auto_apply(self) -> None:
+        self._clean()
+
+    def _auto_set_phase(self, text: str, attr: str) -> None:
+        self._count.set_text((attr, f" {text}"))
+        self.app.refresh()
+
+    async def _arm_when_ready(self) -> None:
+        self._maybe_arm()
+
+    def _maybe_arm(self) -> None:
+        # Arm once, only when the scan found orphans to clean. On an empty/failed
+        # scan the user just reads the message; re-scans (r) don't re-arm.
+        if self._armed:
+            return
+        if self._plan is not None and self._plan.ok and self._orphans():
+            self._armed = True
+            self.arm_auto_accept()
 
     async def _load(self) -> None:
         self._kept.clear()
         self._plan = await self.app.run_blocking(cleanup.plan_cleanup)
         self._rebuild()
+        self._maybe_arm()
 
     # -- rendering ----------------------------------------------------------
 
@@ -185,6 +214,16 @@ class CleanupScreen(Screen):
         return None
 
     def handle_key(self, key):
+        outcome = self._auto_key(key)            # Enter/F10 clean now · Esc stop
+        if outcome == "applied":
+            return None
+        if outcome == "stopped":                 # keep reviewing, back to manual
+            self._refresh_count()
+            self._refresh_footer()
+            return None
+        if self._timer_running and key in (" ", "a", "n", "r"):
+            self._timer_running = False          # fiddling cancels the auto-run
+            self._refresh_footer()
         if key == "esc":
             self.app.pop()
         elif key == "r":
