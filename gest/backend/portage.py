@@ -38,6 +38,7 @@ from gest.backend.polkit import caller_uid, check_authorization
 from gest.core.portage import paths, write
 from gest.core.portage.codec import atomfile, ini, shell
 from gest.core.repos import commands as repo_commands
+from gest.core.software import sets
 from gest.ipc.interface import PORTAGE_IFACE, PORTAGE_PATH, PORTAGE_POLKIT
 
 _INTROSPECTION = f"""
@@ -90,6 +91,13 @@ def _validate_content(path: str, text: str) -> str:
         return ""
     if "/binrepos.conf/" in path or "/repos.conf/" in path:
         ini.parse(text)  # raises nothing; malformed lines are ignored
+        return ""
+    if os.path.basename(os.path.dirname(os.path.normpath(path))) == "sets":
+        # A custom package set: a newline list of atoms (or @set references).
+        for line in text.splitlines():
+            entry = line.strip()
+            if entry and not entry.startswith("#") and not sets.valid_entry(entry):
+                return f"invalid set entry: {entry}"
         return ""
     if os.path.basename(os.path.dirname(os.path.normpath(path))) == "gest":
         # GeST's own state under /etc/portage/gest/. Not Portage config.

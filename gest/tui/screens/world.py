@@ -5,16 +5,23 @@ A two-pane browser. The left pane lists the package sets — the **World set**
 @profile, then any custom sets under /etc/portage/sets. The right pane shows the
 members of whichever set is focused.
 
-Only the World set is actionable: Space marks a package and F10 hands the marked
+The World set is actionable: Space marks a package and F10 hands the marked
 atoms to ``emerge --deselect`` (via the backend), dropping them from @world.
 Deselecting unmerges nothing — it just removes the explicit-install record so a
-later Clean Up (depclean) may reclaim them. Every other set is read-only.
+later Clean Up (depclean) may reclaim them. Custom sets (/etc/portage/sets) are
+editable too — create one (c), add/remove atoms (a / x) and delete it (d), all
+written through the Portage backend. Portage's built-in @system / @profile are
+read-only.
 """
 
 from __future__ import annotations
 
+import contextlib
+
 import urwid
 
+from gest.core.portage.backend_client import PortageBackend
+from gest.core.portage.write import ConfigWrite
 from gest.core.software import reader, sets
 from gest.core.software.backend_client import SoftwareBackend
 from gest.core.software.model import Package
@@ -118,12 +125,19 @@ class WorldScreen(Screen):
         tail = [("Tab", "Pane"), ("Esc", "Back")]
         if pane in ("cancel", "deselect"):
             return [("Enter", "Activate"), *tail]
+        custom = self._focused_is_custom()
         if pane == "sets":
-            return [("↑/↓", "Set"), ("Enter/→", "Members"), *tail]
+            keys = [("↑/↓", "Set"), ("Enter/→", "Members"), ("c", "New set")]
+            if custom:
+                keys += [("a", "Add"), ("d", "Delete")]
+            return [*keys, *tail]
         if self._is_world():                                  # members, World set
             return [("Space", "Mark"), ("a", "All"), ("n", "None"),
                     ("F10", "Deselect"), ("←", "Sets"), *tail]
-        return [("←", "Sets"), *tail]                         # members, read-only
+        if custom:                                            # members, custom set
+            return [("a", "Add"), ("x", "Remove"), ("c", "New set"),
+                    ("←", "Sets"), *tail]
+        return [("c", "New set"), ("←", "Sets"), *tail]       # built-in, read-only
 
     # -- loading / rendering ------------------------------------------------
 
@@ -150,6 +164,10 @@ class WorldScreen(Screen):
     def _focused_set(self) -> PackageSet | None:
         i = self._set_walker.focus
         return self._sets[i - 1] if i >= 1 and i - 1 < len(self._sets) else None
+
+    def _focused_is_custom(self) -> bool:
+        s = self._focused_set()
+        return s is not None and s.kind == "custom"
 
     def _on_set_change(self) -> None:
         self._rebuild_members(reset_focus=True)
@@ -191,8 +209,13 @@ class WorldScreen(Screen):
                                       ("dim", "   ·   F10 Deselect")])
         else:
             s = self._focused_set()
-            self._count.set_text(
-                ("dim", f" {s.name} — {len(s.atoms)} atoms · read-only"))
+            if s.kind == "custom":
+                self._count.set_text([
+                    ("dim", f" {s.name} — {len(s.atoms)} atoms"),
+                    ("dim", "   ·   a Add · x Remove · d Delete")])
+            else:
+                self._count.set_text(
+                    ("dim", f" {s.name} — {len(s.atoms)} atoms · read-only"))
 
     # -- keys ---------------------------------------------------------------
 
@@ -224,6 +247,20 @@ class WorldScreen(Screen):
         if key == "f10":
             self._deselect()
             return None
+        if key == "c":                                        # create a custom set
+            self._new_set()
+            return None
+        set_ = self._focused_set()
+        if set_ is not None and set_.kind == "custom":        # editable set
+            if key == "a":
+                self._add_atom(set_)
+                return None
+            if key == "d":
+                self._delete_set(set_)
+                return None
+            if key == "x" and self._current_pane() == "members":
+                self._remove_atom(set_)
+                return None
         if self._current_pane() == "sets" and key == "enter":
             self._focus_pane("members")
             return None
@@ -288,4 +325,86 @@ class WorldScreen(Screen):
             error=not ok)
         if ok:
             self._marked.clear()
+        await self._load()
+
+    # -- custom sets --------------------------------------------------------
+
+    def _new_set(self) -> None:
+        edit = urwid.Edit("Set name: @")
+
+        def create():
+            name = edit.edit_text.strip()
+            self.app.pop()                                    # the modal
+            if not sets.valid_set_name(name):
+                self.app.notify("Invalid set name.", error=True)
+                return
+            if any(s.name == f"@{name}" for s in self._sets):
+                self.app.notify(f"@{name} already exists.", error=True)
+                return
+            self._write_set(name, [], f"Created @{name}")
+
+        modal = Modal(self.app, "New package set", [edit],
+                      [("Create", create), ("Cancel", self.app.pop)])
+        self.app.push_modal(modal, width=("relative", 60))
+
+    def _add_atom(self, set_: PackageSet) -> None:
+        name = set_.name[1:]
+        atoms = list(set_.atoms)
+        edit = urwid.Edit("Atom: ")
+
+        def add():
+            atom = edit.edit_text.strip()
+            self.app.pop()                                    # the modal
+            if not sets.valid_entry(atom):
+                self.app.notify("Invalid atom.", error=True)
+                return
+            if atom in atoms:
+                self.app.notify(f"{atom} is already in {set_.name}.")
+                return
+            self._write_set(name, [*atoms, atom], f"Added {atom} to {set_.name}")
+
+        modal = Modal(self.app, f"Add to {set_.name}", [edit],
+                      [("Add", add), ("Cancel", self.app.pop)])
+        self.app.push_modal(modal, width=("relative", 60))
+
+    def _remove_atom(self, set_: PackageSet) -> None:
+        i = self._walker.focus
+        if not (set_.atoms and 0 <= i < len(set_.atoms)):
+            return
+        atom = set_.atoms[i]
+        remaining = [a for a in set_.atoms if a != atom]
+        self._write_set(set_.name[1:], remaining, f"Removed {atom} from {set_.name}")
+
+    def _delete_set(self, set_: PackageSet) -> None:
+        def do():
+            self.app.pop()                                    # the modal
+            self._delete_set_file(set_.name[1:], f"Deleted {set_.name}")
+
+        modal = Modal(
+            self.app, f"Delete {set_.name}?",
+            [urwid.Text(("hint", "Removes the set file. Installed packages are "
+                         "untouched."))],
+            [("Delete", do), ("Cancel", self.app.pop)])
+        self.app.push_modal(modal, width=("relative", 60))
+
+    def _write_set(self, name: str, atoms: list[str], ok_msg: str) -> None:
+        write = ConfigWrite(sets.set_path(name), sets.render_set(atoms))
+        self.app.run_async(self._apply_write(write, ok_msg))
+
+    def _delete_set_file(self, name: str, ok_msg: str) -> None:
+        write = ConfigWrite(sets.set_path(name), "")          # empty text = delete
+        self.app.run_async(self._apply_write(write, ok_msg))
+
+    async def _apply_write(self, write: ConfigWrite, ok_msg: str) -> None:
+        backend = PortageBackend()
+        try:
+            await backend.connect()
+            ok = await backend.write_config([write])
+        except Exception as exc:
+            self.app.notify(str(exc), error=True)
+            with contextlib.suppress(Exception):
+                await backend.close()
+            return
+        await backend.close()
+        self.app.notify(ok_msg if ok else "Write failed.", error=not ok)
         await self._load()

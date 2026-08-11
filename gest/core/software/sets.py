@@ -16,9 +16,21 @@ user-meaningful built-ins are surfaced.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 
+from gest.core.software.world import valid_atom
+
 SETS_DIR = "/etc/portage/sets"
+
+# A custom set's file name (the part after the @), and a @set reference that a
+# set file may contain alongside plain package atoms.
+_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9+._-]*$")
+_REF_RE = re.compile(r"^@[A-Za-z0-9][A-Za-z0-9+._-]*$")
+
+# A header line GeST writes so a set can be empty (an empty file would mean
+# "delete") and so hand-editors see where it came from.
+SET_HEADER = "# GeST-managed package set — one atom (or @set) per line"
 
 # Built-in sets worth browsing → one-line description. Order is display order.
 _BUILTIN = (
@@ -86,3 +98,25 @@ def builtin_sets() -> list[PackageSet]:
 def list_sets(sets_dir: str = SETS_DIR) -> list[PackageSet]:
     """All browsable sets: the built-ins, then any custom sets on disk."""
     return builtin_sets() + custom_sets(sets_dir)
+
+
+# -- editing custom sets ----------------------------------------------------
+
+def valid_set_name(name: str) -> bool:
+    """True if ``name`` is a safe custom-set file name (the part after @)."""
+    return bool(_NAME_RE.match(name))
+
+
+def valid_entry(entry: str) -> bool:
+    """True if ``entry`` is a valid set member: a package atom or a @set ref."""
+    return valid_atom(entry) or bool(_REF_RE.match(entry))
+
+
+def set_path(name: str, sets_dir: str = SETS_DIR) -> str:
+    """The on-disk path of the custom set called ``name`` (no leading @)."""
+    return os.path.join(sets_dir, name)
+
+
+def render_set(atoms) -> str:
+    """The file body for a custom set holding ``atoms`` (always non-empty)."""
+    return "\n".join([SET_HEADER, *atoms]) + "\n"

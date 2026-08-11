@@ -1741,6 +1741,79 @@ def test_world_deselect_calls_backend(monkeypatch):
     assert not scr._marked                              # cleared on success
 
 
+def _world_with_sets(monkeypatch, app, custom):
+    """A loaded WorldScreen (one world member + given custom sets) with a fake
+    PortageBackend recording writes. Returns (screen, writes: [(path, text)])."""
+    from gest.core.software.model import Package
+    from gest.tui.screens import world as W
+    _world_members(monkeypatch, [
+        Package(cp="app-misc/neofetch", version="7.1", world_member=True)])
+    monkeypatch.setattr(W.sets, "list_sets", lambda: list(custom))
+    writes: list = []
+
+    class _FakePortage:
+        async def connect(self):
+            return self
+
+        async def write_config(self, ws):
+            writes.extend((w.path, w.text) for w in ws)
+            return True
+
+        async def close(self):
+            return None
+
+    monkeypatch.setattr(W, "PortageBackend", _FakePortage)
+    scr = W.WorldScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: bool(scr._sets), ticks=200)
+    return scr, writes
+
+
+def test_world_write_set_saves_via_backend(monkeypatch):
+    from gest.core.software.sets import PackageSet
+    app = App()
+    app._stack.append(urwid.Text("x"))
+    scr, writes = _world_with_sets(monkeypatch, app, [
+        PackageSet(name="@media", atoms=["media-video/mpv"], kind="custom")])
+    scr._write_set("media", ["media-video/mpv", "x11-wm/i3"], "ok")
+    _pump(app, lambda: bool(writes), ticks=200)
+    path, text = writes[0]
+    assert path == "/etc/portage/sets/media"
+    assert "media-video/mpv" in text and "x11-wm/i3" in text
+    assert text.startswith("# GeST")                    # header keeps the file non-empty
+
+
+def test_world_delete_set_writes_empty(monkeypatch):
+    from gest.core.software.sets import PackageSet
+    app = App()
+    app._stack.append(urwid.Text("x"))
+    scr, writes = _world_with_sets(monkeypatch, app, [
+        PackageSet(name="@media", atoms=["media-video/mpv"], kind="custom")])
+    scr._delete_set_file("media", "ok")
+    _pump(app, lambda: bool(writes), ticks=200)
+    assert writes[0] == ("/etc/portage/sets/media", "")   # empty text = delete
+
+
+def test_world_custom_set_keys_open_editors(monkeypatch):
+    from gest.core.software.sets import PackageSet
+    app = App()
+    app._stack.append(urwid.Text("x"))
+    scr, _ = _world_with_sets(monkeypatch, app, [
+        PackageSet(name="@media", atoms=["media-video/mpv"], kind="custom")])
+    scr._focus_pane("sets")
+    scr._set_walker.set_focus(1)                          # @media (custom)
+    assert scr._focused_is_custom()
+    keys = [k for k, _label in scr._footer_context()]
+    assert "c" in keys and "a" in keys and "d" in keys    # create/add/delete offered
+    depth = len(app._stack)
+    scr.keypress(_SIZE, "a")                              # Add atom → modal overlay
+    assert len(app._stack) == depth + 1
+    assert isinstance(app._stack[-1], urwid.Overlay)
+    app.pop()
+    scr.keypress(_SIZE, "c")                              # New set → modal overlay
+    assert isinstance(app._stack[-1], urwid.Overlay)
+
+
 def test_update_screen_lists_changes(monkeypatch):
     from gest.core.software import update as core_update
     from gest.core.software.update import Change, UpdatePlan

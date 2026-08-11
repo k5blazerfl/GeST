@@ -47,6 +47,14 @@ def test_validate_binrepos_and_unknown_surface():
     assert svc._validate_content("/etc/portage/color.map", "anything") != ""
 
 
+def test_validate_sets_surface():
+    ok = "# GeST-managed\napp-editors/vim\n@world\ndev-lang/python:3.11\n"
+    assert svc._validate_content("/etc/portage/sets/media", ok) == ""
+    assert svc._validate_content("/etc/portage/sets/media", "") == ""            # deletion
+    bad = svc._validate_content("/etc/portage/sets/media", "app-editors/vim\nrm -rf /\n")
+    assert "invalid set entry" in bad
+
+
 def test_validate_gest_state_surface():
     # GeST's own /etc/portage/gest/ list files: newline repo names + comments.
     assert svc._validate_content(

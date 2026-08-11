@@ -68,3 +68,42 @@ def test_custom_sets_lists_files_as_named_sets(tmp_path):
 
 def test_custom_sets_missing_dir_is_empty():
     assert sets.custom_sets("/nonexistent/portage/sets") == []
+
+
+# -- editing custom sets ----------------------------------------------------
+
+@pytest.mark.parametrize("name,ok", [
+    ("mydesktop", True), ("media2", True), ("my-set.list", True),
+    ("../etc", False), ("has space", False), ("", False), (".hidden", False),
+])
+def test_valid_set_name(name, ok):
+    assert sets.valid_set_name(name) is ok
+
+
+@pytest.mark.parametrize("entry,ok", [
+    ("app-editors/vim", True), ("=cat/pkg-1.2", True),
+    ("dev-lang/python:3.11", True), ("@world", True),
+    ("rm -rf /", False), ("--root=/", False), ("@bad set", False), ("", False),
+])
+def test_valid_entry(entry, ok):
+    assert sets.valid_entry(entry) is ok
+
+
+def test_set_path_is_under_sets_dir():
+    assert sets.set_path("media") == "/etc/portage/sets/media"
+    assert sets.set_path("media", "/tmp/s") == "/tmp/s/media"
+
+
+def test_render_set_roundtrips_through_reader(tmp_path):
+    p = tmp_path / "media"
+    p.write_text(sets.render_set(["x11-wm/i3", "@gui"]))
+    assert sets.read_set_file(str(p)) == ["x11-wm/i3", "@gui"]
+
+
+def test_render_empty_set_is_a_nonempty_file(tmp_path):
+    # empty text would mean "delete"; an empty set must still write a file
+    body = sets.render_set([])
+    assert body.strip() != ""
+    p = tmp_path / "empty"
+    p.write_text(body)
+    assert sets.read_set_file(str(p)) == []
