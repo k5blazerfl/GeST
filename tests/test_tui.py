@@ -218,6 +218,22 @@ def test_timezone_screen_loads_and_filters():
     assert 0 < len(scr._visible) < total
 
 
+def test_choice_screen_porous_filter_and_arrow_guard():
+    app = App()
+    scr = TimezoneScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: len(scr._all) > 0)
+    body = scr._frame.body
+    body.focus_position = 1                          # the filter Edit
+    scr.keypress(_SIZE, "down")                       # porous: Down leaves into list
+    assert body.focus_position == 2
+    scr._walker.set_focus(0)
+    scr.keypress(_SIZE, "up")                          # up at list top stays put
+    assert body.focus_position == 2
+    scr.keypress(_SIZE, "tab")                         # Tab returns to the filter
+    assert body.focus_position == 1
+
+
 def test_locale_screen_loads():
     app = App()
     scr = LocaleScreen(app)
@@ -946,6 +962,21 @@ def test_disk_lists_devices_and_fstab():
     assert scr._entries  # the host has fstab entries
     out = _render(scr)
     assert "Block Devices" in out and "/etc/fstab" in out
+
+
+def test_disk_tab_switches_panes_and_arrows_stay():
+    app = App()
+    scr = DiskScreen(app)
+    app._stack.append(scr)
+    _pump(app, lambda: len(scr._entries) > 0, ticks=300)
+    pile = scr._frame.body
+    pile.focus_position = 1                            # the fstab list
+    scr._fstab_walker.set_focus(0)
+    scr.keypress(_SIZE, "up")                           # must not jump to devices
+    assert pile.focus_position == 1
+    scr.keypress(_SIZE, "tab")                          # Tab switches panes
+    assert pile.focus_position == 0
+    assert any(lbl in ("fstab",) for _k, lbl in scr._footer_context())
     # the root filesystem is present and flagged protected
     assert any(e.mountpoint == "/" and e.protected for e in scr._entries)
 

@@ -15,7 +15,7 @@ from gest.core.disk import fstab, reader
 from gest.core.disk.backend_client import DiskBackend
 from gest.core.disk.fstab import FstabEntry
 from gest.core.disk.model import BlockDevice
-from gest.tui.runtime import App, Modal, Screen, boxed
+from gest.tui.runtime import App, Modal, NavPile, Screen, boxed
 
 
 def _row(text: str) -> urwid.Widget:
@@ -40,7 +40,7 @@ class DiskScreen(Screen):
         self._dev_list = urwid.ListBox(self._dev_walker)
         self._fstab_walker = urwid.SimpleFocusListWalker([urwid.Text(" loading …")])
         self._fstab_list = urwid.ListBox(self._fstab_walker)
-        self._pile = urwid.Pile([
+        self._pile = NavPile([
             (12, boxed(self._dev_list, title="Block Devices")),
             boxed(self._fstab_list, title="/etc/fstab  (🔒 = protected)"),
         ])
@@ -51,7 +51,14 @@ class DiskScreen(Screen):
                 ("e", "Edit"), ("d", "Remove"), ("Esc", "Back"),
             ],
         )
+        self.configure_pane_cycle(self._pile, [0, 1])   # Tab switches panes
         app.run_async(self._load())
+
+    def _footer_context(self):
+        if self._pile.focus_position == 0:              # Block Devices (info)
+            return [("Tab", "fstab"), ("Esc", "Back")]
+        return [("m", "Mount"), ("u", "Unmount"), ("a", "Add"), ("e", "Edit"),
+                ("d", "Remove"), ("Tab", "Devices"), ("Esc", "Back")]
 
     async def _load(self) -> None:
         devices = await self.app.run_blocking(reader.list_block_devices)
@@ -69,6 +76,7 @@ class DiskScreen(Screen):
             self._fstab_walker.set_focus(min(prev or 0, len(entries) - 1))
         with contextlib.suppress(Exception):
             self._pile.focus_position = 1  # land on the fstab list
+        self._refresh_footer()
         self.app.refresh()
 
     def _current(self) -> FstabEntry | None:

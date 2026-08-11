@@ -5,7 +5,7 @@ from __future__ import annotations
 import urwid
 
 from gest.core.software import news
-from gest.tui.runtime import App, Screen, ansi_markup, boxed
+from gest.tui.runtime import App, NavPile, Screen, ansi_markup, boxed
 
 
 def _line(text: str) -> urwid.Widget:
@@ -21,7 +21,7 @@ class NewsScreen(Screen):
             [urwid.Text("Select an item and press Enter to read it.")]
         )
         self._content = urwid.ListBox(self._content_walker)
-        self._pile = urwid.Pile([
+        self._pile = NavPile([
             ("weight", 2, boxed(self._list, title="Portage news")),
             ("weight", 1, boxed(self._content, title="Content")),
         ])
@@ -29,7 +29,14 @@ class NewsScreen(Screen):
             app, self._pile, title="Portage News",
             footer_keys=[("Enter", "Read"), ("Tab", "Content"), ("Esc", "Back")],
         )
+        self.configure_pane_cycle(self._pile, [0, 1])   # Tab toggles the panes
+        self._refresh_footer()
         app.run_async(self._load())
+
+    def _footer_context(self):
+        if self._pile.focus_position == 0:              # news list
+            return [("Enter", "Read"), ("Tab", "Content"), ("Esc", "Back")]
+        return [("↑↓", "Scroll"), ("Tab", "List"), ("Esc", "List")]  # content
 
     async def _load(self) -> None:
         items = await self.app.run_blocking(news.list_news)
@@ -57,9 +64,6 @@ class NewsScreen(Screen):
                 self._pile.focus_position = 0
             else:
                 self.app.pop()
-            return None
-        if key == "tab":
-            self._pile.focus_position = 0 if self._pile.focus_position == 1 else 1
             return None
         if key == "enter" and self._pile.focus_position == 0 and self._numbers:
             self.app.run_async(self._read(self._numbers[self._item_walker.focus]))

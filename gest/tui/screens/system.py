@@ -11,7 +11,7 @@ from gest.core.system import hostname as hostname_core
 from gest.core.system import locale as locale_core
 from gest.core.system import timezone as timezone_core
 from gest.core.system.backend_client import SystemBackend
-from gest.tui.runtime import App, Screen, boxed
+from gest.tui.runtime import App, NavPile, Screen, boxed
 
 
 def _choice(text: str) -> urwid.Widget:
@@ -78,17 +78,25 @@ class _ChoiceScreen(Screen):
         self._walker = urwid.SimpleFocusListWalker([urwid.Text(" loading …")])
         self._list = urwid.ListBox(self._walker)
         self._current_text = urwid.Text("")
-        body = urwid.Pile([
+        body = NavPile([
             ("pack", self._current_text),
             ("pack", self._filter),
             ("weight", 1, boxed(self._list, title=self._TITLE)),
-        ])
+        ], porous_from=(urwid.Edit,))       # Down leaves the filter into the list
         super().__init__(
             app, body, title=f"System · {self._TITLE}",
             footer_keys=[("Enter", "Apply"), ("↑↓", "Select"), ("Esc", "Back")],
         )
+        self.configure_pane_cycle(body, [1, 2])   # Tab: filter ↔ list
+        self._refresh_footer()
         urwid.connect_signal(self._filter, "change", self._on_filter)
         app.run_async(self._load())
+
+    def _footer_context(self):
+        if self._frame.body.focus_position == 1:        # the filter Edit
+            return [("↓/Tab", "List"), ("Esc", "Back")]
+        return [("Enter", "Apply"), ("↑↓", "Select"), ("Tab", "Filter"),
+                ("Esc", "Back")]
 
     # subclasses implement these
     def _load_choices(self) -> tuple[list[str], str]:
