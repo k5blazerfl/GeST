@@ -73,6 +73,12 @@ DISK_PARTITION_POLKIT = "org.gentoo.gest.disk.partition"
 DISK_MKFS_POLKIT = "org.gentoo.gest.disk.mkfs"
 DISK_SWAP_POLKIT = "org.gentoo.gest.disk.swap"
 
+# Object path + interface for the kernel-build module. Build streams like emerge
+# (Progress/Finished signals); gated by org.gentoo.gest.kernel.build.
+KERNEL_PATH = "/org/gentoo/gest/Kernel"
+KERNEL_IFACE = "org.gentoo.gest.Kernel"
+KERNEL_POLKIT = "org.gentoo.gest.kernel.build"
+
 # Object path + interface for the date & time module.
 DATETIME_PATH = "/org/gentoo/gest/DateTime"
 DATETIME_IFACE = "org.gentoo.gest.DateTime"

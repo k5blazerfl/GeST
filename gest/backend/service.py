@@ -33,6 +33,7 @@ from gest.backend.bootloader import BootloaderService
 from gest.backend.datetime import DateTimeService
 from gest.backend.disk import DiskService
 from gest.backend.eselect import EselectService
+from gest.backend.kernel import KernelService
 from gest.backend.network import NetworkService
 from gest.backend.polkit import (
     authorization_is_granted,
@@ -742,6 +743,7 @@ def main() -> int:
         PortageService(conn)
         DiskService(conn)
         DateTimeService(conn)
+        KernelService(conn)
 
     def on_name_lost(conn, name):
         sys.stderr.write(f"gest-backend: lost/could not acquire name {name}\n")
