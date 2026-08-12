@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import urwid
 
+from gest.core import prefs
 from gest.core.software import cleanup
 from gest.core.software.cleanup import Orphan, human_size
 from gest.tui.runtime import App, Modal, NavPile, Screen, boxed, focusable_actions
@@ -50,11 +51,15 @@ class CleanupScreen(AutoAccept, Screen):
     _auto_action = "Cleaning up"
 
     def __init__(self, app: App, plan: cleanup.CleanupPlan | None = None,
-                 *, return_to=None, return_label="Package Manager") -> None:
+                 *, return_to=None, return_label="Package Manager",
+                 auto: bool = True) -> None:
         # ``plan`` lets a caller (e.g. post-uninstall housekeeping) hand over an
         # already-computed orphan scan so we don't depclean --pretend twice.
         # ``return_to`` is the screen to offer as a destination when this Clean
         # Up was reached as housekeeping; ``return_label`` names it in the modal.
+        # ``auto`` is False when the loading screen already ran the accept-mode
+        # policy (manual review only — don't re-arm a countdown here).
+        self._auto = auto
         self._plan: cleanup.CleanupPlan | None = plan
         self._preloaded = plan is not None
         self._return_to = return_to
@@ -133,8 +138,9 @@ class CleanupScreen(AutoAccept, Screen):
 
     def _maybe_arm(self) -> None:
         # Arm once, only when the scan found orphans to clean. On an empty/failed
-        # scan the user just reads the message; re-scans (r) don't re-arm.
-        if self._armed:
+        # scan the user just reads the message; re-scans (r) don't re-arm. When
+        # the loading screen already ran the policy (auto=False), never re-arm.
+        if self._armed or not self._auto:
             return
         if self._plan is not None and self._plan.ok and self._orphans():
             self._armed = True
@@ -299,15 +305,16 @@ class CleanupRunScreen(RunScreen):
     STATUS_ATTR = _STATUS_ATTR
     ACTIVE_STATUSES = ("removing",)
     DONE_STATUS = "removed"
+    BRAND_SUBTITLE = "Removing packages"
 
     def __init__(self, app: App, orphans: list[Orphan], plan, *, on_done=None,
-                 return_to=None, return_label="Package Manager"):
+                 return_to=None, return_label="Package Manager", branded=False):
         self._orphans = orphans
         self._plan = plan
         self._return_to = return_to        # screen to offer as a destination, or None
         self._return_label = return_label  # its label in the completion modal
         self._result: tuple | None = None  # (title, ok, message), for re-showing
-        super().__init__(app, on_done=on_done)
+        super().__init__(app, on_done=on_done, branded=branded)
 
     def _build_items(self):
         items = [_Line.from_orphan(o) for o in self._orphans]
@@ -412,16 +419,23 @@ class CleanupRunScreen(RunScreen):
             "failure) to read it. Esc returns when the removal finishes.")
 
 
-class CleanupLoadingScreen(LoadingScreen):
-    """Fullscreen startup for Clean Up Packages.
+class CleanupLoadingScreen(AutoAccept, LoadingScreen):
+    """Fullscreen scan + auto-accept for Clean Up Packages.
 
-    Scanning for orphans (``emerge --pretend --depclean``) can take a while.
-    Show the branded loading screen while it scans, then hand the plan straight
-    to :class:`CleanupScreen` so it appears ready. (The post-uninstall and
-    post-deselect housekeeping flows already have a plan, so they skip this.)
+    Scanning for orphans (``emerge --pretend --depclean``) can take a while, so
+    show the branded loading screen while it scans. When it finds orphans and
+    resolves cleanly, apply the accept-mode policy right here — remove at once
+    (immediate), count down on the branded screen (timer; Enter cleans now / Esc
+    reviews), or hand off to :class:`CleanupScreen` (manual). Nothing found or a
+    failed scan opens the review so the user reads the message. (The
+    post-uninstall and post-deselect housekeeping flows already have a plan and
+    their own review, so they skip this.)
     """
 
+    _auto_action = "Cleaning up"
+
     def __init__(self, app: App) -> None:
+        self._plan = None
         super().__init__(
             app,
             [{"key": "scan", "label": "Scan for orphaned packages",
@@ -431,21 +445,70 @@ class CleanupLoadingScreen(LoadingScreen):
             help_text=(
                 "Looking for packages no longer required by anything installed "
                 "or by\nyour @world set (emerge --pretend --depclean) — this can "
-                "take a while.\nEsc cancels and returns to the main menu."))
+                "take a while.\nWhen it finds orphans it cleans up per your "
+                "accept-mode preference:\n"
+                "  · immediate — removes at once\n"
+                "  · timer — counts down here; Enter cleans now, Esc reviews\n"
+                "  · manual — opens the review to confirm\n"
+                "Esc cancels and returns to the main menu."))
 
     async def _run(self) -> None:
         self._set_step("scan", "active")
         self._set_phase("Running emerge --pretend --depclean …  "
                         "(this can take a while)")
         plan = await self.app.run_blocking(cleanup.plan_cleanup)
-        self._bar.set_completion(1)
-        if plan is not None and plan.ok:
-            n = len(plan.orphans)
-            self._set_step("scan", "done",
-                           f"{n} orphan{'s' if n != 1 else ''}")
-            self._set_phase("Ready.", "ok")
-        else:
+        self._plan = plan
+        if plan is None or not plan.ok:
             self._set_step("scan", "failed")
-            self._set_phase("Could not compute a clean-up plan.", "error")
-        if self.app._stack and self.app._stack[-1] is self:   # not cancelled
-            self.app.replace(CleanupScreen(self.app, plan))
+            self._bar.set_completion(1)
+            self._to_review()                    # show the failure in the review
+            return
+        n = len(plan.orphans)
+        self._set_step("scan", "done", f"{n} orphan{'s' if n != 1 else ''}")
+        # Nothing to clean, or the user reviews every plan: open the review.
+        # Otherwise apply the accept-mode policy here — immediate removes at once,
+        # timer counts down on this branded screen.
+        if not plan.orphans or prefs.accept_mode() == prefs.MANUAL:
+            self._bar.set_completion(1)
+            self._to_review()
+        else:
+            self._set_phase("Ready.", "ok")
+            self.arm_auto_accept()
+
+    # -- auto-accept (AutoAccept hooks) -------------------------------------
+
+    def _auto_progress(self, remaining: int, frac: float) -> None:
+        self._bar.set_completion(frac)
+        self._set_phase(f"{self._auto_action} in {remaining}s — "
+                        "Enter cleans up now, Esc reviews.", "ok")
+
+    def _auto_apply(self) -> None:
+        # Applied without a review (immediate / timed): remove every orphan and
+        # keep the branded look going into the removal run.
+        if not (self.app._stack and self.app._stack[-1] is self):   # cancelled
+            return
+        self.app.replace(CleanupRunScreen(
+            self.app, self._plan.orphans, depclean_plan(), branded=True))
+
+    def _to_review(self) -> None:
+        if self.app._stack and self.app._stack[-1] is self:         # not cancelled
+            self.app.replace(CleanupScreen(self.app, self._plan, auto=False))
+
+    # -- keys / footer ------------------------------------------------------
+
+    def _footer_context(self):
+        if self._timer_running:
+            return [("Enter", "Clean up now"), ("Esc", "Review")]
+        return self._base_footer_keys
+
+    def handle_key(self, key):
+        outcome = self._auto_key(key)            # Enter/F10 clean now · Esc review
+        if outcome == "applied":
+            return None
+        if outcome == "stopped":                 # Esc during countdown → review
+            self._to_review()
+            return None
+        if key == "esc":
+            self.app.pop()                       # cancel scan → back to the menu
+            return None
+        return key

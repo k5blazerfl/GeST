@@ -1160,6 +1160,83 @@ def test_cleanup_immediate_mode_cleans_at_once(monkeypatch):
     assert not scr._timer_running
 
 
+def _loading_cleanup(monkeypatch, app, mode="timer"):
+    """A CleanupLoadingScreen whose scan is stubbed to one orphan, in ``mode``;
+    pushed onto the stack and returned. Its _run() is scheduled — the caller
+    pumps to drive scan → accept-mode policy."""
+    from gest.core.software import cleanup as core_cleanup
+    from gest.core.software.cleanup import CleanupPlan, Orphan
+    from gest.tui.screens.cleanup import CleanupLoadingScreen
+    plan = CleanupPlan(
+        orphans=[Orphan(cp="games-board/freecell", version="1.0", size=1024)],
+        counts={"installed": 1}, ok=True)
+    monkeypatch.setattr(core_cleanup, "plan_cleanup", lambda **kw: plan)
+    monkeypatch.setattr("gest.core.prefs.accept_mode", lambda *a, **k: mode)
+    scr = CleanupLoadingScreen(app)
+    app._stack.append(scr)
+    return scr
+
+
+def test_cleanup_loading_manual_opens_review(monkeypatch):
+    from gest.tui.screens.cleanup import CleanupScreen
+    app = App()
+    app._stack.append(urwid.Text("menu"))
+    _loading_cleanup(monkeypatch, app, mode="manual")
+    _pump(app, lambda: isinstance(app._stack[-1], CleanupScreen), ticks=200)
+    top = app._stack[-1]
+    assert isinstance(top, CleanupScreen)
+    assert not top._timer_running                 # manual → no countdown re-armed
+
+
+def test_cleanup_loading_immediate_removes_without_review(monkeypatch):
+    from gest.tui.screens.cleanup import CleanupRunScreen, CleanupScreen
+    app = App()
+    app._stack.append(urwid.Text("menu"))
+    _loading_cleanup(monkeypatch, app, mode="immediate")
+    _pump(app, lambda: any(isinstance(w, CleanupRunScreen) for w in app._stack),
+          ticks=200)
+    assert any(isinstance(w, CleanupRunScreen) for w in app._stack)   # removed at once
+    assert not any(isinstance(w, CleanupScreen) for w in app._stack)  # no review
+
+
+def test_cleanup_loading_timer_counts_down_on_screen(monkeypatch):
+    app = App()
+    app._stack.append(urwid.Text("menu"))
+    scr = _loading_cleanup(monkeypatch, app, mode="timer")
+    _pump(app, lambda: scr._timer_running, ticks=200)   # countdown on the branded
+    assert scr._timer_running                            # scan screen, not the review
+    assert ("Enter", "Clean up now") in scr._footer_context()
+
+
+def test_cleanup_loading_esc_during_countdown_opens_review(monkeypatch):
+    from gest.tui.screens.cleanup import CleanupScreen
+    app = App()
+    app._stack.append(urwid.Text("menu"))
+    scr = _loading_cleanup(monkeypatch, app, mode="timer")
+    _pump(app, lambda: scr._timer_running, ticks=200)
+    scr.keypress(_SIZE, "esc")                           # Esc → drop to review
+    assert isinstance(app._stack[-1], CleanupScreen)
+    assert not app._stack[-1]._timer_running
+
+
+def test_cleanup_run_branded_starts_on_overview_and_toggles():
+    from gest.core.software.cleanup import Orphan
+    from gest.tui.screens.apply import depclean_plan
+    from gest.tui.screens.cleanup import CleanupRunScreen
+    app = App()
+    app._stack.append(urwid.Text("menu"))
+    orphans = [Orphan(cp="games-board/freecell", version="1.0", size=1024)]
+    scr = CleanupRunScreen(app, orphans, depclean_plan(), branded=True)
+    out = _render(scr)
+    assert "Removing packages" in out                    # branded subtitle
+    assert "Category" not in out                          # table hidden
+    assert ("Tab", "Details") in scr._footer_context()
+    scr.keypress(_SIZE, "tab")                            # switch to per-package view
+    out = _render(scr)
+    assert "Category" in out and "Version" in out
+    assert ("Tab", "Overview") in scr._footer_context()
+
+
 def test_preferences_screen_selects_and_saves(monkeypatch):
     from gest.core import prefs
     from gest.tui.screens.preferences import PreferencesScreen
