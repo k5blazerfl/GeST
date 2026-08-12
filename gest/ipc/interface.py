@@ -63,6 +63,12 @@ PORTAGE_POLKIT = "org.gentoo.gest.portage.configure"
 DISK_PATH = "/org/gentoo/gest/Disk"
 DISK_IFACE = "org.gentoo.gest.Disk"
 DISK_POLKIT = "org.gentoo.gest.disk.manage"
+# Provisioning is split into distinct polkit actions per destructive class, so an
+# installed-system policy can authorize (or refuse) partitioning, mkfs and swap
+# independently rather than through one overloaded action.
+DISK_PARTITION_POLKIT = "org.gentoo.gest.disk.partition"
+DISK_MKFS_POLKIT = "org.gentoo.gest.disk.mkfs"
+DISK_SWAP_POLKIT = "org.gentoo.gest.disk.swap"
 
 # Object path + interface for the date & time module.
 DATETIME_PATH = "/org/gentoo/gest/DateTime"
