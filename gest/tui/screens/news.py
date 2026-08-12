@@ -22,6 +22,26 @@ from gest.tui.runtime import App, NavPile, Screen, ansi_markup, boxed
 _LINK = re.compile(r"^\s*\[\d+\]\s")   # a "[1] https://…" footnote line
 
 
+def _content_rows(parsed: news.NewsContent) -> list[urwid.Widget]:
+    """Selectable rows for a read item: styled header, divider, then body.
+
+    All rows are selectable icons so the pane scrolls from the header down
+    through the body; the Title is blue, other headers are ``label: value``,
+    and ``[n] http…`` footnote links are highlighted.
+    """
+    rows: list[urwid.Widget] = []
+    for label, value in parsed.headers:
+        markup = ([("box_title", f" {value}")] if label.lower() == "title"
+                  else [("hint", f" {label}: "), value])
+        rows.append(urwid.SelectableIcon(markup, 0))
+    if parsed.headers:
+        rows.append(urwid.Divider("─"))
+    for line in parsed.body:
+        markup = [("field", line)] if _LINK.match(line) else ansi_markup(line)
+        rows.append(urwid.SelectableIcon(markup or " ", 0))
+    return rows or [urwid.Text("(empty)")]
+
+
 class NewsScreen(Screen):
     def __init__(self, app: App) -> None:
         self._items: list[NewsItem] = []
@@ -42,7 +62,8 @@ class NewsScreen(Screen):
             help_text=(
                 "Gentoo news items relevant to this system.\n\n"
                 "●   marks an unread item.\n"
-                "Enter   read the item (and mark it read)\n"
+                "Enter   read the item in the preview pane (and mark it read)\n"
+                "f       read the item full-screen (better for long items)\n"
                 "r       mark the highlighted item read\n"
                 "a       mark all items read\n"
                 "Tab     switch to the content pane   ↑/↓ scrolls it\n"
@@ -53,9 +74,10 @@ class NewsScreen(Screen):
 
     def _footer_context(self):
         if self._pile.focus_position == 0:              # news list
-            return [("Enter", "Read"), ("r", "Mark read"), ("a", "All read"),
-                    ("Tab", "Content"), ("Esc", "Back")]
-        return [("↑↓", "Scroll"), ("Tab", "List"), ("Esc", "List")]  # content
+            return [("Enter", "Read"), ("f", "Full screen"), ("r", "Mark read"),
+                    ("a", "All read"), ("Tab", "Content"), ("Esc", "Back")]
+        return [("↑↓", "Scroll"), ("f", "Full screen"),
+                ("Tab", "List"), ("Esc", "List")]       # content
 
     # -- loading / list -----------------------------------------------------
 
@@ -105,22 +127,13 @@ class NewsScreen(Screen):
 
     async def _read(self, item: NewsItem) -> None:
         raw = await self.app.run_blocking(news.read_news, item.number)
-        parsed = news.parse_content(raw)
-        # All rows are selectable icons so the content pane scrolls from the
-        # styled header down through the body (the header shows first).
-        rows: list[urwid.Widget] = []
-        for label, value in parsed.headers:
-            markup = ([("box_title", f" {value}")] if label.lower() == "title"
-                      else [("hint", f" {label}: "), value])
-            rows.append(urwid.SelectableIcon(markup, 0))
-        if parsed.headers:
-            rows.append(urwid.Divider("─"))
-        for line in parsed.body:
-            markup = [("field", line)] if _LINK.match(line) else ansi_markup(line)
-            rows.append(urwid.SelectableIcon(markup or " ", 0))
-        self._content_walker[:] = rows or [urwid.Text("(empty)")]
+        self._content_walker[:] = _content_rows(news.parse_content(raw))
         self._content_walker.set_focus(0)               # show the header first
         self.app.refresh()
+
+    async def _read_fullscreen(self, item: NewsItem) -> None:
+        raw = await self.app.run_blocking(news.read_news, item.number)
+        self.app.push(NewsReaderScreen(self.app, item, news.parse_content(raw)))
 
     # -- marking read -------------------------------------------------------
 
@@ -151,8 +164,12 @@ class NewsScreen(Screen):
             else:
                 self.app.pop()
             return None
+        item = self._current()
+        if key in ("f", "F") and item is not None:   # full-screen the focused item
+            self.app.run_async(self._read_fullscreen(item))
+            self.app.run_async(self._mark(str(item.number), silent=True))
+            return None
         if self._pile.focus_position == 0 and self._items:
-            item = self._current()
             if key == "enter" and item is not None:
                 self.app.run_async(self._read(item))
                 self.app.run_async(self._mark(str(item.number), silent=True))
@@ -163,4 +180,27 @@ class NewsScreen(Screen):
             if key == "a":
                 self.app.run_async(self._mark("all"))
                 return None
+        return key
+
+
+class NewsReaderScreen(Screen):
+    """Full-screen reader for a single news item — better for long items.
+
+    Shows the styled item (header + word-wrapped body + links) across the whole
+    pane; ↑/↓ and PageUp/PageDown scroll. Esc returns to the news list.
+    """
+
+    def __init__(self, app: App, item: NewsItem, parsed: news.NewsContent) -> None:
+        walker = urwid.SimpleFocusListWalker(_content_rows(parsed))
+        super().__init__(
+            app, boxed(urwid.ListBox(walker), title=item.title),
+            title="Portage News",
+            footer_keys=[("↑/↓", "Scroll"), ("PgUp/PgDn", "Page"), ("Esc", "Back")],
+            help_text=("Reading a Portage news item full-screen.\n"
+                       "↑/↓ and PageUp/PageDown scroll.  Esc returns to the list."))
+
+    def handle_key(self, key):
+        if key == "esc":
+            self.app.pop()
+            return None
         return key

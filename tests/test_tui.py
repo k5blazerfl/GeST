@@ -171,6 +171,24 @@ def test_news_read_styles_content_and_marks_read(monkeypatch):
     assert _FakeSoftwareBackend.news_read == ["1"]       # Enter also marked read
 
 
+def test_news_full_screen_reader(monkeypatch):
+    from gest.core.software.news import NewsItem
+    from gest.tui.screens.news import NewsReaderScreen
+    content = ("  Title    Big News\n\nA long body line one.\nAnd line two.")
+    items = [NewsItem(3, "N", "2020-01-01", "Big News")]
+    app, scr = _news_screen(monkeypatch, items, content=content)
+    scr._item_walker.set_focus(0)
+    scr.keypress(_SIZE, "f")                              # open full-screen
+    _pump(app, lambda: isinstance(app._stack[-1], NewsReaderScreen), ticks=200)
+    reader = app._stack[-1]
+    out = _render(reader)
+    assert "Big News" in out and "A long body line one." in out
+    _pump(app, lambda: bool(_FakeSoftwareBackend.news_read), ticks=200)
+    assert _FakeSoftwareBackend.news_read == ["3"]        # 'f' also marked read
+    reader.keypress(_SIZE, "esc")                         # back to the list
+    assert app._stack[-1] is scr
+
+
 def test_screen_status_line():
     app = App()
     menu = MenuScreen(app)
