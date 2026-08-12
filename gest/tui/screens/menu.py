@@ -167,16 +167,17 @@ class MenuScreen(Screen):
             self._open(key)
 
     async def _launch_checked(self, key: str) -> None:
-        busy, operation = await self._package_busy()
+        busy, message = await self._package_busy()
         if busy:
-            self._locked_modal(operation)
+            self._locked_modal(message)
         else:
             self._open(key)
 
     async def _package_busy(self) -> tuple[bool, str]:
-        """Ask the shared root backend whether a package operation is running.
-        A backend that is unreachable (not installed/activatable) means nothing
-        is running, so it never blocks using GeST."""
+        """Ask the shared root backend whether package management is locked —
+        by another GeST session or an external terminal emerge. A backend that is
+        unreachable (not installed/activatable) means nothing is running, so it
+        never blocks using GeST."""
         backend = SoftwareBackend()
         try:
             await backend.connect()
@@ -187,12 +188,11 @@ class MenuScreen(Screen):
             with contextlib.suppress(Exception):
                 await backend.close()
 
-    def _locked_modal(self, operation: str) -> None:
-        what = operation or "A package operation"
+    def _locked_modal(self, message: str) -> None:
+        message = message or "A package operation is in progress"
         modal = Modal(
             self.app, "Package management locked",
-            [urwid.Text(("error", f" {what} is in progress in another "
-                         "GeST session.")),
+            [urwid.Text(("error", f" {message}.")),
              urwid.Divider(),
              urwid.Text(("hint", " Package-management modules are unavailable "
                          "until it finishes.\n Portage News, Package Licenses "

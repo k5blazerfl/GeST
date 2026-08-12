@@ -10,12 +10,35 @@ treat that as "privileged operations unavailable" rather than crashing.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 
 from dbus_next import BusType
 from dbus_next.aio import MessageBus
+from dbus_next.errors import DBusError
 
-from gest.ipc.interface import BUS_NAME, SOFTWARE_IFACE, SOFTWARE_PATH
+from gest.ipc.interface import BUS_NAME, BUSY_ERROR, SOFTWARE_IFACE, SOFTWARE_PATH
+
+
+class BackendBusy(Exception):
+    """Raised when the backend refuses an operation because package management is
+    already locked — another GeST session, or an external terminal emerge. Its
+    ``message`` is a ready-to-display sentence describing what is running."""
+
+    def __init__(self, message: str) -> None:
+        self.message = message
+        super().__init__(message)
+
+
+async def _guard_busy(call: Awaitable):
+    """Await a mutating backend call, translating the backend's BUSY_ERROR into a
+    :class:`BackendBusy` so callers can show a clean message instead of a raw
+    D-Bus fault. Any other error propagates unchanged."""
+    try:
+        return await call
+    except DBusError as exc:
+        if exc.type == BUSY_ERROR:
+            raise BackendBusy(exc.text) from exc
+        raise
 
 
 class SoftwareBackend:
@@ -54,7 +77,7 @@ class SoftwareBackend:
             self._iface.on_progress(on_progress)
         if on_finished is not None:
             self._iface.on_finished(on_finished)
-        return await self._iface.call_install(atom)
+        return await _guard_busy(self._iface.call_install(atom))
 
     async def install_multi(self, atoms, on_progress=None, on_finished=None) -> bool:
         """Merge several atoms in one emerge; streams like install."""
@@ -62,7 +85,7 @@ class SoftwareBackend:
             self._iface.on_progress(on_progress)
         if on_finished is not None:
             self._iface.on_finished(on_finished)
-        return await self._iface.call_install_multi(atoms)
+        return await _guard_busy(self._iface.call_install_multi(atoms))
 
     async def install_binary_multi(self, atoms, only, on_progress=None,
                                    on_finished=None) -> bool:
@@ -71,7 +94,7 @@ class SoftwareBackend:
             self._iface.on_progress(on_progress)
         if on_finished is not None:
             self._iface.on_finished(on_finished)
-        return await self._iface.call_install_binary_multi(atoms, only)
+        return await _guard_busy(self._iface.call_install_binary_multi(atoms, only))
 
     async def rebuild(
         self,
@@ -84,7 +107,7 @@ class SoftwareBackend:
             self._iface.on_progress(on_progress)
         if on_finished is not None:
             self._iface.on_finished(on_finished)
-        return await self._iface.call_rebuild(atom)
+        return await _guard_busy(self._iface.call_rebuild(atom))
 
     async def sync(self, on_progress=None, on_finished=None) -> bool:
         """Sync the Portage tree (emerge --sync); streams like install."""
@@ -92,7 +115,7 @@ class SoftwareBackend:
             self._iface.on_progress(on_progress)
         if on_finished is not None:
             self._iface.on_finished(on_finished)
-        return await self._iface.call_sync()
+        return await _guard_busy(self._iface.call_sync())
 
     async def sync_repos(self, names) -> tuple[bool, str]:
         """Sync specific repositories (emaint sync --repo <name>) and wait.
@@ -100,7 +123,7 @@ class SoftwareBackend:
         Returns ``(ok, output)`` — ``ok`` is True only if every named repo
         synced. Blocking (no streaming); used by the refresh-on-open step.
         """
-        return await self._iface.call_sync_repos(list(names))
+        return await _guard_busy(self._iface.call_sync_repos(list(names)))
 
     async def depclean(self, atom: str = "", on_progress=None, on_finished=None) -> bool:
         """Remove packages via emerge --depclean [atom]; streams like install."""
@@ -108,7 +131,7 @@ class SoftwareBackend:
             self._iface.on_progress(on_progress)
         if on_finished is not None:
             self._iface.on_finished(on_finished)
-        return await self._iface.call_depclean(atom)
+        return await _guard_busy(self._iface.call_depclean(atom))
 
     async def update_world(self, on_progress=None, on_finished=None) -> bool:
         """Update the system (emerge -uDN @world); streams like install."""
@@ -116,7 +139,7 @@ class SoftwareBackend:
             self._iface.on_progress(on_progress)
         if on_finished is not None:
             self._iface.on_finished(on_finished)
-        return await self._iface.call_update_world()
+        return await _guard_busy(self._iface.call_update_world())
 
     async def mark_news_read(self, selector: str) -> bool:
         """Mark Portage news read (polkit-gated). selector: "all"/"new"/number."""
@@ -132,7 +155,7 @@ class SoftwareBackend:
         Returns ``(ok, output)``. Unmerges nothing — only removes the explicit
         record so a later depclean can reclaim them. Polkit-gated (remove).
         """
-        return await self._iface.call_deselect(list(atoms))
+        return await _guard_busy(self._iface.call_deselect(list(atoms)))
 
     async def depclean_multi(self, atoms, on_progress=None, on_finished=None) -> bool:
         """Remove several atoms in one emerge --depclean; streams like install."""
@@ -140,7 +163,7 @@ class SoftwareBackend:
             self._iface.on_progress(on_progress)
         if on_finished is not None:
             self._iface.on_finished(on_finished)
-        return await self._iface.call_depclean_multi(atoms)
+        return await _guard_busy(self._iface.call_depclean_multi(atoms))
 
     async def package_status(self) -> tuple[bool, str]:
         """Return ``(busy, operation)`` — whether a package operation is in

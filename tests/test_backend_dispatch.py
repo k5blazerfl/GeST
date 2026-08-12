@@ -22,12 +22,16 @@ class _FakeInvocation:
     def __init__(self):
         self.value = None
         self.error = None
+        self.dbus_error = None
 
     def return_value(self, variant):
         self.value = variant.unpack()
 
     def return_error_literal(self, quark, code, message):
         self.error = (code, message)
+
+    def return_dbus_error(self, name, message):
+        self.dbus_error = (name, message)
 
 
 class _FakeParams:
@@ -206,6 +210,70 @@ def test_datetime_unknown_method(monkeypatch):
     inv = _FakeInvocation()
     _datetime_service()._on_call(None, ":1.5", "/p", "i", "Nope", _FakeParams([]), inv)
     assert inv.error[0] == Gio.DBusError.UNKNOWN_METHOD
+
+
+def _software_service():
+    from gest.backend import service as service_mod
+    svc = service_mod.SoftwareService.__new__(service_mod.SoftwareService)
+    svc._conn = None
+    svc._active = 0
+    svc._operation = ""
+    svc._last_activity = 0
+    return svc
+
+
+def _sw_call(svc, method, values):
+    inv = _FakeInvocation()
+    svc._on_method_call(None, ":1.5", "/p", "iface", method, _FakeParams(values), inv)
+    return inv
+
+
+def test_package_status_reports_a_running_session_op():
+    svc = _software_service()
+    svc._active = 1
+    svc._operation = "A system update"
+    inv = _sw_call(svc, "PackageStatus", [])
+    assert inv.value == (True, "A system update is running in another GeST session")
+
+
+def test_package_status_reports_external_emerge(monkeypatch):
+    from gest.backend import service as service_mod
+    monkeypatch.setattr(service_mod, "external_emerge", lambda: "emerge")
+    inv = _sw_call(_software_service(), "PackageStatus", [])   # _active == 0
+    assert inv.value == (True, "An external emerge is running outside GeST")
+
+
+def test_package_status_free_when_idle(monkeypatch):
+    from gest.backend import service as service_mod
+    monkeypatch.setattr(service_mod, "external_emerge", lambda: None)
+    inv = _sw_call(_software_service(), "PackageStatus", [])
+    assert inv.value == (False, "")
+
+
+def test_mutating_call_rejected_when_busy():
+    from gest.ipc.interface import BUSY_ERROR
+    # A session op is active — a second update must be refused before polkit.
+    called = {"polkit": False}
+    svc = _software_service()
+    svc._check_authorized = lambda *a: called.__setitem__("polkit", True) or True
+    svc._active = 1
+    svc._operation = "A system update"
+    inv = _sw_call(svc, "UpdateWorld", [])
+    assert inv.dbus_error is not None
+    assert inv.dbus_error[0] == BUSY_ERROR
+    assert "another GeST session" in inv.dbus_error[1]
+    assert inv.value is None                 # nothing started
+    assert called["polkit"] is False         # refused before asking for auth
+
+
+def test_mutating_call_rejected_for_external_emerge(monkeypatch):
+    from gest.backend import service as service_mod
+    from gest.ipc.interface import BUSY_ERROR
+    monkeypatch.setattr(service_mod, "external_emerge", lambda: "emerge")
+    inv = _sw_call(_software_service(), "Sync", [])   # idle here, but emerge outside
+    assert inv.dbus_error is not None
+    assert inv.dbus_error[0] == BUSY_ERROR
+    assert "external emerge" in inv.dbus_error[1]
 
 
 def test_authorization_variant_builds():

@@ -19,7 +19,7 @@ import urwid
 from gest.core import prefs
 from gest.core.repos import reader
 from gest.core.software import sync
-from gest.core.software.backend_client import SoftwareBackend
+from gest.core.software.backend_client import BackendBusy, SoftwareBackend
 from gest.tui.runtime import (
     App,
     Modal,
@@ -228,6 +228,7 @@ class SyncRunScreen(StreamLog, LoadingScreen):
         self._by_name = {r.name: r for r in self._repos}
         self._total = len(self._repos)
         self._done = False
+        self._busy_message = ""      # set if the sync was refused as busy (locked)
         self._logfile = None
         self._logpath: str | None = None
         self._refresh_pending = False
@@ -308,6 +309,12 @@ class SyncRunScreen(StreamLog, LoadingScreen):
         try:
             await backend.connect()
             started = await backend.sync(on_progress, on_finished)
+        except BackendBusy as exc:
+            with contextlib.suppress(Exception):
+                await backend.close()
+            self._busy_message = exc.message      # another session / external emerge
+            self._finish(None, "")
+            return
         except Exception as exc:
             with contextlib.suppress(Exception):
                 await backend.close()
@@ -353,7 +360,11 @@ class SyncRunScreen(StreamLog, LoadingScreen):
         self._bar.set_completion(self._total)
         synced = [r.name for r in self._repos if r.status == "synced"]
         failed = [r.name for r in self._repos if r.status == "failed"]
-        if code is None:
+        if code is None and self._busy_message:
+            self._set_step("sync", "failed")
+            title, ok, msg = "Package management busy", False, (
+                f"{self._busy_message}. Nothing was changed.")
+        elif code is None:
             self._set_step("sync", "failed")
             reason = error or ("administrator authentication was declined, or the "
                                "backend was unavailable")

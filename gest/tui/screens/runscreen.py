@@ -25,7 +25,7 @@ import contextlib
 
 import urwid
 
-from gest.core.software.backend_client import SoftwareBackend
+from gest.core.software.backend_client import BackendBusy, SoftwareBackend
 from gest.tui.runtime import App, Modal, Screen, boxed
 from gest.tui.screens.apply import RawLogScreen, StreamLog
 from gest.tui.screens.loading import _LOGO_MARKUP, _LOGO_W
@@ -62,6 +62,7 @@ class RunScreen(StreamLog, Screen):
     def __init__(self, app: App, *, on_done=None, branded: bool = False):
         self._on_done = on_done
         self._done = False
+        self._busy_message = ""         # set if the run was refused as busy (locked)
         self._code: int | None = None   # emerge exit code, once finished
         self._logfile = None
         self._logpath: str | None = None
@@ -210,6 +211,11 @@ class RunScreen(StreamLog, Screen):
         try:
             await backend.connect()
             started = await run_op(backend, on_progress, on_finished)
+        except BackendBusy as exc:
+            with contextlib.suppress(Exception):
+                await backend.close()
+            self._busy_message = exc.message      # another session / external emerge
+            return None
         except Exception:
             with contextlib.suppress(Exception):
                 await backend.close()
@@ -237,7 +243,10 @@ class RunScreen(StreamLog, Screen):
         if self._on_done is not None and code is not None:
             with contextlib.suppress(Exception):
                 self._on_done()
-        if code is None:
+        if code is None and self._busy_message:
+            title, ok, msg = "Package management busy", False, (
+                f"{self._busy_message}. Nothing was changed.")
+        elif code is None:
             title, ok, msg = "Not started", False, (
                 "The operation did not start — administrator authentication was "
                 "declined, or the backend was unavailable. Nothing was changed.")

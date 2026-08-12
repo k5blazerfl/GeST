@@ -325,7 +325,8 @@ class _FakeSoftwareBackend:
     deselected: list[list[str]] = []
     news_read: list[str] = []
     news_unread: list[str] = []
-    busy_status: tuple[bool, str] = (False, "")   # (busy, operation) for the lock
+    busy_status: tuple[bool, str] = (False, "")   # (busy, message) for the lock
+    raise_busy: str = ""   # when set, mutating streaming ops raise BackendBusy
 
     async def connect(self):
         return self
@@ -350,6 +351,9 @@ class _FakeSoftwareBackend:
         return True
 
     async def _stream(self, on_progress=None, on_finished=None):
+        if _FakeSoftwareBackend.raise_busy:
+            from gest.core.software.backend_client import BackendBusy
+            raise BackendBusy(_FakeSoftwareBackend.raise_busy)
         if on_finished is not None:
             on_finished(0)
         return True
@@ -377,6 +381,7 @@ def _isolate_software_backend(monkeypatch):
     _FakeSoftwareBackend.news_read.clear()
     _FakeSoftwareBackend.news_unread.clear()
     _FakeSoftwareBackend.busy_status = (False, "")
+    _FakeSoftwareBackend.raise_busy = ""
     for mod in ("software", "sync", "update", "cleanup", "accept", "world",
                 "news", "menu"):
         monkeypatch.setattr(f"gest.tui.screens.{mod}.SoftwareBackend",
@@ -2527,6 +2532,39 @@ def test_sync_run_tracks_progress():
     assert run._done
 
 
+def test_sync_run_reports_busy_when_locked():
+    from gest.tui.screens.sync import SyncRunScreen, _SyncRepo
+    _FakeSoftwareBackend.raise_busy = "An external emerge is running outside GeST"
+    app = App()
+    app._stack.append(urwid.Text("review"))
+    run = SyncRunScreen(app, [_SyncRepo("guru", "git", "https://h/guru")])
+    app._stack.append(run)
+    _pump(app, lambda: isinstance(app._stack[-1], urwid.Overlay), ticks=200)
+    out = _render(app._stack[-1])
+    assert "Package management busy" in out       # modal title
+    assert "external emerge" in out               # the busy reason (may wrap after)
+
+
+def test_update_run_reports_busy_when_locked(monkeypatch):
+    from gest.core.software.update import Change
+    from gest.tui.screens import runscreen as runscreen_mod
+    from gest.tui.screens.apply import world_plan
+    from gest.tui.screens.update import UpdateRunScreen
+    # RunScreen opens its own backend (runscreen namespace) — point it at the fake.
+    monkeypatch.setattr(runscreen_mod, "SoftwareBackend", _FakeSoftwareBackend)
+    _FakeSoftwareBackend.raise_busy = (
+        "A package removal is running in another GeST session")
+    app = App()
+    app._stack.append(urwid.Text("review"))
+    changes = [Change("app-arch/gzip", "1.13", "1.14", "update", False, 430080)]
+    run = UpdateRunScreen(app, changes, world_plan())
+    app._stack.append(run)
+    _pump(app, lambda: isinstance(app._stack[-1], urwid.Overlay), ticks=200)
+    out = _render(app._stack[-1])
+    assert "Package management busy" in out       # modal title
+    assert "another GeST session" in out          # the busy reason (may wrap after)
+
+
 def test_sync_run_verbose_view_toggles_and_streams():
     from gest.tui.screens.sync import SyncRunScreen, _SyncRepo
     app = App()
@@ -2806,7 +2844,8 @@ def test_menu_launches_repos():
 
 def test_menu_blocks_package_module_when_backend_busy():
     from gest.tui.screens.software import SoftwareLoadingScreen
-    _FakeSoftwareBackend.busy_status = (True, "Updating the system")
+    _FakeSoftwareBackend.busy_status = (
+        True, "A system update is running in another GeST session")
     app = App()
     menu = MenuScreen(app)
     app._stack.append(menu)
@@ -2815,8 +2854,27 @@ def test_menu_blocks_package_module_when_backend_busy():
     _pump(app, lambda: isinstance(app._stack[-1], urwid.Overlay), ticks=200)
     out = _render(app._stack[-1])
     assert "Package management locked" in out
-    assert "Updating the system" in out    # names the operation
+    assert "another GeST session" in out   # names the source
     assert not any(isinstance(w, SoftwareLoadingScreen) for w in app._stack)
+
+
+def test_menu_blocks_package_module_for_external_emerge():
+    from gest.tui.screens.update import UpdateLoadingScreen
+    _FakeSoftwareBackend.busy_status = (
+        True, "An external emerge is running outside GeST")
+    app = App()
+    menu = MenuScreen(app)
+    app._stack.append(menu)
+    menu.keypress(_SIZE, "enter")          # Software category -> modules
+    menu.keypress(_SIZE, "down")           # -> World
+    menu.keypress(_SIZE, "down")           # -> Repositories
+    menu.keypress(_SIZE, "down")           # -> System Update
+    menu.keypress(_SIZE, "enter")          # try to launch
+    _pump(app, lambda: isinstance(app._stack[-1], urwid.Overlay), ticks=200)
+    out = _render(app._stack[-1])
+    assert "Package management locked" in out
+    assert "external emerge" in out
+    assert not any(isinstance(w, UpdateLoadingScreen) for w in app._stack)
 
 
 def test_menu_allows_readonly_module_when_backend_busy():

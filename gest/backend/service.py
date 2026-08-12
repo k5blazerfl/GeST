@@ -47,7 +47,14 @@ from gest.backend.system import SystemService
 from gest.backend.users import UsersService
 from gest.core.repos import commands as repo_commands
 from gest.core.software import news, world
-from gest.ipc.interface import BUS_NAME, SOFTWARE_IFACE, SOFTWARE_PATH, polkit_action
+from gest.core.software.running import external_emerge
+from gest.ipc.interface import (
+    BUS_NAME,
+    BUSY_ERROR,
+    SOFTWARE_IFACE,
+    SOFTWARE_PATH,
+    polkit_action,
+)
 
 # D-Bus introspection describing the surface above.
 _INTROSPECTION = f"""
@@ -202,6 +209,38 @@ class SoftwareService:
             self._operation = ""
         self._touch()
 
+    # -- the package-management lock (cross-session + external emerge) --------
+
+    def _busy_message(self) -> str:
+        """A ready-to-display sentence describing why package management is
+        locked, or "" when it is free.
+
+        Two sources, checked in order: an operation *this* shared backend is
+        running (so any GeST session), then an ``emerge``/``emaint``/``ebuild``
+        a user started by hand in a terminal. The external scan only runs when we
+        are idle — when we are busy our own child would match it anyway.
+        """
+        if self._active > 0:
+            op = self._operation or "A package operation"
+            return f"{op} is running in another GeST session"
+        external = external_emerge()
+        if external:
+            return f"An external {external} is running outside GeST"
+        return ""
+
+    def _reject_if_busy(self, invocation) -> bool:
+        """If package management is locked, fail the call with BUSY_ERROR and
+        return True; the handler must then return without starting anything.
+        Checked before the polkit prompt so we never ask for authentication only
+        to refuse. Race-free: the loop is single-threaded and polkit is a
+        blocking call, so no other handler runs between this check and the
+        _begin_op that follows in the same handler."""
+        message = self._busy_message()
+        if message:
+            invocation.return_dbus_error(BUSY_ERROR, message)
+            return True
+        return False
+
     @staticmethod
     def _should_exit(active: int, idle_seconds: float, timeout: float,
                      code_changed: bool = False) -> bool:
@@ -272,15 +311,14 @@ class SoftwareService:
     # -- methods ------------------------------------------------------------
 
     def _package_status(self, invocation) -> None:
-        """Report whether a package operation is in progress and its label.
+        """Report whether package management is locked and a display sentence.
 
         Read-only (no polkit): the frontend polls this before opening a
-        package-management module so a second GeST session can't start a
-        conflicting operation while this shared root service is mid-op.
+        package-management module. Covers both a conflicting GeST session and an
+        external terminal emerge (see :meth:`_busy_message`).
         """
-        busy = self._active > 0
-        invocation.return_value(
-            GLib.Variant("(bs)", (busy, self._operation if busy else "")))
+        message = self._busy_message()
+        invocation.return_value(GLib.Variant("(bs)", (bool(message), message)))
 
     def _install_preview(self, atom: str, invocation) -> None:
         """`emerge --pretend` — read-only, so no polkit check required."""
@@ -299,6 +337,8 @@ class SoftwareService:
             )
 
     def _install(self, atom: str, sender: str, invocation) -> None:
+        if self._reject_if_busy(invocation):
+            return
         if not self._check_authorized(sender, polkit_action("install")):
             invocation.return_error_literal(
                 Gio.dbus_error_quark(),
@@ -309,10 +349,12 @@ class SoftwareService:
         # Authorized: start the merge and stream output asynchronously.
         invocation.return_value(GLib.Variant("(b)", (True,)))
         self._spawn_streaming([_EMERGE, "--color", "n", atom],
-                              operation="Installing a package")
+                              operation="A package install")
 
     def _install_multi(self, atoms, sender: str, invocation) -> None:
         """Merge several atoms in one emerge (the transactional Accept)."""
+        if self._reject_if_busy(invocation):
+            return
         if not self._check_authorized(sender, polkit_action("install")):
             invocation.return_error_literal(
                 Gio.dbus_error_quark(), Gio.DBusError.ACCESS_DENIED,
@@ -326,7 +368,7 @@ class SoftwareService:
             return
         invocation.return_value(GLib.Variant("(b)", (True,)))
         self._spawn_streaming([_EMERGE, "--color", "n", *atoms],
-                              operation="Installing packages")
+                              operation="A package install")
 
     def _install_binary_multi(self, atoms, only, sender: str, invocation) -> None:
         """Merge atoms as binary packages: emerge --getbinpkg [--usepkgonly].
@@ -334,6 +376,8 @@ class SoftwareService:
         ``only`` forces binary (fails if no binpkg); otherwise emerge prefers a
         binary and falls back to building from source.
         """
+        if self._reject_if_busy(invocation):
+            return
         if not self._check_authorized(sender, polkit_action("install")):
             invocation.return_error_literal(
                 Gio.dbus_error_quark(), Gio.DBusError.ACCESS_DENIED,
@@ -349,10 +393,12 @@ class SoftwareService:
         argv = [_EMERGE, "--getbinpkg", "--color", "n"]
         if only:
             argv.insert(2, "--usepkgonly")
-        self._spawn_streaming([*argv, *atoms], operation="Installing packages")
+        self._spawn_streaming([*argv, *atoms], operation="A package install")
 
     def _rebuild(self, atom: str, sender: str, invocation) -> None:
         """Rebuild a package to apply changed USE flags (--changed-use)."""
+        if self._reject_if_busy(invocation):
+            return
         if not self._check_authorized(sender, polkit_action("install")):
             invocation.return_error_literal(
                 Gio.dbus_error_quark(), Gio.DBusError.ACCESS_DENIED,
@@ -360,10 +406,12 @@ class SoftwareService:
             return
         invocation.return_value(GLib.Variant("(b)", (True,)))
         self._spawn_streaming([_EMERGE, "--changed-use", "--color", "n", atom],
-                              operation="Rebuilding a package")
+                              operation="A package rebuild")
 
     def _update_world(self, sender: str, invocation) -> None:
         """Update the whole system: emerge -uDN @world."""
+        if self._reject_if_busy(invocation):
+            return
         if not self._check_authorized(sender, polkit_action("install")):
             invocation.return_error_literal(
                 Gio.dbus_error_quark(), Gio.DBusError.ACCESS_DENIED,
@@ -371,10 +419,12 @@ class SoftwareService:
             return
         invocation.return_value(GLib.Variant("(b)", (True,)))
         self._spawn_streaming([_EMERGE, "-uDN", "--color", "n", "@world"],
-                              operation="Updating the system")
+                              operation="A system update")
 
     def _depclean(self, atom: str, sender: str, invocation) -> None:
         """Safely remove packages: emerge --depclean [atom] (keeps needed deps)."""
+        if self._reject_if_busy(invocation):
+            return
         if not self._check_authorized(sender, polkit_action("remove")):
             invocation.return_error_literal(
                 Gio.dbus_error_quark(), Gio.DBusError.ACCESS_DENIED,
@@ -389,10 +439,12 @@ class SoftwareService:
         argv = [_EMERGE, "--depclean", "--color", "n"]
         if atom:
             argv.append(atom)
-        self._spawn_streaming(argv, operation="Removing packages")
+        self._spawn_streaming(argv, operation="A package removal")
 
     def _depclean_multi(self, atoms, sender: str, invocation) -> None:
         """Remove several packages in one emerge --depclean (safe; keeps deps)."""
+        if self._reject_if_busy(invocation):
+            return
         if not self._check_authorized(sender, polkit_action("remove")):
             invocation.return_error_literal(
                 Gio.dbus_error_quark(), Gio.DBusError.ACCESS_DENIED,
@@ -406,10 +458,12 @@ class SoftwareService:
             return
         invocation.return_value(GLib.Variant("(b)", (True,)))
         self._spawn_streaming([_EMERGE, "--depclean", "--color", "n", *atoms],
-                              operation="Removing packages")
+                              operation="A package removal")
 
     def _sync(self, sender: str, invocation) -> None:
         """Sync the Portage tree: emerge --sync."""
+        if self._reject_if_busy(invocation):
+            return
         if not self._check_authorized(sender, polkit_action("sync")):
             invocation.return_error_literal(
                 Gio.dbus_error_quark(), Gio.DBusError.ACCESS_DENIED,
@@ -417,7 +471,7 @@ class SoftwareService:
             return
         invocation.return_value(GLib.Variant("(b)", (True,)))
         self._spawn_streaming([_EMERGE, "--sync", "--color", "n"],
-                              operation="Syncing the Portage tree")
+                              operation="A Portage tree sync")
 
     def _sync_repos(self, names, sender: str, invocation) -> None:
         """Sync specific repositories by name (``emaint sync --repo <name>``).
@@ -427,6 +481,8 @@ class SoftwareService:
         tool). Runs synchronously and returns an aggregate ``(ok, output)`` so
         the frontend can await it and surface any per-repo failure.
         """
+        if self._reject_if_busy(invocation):
+            return
         if not self._check_authorized(sender, polkit_action("sync")):
             invocation.return_error_literal(
                 Gio.dbus_error_quark(), Gio.DBusError.ACCESS_DENIED,
@@ -438,7 +494,7 @@ class SoftwareService:
                 Gio.dbus_error_quark(), Gio.DBusError.INVALID_ARGS,
                 "invalid or empty repository name list")
             return
-        self._begin_op("Syncing repositories")  # don't idle-exit mid-sync
+        self._begin_op("A repository sync")  # don't idle-exit mid-sync
         outputs: list[str] = []
         ok_all = True
         try:
@@ -471,6 +527,8 @@ class SoftwareService:
         synchronously (it just rewrites the world file) and returns
         ``(ok, output)`` so the frontend can await it and report the result.
         """
+        if self._reject_if_busy(invocation):
+            return
         if not self._check_authorized(sender, polkit_action("remove")):
             invocation.return_error_literal(
                 Gio.dbus_error_quark(), Gio.DBusError.ACCESS_DENIED,
@@ -484,7 +542,7 @@ class SoftwareService:
                 Gio.dbus_error_quark(), Gio.DBusError.INVALID_ARGS,
                 "invalid or empty package atom list")
             return
-        self._begin_op("Updating the @world set")  # don't idle-exit mid-op
+        self._begin_op("An @world set update")  # don't idle-exit mid-op
         try:
             proc = Gio.Subprocess.new(
                 argv,
