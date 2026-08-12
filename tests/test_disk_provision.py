@@ -1,0 +1,149 @@
+"""CI-safe tests for the disk provisioning core: argv builders, safety
+validation, and the ordered apply pipeline. No disk is touched — the pipeline is
+driven through a FakeExecutor."""
+
+import asyncio
+
+import pytest
+
+from gest.core.disk import commands, provision
+from gest.core.disk.model import BlockDevice, DiskPlan, Filesystem, Partition
+from gest.core.exec.executor import FakeExecutor
+
+# A disk with no mounted children — the safe, unpartitioned scratch target.
+_DEVICES = [
+    BlockDevice(name="sda", type="disk", children=[]),
+    BlockDevice(
+        name="nvme0n1",
+        type="disk",
+        children=[BlockDevice(name="nvme0n1p1", type="part", mountpoint="/")],
+    ),
+]
+_MOUNTS = "/dev/nvme0n1p1 / ext4 rw,relatime 0 0\nproc /proc proc rw 0 0\n"
+
+_PLAN = DiskPlan(
+    disk="/dev/sda",
+    wipe=True,
+    partitions=[
+        Partition(1, "512M", "EF00", "esp"),
+        Partition(2, "rest", "8300", "root"),
+    ],
+    filesystems=[
+        Filesystem("/dev/sda1", "vfat", "ESP"),
+        Filesystem("/dev/sda2", "ext4", "root"),
+    ],
+)
+
+
+# --- argv builders ----------------------------------------------------------
+
+def test_sgdisk_partition_argv_encodes_each_partition():
+    argv = commands.sgdisk_partition_argv("/dev/sda", _PLAN.partitions)
+    assert argv[0] == "sgdisk" and argv[-1] == "/dev/sda"
+    assert "-n" in argv and "1:0:+512M" in argv        # sized partition
+    assert "2:0:0" in argv                             # "rest" -> end sentinel 0
+    assert "1:EF00" in argv and "2:8300" in argv       # type codes
+    assert "1:esp" in argv and "2:root" in argv        # labels
+
+
+def test_mkfs_argv_per_kind():
+    assert commands.mkfs_argv("/dev/sda2", "ext4", "root") == \
+        ["mkfs.ext4", "-F", "-L", "root", "/dev/sda2"]
+    assert commands.mkfs_argv("/dev/sda1", "vfat", "ESP") == \
+        ["mkfs.vfat", "-F", "32", "-n", "ESP", "/dev/sda1"]
+    assert commands.mkfs_argv("/dev/sda3", "btrfs") == ["mkfs.btrfs", "-f", "/dev/sda3"]
+
+
+def test_swap_builders():
+    assert commands.mkswap_argv("/dev/sda3", "swp") == ["mkswap", "-L", "swp", "/dev/sda3"]
+    assert commands.swapon_argv("/dev/sda3") == ["swapon", "/dev/sda3"]
+
+
+@pytest.mark.parametrize("dev,ok", [
+    ("/dev/sda", True), ("/dev/nvme0n1p2", True), ("/dev/mapper/vg-root", True),
+    ("/etc/passwd", False), ("/dev/../etc/shadow", False), ("sda", False), ("/dev/a b", False),
+])
+def test_valid_device(dev, ok):
+    assert commands.valid_device(dev) is ok
+
+
+def test_builders_reject_bad_inputs():
+    with pytest.raises(ValueError):
+        commands.mkfs_argv("/dev/sda1", "reiser4")             # unknown fs
+    with pytest.raises(ValueError):
+        commands.sgdisk_partition_argv("/dev/sda", [Partition(1, "8Q", "EF00")])  # bad size
+    with pytest.raises(ValueError):
+        commands.sgdisk_partition_argv("/dev/sda", [Partition(1, "1G", "ZZZZ")])  # bad guid
+    with pytest.raises(ValueError):
+        commands.wipefs_argv("/dev/sda; rm -rf /")             # bad device
+
+
+# --- safety validation ------------------------------------------------------
+
+def test_validate_accepts_clean_scratch_disk():
+    assert provision.validate_plan(_PLAN, _DEVICES, _MOUNTS) == []
+
+
+def test_validate_refuses_unknown_device():
+    plan = DiskPlan(disk="/dev/sdz", wipe=True, partitions=[Partition(1, "rest", "8300")])
+    problems = provision.validate_plan(plan, _DEVICES, _MOUNTS)
+    assert any("not a present block device" in p for p in problems)
+
+
+def test_validate_refuses_mounted_disk():
+    plan = DiskPlan(disk="/dev/nvme0n1", wipe=True, partitions=[Partition(1, "rest", "8300")])
+    problems = provision.validate_plan(plan, _DEVICES, _MOUNTS)
+    assert any("mounted partition" in p for p in problems)
+
+
+def test_validate_refuses_live_medium():
+    problems = provision.validate_plan(_PLAN, _DEVICES, _MOUNTS, boot_source="/dev/sda")
+    assert any("live/boot medium" in p for p in problems)
+
+
+def test_mounted_sources_parses_proc_mounts():
+    assert provision.mounted_sources(_MOUNTS) == {"/dev/nvme0n1p1"}
+
+
+# --- pipeline ordering ------------------------------------------------------
+
+def test_plan_steps_order_is_wipe_partition_settle_then_mkfs():
+    labels = [s.label for s in provision.plan_steps(_PLAN)]
+    i_wipe = next(i for i, s in enumerate(labels) if s.startswith("wipe"))
+    i_part = next(i for i, s in enumerate(labels) if s.startswith("create partitions"))
+    i_settle = next(i for i, s in enumerate(labels) if s == "settle udev")
+    i_mkfs = next(i for i, s in enumerate(labels) if s.startswith("make ext4"))
+    assert i_wipe < i_part < i_settle < i_mkfs
+
+
+def test_plan_steps_no_wipe_skips_wipe_steps():
+    plan = DiskPlan(disk="/dev/sda", wipe=False, partitions=[Partition(1, "rest", "8300")],
+                    filesystems=[Filesystem("/dev/sda1", "ext4")])
+    labels = [s.label for s in provision.plan_steps(plan)]
+    assert not any(s.startswith("wipe") or s.startswith("zap") for s in labels)
+
+
+# --- apply ------------------------------------------------------------------
+
+def test_apply_runs_every_step_in_order():
+    ex = FakeExecutor()
+    steps = asyncio.run(provision.apply_plan(_PLAN, ex, _DEVICES, _MOUNTS))
+    assert [c[0] for c in ex.calls] == \
+        ["wipefs", "sgdisk", "sgdisk", "partprobe", "udevadm", "mkfs.vfat", "mkfs.ext4"]
+    assert len(ex.calls) == len(steps)
+
+
+def test_apply_refuses_unsafe_plan_without_running_anything():
+    ex = FakeExecutor()
+    with pytest.raises(provision.DiskSafetyError):
+        asyncio.run(provision.apply_plan(_PLAN, ex, _DEVICES, _MOUNTS, boot_source="/dev/sda"))
+    assert ex.calls == []
+
+
+def test_apply_stops_at_first_failing_step():
+    ex = FakeExecutor(code_for=lambda argv: 1 if argv[0] == "sgdisk" else 0)
+    with pytest.raises(provision.DiskApplyError) as excinfo:
+        asyncio.run(provision.apply_plan(_PLAN, ex, _DEVICES, _MOUNTS))
+    # wipefs ran, then the first sgdisk failed — nothing after it ran.
+    assert [c[0] for c in ex.calls] == ["wipefs", "sgdisk"]
+    assert excinfo.value.result.code == 1
