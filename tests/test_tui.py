@@ -218,6 +218,55 @@ def test_news_jump_between_unread(monkeypatch):
     assert scr._current().number == 3
 
 
+def test_news_reader_pages_with_left_right(monkeypatch):
+    from gest.core.software.news import NewsItem, parse_content
+    from gest.tui.screens.news import NewsReaderScreen
+    raw = "  Title  Long\n\n" + "\n".join(f"line {i}" for i in range(40))
+    app = App()
+    reader = NewsReaderScreen(app, NewsItem(1, "-", "2020-01-01", "Long"),
+                              parse_content(raw))
+    app._stack.append(reader)
+    size = (60, 8)
+    reader.render(size, focus=True)                       # establish the page size
+    reader.keypress(size, "right")                        # → next page
+    paged = reader._walker.focus
+    assert paged > 0
+    reader.keypress(size, "left")                         # ← previous page
+    assert reader._walker.focus < paged
+
+
+def test_news_enter_previews_then_fullscreen(monkeypatch):
+    from gest.core.software.news import NewsItem
+    from gest.tui.screens.news import NewsReaderScreen
+    items = [NewsItem(1, "N", "2019-01-01", "First")]
+    app, scr = _news_screen(monkeypatch, items,
+                            content="  Title  First\n\nBody of the first item.")
+    scr._item_walker.set_focus(0)
+    scr.keypress(_SIZE, "enter")                          # 1st Enter → preview
+    _pump(app, lambda: scr._previewed is not None, ticks=200)
+    assert scr._previewed.number == 1
+    assert "Body of the first item." in _render(scr)      # shown in the preview
+    _pump(app, lambda: bool(_FakeSoftwareBackend.news_read), ticks=200)
+    assert _FakeSoftwareBackend.news_read == ["1"]        # and marked read
+    scr.keypress(_SIZE, "enter")                          # 2nd Enter → full screen
+    _pump(app, lambda: isinstance(app._stack[-1], NewsReaderScreen), ticks=200)
+    assert isinstance(app._stack[-1], NewsReaderScreen)
+
+
+def test_news_action_bar_read_button(monkeypatch):
+    from gest.core.software.news import NewsItem
+    items = [NewsItem(1, "N", "2019-01-01", "First")]
+    app, scr = _news_screen(monkeypatch, items)
+    out = _render(scr)
+    assert "[Exit]" in out and "[Read]" in out            # two Tab-able buttons
+    scr.keypress(_SIZE, "tab")                            # list → Exit
+    scr.keypress(_SIZE, "tab")                            # Exit → Read
+    assert scr._on_action_row()
+    scr.keypress(_SIZE, "enter")                          # activate Read → preview
+    _pump(app, lambda: scr._previewed is not None, ticks=200)
+    assert scr._previewed.number == 1
+
+
 def test_screen_status_line():
     app = App()
     menu = MenuScreen(app)

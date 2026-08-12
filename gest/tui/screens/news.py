@@ -1,10 +1,11 @@
 """Portage news viewer (urwid): list items, read content, mark read.
 
-Two panes — the item list (● = unread) with an unread count, and the read
-item's content (styled header block + word-wrapped body + highlighted footnote
-links). Enter reads an item and marks it read; r marks the focused item read;
-a marks all read. Reads are persisted through the backend (eselect news read,
-polkit-gated); the ● clears optimistically for immediate feedback.
+The item list (● = unread) with an unread count, a read-item preview pane, and
+Tab-able [Exit] / [Read] buttons. Enter previews the focused item (and marks it
+read); a second Enter on the same item opens it full-screen. u filters to
+unread only; n/p jump between unread; r / a mark the focused / all items read.
+Reads are persisted through the backend (eselect news read, polkit-gated); the
+● clears optimistically for immediate feedback.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ import urwid
 from gest.core.software import news
 from gest.core.software.backend_client import SoftwareBackend
 from gest.core.software.news import NewsItem
-from gest.tui.runtime import App, NavPile, Screen, ansi_markup, boxed
+from gest.tui.runtime import App, NavPile, Screen, ansi_markup, boxed, focusable_actions
 
 _LINK = re.compile(r"^\s*\[\d+\]\s")   # a "[1] https://…" footnote line
 
@@ -47,43 +48,47 @@ class NewsScreen(Screen):
         self._items: list[NewsItem] = []        # every item
         self._visible: list[NewsItem] = []      # what the list currently shows
         self._unread_only = False
+        self._previewed: NewsItem | None = None  # item shown in the preview pane
         self._item_walker = urwid.SimpleFocusListWalker([urwid.Text(" loading …")])
         self._list = urwid.ListBox(self._item_walker)
         self._content_walker = urwid.SimpleFocusListWalker(
-            [urwid.Text("Select an item and press Enter to read it.")])
+            [urwid.Text("Select an item and press Enter to read it "
+                        "(Enter again for full screen).")])
         self._content = urwid.ListBox(self._content_walker)
         self._count = urwid.Text("")
+        self._actions = focusable_actions([
+            ("Exit", app.pop), ("Read", self._activate_read)])
         self._pile = NavPile([
             ("weight", 2, boxed(self._list, title="Portage news")),
             ("pack", self._count),
             ("weight", 1, boxed(self._content, title="Content")),
+            ("pack", self._actions),
         ])
         super().__init__(
             app, self._pile, title="Portage News",
-            footer_keys=[("Enter", "Read"), ("Tab", "Content"), ("Esc", "Back")],
+            footer_keys=[("Enter", "Read"), ("Esc", "Back")],
             help_text=(
                 "Gentoo news items relevant to this system.\n\n"
                 "●   marks an unread item.\n"
-                "Enter   read the item in the preview pane (and mark it read)\n"
-                "f       read the item full-screen (better for long items)\n"
+                "Enter   read the item in the preview pane (and mark it read);\n"
+                "        Enter again on the same item opens it full-screen\n"
                 "u       toggle showing only unread items\n"
                 "n / p   jump to the next / previous unread item\n"
                 "r       mark the highlighted item read\n"
                 "a       mark all items read\n"
-                "Tab     switch to the content pane   ↑/↓ scrolls it\n"
-                "Esc     back to the list, then out"))
-        self.configure_pane_cycle(self._pile, [0, 2])   # Tab toggles list/content
+                "Tab     move to the Exit / Read buttons\n"
+                "Esc     back to the menu"))
+        self.configure_pane_cycle(self._pile, [0], action_row=self._actions)
         self._refresh_footer()
         app.run_async(self._load())
 
     def _footer_context(self):
-        if self._pile.focus_position == 0:              # news list
-            return [("Enter", "Read"), ("f", "Full screen"),
-                    ("u", "Show all" if self._unread_only else "Unread only"),
-                    ("n/p", "Jump unread"), ("a", "All read"),
-                    ("Tab", "Content"), ("Esc", "Back")]
-        return [("↑↓", "Scroll"), ("f", "Full screen"),
-                ("Tab", "List"), ("Esc", "List")]       # content
+        if self._on_action_row():
+            return [("Enter", "Activate"), ("Tab", "Next"), ("Esc", "Back")]
+        return [("Enter", "Read"),
+                ("u", "Show all" if self._unread_only else "Unread only"),
+                ("n/p", "Jump unread"), ("r", "Mark read"), ("a", "All read"),
+                ("Tab", "Buttons"), ("Esc", "Back")]
 
     # -- loading / list -----------------------------------------------------
 
@@ -157,6 +162,19 @@ class NewsScreen(Screen):
                 self._item_walker.set_focus(i)
                 return
 
+    def _activate_read(self) -> None:
+        """Enter / the Read button: first press previews the item (and marks it
+        read); a second press on the same item opens it full-screen."""
+        item = self._current()
+        if item is None:
+            return
+        if item is self._previewed:
+            self.app.run_async(self._read_fullscreen(item))
+        else:
+            self._previewed = item
+            self.app.run_async(self._read(item))
+            self.app.run_async(self._mark(str(item.number), silent=True))
+
     async def _read(self, item: NewsItem) -> None:
         raw = await self.app.run_blocking(news.read_news, item.number)
         self._content_walker[:] = _content_rows(news.parse_content(raw))
@@ -191,36 +209,35 @@ class NewsScreen(Screen):
 
     def handle_key(self, key):
         if key == "esc":
-            if self._pile.focus_position != 0:
-                self._pile.focus_position = 0    # content → list
-            else:
-                self.app.pop()
+            self.app.pop()
+            return None
+        if self._on_action_row():
+            return key                           # nav owns Tab / Enter on buttons
+        if key == "enter":
+            self._activate_read()                # preview, or full-screen on repeat
             return None
         item = self._current()
-        if key in ("f", "F") and item is not None:   # full-screen the focused item
+        if key in ("f", "F") and item is not None:   # direct full-screen shortcut
             self.app.run_async(self._read_fullscreen(item))
             self.app.run_async(self._mark(str(item.number), silent=True))
             return None
-        if self._pile.focus_position == 0 and self._items:
-            if key == "enter" and item is not None:
-                self.app.run_async(self._read(item))
-                self.app.run_async(self._mark(str(item.number), silent=True))
-                return None
-            if key == "r" and item is not None:
-                self.app.run_async(self._mark(str(item.number)))
-                return None
-            if key == "a":
-                self.app.run_async(self._mark("all"))
-                return None
-            if key in ("u", "U"):
-                self._toggle_filter()
-                return None
-            if key == "n":
-                self._jump_unread(1)
-                return None
-            if key == "p":
-                self._jump_unread(-1)
-                return None
+        if not self._items:
+            return key
+        if key in ("u", "U"):
+            self._toggle_filter()
+            return None
+        if key == "n":
+            self._jump_unread(1)
+            return None
+        if key == "p":
+            self._jump_unread(-1)
+            return None
+        if key == "r" and item is not None:
+            self.app.run_async(self._mark(str(item.number)))
+            return None
+        if key == "a":
+            self.app.run_async(self._mark("all"))
+            return None
         return key
 
 
@@ -228,17 +245,24 @@ class NewsReaderScreen(Screen):
     """Full-screen reader for a single news item — better for long items.
 
     Shows the styled item (header + word-wrapped body + links) across the whole
-    pane; ↑/↓ and PageUp/PageDown scroll. Esc returns to the news list.
+    pane; ↑/↓ scroll a line, ←/→ page back/forward. Esc returns to the list.
     """
 
+    # ← previous page, → next page — remapped onto the ListBox's paging.
+    _PAGE = {"left": "page up", "right": "page down"}
+
     def __init__(self, app: App, item: NewsItem, parsed: news.NewsContent) -> None:
-        walker = urwid.SimpleFocusListWalker(_content_rows(parsed))
+        self._walker = urwid.SimpleFocusListWalker(_content_rows(parsed))
         super().__init__(
-            app, boxed(urwid.ListBox(walker), title=item.title),
+            app, boxed(urwid.ListBox(self._walker), title=item.title),
             title="Portage News",
-            footer_keys=[("↑/↓", "Scroll"), ("PgUp/PgDn", "Page"), ("Esc", "Back")],
+            footer_keys=[("↑/↓", "Scroll"), ("←/→", "Page"), ("Esc", "Back")],
             help_text=("Reading a Portage news item full-screen.\n"
-                       "↑/↓ and PageUp/PageDown scroll.  Esc returns to the list."))
+                       "↑/↓ scroll a line · ←/→ page back / forward · "
+                       "Esc returns to the list."))
+
+    def keypress(self, size, key):
+        return super().keypress(size, self._PAGE.get(key, key))
 
     def handle_key(self, key):
         if key == "esc":
