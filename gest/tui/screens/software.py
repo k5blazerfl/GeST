@@ -25,7 +25,7 @@ from gest.tui.screens.binhost import BinhostScreen
 from gest.tui.screens.config import KeywordsScreen, UseFlagScreen
 from gest.tui.screens.loading import _STEP_ATTR, _STEP_GLYPH, LoadingScreen
 from gest.tui.screens.news import NewsScreen
-from gest.tui.screens.proposal import ProposalScreen
+from gest.tui.screens.proposal import ProposalLoadingScreen
 from gest.tui.screens.sync import SyncLoadingScreen
 from gest.tui.screens.update import UpdateLoadingScreen
 
@@ -577,7 +577,7 @@ class SoftwareScreen(Screen):
         if not installs and not binpkgs and not binprefs and not removes:
             self.app.notify("Mark packages with Space or r first.", error=True)
             return
-        self.app.push(ProposalScreen(
+        self.app.push(ProposalLoadingScreen(
             self.app, installs=installs, binpkgs=binpkgs, binprefs=binprefs,
             removes=removes, on_done=self._after))
 
@@ -709,7 +709,7 @@ class SoftwareScreen(Screen):
             elif in_table and self._table_mode == "categories" and self._categories:
                 self.app.run_async(self._load_category(self._categories[self._walker.focus]))
             elif in_table and self._cps:
-                self.app.push(ProposalScreen(
+                self.app.push(ProposalLoadingScreen(
                     self.app, installs=[self._cps[self._walker.focus]],
                     on_done=self._after))
             return None

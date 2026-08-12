@@ -17,7 +17,42 @@ from gest.core.software.update import human_size
 from gest.tui.runtime import App, NavPile, Screen, boxed, focusable_actions
 from gest.tui.screens.accept import AcceptRunScreen
 from gest.tui.screens.autoaccept import AutoAccept
+from gest.tui.screens.loading import LoadingScreen
 from gest.tui.screens.runscreen import clip, row
+
+
+async def _resolve(app, installs, binpkgs, binprefs, removes, set_phase):
+    """Run ``emerge --pretend`` for the marked changes; return (changes, orphans,
+    errors). ``set_phase(text)`` narrates each step. Shared by the loading screen
+    and ProposalScreen so both resolve identically."""
+    changes: list = []
+    orphans: list = []
+    errors: list[str] = []
+
+    async def step(phase, fn):
+        set_phase(phase)
+        r = await app.run_blocking(fn)
+        if not r.ok:
+            errors.append(r.summary)
+        return r
+
+    if installs:
+        r = await step("Resolving installs …",
+                       lambda: preview.preview_install_many(installs))
+        changes += update.parse_changes(r.output)
+    if binpkgs:
+        r = await step("Resolving binary installs …",
+                       lambda: preview.preview_install_binary_many(binpkgs, only=True))
+        changes += update.parse_changes(r.output)
+    if binprefs:
+        r = await step("Resolving installs (prefer binary) …",
+                       lambda: preview.preview_install_binary_many(binprefs, only=False))
+        changes += update.parse_changes(r.output)
+    if removes:
+        r = await step("Resolving removals …",
+                       lambda: preview.preview_depclean_many(removes))
+        orphans += cleanup.parse_orphans(r.output)
+    return changes, orphans, errors
 
 _G_W, _CAT_W, _PKG_W, _CHG_W, _SZ_W = 2, 16, 24, 22, 11
 
@@ -60,7 +95,7 @@ class ProposalScreen(AutoAccept, Screen):
     """Resolved review of the marked changes, shown before they are applied."""
 
     def __init__(self, app: App, *, installs=(), binpkgs=(), binprefs=(),
-                 removes=(), on_done=None):
+                 removes=(), on_done=None, resolved=None):
         self._installs = list(installs)
         self._binpkgs = list(binpkgs)
         self._binprefs = list(binprefs)
@@ -105,7 +140,10 @@ class ProposalScreen(AutoAccept, Screen):
                 "Lead glyph:  + new   ↑ update   ⟳ rebuild   - remove.\n"
                 "F10 applies the proposal; Esc cancels back to the package list."))
         self.configure_pane_cycle(body, [2], action_row=self._actions)
-        app.run_async(self._compute())
+        if resolved is not None:
+            self._finalize(*resolved)          # resolved by the loading screen
+        else:
+            app.run_async(self._compute())
 
     def _footer_context(self):
         if self._timer_running:
@@ -127,36 +165,11 @@ class ProposalScreen(AutoAccept, Screen):
     # -- resolve ------------------------------------------------------------
 
     async def _compute(self) -> None:
-        changes: list = []
-        orphans: list = []
-        errors: list[str] = []
+        resolved = await _resolve(self.app, self._installs, self._binpkgs,
+                                  self._binprefs, self._removes, self._set_phase)
+        self._finalize(*resolved)
 
-        async def step(phase, fn):
-            self._set_phase(phase)
-            r = await self.app.run_blocking(fn)
-            if not r.ok:
-                errors.append(r.summary)
-            return r
-
-        if self._installs:
-            r = await step("Resolving installs …",
-                           lambda: preview.preview_install_many(self._installs))
-            changes += update.parse_changes(r.output)
-        if self._binpkgs:
-            r = await step("Resolving binary installs …",
-                           lambda: preview.preview_install_binary_many(
-                               self._binpkgs, only=True))
-            changes += update.parse_changes(r.output)
-        if self._binprefs:
-            r = await step("Resolving installs (prefer binary) …",
-                           lambda: preview.preview_install_binary_many(
-                               self._binprefs, only=False))
-            changes += update.parse_changes(r.output)
-        if self._removes:
-            r = await step("Resolving removals …",
-                           lambda: preview.preview_depclean_many(self._removes))
-            orphans += cleanup.parse_orphans(r.output)
-
+    def _finalize(self, changes, orphans, errors) -> None:
         self._items = ([_from_change(c) for c in changes]
                        + [_from_orphan(o) for o in orphans])
         self._n_install = len(changes)
@@ -240,3 +253,47 @@ class ProposalScreen(AutoAccept, Screen):
             self.app, installs=self._installs, binpkgs=self._binpkgs,
             binprefs=self._binprefs, removes=self._removes,
             on_done=self._on_done))
+
+
+class ProposalLoadingScreen(LoadingScreen):
+    """Branded resolve: run emerge --pretend behind the loading screen, then
+    hand the resolved plan to :class:`ProposalScreen` for review."""
+
+    def __init__(self, app: App, *, installs=(), binpkgs=(), binprefs=(),
+                 removes=(), on_done=None) -> None:
+        self._installs = list(installs)
+        self._binpkgs = list(binpkgs)
+        self._binprefs = list(binprefs)
+        self._removes = list(removes)
+        self._on_done = on_done
+        super().__init__(
+            app,
+            [{"key": "resolve", "label": "Resolve with emerge",
+              "status": "pending", "detail": ""}],
+            title="Software Management",
+            subtitle="Resolving the proposal",
+            help_text=(
+                "Resolving what emerge would actually do for the packages you\n"
+                "marked (emerge --pretend), including the dependencies pulled in.\n"
+                "Esc cancels and returns to the package list."))
+
+    async def _run(self) -> None:
+        self._set_step("resolve", "active")
+        changes, orphans, errors = await _resolve(
+            self.app, self._installs, self._binpkgs, self._binprefs,
+            self._removes, self._set_phase)
+        self._bar.set_completion(1)
+        n = len(changes) + len(orphans)
+        if errors:
+            self._set_step("resolve", "failed", "problems")
+            self._set_phase("Resolution reported problems — review below.", "error")
+        else:
+            self._set_step("resolve", "done",
+                           f"{n} change{'s' if n != 1 else ''}")
+            self._set_phase("Ready.", "ok")
+        if self.app._stack and self.app._stack[-1] is self:   # not cancelled
+            self.app.replace(ProposalScreen(
+                self.app, resolved=(changes, orphans, errors),
+                installs=self._installs, binpkgs=self._binpkgs,
+                binprefs=self._binprefs, removes=self._removes,
+                on_done=self._on_done))

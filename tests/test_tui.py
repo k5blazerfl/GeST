@@ -830,12 +830,15 @@ def test_software_provides_view_resolves_file_owner():
 
 
 def test_software_accept_opens_proposal():
-    from gest.tui.screens.proposal import ProposalScreen
+    from gest.tui.screens.proposal import ProposalLoadingScreen, ProposalScreen
     app = App()
     scr = _software(app)
     scr.keypress(_SIZE, "tab")    # focus table
     scr.keypress(_SIZE, " ")      # mark one
-    scr.keypress(_SIZE, "f10")    # Accept → resolved proposal first
+    scr.keypress(_SIZE, "f10")    # Accept → branded resolve screen first
+    assert isinstance(app._stack[-1], ProposalLoadingScreen)
+    # It resolves behind the logo, then hands off to the review screen.
+    _pump(app, lambda: isinstance(app._stack[-1], ProposalScreen), ticks=300)
     assert isinstance(app._stack[-1], ProposalScreen)
 
 
