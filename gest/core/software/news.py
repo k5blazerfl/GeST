@@ -91,15 +91,17 @@ def parse_content(text: str) -> NewsContent:
     return NewsContent(headers, body)
 
 
-def mark_read_argv(selector: str, eselect: str = "eselect") -> list[str]:
-    """Build the ``eselect news read`` argv, validating the selector.
+def mark_read_argv(selector: str, eselect: str = "eselect", *,
+                   read: bool = True) -> list[str]:
+    """Build the ``eselect news read`` / ``unread`` argv, validating the selector.
 
     ``selector`` is ``"all"``, ``"new"``, or a positive item number (as a
-    string). Kept here — pure and dependency-free — so the root backend and the
-    tests share one validated command shape rather than trusting a bus caller.
-    Raises :class:`ValueError` on anything else.
+    string). ``read=False`` marks the item unread instead. Kept here — pure and
+    dependency-free — so the root backend and the tests share one validated
+    command shape rather than trusting a bus caller. Raises :class:`ValueError`
+    on anything else.
     """
     sel = selector.strip()
     if not _SELECTOR.match(sel):
         raise ValueError(f"invalid news selector: {selector!r}")
-    return [eselect, "news", "read", sel]
+    return [eselect, "news", "read" if read else "unread", sel]

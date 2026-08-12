@@ -183,10 +183,10 @@ def test_news_full_screen_reader(monkeypatch):
     reader = app._stack[-1]
     out = _render(reader)
     assert "Big News" in out and "A long body line one." in out
+    reader.keypress(_SIZE, "esc")                         # Back → marks read
+    assert app._stack[-1] is scr                          # back to the list
     _pump(app, lambda: bool(_FakeSoftwareBackend.news_read), ticks=200)
-    assert _FakeSoftwareBackend.news_read == ["3"]        # 'f' also marked read
-    reader.keypress(_SIZE, "esc")                         # back to the list
-    assert app._stack[-1] is scr
+    assert _FakeSoftwareBackend.news_read == ["3"]
 
 
 def test_news_unread_only_filter(monkeypatch):
@@ -224,7 +224,7 @@ def test_news_reader_pages_with_left_right(monkeypatch):
     raw = "  Title  Long\n\n" + "\n".join(f"line {i}" for i in range(40))
     app = App()
     reader = NewsReaderScreen(app, NewsItem(1, "-", "2020-01-01", "Long"),
-                              parse_content(raw))
+                              parse_content(raw), on_close=lambda *a: None)
     app._stack.append(reader)
     size = (60, 8)
     reader.render(size, focus=True)                       # establish the page size
@@ -267,6 +267,37 @@ def test_news_action_bar_read_button(monkeypatch):
     assert scr._previewed.number == 1
 
 
+def test_news_reader_back_marks_read(monkeypatch):
+    from gest.core.software.news import NewsItem
+    from gest.tui.screens.news import NewsReaderScreen
+    items = [NewsItem(1, "N", "2019-01-01", "First")]
+    app, scr = _news_screen(monkeypatch, items, content="  Title  First\n\nBody.")
+    scr._item_walker.set_focus(0)
+    scr.keypress(_SIZE, "f")                              # full-screen (no auto-mark)
+    _pump(app, lambda: isinstance(app._stack[-1], NewsReaderScreen), ticks=200)
+    reader = app._stack[-1]
+    reader.keypress(_SIZE, "esc")                         # Esc = Back → marks read
+    assert app._stack[-1] is scr                          # back on the list
+    _pump(app, lambda: bool(_FakeSoftwareBackend.news_read), ticks=200)
+    assert _FakeSoftwareBackend.news_read == ["1"] and not items[0].unread
+
+
+def test_news_reader_mark_unread_button(monkeypatch):
+    from gest.core.software.news import NewsItem
+    from gest.tui.screens.news import NewsReaderScreen
+    items = [NewsItem(1, "-", "2019-01-01", "Already read")]   # starts read
+    app, scr = _news_screen(monkeypatch, items, content="  Title  X\n\nBody.")
+    scr._item_walker.set_focus(0)
+    scr.keypress(_SIZE, "f")
+    _pump(app, lambda: isinstance(app._stack[-1], NewsReaderScreen), ticks=200)
+    reader = app._stack[-1]
+    reader.keypress(_SIZE, "tab")                         # content → Mark Unread
+    reader.keypress(_SIZE, "enter")                       # activate Mark Unread
+    assert app._stack[-1] is scr
+    _pump(app, lambda: bool(_FakeSoftwareBackend.news_unread), ticks=200)
+    assert _FakeSoftwareBackend.news_unread == ["1"] and items[0].unread
+
+
 def test_screen_status_line():
     app = App()
     menu = MenuScreen(app)
@@ -293,6 +324,7 @@ class _FakeSoftwareBackend:
     synced: list[list[str]] = []
     deselected: list[list[str]] = []
     news_read: list[str] = []
+    news_unread: list[str] = []
 
     async def connect(self):
         return self
@@ -307,6 +339,10 @@ class _FakeSoftwareBackend:
 
     async def mark_news_read(self, selector):
         _FakeSoftwareBackend.news_read.append(selector)
+        return True
+
+    async def mark_news_unread(self, selector):
+        _FakeSoftwareBackend.news_unread.append(selector)
         return True
 
     async def _stream(self, on_progress=None, on_finished=None):
@@ -335,6 +371,7 @@ def _isolate_software_backend(monkeypatch):
     _FakeSoftwareBackend.synced.clear()
     _FakeSoftwareBackend.deselected.clear()
     _FakeSoftwareBackend.news_read.clear()
+    _FakeSoftwareBackend.news_unread.clear()
     for mod in ("software", "sync", "update", "cleanup", "accept", "world", "news"):
         monkeypatch.setattr(f"gest.tui.screens.{mod}.SoftwareBackend",
                             _FakeSoftwareBackend, raising=False)

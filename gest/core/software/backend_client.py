@@ -122,6 +122,10 @@ class SoftwareBackend:
         """Mark Portage news read (polkit-gated). selector: "all"/"new"/number."""
         return await self._iface.call_mark_news_read(selector)
 
+    async def mark_news_unread(self, selector: str) -> bool:
+        """Mark Portage news unread (polkit-gated). selector: a number/"all"."""
+        return await self._iface.call_mark_news_unread(selector)
+
     async def deselect(self, atoms) -> tuple[bool, str]:
         """Drop packages from @world (emerge --deselect); waits for the result.
 

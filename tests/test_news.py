@@ -34,6 +34,7 @@ def test_mark_read_argv_valid_selectors():
     assert news.mark_read_argv("7") == ["eselect", "news", "read", "7"]
     assert news.mark_read_argv(" 7 ") == ["eselect", "news", "read", "7"]
     assert news.mark_read_argv("3", "/usr/bin/eselect")[0] == "/usr/bin/eselect"
+    assert news.mark_read_argv("3", read=False) == ["eselect", "news", "unread", "3"]
 
 
 def test_mark_read_argv_rejects_bad_selectors():

@@ -97,6 +97,10 @@ _INTROSPECTION = f"""
       <arg type="s" name="selector" direction="in"/>
       <arg type="b" name="ok" direction="out"/>
     </method>
+    <method name="MarkNewsUnread">
+      <arg type="s" name="selector" direction="in"/>
+      <arg type="b" name="ok" direction="out"/>
+    </method>
     <method name="Deselect">
       <arg type="as" name="atoms" direction="in"/>
       <arg type="b" name="ok" direction="out"/>
@@ -230,7 +234,10 @@ class SoftwareService:
             self._sync_repos(names, sender, invocation)
         elif method == "MarkNewsRead":
             (selector,) = params.unpack()
-            self._mark_news_read(selector, sender, invocation)
+            self._mark_news(selector, True, sender, invocation)
+        elif method == "MarkNewsUnread":
+            (selector,) = params.unpack()
+            self._mark_news(selector, False, sender, invocation)
         elif method == "Deselect":
             (atoms,) = params.unpack()
             self._deselect(atoms, sender, invocation)
@@ -459,8 +466,9 @@ class SoftwareService:
 
     # -- news mark-read ------------------------------------------------------
 
-    def _mark_news_read(self, selector: str, sender: str, invocation) -> None:
-        """Mark Portage news items read via `eselect news read` (polkit-gated).
+    def _mark_news(self, selector: str, read: bool, sender: str,
+                   invocation) -> None:
+        """Mark Portage news items read / unread via `eselect news` (polkit).
 
         The news read-state under /var/lib/gentoo/news is root/portage-owned, so
         an unprivileged user often can't persist it — this does it for them.
@@ -468,10 +476,10 @@ class SoftwareService:
         if not self._check_authorized(sender, polkit_action("news")):
             invocation.return_error_literal(
                 Gio.dbus_error_quark(), Gio.DBusError.ACCESS_DENIED,
-                "Not authorized to mark news read")
+                "Not authorized to mark news")
             return
         try:
-            argv = news.mark_read_argv(selector, _ESELECT)
+            argv = news.mark_read_argv(selector, _ESELECT, read=read)
         except ValueError:
             invocation.return_error_literal(
                 Gio.dbus_error_quark(), Gio.DBusError.INVALID_ARGS,
