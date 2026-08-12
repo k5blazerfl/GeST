@@ -133,6 +133,36 @@
     </defaults>
   </action>
 
+  <action id="org.gentoo.gest.disk.partition">
+    <description>Partition a disk</description>
+    <message>Authentication is required to repartition a disk (this erases it)</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+
+  <action id="org.gentoo.gest.disk.mkfs">
+    <description>Create a filesystem</description>
+    <message>Authentication is required to create a filesystem (this erases the target)</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+
+  <action id="org.gentoo.gest.disk.swap">
+    <description>Configure swap space</description>
+    <message>Authentication is required to create or enable swap space</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+
   <action id="org.gentoo.gest.datetime.manage">
     <description>Set the system clock</description>
     <message>Authentication is required to set the system date and time</message>
