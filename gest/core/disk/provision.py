@@ -18,11 +18,12 @@ without touching a disk:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
 from gest.core.disk import commands
-from gest.core.disk.model import BlockDevice, DiskPlan
+from gest.core.disk.model import BlockDevice, DiskPlan, Filesystem, Partition
 from gest.core.exec.executor import Executor
 from gest.core.exec.runner import OnProgress, RunResult
 
@@ -174,6 +175,54 @@ def plan_steps(plan: DiskPlan) -> list[Step]:
     return steps
 
 
+def partition_device(disk_name: str, number: int) -> str:
+    """The partition node for ``number`` on ``disk_name`` (sda2, nvme0n1p2)."""
+    sep = "p" if disk_name[-1:].isdigit() else ""
+    return f"/dev/{disk_name}{sep}{number}"
+
+
+def uefi_plan(disk_name: str, esp_size: str, swap_size: str, root_fs: str) -> DiskPlan:
+    """Build a GPT/UEFI ``DiskPlan``: ESP + optional swap + root (fills the rest).
+
+    ``swap_size`` empty means no swap. Raises ``ValueError`` on an unsupported
+    root filesystem or a size/label the argv builders reject (checked eagerly via
+    :func:`plan_steps`).
+    """
+    if root_fs not in commands.FS_KINDS or root_fs == "swap":
+        raise ValueError(f"unsupported root filesystem: {root_fs!r}")
+    partitions: list[Partition] = []
+    filesystems: list[Filesystem] = []
+    number = 1
+    partitions.append(Partition(number, esp_size, "EF00", "ESP"))
+    filesystems.append(Filesystem(partition_device(disk_name, number), "vfat", "ESP"))
+    number += 1
+    if swap_size:
+        partitions.append(Partition(number, swap_size, "8200", "swap"))
+        filesystems.append(Filesystem(partition_device(disk_name, number), "swap", "swap"))
+        number += 1
+    partitions.append(Partition(number, "rest", "8300", "root"))
+    filesystems.append(Filesystem(partition_device(disk_name, number), root_fs, "root"))
+    plan = DiskPlan(disk=f"/dev/{disk_name}", wipe=True,
+                    partitions=partitions, filesystems=filesystems)
+    plan_steps(plan)          # validate sizes/labels eagerly; raises ValueError
+    return plan
+
+
+def plan_phase_labels(plan: DiskPlan) -> list[str]:
+    """Coarse, one-per-phase labels for the backend path (and the apply UI).
+
+    Matches the phases :func:`apply_via_backend` walks: one partition phase, then
+    one per filesystem (a swap phase covers both mkswap and swapon).
+    """
+    labels = [f"Partition {plan.disk}"]
+    for fs in plan.filesystems:
+        if fs.kind == "swap":
+            labels.append(f"Enable swap on {fs.device}")
+        else:
+            labels.append(f"Make {fs.kind} on {fs.device}")
+    return labels
+
+
 async def apply_plan(
     plan: DiskPlan,
     executor: Executor,
@@ -181,19 +230,23 @@ async def apply_plan(
     proc_mounts_text: str,
     *,
     boot_source: str | None = None,
-    on_progress=None,
+    on_progress: OnProgress | None = None,
+    on_step: Callable[[int], None] | None = None,
 ) -> list[Step]:
     """Validate ``plan`` and run its pipeline through ``executor``.
 
     Raises :class:`DiskSafetyError` before running anything if validation fails,
-    or :class:`DiskApplyError` at the first step that exits non-zero. Returns the
+    or :class:`DiskApplyError` at the first step that exits non-zero. ``on_step``
+    is called with each step's index as it starts (for progress UI). Returns the
     steps that ran on success.
     """
     problems = validate_plan(plan, devices, proc_mounts_text, boot_source=boot_source)
     if problems:
         raise DiskSafetyError(problems)
     steps = plan_steps(plan)
-    for step in steps:
+    for index, step in enumerate(steps):
+        if on_step is not None:
+            on_step(index)
         result = await executor.run(step.argv, on_progress=on_progress)
         if result.code != 0:
             raise DiskApplyError(step, result)
@@ -220,15 +273,21 @@ class DiskProvisioner(Protocol):
 
 
 async def apply_via_backend(
-    plan: DiskPlan, backend: DiskProvisioner, *, on_progress: OnProgress | None = None
+    plan: DiskPlan,
+    backend: DiskProvisioner,
+    *,
+    on_progress: OnProgress | None = None,
+    on_step: Callable[[int], None] | None = None,
 ) -> None:
     """Apply ``plan`` through the root backend (installed-system path).
 
     The same plan, same order (partition → filesystems/swap) as the direct path,
     but each phase is a polkit-gated backend call that re-validates server-side.
-    Raises :class:`DiskApplyError` at the first phase the backend refuses or that
-    fails. (Callers should still pre-validate with :func:`validate_plan` for a
-    friendly message; the backend guard is the authoritative one.)
+    ``on_step`` is called with each phase index as it starts (see
+    :func:`plan_phase_labels`). Raises :class:`DiskApplyError` at the first phase
+    the backend refuses or that fails. (Callers should still pre-validate with
+    :func:`validate_plan` for a friendly message; the backend guard is the
+    authoritative one.)
     """
 
     def _fail(label: str, output: str) -> DiskApplyError:
@@ -238,13 +297,19 @@ async def apply_via_backend(
         if on_progress and output:
             on_progress(output.splitlines())
 
+    def _step(index: int) -> None:
+        if on_step is not None:
+            on_step(index)
+
+    _step(0)
     partitions = [(p.number, p.size, p.type_guid, p.label or "") for p in plan.partitions]
     ok, out = await backend.partition_disk(plan.disk, plan.wipe, partitions)
     _emit(out)
     if not ok:
         raise _fail(f"partition {plan.disk}", out)
 
-    for fs in plan.filesystems:
+    for phase, fs in enumerate(plan.filesystems, start=1):
+        _step(phase)
         if fs.kind == "swap":
             ok, out = await backend.make_swap(fs.device, fs.label or "")
             _emit(out)

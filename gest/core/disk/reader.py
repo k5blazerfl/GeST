@@ -18,6 +18,7 @@ from gest.core.disk.model import BlockDevice
 Runner = Callable[[list[str]], str]
 
 FSTAB = "/etc/fstab"
+PROC_MOUNTS = "/proc/mounts"
 
 
 def _mountpoint(entry: dict) -> str:
@@ -69,3 +70,12 @@ def read_fstab(path: str = FSTAB) -> list[FstabEntry]:
     except OSError:
         text = ""
     return fstab.parse_fstab(text)
+
+
+def read_proc_mounts(path: str = PROC_MOUNTS) -> str:
+    """The raw /proc/mounts text — fed to the provisioning safety validator."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return fh.read()
+    except OSError:
+        return ""
