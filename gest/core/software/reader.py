@@ -472,6 +472,24 @@ def invalidate_caches() -> None:
         _VARDB._clear_cache()
 
 
+def _repos_providing(cp: str) -> list[str]:
+    """Repository names that provide any version of ``cp``.
+
+    Gentoo lets the same package live in several repositories (the ::gentoo tree
+    plus overlays); this powers the detail pane's "also in" overlap note. Cheap:
+    ``cp_list`` is cached and there are only a handful of repos.
+    """
+    names: list[str] = []
+    for name in _PORTDB.getRepositories():
+        try:
+            path = _PORTDB.getRepositoryPath(name)
+            if path and _PORTDB.cp_list(cp, mytree=path):
+                names.append(name)
+        except Exception:                      # pragma: no cover - portage quirks
+            continue
+    return names
+
+
 def get_package_detail(cp: str) -> PackageDetail | None:
     """Metadata for the detail pane: best-available + installed versions.
 
@@ -487,9 +505,12 @@ def get_package_detail(cp: str) -> PackageDetail | None:
         src_db, src_cpv = _VARDB, inst[-1]
     else:
         return None
-    desc, slot, _repo, _iuse, _use, homepage, lic, kw = src_db.aux_get(src_cpv, _DETAIL_KEYS)
+    desc, slot, repo, _iuse, _use, homepage, lic, kw = src_db.aux_get(src_cpv, _DETAIL_KEYS)
+    providing = _repos_providing(cp)
     return PackageDetail(
         cp=cp,
+        repository=repo,
+        other_repos=[r for r in providing if r != repo],
         available_version=cpv_getversion(avail) if avail else "",
         installed_version=cpv_getversion(inst[-1]) if inst else "",
         slot=slot,

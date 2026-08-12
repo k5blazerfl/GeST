@@ -648,6 +648,24 @@ def test_software_two_pane_layout():
     assert "[Cancel]" in out and "[Accept]" in out  # YaST-style action bar
 
 
+def test_software_detail_shows_repository_and_overlap():
+    from gest.core.software.model import PackageDetail
+    app = App()
+    scr = _software(app)
+    d = PackageDetail(cp="app-misc/foo", available_version="1.2",
+                      description="demo", repository="gentoo",
+                      other_repos=["guru", "pentoo"])
+    text = "".join(p[1] if isinstance(p, tuple) else p
+                   for p in scr._render_detail("app-misc/foo", d))
+    assert "Repository: gentoo" in text                 # install source repo
+    assert "also in: guru, pentoo" in text              # overlap note
+    # no overlap → no "also in"
+    d2 = PackageDetail(cp="app-misc/bar", repository="gentoo")
+    text2 = "".join(p[1] if isinstance(p, tuple) else p
+                    for p in scr._render_detail("app-misc/bar", d2))
+    assert "Repository: gentoo" in text2 and "also in" not in text2
+
+
 def test_software_refreshes_only_flagged_non_main_repos_on_open(monkeypatch):
     from gest.core.repos.reader import Repo
     from gest.tui.screens import software as sw

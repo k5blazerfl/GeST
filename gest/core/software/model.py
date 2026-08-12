@@ -89,6 +89,8 @@ class PackageDetail:
     download_size: int = 0   # bytes, distfiles for the best available version
     from_binary: bool = False  # installed version came from a binary package
     required_by: list[str] = field(default_factory=list)  # installed dependents
+    repository: str = ""       # repo the shown version comes from (install source)
+    other_repos: list[str] = field(default_factory=list)  # other repos providing it
 
     @property
     def name(self) -> str:

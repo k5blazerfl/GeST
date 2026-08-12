@@ -506,6 +506,9 @@ class SoftwareScreen(Screen):
             ("field", "Version: "), f"{d.available_version or '—'}   ",
             ("field", "Installed: "), f"{d.installed_version or '—'}   ",
             ("field", "Slot: "), f"{d.slot}\n",
+            ("field", "Repository: "), d.repository or "—",
+            (f"   (also in: {', '.join(d.other_repos)})" if d.other_repos
+             else "") + "\n",
             ("field", "Origin: "),
             (("binary package" if d.from_binary else "source build")
              if d.installed else "—") + "\n",
