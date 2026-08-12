@@ -1040,6 +1040,75 @@ def test_proposal_immediate_mode_applies_without_timer(monkeypatch):
     assert isinstance(app._stack[-1], AcceptRunScreen)     # applied at once
 
 
+def _loading_proposal(monkeypatch, app, mode="timer"):
+    """A ProposalLoadingScreen (one install) whose resolve is stubbed, in
+    ``mode``; pushed onto the stack and returned. Its _run() is scheduled — the
+    caller pumps to drive resolve → accept-mode policy."""
+    from gest.core.software.preview import PreviewResult
+    from gest.tui.screens import proposal as proposal_mod
+    from gest.tui.screens.proposal import ProposalLoadingScreen
+    monkeypatch.setattr("gest.core.prefs.accept_mode", lambda *a, **k: mode)
+    monkeypatch.setattr(
+        proposal_mod.preview, "preview_install_many",
+        lambda atoms, **kw: PreviewResult(" ".join(atoms), 0,
+            "[ebuild  N     ] app-editors/vim-9.1  5,000 KiB\n"))
+    scr = ProposalLoadingScreen(app, installs=["app-editors/vim"])
+    app._stack.append(scr)
+    return scr
+
+
+def test_proposal_loading_manual_opens_review(monkeypatch):
+    from gest.tui.screens.proposal import ProposalScreen
+    app = App()
+    app._stack.append(urwid.Text("software list"))
+    _loading_proposal(monkeypatch, app, mode="manual")
+    _pump(app, lambda: isinstance(app._stack[-1], ProposalScreen), ticks=200)
+    assert isinstance(app._stack[-1], ProposalScreen)
+    assert not app._stack[-1]._timer_running        # manual → no countdown re-armed
+
+
+def test_proposal_loading_immediate_applies_without_review(monkeypatch):
+    from gest.tui.screens.accept import AcceptRunScreen
+    from gest.tui.screens.proposal import ProposalScreen
+    app = App()
+    app._stack.append(urwid.Text("software list"))
+    _loading_proposal(monkeypatch, app, mode="immediate")
+    _pump(app, lambda: isinstance(app._stack[-1], AcceptRunScreen), ticks=200)
+    assert isinstance(app._stack[-1], AcceptRunScreen)          # applied at once
+    assert not any(isinstance(w, ProposalScreen) for w in app._stack)  # no review
+
+
+def test_proposal_loading_timer_counts_down_on_screen(monkeypatch):
+    app = App()
+    app._stack.append(urwid.Text("software list"))
+    scr = _loading_proposal(monkeypatch, app, mode="timer")
+    _pump(app, lambda: scr._timer_running, ticks=200)           # countdown on the
+    assert scr._timer_running                                   # branded screen
+    _pump(app, lambda: "applying in" in scr._phase.get_text()[0].lower(), ticks=100)
+    assert ("Enter", "Apply now") in scr._footer_context()
+
+
+def test_proposal_loading_timer_auto_applies(monkeypatch):
+    from gest.tui.screens.accept import AcceptRunScreen
+    monkeypatch.setattr("gest.core.prefs.timer_seconds", lambda *a, **k: 1)  # fast
+    app = App()
+    app._stack.append(urwid.Text("software list"))
+    _loading_proposal(monkeypatch, app, mode="timer")
+    _pump(app, lambda: isinstance(app._stack[-1], AcceptRunScreen), ticks=300)
+    assert isinstance(app._stack[-1], AcceptRunScreen)         # applied on its own
+
+
+def test_proposal_loading_esc_during_countdown_opens_review(monkeypatch):
+    from gest.tui.screens.proposal import ProposalScreen
+    app = App()
+    app._stack.append(urwid.Text("software list"))
+    scr = _loading_proposal(monkeypatch, app, mode="timer")
+    _pump(app, lambda: scr._timer_running, ticks=200)
+    scr.keypress(_SIZE, "esc")                       # Esc → drop to manual review
+    assert isinstance(app._stack[-1], ProposalScreen)
+    assert not app._stack[-1]._timer_running         # review, not a new countdown
+
+
 def _cleanup_with_orphans(monkeypatch, app, mode="timer"):
     """A CleanupScreen scanned to one orphan in ``mode``; ``_clean`` is spied.
 

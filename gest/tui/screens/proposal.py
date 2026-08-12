@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import urwid
 
+from gest.core import prefs
 from gest.core.software import cleanup, preview, update
 from gest.core.software.update import human_size
 from gest.tui.runtime import App, NavPile, Screen, boxed, focusable_actions
@@ -95,12 +96,14 @@ class ProposalScreen(AutoAccept, Screen):
     """Resolved review of the marked changes, shown before they are applied."""
 
     def __init__(self, app: App, *, installs=(), binpkgs=(), binprefs=(),
-                 removes=(), on_done=None, resolved=None):
+                 removes=(), on_done=None, resolved=None, auto=True):
         self._installs = list(installs)
         self._binpkgs = list(binpkgs)
         self._binprefs = list(binprefs)
         self._removes = list(removes)
         self._on_done = on_done
+        self._auto = auto           # False when the loading screen already ran
+                                    # the accept-mode policy (manual review only)
         self._items: list[_Item] = []
         self._n_install = 0
         self._n_remove = 0
@@ -182,7 +185,7 @@ class ProposalScreen(AutoAccept, Screen):
         # Hand off to the accept-mode policy — but only when there is something
         # to apply and it resolved cleanly. On an error or an empty plan the user
         # reviews and dismisses it manually (no surprise run).
-        if self._items and not self._error:
+        if self._auto and self._items and not self._error:
             self.arm_auto_accept()
 
     # -- render -------------------------------------------------------------
@@ -255,9 +258,13 @@ class ProposalScreen(AutoAccept, Screen):
             on_done=self._on_done))
 
 
-class ProposalLoadingScreen(LoadingScreen):
-    """Branded resolve: run emerge --pretend behind the loading screen, then
-    hand the resolved plan to :class:`ProposalScreen` for review."""
+class ProposalLoadingScreen(AutoAccept, LoadingScreen):
+    """Branded resolve + auto-accept: run emerge --pretend behind the loading
+    screen, then apply the accept-mode policy right here — apply at once
+    (immediate), count down on the branded screen (timer, Enter applies now /
+    Esc drops to review), or hand off to :class:`ProposalScreen` (manual)."""
+
+    _auto_action = "Applying"
 
     def __init__(self, app: App, *, installs=(), binpkgs=(), binprefs=(),
                  removes=(), on_done=None) -> None:
@@ -266,6 +273,7 @@ class ProposalLoadingScreen(LoadingScreen):
         self._binprefs = list(binprefs)
         self._removes = list(removes)
         self._on_done = on_done
+        self._resolved = None
         super().__init__(
             app,
             [{"key": "resolve", "label": "Resolve with emerge",
@@ -275,6 +283,11 @@ class ProposalLoadingScreen(LoadingScreen):
             help_text=(
                 "Resolving what emerge would actually do for the packages you\n"
                 "marked (emerge --pretend), including the dependencies pulled in.\n"
+                "When it resolves cleanly it applies per your accept-mode "
+                "preference:\n"
+                "  · immediate — applies at once\n"
+                "  · timer — counts down here; Enter applies now, Esc reviews\n"
+                "  · manual — opens the resolved proposal to review and confirm\n"
                 "Esc cancels and returns to the package list."))
 
     async def _run(self) -> None:
@@ -282,18 +295,62 @@ class ProposalLoadingScreen(LoadingScreen):
         changes, orphans, errors = await _resolve(
             self.app, self._installs, self._binpkgs, self._binprefs,
             self._removes, self._set_phase)
-        self._bar.set_completion(1)
+        self._resolved = (changes, orphans, errors)
         n = len(changes) + len(orphans)
         if errors:
             self._set_step("resolve", "failed", "problems")
-            self._set_phase("Resolution reported problems — review below.", "error")
+            self._bar.set_completion(1)
+            self._to_review()                    # show the problems in review
+            return
+        self._set_step("resolve", "done",
+                       f"{n} change{'s' if n != 1 else ''}")
+        # Nothing to do, or the user wants to eyeball every plan: hand off to
+        # the review screen. Otherwise apply the accept-mode policy right here —
+        # immediate applies at once, timer counts down on this branded screen.
+        if not (changes or orphans) or prefs.accept_mode() == prefs.MANUAL:
+            self._bar.set_completion(1)
+            self._to_review()
         else:
-            self._set_step("resolve", "done",
-                           f"{n} change{'s' if n != 1 else ''}")
             self._set_phase("Ready.", "ok")
-        if self.app._stack and self.app._stack[-1] is self:   # not cancelled
-            self.app.replace(ProposalScreen(
-                self.app, resolved=(changes, orphans, errors),
-                installs=self._installs, binpkgs=self._binpkgs,
+            self.arm_auto_accept()
+
+    # -- auto-accept (AutoAccept hooks) -------------------------------------
+
+    def _auto_progress(self, remaining: int, frac: float) -> None:
+        self._bar.set_completion(frac)
+        self._set_phase(f"{self._auto_action} in {remaining}s — "
+                        "Enter applies now, Esc reviews.", "ok")
+
+    def _auto_apply(self) -> None:
+        if self.app._stack and self.app._stack[-1] is self:     # not cancelled
+            self.app.replace(AcceptRunScreen(
+                self.app, installs=self._installs, binpkgs=self._binpkgs,
                 binprefs=self._binprefs, removes=self._removes,
                 on_done=self._on_done))
+
+    def _to_review(self) -> None:
+        if self.app._stack and self.app._stack[-1] is self:     # not cancelled
+            self.app.replace(ProposalScreen(
+                self.app, resolved=self._resolved,
+                installs=self._installs, binpkgs=self._binpkgs,
+                binprefs=self._binprefs, removes=self._removes,
+                on_done=self._on_done, auto=False))
+
+    # -- keys / footer ------------------------------------------------------
+
+    def _footer_context(self):
+        if self._timer_running:
+            return [("Enter", "Apply now"), ("Esc", "Review")]
+        return self._base_footer_keys
+
+    def handle_key(self, key):
+        outcome = self._auto_key(key)            # Enter/F10 apply now · Esc review
+        if outcome == "applied":
+            return None
+        if outcome == "stopped":                 # Esc during countdown → review
+            self._to_review()
+            return None
+        if key == "esc":
+            self.app.pop()                       # cancel resolve → package list
+            return None
+        return key

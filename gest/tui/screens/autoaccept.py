@@ -47,12 +47,7 @@ class AutoAccept:
             if not self._timer_running:
                 return                           # stopped mid-count
             remaining = math.ceil(total - step / _SUBSTEPS)
-            filled = round(step / steps * _BAR_W)
-            self._auto_set_status([
-                ("ok", f" {self._auto_action} in {remaining}s   "),
-                ("ok", "█" * filled),
-                ("dim", "░" * (_BAR_W - filled)),
-            ])
+            self._auto_progress(remaining, step / steps)
             self.app.refresh()
             await asyncio.sleep(1 / _SUBSTEPS)
         # Re-check the flag and that we're still the top screen: a stop in the
@@ -60,6 +55,17 @@ class AutoAccept:
         if self._timer_running and self.app._stack and self.app._stack[-1] is self:
             self._timer_running = False
             self._auto_apply()
+
+    def _auto_progress(self, remaining: int, frac: float) -> None:
+        """Render one countdown frame. Default: a text progress bar written
+        through ``_auto_set_status``. The branded loading screen overrides this
+        to drive its real ProgressBar and phase line instead."""
+        filled = round(frac * _BAR_W)
+        self._auto_set_status([
+            ("ok", f" {self._auto_action} in {remaining}s   "),
+            ("ok", "█" * filled),
+            ("dim", "░" * (_BAR_W - filled)),
+        ])
 
     def _auto_key(self, key):
         """Handle a key while counting down.
