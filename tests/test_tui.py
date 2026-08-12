@@ -325,9 +325,13 @@ class _FakeSoftwareBackend:
     deselected: list[list[str]] = []
     news_read: list[str] = []
     news_unread: list[str] = []
+    busy_status: tuple[bool, str] = (False, "")   # (busy, operation) for the lock
 
     async def connect(self):
         return self
+
+    async def package_status(self):
+        return _FakeSoftwareBackend.busy_status
 
     async def sync_repos(self, names):
         _FakeSoftwareBackend.synced.append(list(names))
@@ -372,7 +376,9 @@ def _isolate_software_backend(monkeypatch):
     _FakeSoftwareBackend.deselected.clear()
     _FakeSoftwareBackend.news_read.clear()
     _FakeSoftwareBackend.news_unread.clear()
-    for mod in ("software", "sync", "update", "cleanup", "accept", "world", "news"):
+    _FakeSoftwareBackend.busy_status = (False, "")
+    for mod in ("software", "sync", "update", "cleanup", "accept", "world",
+                "news", "menu"):
         monkeypatch.setattr(f"gest.tui.screens.{mod}.SoftwareBackend",
                             _FakeSoftwareBackend, raising=False)
 
@@ -1431,8 +1437,9 @@ def test_menu_launches_software():
     menu = MenuScreen(app)
     app._stack.append(menu)
     menu.keypress(_SIZE, "enter")  # Software category -> modules (Software Mgmt first)
-    menu.keypress(_SIZE, "enter")  # launch
+    menu.keypress(_SIZE, "enter")  # launch (async: clears the package lock first)
     # the fullscreen loading screen opens first, then hands off to SoftwareScreen
+    _pump(app, lambda: isinstance(app._stack[-1], SoftwareLoadingScreen), ticks=200)
     assert isinstance(app._stack[-1], SoftwareLoadingScreen)
     _pump(app, lambda: isinstance(app._stack[-1], SoftwareScreen), ticks=400)
     assert isinstance(app._stack[-1], SoftwareScreen)
@@ -2792,8 +2799,53 @@ def test_menu_launches_repos():
     menu.keypress(_SIZE, "enter")          # Software category, focus modules
     menu.keypress(_SIZE, "down")           # Software Management -> World & Package Sets
     menu.keypress(_SIZE, "down")           # -> Software Repositories
-    menu.keypress(_SIZE, "enter")
+    menu.keypress(_SIZE, "enter")          # async: clears the package lock first
+    _pump(app, lambda: isinstance(app._stack[-1], ReposScreen), ticks=200)
     assert isinstance(app._stack[-1], ReposScreen)
+
+
+def test_menu_blocks_package_module_when_backend_busy():
+    from gest.tui.screens.software import SoftwareLoadingScreen
+    _FakeSoftwareBackend.busy_status = (True, "Updating the system")
+    app = App()
+    menu = MenuScreen(app)
+    app._stack.append(menu)
+    menu.keypress(_SIZE, "enter")          # Software category -> modules
+    menu.keypress(_SIZE, "enter")          # try to launch Software Management
+    _pump(app, lambda: isinstance(app._stack[-1], urwid.Overlay), ticks=200)
+    out = _render(app._stack[-1])
+    assert "Package management locked" in out
+    assert "Updating the system" in out    # names the operation
+    assert not any(isinstance(w, SoftwareLoadingScreen) for w in app._stack)
+
+
+def test_menu_allows_readonly_module_when_backend_busy():
+    from gest.tui.screens.news import NewsScreen
+    _FakeSoftwareBackend.busy_status = (True, "Syncing the Portage tree")
+    app = App()
+    menu = MenuScreen(app)
+    app._stack.append(menu)
+    # Portage News is the 7th Software module; read-only, so never locked.
+    menu.keypress(_SIZE, "enter")
+    for _ in range(6):
+        menu.keypress(_SIZE, "down")
+    menu.keypress(_SIZE, "enter")          # opens straight away (no lock check)
+    assert isinstance(app._stack[-1], NewsScreen)
+
+
+def test_menu_opens_package_module_when_not_busy():
+    from gest.tui.screens.update import UpdateLoadingScreen
+    _FakeSoftwareBackend.busy_status = (False, "")
+    app = App()
+    menu = MenuScreen(app)
+    app._stack.append(menu)
+    menu.keypress(_SIZE, "enter")          # Software category -> modules
+    menu.keypress(_SIZE, "down")           # -> World & Package Sets
+    menu.keypress(_SIZE, "down")           # -> Software Repositories
+    menu.keypress(_SIZE, "down")           # -> System Update
+    menu.keypress(_SIZE, "enter")          # launch (lock is clear)
+    _pump(app, lambda: isinstance(app._stack[-1], UpdateLoadingScreen), ticks=200)
+    assert isinstance(app._stack[-1], UpdateLoadingScreen)
 
 
 def test_preferences_lives_under_software():

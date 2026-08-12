@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import contextlib
 import socket
 
 import urwid
 
 from gest import __version__
-from gest.tui.runtime import App, NavPile, Screen, boxed, focusable_actions
+from gest.core.software.backend_client import SoftwareBackend
+from gest.tui.runtime import App, Modal, NavPile, Screen, boxed, focusable_actions
 from gest.tui.screens.bootloader import BootloaderScreen
 from gest.tui.screens.cleanup import CleanupLoadingScreen
 from gest.tui.screens.datetime import DateTimeScreen
@@ -72,6 +74,14 @@ CATEGORIES: list[tuple[str, list[tuple[str, str, bool]]]] = [
         ("logs", "System Logs", True),
     ]),
 ]
+
+
+# Modules that run — or whose edits feed — a package operation. They are locked
+# out while any GeST session has an operation in progress: the root backend is a
+# single shared service, so its busy state is authoritative across sessions. The
+# read-only modules (news, licenses, prefs) stay open.
+_LOCKED_WHILE_BUSY = frozenset({
+    "software", "world", "repositories", "update", "depclean", "sync"})
 
 
 def _icon(label: str) -> urwid.Widget:
@@ -147,6 +157,52 @@ class MenuScreen(Screen):
             self._mod_walker.set_focus(0)
 
     def _launch(self, key: str) -> None:
+        # Package-management modules first check the shared backend: if another
+        # GeST session has an operation running, refuse and explain rather than
+        # let two conflicting emerge runs collide. The check is a quick read-only
+        # backend call; other modules open straight away.
+        if key in _LOCKED_WHILE_BUSY:
+            self.app.run_async(self._launch_checked(key))
+        else:
+            self._open(key)
+
+    async def _launch_checked(self, key: str) -> None:
+        busy, operation = await self._package_busy()
+        if busy:
+            self._locked_modal(operation)
+        else:
+            self._open(key)
+
+    async def _package_busy(self) -> tuple[bool, str]:
+        """Ask the shared root backend whether a package operation is running.
+        A backend that is unreachable (not installed/activatable) means nothing
+        is running, so it never blocks using GeST."""
+        backend = SoftwareBackend()
+        try:
+            await backend.connect()
+            return await backend.package_status()
+        except Exception:
+            return (False, "")
+        finally:
+            with contextlib.suppress(Exception):
+                await backend.close()
+
+    def _locked_modal(self, operation: str) -> None:
+        what = operation or "A package operation"
+        modal = Modal(
+            self.app, "Package management locked",
+            [urwid.Text(("error", f" {what} is in progress in another "
+                         "GeST session.")),
+             urwid.Divider(),
+             urwid.Text(("hint", " Package-management modules are unavailable "
+                         "until it finishes.\n Portage News, Package Licenses "
+                         "and Preferences stay open.")),
+             urwid.Divider(),
+             urwid.Text(("hint", " Try again once the operation completes."))],
+            [("OK", self.app.pop)])
+        self.app.push_modal(modal, width=("relative", 66), height=("relative", 42))
+
+    def _open(self, key: str) -> None:
         if key == "news":
             self.app.push(NewsScreen(self.app))
         elif key == "software":

@@ -106,6 +106,10 @@ _INTROSPECTION = f"""
       <arg type="b" name="ok" direction="out"/>
       <arg type="s" name="output" direction="out"/>
     </method>
+    <method name="PackageStatus">
+      <arg type="b" name="busy" direction="out"/>
+      <arg type="s" name="operation" direction="out"/>
+    </method>
     <signal name="Progress"><arg type="as" name="lines"/></signal>
     <signal name="Finished"><arg type="i" name="exit_code"/></signal>
   </interface>
@@ -164,7 +168,8 @@ class SoftwareService:
     def __init__(self, connection: Gio.DBusConnection, on_idle=None):
         self._conn = connection
         self._on_idle = on_idle
-        self._active = 0  # streaming operations in progress
+        self._active = 0  # package operations in progress (streaming + sync/deselect)
+        self._operation = ""  # human label of the current op (for the cross-session lock)
         self._last_activity = GLib.get_monotonic_time()
         node = Gio.DBusNodeInfo.new_for_xml(_INTROSPECTION)
         self._iface = node.interfaces[0]
@@ -182,6 +187,20 @@ class SoftwareService:
 
     def _touch(self) -> None:
         self._last_activity = GLib.get_monotonic_time()
+
+    # -- package-operation tracking (drives idle-exit + the cross-session lock) --
+
+    def _begin_op(self, operation: str) -> None:
+        """Mark a package operation as started: bump the active count and record a
+        human label so other GeST sessions can see what is running."""
+        self._active += 1
+        self._operation = operation
+
+    def _end_op(self) -> None:
+        self._active = max(self._active - 1, 0)
+        if self._active == 0:
+            self._operation = ""
+        self._touch()
 
     @staticmethod
     def _should_exit(active: int, idle_seconds: float, timeout: float,
@@ -241,6 +260,8 @@ class SoftwareService:
         elif method == "Deselect":
             (atoms,) = params.unpack()
             self._deselect(atoms, sender, invocation)
+        elif method == "PackageStatus":
+            self._package_status(invocation)
         else:
             invocation.return_error_literal(
                 Gio.dbus_error_quark(),
@@ -249,6 +270,17 @@ class SoftwareService:
             )
 
     # -- methods ------------------------------------------------------------
+
+    def _package_status(self, invocation) -> None:
+        """Report whether a package operation is in progress and its label.
+
+        Read-only (no polkit): the frontend polls this before opening a
+        package-management module so a second GeST session can't start a
+        conflicting operation while this shared root service is mid-op.
+        """
+        busy = self._active > 0
+        invocation.return_value(
+            GLib.Variant("(bs)", (busy, self._operation if busy else "")))
 
     def _install_preview(self, atom: str, invocation) -> None:
         """`emerge --pretend` — read-only, so no polkit check required."""
@@ -276,7 +308,8 @@ class SoftwareService:
             return
         # Authorized: start the merge and stream output asynchronously.
         invocation.return_value(GLib.Variant("(b)", (True,)))
-        self._spawn_streaming([_EMERGE, "--color", "n", atom])
+        self._spawn_streaming([_EMERGE, "--color", "n", atom],
+                              operation="Installing a package")
 
     def _install_multi(self, atoms, sender: str, invocation) -> None:
         """Merge several atoms in one emerge (the transactional Accept)."""
@@ -292,7 +325,8 @@ class SoftwareService:
                 "invalid or empty package atom list")
             return
         invocation.return_value(GLib.Variant("(b)", (True,)))
-        self._spawn_streaming([_EMERGE, "--color", "n", *atoms])
+        self._spawn_streaming([_EMERGE, "--color", "n", *atoms],
+                              operation="Installing packages")
 
     def _install_binary_multi(self, atoms, only, sender: str, invocation) -> None:
         """Merge atoms as binary packages: emerge --getbinpkg [--usepkgonly].
@@ -315,7 +349,7 @@ class SoftwareService:
         argv = [_EMERGE, "--getbinpkg", "--color", "n"]
         if only:
             argv.insert(2, "--usepkgonly")
-        self._spawn_streaming([*argv, *atoms])
+        self._spawn_streaming([*argv, *atoms], operation="Installing packages")
 
     def _rebuild(self, atom: str, sender: str, invocation) -> None:
         """Rebuild a package to apply changed USE flags (--changed-use)."""
@@ -325,7 +359,8 @@ class SoftwareService:
                 "Not authorized to rebuild packages")
             return
         invocation.return_value(GLib.Variant("(b)", (True,)))
-        self._spawn_streaming([_EMERGE, "--changed-use", "--color", "n", atom])
+        self._spawn_streaming([_EMERGE, "--changed-use", "--color", "n", atom],
+                              operation="Rebuilding a package")
 
     def _update_world(self, sender: str, invocation) -> None:
         """Update the whole system: emerge -uDN @world."""
@@ -335,7 +370,8 @@ class SoftwareService:
                 "Not authorized to update the system")
             return
         invocation.return_value(GLib.Variant("(b)", (True,)))
-        self._spawn_streaming([_EMERGE, "-uDN", "--color", "n", "@world"])
+        self._spawn_streaming([_EMERGE, "-uDN", "--color", "n", "@world"],
+                              operation="Updating the system")
 
     def _depclean(self, atom: str, sender: str, invocation) -> None:
         """Safely remove packages: emerge --depclean [atom] (keeps needed deps)."""
@@ -353,7 +389,7 @@ class SoftwareService:
         argv = [_EMERGE, "--depclean", "--color", "n"]
         if atom:
             argv.append(atom)
-        self._spawn_streaming(argv)
+        self._spawn_streaming(argv, operation="Removing packages")
 
     def _depclean_multi(self, atoms, sender: str, invocation) -> None:
         """Remove several packages in one emerge --depclean (safe; keeps deps)."""
@@ -369,7 +405,8 @@ class SoftwareService:
                 "invalid or empty package atom list")
             return
         invocation.return_value(GLib.Variant("(b)", (True,)))
-        self._spawn_streaming([_EMERGE, "--depclean", "--color", "n", *atoms])
+        self._spawn_streaming([_EMERGE, "--depclean", "--color", "n", *atoms],
+                              operation="Removing packages")
 
     def _sync(self, sender: str, invocation) -> None:
         """Sync the Portage tree: emerge --sync."""
@@ -379,7 +416,8 @@ class SoftwareService:
                 "Not authorized to sync the Portage tree")
             return
         invocation.return_value(GLib.Variant("(b)", (True,)))
-        self._spawn_streaming([_EMERGE, "--sync", "--color", "n"])
+        self._spawn_streaming([_EMERGE, "--sync", "--color", "n"],
+                              operation="Syncing the Portage tree")
 
     def _sync_repos(self, names, sender: str, invocation) -> None:
         """Sync specific repositories by name (``emaint sync --repo <name>``).
@@ -400,7 +438,7 @@ class SoftwareService:
                 Gio.dbus_error_quark(), Gio.DBusError.INVALID_ARGS,
                 "invalid or empty repository name list")
             return
-        self._active += 1  # don't idle-exit mid-sync
+        self._begin_op("Syncing repositories")  # don't idle-exit mid-sync
         outputs: list[str] = []
         ok_all = True
         try:
@@ -420,8 +458,7 @@ class SoftwareService:
                     f"=== {name}: {'ok' if code == 0 else 'failed'} ===\n"
                     f"{(out or '').strip()}")
         finally:
-            self._active -= 1
-            self._touch()
+            self._end_op()
         audit("software.sync_repos", uid=caller_uid(self._conn, sender),
               result="ok" if ok_all else "failed", detail=",".join(names))
         invocation.return_value(GLib.Variant("(bs)", (ok_all, "\n".join(outputs))))
@@ -447,7 +484,7 @@ class SoftwareService:
                 Gio.dbus_error_quark(), Gio.DBusError.INVALID_ARGS,
                 "invalid or empty package atom list")
             return
-        self._active += 1  # don't idle-exit mid-op
+        self._begin_op("Updating the @world set")  # don't idle-exit mid-op
         try:
             proc = Gio.Subprocess.new(
                 argv,
@@ -457,8 +494,7 @@ class SoftwareService:
         except GLib.Error as exc:  # pragma: no cover - depends on live system
             out, code = exc.message, -1
         finally:
-            self._active -= 1
-            self._touch()
+            self._end_op()
         ok = code == 0
         audit("software.deselect", uid=caller_uid(self._conn, sender),
               result="ok" if ok else "failed", detail=",".join(atoms))
@@ -535,8 +571,8 @@ class SoftwareService:
     def _emit(self, signal: str, variant: GLib.Variant) -> None:
         self._conn.emit_signal(None, SOFTWARE_PATH, SOFTWARE_IFACE, signal, variant)
 
-    def _spawn_streaming(self, argv: list[str]) -> None:
-        self._active += 1
+    def _spawn_streaming(self, argv: list[str], operation: str = "") -> None:
+        self._begin_op(operation)
         proc = Gio.Subprocess.new(
             argv, Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_MERGE
         )
@@ -603,8 +639,7 @@ class SoftwareService:
             p.wait_finish(res)
             code = p.get_exit_status() if p.get_if_exited() else -1
             self._emit("Finished", GLib.Variant("(i)", (code,)))
-            self._active -= 1
-            self._touch()
+            self._end_op()
 
         read_next()
 

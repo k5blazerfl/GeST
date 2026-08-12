@@ -142,6 +142,16 @@ class SoftwareBackend:
             self._iface.on_finished(on_finished)
         return await self._iface.call_depclean_multi(atoms)
 
+    async def package_status(self) -> tuple[bool, str]:
+        """Return ``(busy, operation)`` — whether a package operation is in
+        progress in the shared root backend, and a human label for it.
+
+        The backend is a single system service every GeST session talks to, so
+        this reports operations started by *any* session. Read-only (no polkit);
+        used to lock package-management modules out while one is running.
+        """
+        return await self._iface.call_package_status()
+
     async def close(self) -> None:
         if self._bus is not None:
             self._bus.disconnect()
