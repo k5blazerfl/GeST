@@ -215,3 +215,48 @@ def test_apply_via_backend_raises_on_refusal():
     with pytest.raises(provision.DiskApplyError):
         asyncio.run(provision.apply_via_backend(_PLAN, backend))
     assert backend.calls == ["partition"]        # stopped before any mkfs
+
+
+def test_on_step_reports_each_phase_index():
+    seen: list[int] = []
+    asyncio.run(provision.apply_plan(_PLAN, FakeExecutor(), _DEVICES, _MOUNTS,
+                                     on_step=seen.append))
+    assert seen == list(range(len(provision.plan_steps(_PLAN))))
+
+
+def test_on_step_via_backend_is_one_per_phase():
+    seen: list[int] = []
+    asyncio.run(provision.apply_via_backend(_PLAN, _FakeBackend(), on_step=seen.append))
+    # one partition phase + one per filesystem
+    assert seen == [0, 1, 2] == list(range(len(provision.plan_phase_labels(_PLAN))))
+
+
+# --- UEFI layout builder ----------------------------------------------------
+
+def test_partition_device_naming():
+    assert provision.partition_device("sda", 2) == "/dev/sda2"
+    assert provision.partition_device("nvme0n1", 2) == "/dev/nvme0n1p2"
+
+
+def test_uefi_plan_with_swap():
+    plan = provision.uefi_plan("sda", "512M", "8G", "ext4")
+    assert plan.disk == "/dev/sda" and plan.wipe
+    assert [(p.number, p.size, p.type_guid) for p in plan.partitions] == \
+        [(1, "512M", "EF00"), (2, "8G", "8200"), (3, "rest", "8300")]
+    assert [(f.device, f.kind) for f in plan.filesystems] == \
+        [("/dev/sda1", "vfat"), ("/dev/sda2", "swap"), ("/dev/sda3", "ext4")]
+    labels = provision.plan_phase_labels(plan)
+    assert labels[0] == "Partition /dev/sda" and "Enable swap" in labels[2]
+
+
+def test_uefi_plan_without_swap():
+    plan = provision.uefi_plan("nvme0n1", "512M", "", "btrfs")
+    assert [f.device for f in plan.filesystems] == ["/dev/nvme0n1p1", "/dev/nvme0n1p2"]
+    assert plan.filesystems[-1].kind == "btrfs"
+
+
+def test_uefi_plan_rejects_bad_root_fs():
+    with pytest.raises(ValueError):
+        provision.uefi_plan("sda", "512M", "", "swap")     # swap isn't a root fs
+    with pytest.raises(ValueError):
+        provision.uefi_plan("sda", "512M", "", "reiser4")  # unsupported

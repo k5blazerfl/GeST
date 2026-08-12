@@ -16,6 +16,7 @@ from gest.core.disk.backend_client import DiskBackend
 from gest.core.disk.fstab import FstabEntry
 from gest.core.disk.model import BlockDevice
 from gest.tui.runtime import App, Modal, NavPile, Screen, boxed
+from gest.tui.screens.partition import PartitionScreen
 
 
 def _row(text: str) -> urwid.Widget:
@@ -48,7 +49,7 @@ class DiskScreen(Screen):
             app, self._pile, title="Disks & Mounts",
             footer_keys=[
                 ("m", "Mount"), ("u", "Unmount"), ("a", "Add"),
-                ("e", "Edit"), ("d", "Remove"), ("Esc", "Back"),
+                ("e", "Edit"), ("d", "Remove"), ("p", "Partition"), ("Esc", "Back"),
             ],
         )
         self.configure_pane_cycle(self._pile, [0, 1])   # Tab switches panes
@@ -56,9 +57,9 @@ class DiskScreen(Screen):
 
     def _footer_context(self):
         if self._pile.focus_position == 0:              # Block Devices (info)
-            return [("Tab", "fstab"), ("Esc", "Back")]
+            return [("p", "Partition"), ("Tab", "fstab"), ("Esc", "Back")]
         return [("m", "Mount"), ("u", "Unmount"), ("a", "Add"), ("e", "Edit"),
-                ("d", "Remove"), ("Tab", "Devices"), ("Esc", "Back")]
+                ("d", "Remove"), ("p", "Partition"), ("Tab", "Devices"), ("Esc", "Back")]
 
     async def _load(self) -> None:
         devices = await self.app.run_blocking(reader.list_block_devices)
@@ -104,6 +105,9 @@ class DiskScreen(Screen):
     def handle_key(self, key):
         if key == "esc":
             self.app.pop()
+            return None
+        if key in ("p", "P"):
+            self.app.push(PartitionScreen(self.app))
             return None
         entry = self._current()
         if key in ("m", "u"):
