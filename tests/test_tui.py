@@ -2341,6 +2341,82 @@ def test_update_immediate_mode_updates_at_once(monkeypatch):
     assert updated == [True] and not scr._timer_running
 
 
+def _loading_update(monkeypatch, app, mode="timer"):
+    """An UpdateLoadingScreen whose resolve is stubbed to one change, in ``mode``;
+    pushed onto the stack and returned. Its _run() is scheduled — the caller pumps
+    to drive resolve → accept-mode policy."""
+    from gest.core.software import update as core_update
+    from gest.core.software.update import Change, UpdatePlan
+    from gest.tui.screens.update import UpdateLoadingScreen
+    fake = UpdatePlan(changes=[
+        Change("app-arch/gzip", "1.13", "1.14", "update", False, 430080)], ok=True)
+    monkeypatch.setattr(core_update, "plan_update", lambda: fake)
+    monkeypatch.setattr("gest.core.prefs.accept_mode", lambda *a, **k: mode)
+    scr = UpdateLoadingScreen(app)
+    app._stack.append(scr)
+    return scr
+
+
+def test_update_loading_manual_opens_review(monkeypatch):
+    from gest.tui.screens.update import UpdateScreen
+    app = App()
+    app._stack.append(urwid.Text("menu"))
+    _loading_update(monkeypatch, app, mode="manual")
+    _pump(app, lambda: isinstance(app._stack[-1], UpdateScreen), ticks=200)
+    top = app._stack[-1]
+    assert isinstance(top, UpdateScreen)
+    assert not top._timer_running                 # manual → no countdown re-armed
+
+
+def test_update_loading_immediate_updates_without_review(monkeypatch):
+    from gest.tui.screens.update import UpdateRunScreen, UpdateScreen
+    app = App()
+    app._stack.append(urwid.Text("menu"))
+    _loading_update(monkeypatch, app, mode="immediate")
+    _pump(app, lambda: any(isinstance(w, UpdateRunScreen) for w in app._stack),
+          ticks=200)
+    assert any(isinstance(w, UpdateRunScreen) for w in app._stack)   # updated at once
+    assert not any(isinstance(w, UpdateScreen) for w in app._stack)  # no review
+
+
+def test_update_loading_timer_counts_down_on_screen(monkeypatch):
+    app = App()
+    app._stack.append(urwid.Text("menu"))
+    scr = _loading_update(monkeypatch, app, mode="timer")
+    _pump(app, lambda: scr._timer_running, ticks=200)   # countdown on the branded
+    assert scr._timer_running                            # resolve screen, not review
+    assert ("Enter", "Update now") in scr._footer_context()
+
+
+def test_update_loading_esc_during_countdown_opens_review(monkeypatch):
+    from gest.tui.screens.update import UpdateScreen
+    app = App()
+    app._stack.append(urwid.Text("menu"))
+    scr = _loading_update(monkeypatch, app, mode="timer")
+    _pump(app, lambda: scr._timer_running, ticks=200)
+    scr.keypress(_SIZE, "esc")                           # Esc → drop to review
+    assert isinstance(app._stack[-1], UpdateScreen)
+    assert not app._stack[-1]._timer_running
+
+
+def test_update_run_branded_starts_on_overview_and_toggles():
+    from gest.core.software.update import Change
+    from gest.tui.screens.apply import world_plan
+    from gest.tui.screens.update import UpdateRunScreen
+    app = App()
+    app._stack.append(urwid.Text("menu"))
+    changes = [Change("app-arch/gzip", "1.13", "1.14", "update", False, 430080)]
+    scr = UpdateRunScreen(app, changes, world_plan(), branded=True)
+    out = _render(scr)
+    assert "Updating packages" in out                    # branded subtitle
+    assert "Category" not in out                          # table hidden
+    assert ("Tab", "Details") in scr._footer_context()
+    scr.keypress(_SIZE, "tab")                            # switch to per-package view
+    out = _render(scr)
+    assert "Category" in out
+    assert ("Tab", "Overview") in scr._footer_context()
+
+
 def _sync_repos(monkeypatch, repos):
     from gest.tui.screens import sync as S
     monkeypatch.setattr(S.reader, "enabled_repos", lambda: repos)
@@ -2507,10 +2583,30 @@ def test_accept_run_overview_shows_live_phase():
 
 
 def test_run_screen_without_brand_subtitle_has_no_toggle():
-    from gest.tui.screens.update import UpdateRunScreen
+    from gest.tui.screens.runscreen import RunScreen
+
+    class _BareRun(RunScreen):                    # no BRAND_SUBTITLE → not capable
+        SCREEN_TITLE = "Bare"
+        HEADER = "h"
+
+        def _build_items(self):
+            return []
+
+        def _row_text(self, it):
+            return ""
+
+        def _consume(self, line):
+            pass
+
+        def _operations(self):
+            return []
+
+        def _summary(self, code):
+            return ("", True, "")
+
     app = App()
     app._stack.append(urwid.Text("menu"))
-    scr = UpdateRunScreen(app, [], None)
+    scr = _BareRun(app)
     assert not scr._brand_capable
     assert ("Tab", "Overview") not in scr._footer_context()
     assert scr._footer_context() == scr._base_footer_keys

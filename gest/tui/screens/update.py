@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import urwid
 
+from gest.core import prefs
 from gest.core.software import update
 from gest.core.software.update import Change, human_size
 from gest.tui.runtime import App, NavPile, Screen, boxed, focusable_actions
@@ -56,10 +57,14 @@ def _row_line(c: Change) -> str:
 class UpdateScreen(AutoAccept, Screen):
     _auto_action = "Updating"
 
-    def __init__(self, app: App, preloaded: update.UpdatePlan | None = None) -> None:
+    def __init__(self, app: App, preloaded: update.UpdatePlan | None = None,
+                 *, auto: bool = True) -> None:
         # ``preloaded`` lets UpdateLoadingScreen hand over an already-resolved
-        # plan so we don't run emerge --pretend @world twice.
+        # plan so we don't run emerge --pretend @world twice. ``auto`` is False
+        # when the loading screen already ran the accept-mode policy (manual
+        # review only — don't re-arm a countdown here).
         self._plan: update.UpdatePlan | None = preloaded
+        self._auto = auto
         self._armed = False
         self._walker = urwid.SimpleFocusListWalker(
             [urwid.Text(" computing the update plan …  (this can take a while)")])
@@ -126,8 +131,9 @@ class UpdateScreen(AutoAccept, Screen):
 
     def _maybe_arm(self) -> None:
         # Arm once, only when there's actually something to update. An empty or
-        # failed plan is reviewed manually; reloads (r) don't re-arm.
-        if self._armed:
+        # failed plan is reviewed manually; reloads (r) don't re-arm. When the
+        # loading screen already ran the policy (auto=False), never re-arm.
+        if self._armed or not self._auto:
             return
         if self._plan is not None and self._plan.ok and self._changes():
             self._armed = True
@@ -246,11 +252,13 @@ class UpdateRunScreen(RunScreen):
     STATUS_ATTR = _RUN_ATTR
     ACTIVE_STATUSES = ("building",)
     DONE_STATUS = "installed"
+    BRAND_SUBTITLE = "Updating packages"
 
-    def __init__(self, app: App, changes: list[Change], plan, *, on_done=None):
+    def __init__(self, app: App, changes: list[Change], plan, *, on_done=None,
+                 branded=False):
         self._changes = changes
         self._plan = plan
-        super().__init__(app, on_done=on_done)
+        super().__init__(app, on_done=on_done, branded=branded)
 
     def _build_items(self):
         items = [_RunLine.from_change(c) for c in self._changes]
@@ -295,16 +303,22 @@ class UpdateRunScreen(RunScreen):
             "failure) to read it. Esc returns when the update finishes.")
 
 
-class UpdateLoadingScreen(LoadingScreen):
-    """Fullscreen startup for System Update.
+class UpdateLoadingScreen(AutoAccept, LoadingScreen):
+    """Fullscreen resolve + auto-accept for System Update.
 
-    Resolving a world update (``emerge --pretend -uDN @world``) can take a
-    while on a large system. Instead of a blank pane, show the branded loading
-    screen while it resolves, then hand the plan straight to
-    :class:`UpdateScreen` so it appears ready.
+    Resolving a world update (``emerge --pretend -uDN @world``) can take a while
+    on a large system, so show the branded loading screen while it resolves. When
+    it resolves cleanly with changes, apply the accept-mode policy right here —
+    update at once (immediate), count down on the branded screen (timer; Enter
+    updates now / Esc reviews), or hand off to :class:`UpdateScreen` (manual). An
+    up-to-date system or a failed resolve opens the review so the user reads the
+    message.
     """
 
+    _auto_action = "Updating"
+
     def __init__(self, app: App) -> None:
+        self._plan = None
         super().__init__(
             app,
             [{"key": "resolve", "label": "Resolve the world update",
@@ -314,21 +328,71 @@ class UpdateLoadingScreen(LoadingScreen):
             help_text=(
                 "Resolving what a full @world update would do "
                 "(emerge --pretend -uDN\n@world) — this can take a while on a "
-                "large system.\nEsc cancels and returns to the main menu."))
+                "large system.\nWhen there is something to update it applies per "
+                "your accept-mode preference:\n"
+                "  · immediate — updates at once\n"
+                "  · timer — counts down here; Enter updates now, Esc reviews\n"
+                "  · manual — opens the review to confirm\n"
+                "Esc cancels and returns to the main menu."))
 
     async def _run(self) -> None:
         self._set_step("resolve", "active")
         self._set_phase("Running emerge --pretend -uDN @world …  "
                         "(this can take a while)")
         plan = await self.app.run_blocking(update.plan_update)
-        self._bar.set_completion(1)
-        if plan is not None and plan.ok:
-            n = len(plan.changes)
-            self._set_step("resolve", "done",
-                           f"{n} change{'s' if n != 1 else ''}")
-            self._set_phase("Ready.", "ok")
-        else:
+        self._plan = plan
+        if plan is None or not plan.ok:
             self._set_step("resolve", "failed")
-            self._set_phase("Could not resolve the update plan.", "error")
-        if self.app._stack and self.app._stack[-1] is self:   # not cancelled
-            self.app.replace(UpdateScreen(self.app, preloaded=plan))
+            self._bar.set_completion(1)
+            self._to_review()                    # show the failure in the review
+            return
+        n = len(plan.changes)
+        self._set_step("resolve", "done", f"{n} change{'s' if n != 1 else ''}")
+        # Nothing to update, or the user reviews every plan: open the review.
+        # Otherwise apply the accept-mode policy here — immediate updates at once,
+        # timer counts down on this branded screen.
+        if not plan.changes or prefs.accept_mode() == prefs.MANUAL:
+            self._bar.set_completion(1)
+            self._to_review()
+        else:
+            self._set_phase("Ready.", "ok")
+            self.arm_auto_accept()
+
+    # -- auto-accept (AutoAccept hooks) -------------------------------------
+
+    def _auto_progress(self, remaining: int, frac: float) -> None:
+        self._bar.set_completion(frac)
+        self._set_phase(f"{self._auto_action} in {remaining}s — "
+                        "Enter updates now, Esc reviews.", "ok")
+
+    def _auto_apply(self) -> None:
+        # Applied without a review (immediate / timed): run the world update and
+        # keep the branded look going into the run.
+        if not (self.app._stack and self.app._stack[-1] is self):   # cancelled
+            return
+        self.app.replace(UpdateRunScreen(
+            self.app, self._plan.changes, world_plan(), branded=True))
+
+    def _to_review(self) -> None:
+        if self.app._stack and self.app._stack[-1] is self:         # not cancelled
+            self.app.replace(UpdateScreen(self.app, preloaded=self._plan,
+                                          auto=False))
+
+    # -- keys / footer ------------------------------------------------------
+
+    def _footer_context(self):
+        if self._timer_running:
+            return [("Enter", "Update now"), ("Esc", "Review")]
+        return self._base_footer_keys
+
+    def handle_key(self, key):
+        outcome = self._auto_key(key)            # Enter/F10 update now · Esc review
+        if outcome == "applied":
+            return None
+        if outcome == "stopped":                 # Esc during countdown → review
+            self._to_review()
+            return None
+        if key == "esc":
+            self.app.pop()                       # cancel resolve → back to the menu
+            return None
+        return key
