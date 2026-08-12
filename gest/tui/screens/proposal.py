@@ -251,11 +251,12 @@ class ProposalScreen(AutoAccept, Screen):
             self.app.notify("Nothing to apply.")
             return
         # Swap the proposal for the live run so Back/Package Manager from the run
-        # returns to the package list, not to this (spent) proposal.
+        # returns to the package list, not to this (spent) proposal. The user has
+        # just reviewed the plan here, so the run opens on the detailed table.
         self.app.replace(AcceptRunScreen(
             self.app, installs=self._installs, binpkgs=self._binpkgs,
             binprefs=self._binprefs, removes=self._removes,
-            on_done=self._on_done))
+            on_done=self._on_done, branded=False))
 
 
 class ProposalLoadingScreen(AutoAccept, LoadingScreen):
@@ -322,11 +323,13 @@ class ProposalLoadingScreen(AutoAccept, LoadingScreen):
                         "Enter applies now, Esc reviews.", "ok")
 
     def _auto_apply(self) -> None:
+        # Applied without a review (immediate / timed) — keep the branded loading
+        # look going into the run; the user can Tab to the per-package details.
         if self.app._stack and self.app._stack[-1] is self:     # not cancelled
             self.app.replace(AcceptRunScreen(
                 self.app, installs=self._installs, binpkgs=self._binpkgs,
                 binprefs=self._binprefs, removes=self._removes,
-                on_done=self._on_done))
+                on_done=self._on_done, branded=True))
 
     def _to_review(self) -> None:
         if self.app._stack and self.app._stack[-1] is self:     # not cancelled

@@ -28,6 +28,7 @@ import urwid
 from gest.core.software.backend_client import SoftwareBackend
 from gest.tui.runtime import App, Modal, Screen, boxed
 from gest.tui.screens.apply import RawLogScreen, StreamLog
+from gest.tui.screens.loading import _LOGO_MARKUP, _LOGO_W
 
 
 def clip(text: str, width: int) -> str:
@@ -52,8 +53,13 @@ class RunScreen(StreamLog, Screen):
     ACTIVE_STATUSES: tuple[str, ...] = ()   # in-progress statuses, settled at finish
     DONE_STATUS = "done"
     FAIL_STATUS = "failed"
+    # Set truthy to offer a branded overview (the GeST logo + phase + bar) as an
+    # alternative to the per-item table, toggled with Tab. Its value is the
+    # subtitle under the logo. Empty → no overview (Update/Clean Up keep the
+    # table only).
+    BRAND_SUBTITLE = ""
 
-    def __init__(self, app: App, *, on_done=None):
+    def __init__(self, app: App, *, on_done=None, branded: bool = False):
         self._on_done = on_done
         self._done = False
         self._code: int | None = None   # emerge exit code, once finished
@@ -72,18 +78,53 @@ class RunScreen(StreamLog, Screen):
             urwid.Pile([("pack", header), ("pack", urwid.Divider("─")),
                         ("weight", 1, self._list)]),
             title=self.TABLE_TITLE)
-        body = urwid.Pile([
+        self._detail_body = urwid.Pile([
             ("pack", urwid.AttrMap(self._phase, "field")),
             ("pack", urwid.Divider("─")),
             ("weight", 1, table),
             ("pack", urwid.Divider("─")),
             ("pack", self._bar),
         ])
-        super().__init__(app, body, title=self.SCREEN_TITLE,
+        # Optional branded overview: the same live phase line + progress bar under
+        # the GeST logo. Toggled with Tab; starts on whichever the caller asked
+        # for (branded when the run was launched without a review).
+        self._brand_capable = bool(self.BRAND_SUBTITLE)
+        self._brand_body = self._make_brand_body() if self._brand_capable else None
+        self._branded = branded and self._brand_capable
+        super().__init__(app, self._brand_body if self._branded else self._detail_body,
+                         title=self.SCREEN_TITLE,
                          footer_keys=[("l", "View log"), ("Esc", "Back")],
                          help_text=self._help_text())
         self._render()
+        self._refresh_footer()
         app.run_async(self._run())
+
+    def _make_brand_body(self) -> urwid.Widget:
+        logo = urwid.Padding(urwid.Text(_LOGO_MARKUP, wrap="clip"),
+                             align="center", width=_LOGO_W)
+        panel = boxed(
+            urwid.Pile([
+                ("pack", urwid.Divider(" ")),
+                ("pack", logo),
+                ("pack", urwid.Divider(" ")),
+                ("pack", urwid.Text(("dim", self.BRAND_SUBTITLE), align="center")),
+                ("pack", urwid.Divider(" ")),
+                ("pack", self._bar),
+                ("pack", urwid.AttrMap(self._phase, "field")),
+                ("pack", urwid.Divider(" ")),
+                ("pack", urwid.Text(("dim", "Tab — per-package details"),
+                                    align="center")),
+            ]),
+            title=self.SCREEN_TITLE)
+        return urwid.Filler(
+            urwid.Padding(panel, align="center", width=("relative", 62),
+                          min_width=_LOGO_W + 6),
+            valign="middle", height="pack")
+
+    def _toggle_view(self) -> None:
+        self._branded = not self._branded
+        self.set_body(self._brand_body if self._branded else self._detail_body)
+        self.app.refresh()
 
     # -- hooks (subclass) ---------------------------------------------------
 
@@ -238,8 +279,16 @@ class RunScreen(StreamLog, Screen):
     def _view_log(self) -> None:
         self.app.push(RawLogScreen(self.app, self._logpath))
 
+    def _footer_context(self):
+        if not self._brand_capable:
+            return self._base_footer_keys
+        toggle = ("Tab", "Details") if self._branded else ("Tab", "Overview")
+        return [toggle, *self._base_footer_keys]
+
     def handle_key(self, key):
-        if key == "esc" and self._done:
+        if key == "tab" and self._brand_capable:
+            self._toggle_view()
+        elif key == "esc" and self._done:
             self.app.pop()
         elif key in ("l", "L"):
             self._view_log()

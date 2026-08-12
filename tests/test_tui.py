@@ -2392,6 +2392,53 @@ def test_run_screen_result_modal_offers_main_menu():
     assert len(app._stack) == 1
 
 
+def test_accept_run_branded_starts_on_overview_and_toggles():
+    from gest.tui.screens.accept import AcceptRunScreen
+    app = App()
+    app._stack.append(urwid.Text("software list"))
+    scr = AcceptRunScreen(app, installs=["app-editors/vim"], branded=True)
+    app._stack.append(scr)
+    out = _render(scr)
+    assert "Applying changes" in out                 # branded subtitle under logo
+    assert "Category" not in out and "Operation" not in out   # table hidden
+    assert ("Tab", "Details") in scr._footer_context()
+    scr.keypress(_SIZE, "tab")                        # switch to the per-package view
+    out = _render(scr)
+    assert "Category" in out and "Operation" in out   # detailed table now shown
+    assert ("Tab", "Overview") in scr._footer_context()
+
+
+def test_accept_run_detailed_by_default_after_review():
+    from gest.tui.screens.accept import AcceptRunScreen
+    app = App()
+    app._stack.append(urwid.Text("software list"))
+    scr = AcceptRunScreen(app, installs=["app-editors/vim"])   # branded=False
+    out = _render(scr)
+    assert "Category" in out                          # opens on the table
+    assert ("Tab", "Overview") in scr._footer_context()   # Tab offers the overview
+
+
+def test_accept_run_overview_shows_live_phase():
+    from gest.tui.screens.accept import AcceptRunScreen
+    app = App()
+    app._stack.append(urwid.Text("software list"))
+    scr = AcceptRunScreen(app, installs=["app-editors/vim"], branded=True)
+    app._stack.append(scr)
+    scr._consume(">>> Emerging (1 of 1) app-editors/vim-9.1::gentoo")
+    assert "Emerging 1 of 1" in _render(scr)          # phase live in the overview
+    assert scr._install["app-editors/vim"].status == "active"  # table tracked too
+
+
+def test_run_screen_without_brand_subtitle_has_no_toggle():
+    from gest.tui.screens.update import UpdateRunScreen
+    app = App()
+    app._stack.append(urwid.Text("menu"))
+    scr = UpdateRunScreen(app, [], None)
+    assert not scr._brand_capable
+    assert ("Tab", "Overview") not in scr._footer_context()
+    assert scr._footer_context() == scr._base_footer_keys
+
+
 def test_cleanup_screen_accepts_preloaded_plan_without_rescanning():
     from gest.core.software.cleanup import CleanupPlan, Orphan
     plan = CleanupPlan(orphans=[Orphan("dev-libs/orphanlib", "1.2", 4096)],

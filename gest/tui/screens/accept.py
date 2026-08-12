@@ -60,9 +60,10 @@ class AcceptRunScreen(RunScreen):
     STATUS_ATTR = _ATTR
     ACTIVE_STATUSES = ("active",)
     DONE_STATUS = "done"
+    BRAND_SUBTITLE = "Applying changes"
 
     def __init__(self, app: App, *, installs=(), binpkgs=(), binprefs=(),
-                 removes=(), verb: str = "Accept", on_done=None):
+                 removes=(), verb: str = "Accept", on_done=None, branded=False):
         self._installs = list(installs)
         self._binpkgs = list(binpkgs)
         self._binprefs = list(binprefs)
@@ -76,7 +77,7 @@ class AcceptRunScreen(RunScreen):
             self._plans.append(install_binary_plan(self._binprefs, only=False))
         if self._removes:
             self._plans.append(remove_plan(self._removes))
-        super().__init__(app, on_done=on_done)
+        super().__init__(app, on_done=on_done, branded=branded)
 
     def _build_items(self):
         items = [_Item(cp, "install")
