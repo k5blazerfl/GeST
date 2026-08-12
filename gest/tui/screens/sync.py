@@ -1,12 +1,12 @@
-"""Sync Portage Tree (urwid): a compact per-repository sync instead of a raw dump.
+"""Sync Portage Tree (urwid): branded startup, review, then a branded sync run.
 
-``emerge --sync`` streams verbose rsync/git output; this lists the repositories
-that will sync (from repos.conf) and updates each row's status live from emerge's
-``>>> Syncing repository 'X'`` / ``Action: sync for repo: X, returned code = N``
-markers (pending → syncing → synced / failed), with a progress bar and a per-repo
-result. The full raw log is kept on demand (l / View log). Since ``emerge --sync``
-has no ``--pretend``, the review list and the progress list are the same rows, so
-this is one screen: review, then F10 syncs in place.
+Opening reads the syncable repositories behind the branded loading screen
+(:class:`SyncLoadingScreen`), then lists them for review (:class:`SyncScreen`).
+F10 runs ``emerge --sync`` on a full-screen branded progress screen
+(:class:`SyncRunScreen` — GeST logo + per-repo status + bar), updating each row
+from emerge's ``>>> Syncing repository 'X'`` / ``Action: sync for repo: X,
+returned code = N`` markers (pending → syncing → synced / failed), then a
+result. The full raw log is kept on demand (l / View log).
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ from gest.core.software import sync
 from gest.core.software.backend_client import SoftwareBackend
 from gest.tui.runtime import App, Modal, NavPile, Screen, boxed, focusable_actions
 from gest.tui.screens.apply import RawLogScreen, StreamLog
+from gest.tui.screens.loading import LoadingScreen
 from gest.tui.screens.runscreen import clip, row
 
 _STATUS_W = 2
@@ -44,92 +45,148 @@ class _SyncRepo:
         self.status = "pending"
 
 
-class SyncScreen(StreamLog, Screen):
-    def __init__(self, app: App) -> None:
-        self._repos: list[_SyncRepo] = []
-        self._by_name: dict[str, _SyncRepo] = {}
-        self._total = 0
-        self._running = False
-        self._done = False
-        self._logfile = None
-        self._logpath: str | None = None
-        self._refresh_pending = False
+def _syncable(repos) -> list[_SyncRepo]:
+    """The enabled repos that will actually sync (a URI, auto-sync not 'no')."""
+    return [_SyncRepo(r.name, r.sync_type, r.sync_uri) for r in repos
+            if r.sync_uri and r.auto_sync.strip().lower() != "no"]
 
+
+class SyncLoadingScreen(LoadingScreen):
+    """Branded startup: read the syncable repositories, then hand off to review."""
+
+    def __init__(self, app: App) -> None:
+        super().__init__(
+            app,
+            [{"key": "read", "label": "Read repositories",
+              "status": "pending", "detail": ""}],
+            title="Sync Portage Tree",
+            subtitle="Preparing to sync the Portage tree",
+            help_text=("Reading the repositories to sync from "
+                       "/etc/portage/repos.conf.\n"
+                       "Esc cancels and returns to the main menu."))
+
+    async def _run(self) -> None:
+        self._set_step("read", "active")
+        self._set_phase("Reading /etc/portage/repos.conf …")
+        repos = await self.app.run_blocking(reader.enabled_repos)
+        rows = _syncable(repos)
+        self._bar.set_completion(1)
+        self._set_step("read", "done",
+                       f"{len(rows)} repositor{'y' if len(rows) == 1 else 'ies'}")
+        self._set_phase("Ready.", "ok")
+        if self.app._stack and self.app._stack[-1] is self:   # not cancelled
+            self.app.replace(SyncScreen(self.app, preloaded=rows))
+
+
+class SyncScreen(Screen):
+    """Review the repositories that will sync; F10 starts the branded sync run."""
+
+    def __init__(self, app: App, preloaded: list[_SyncRepo] | None = None) -> None:
+        self._repos: list[_SyncRepo] = preloaded or []
         self._walker = urwid.SimpleFocusListWalker([urwid.Text(" loading …")])
         self._list = urwid.ListBox(self._walker)
-        self._phase = urwid.Text(("dim", " Reading repositories …"))
-        self._bar = urwid.ProgressBar("pb_normal", "pb_complete", 0, 1)
+        self._count = urwid.Text("")
 
         header = urwid.AttrMap(
-            urwid.Text(_fmt("", "Name", "Type", "Sync URI"), wrap="clip"), "pane_title")
+            urwid.Text(_fmt("", "Name", "Type", "Sync URI"), wrap="clip"),
+            "pane_title")
         table = boxed(
             urwid.Pile([("pack", header), ("pack", urwid.Divider("─")),
                         ("weight", 1, self._list)]),
             title="Repositories")
         self._actions = focusable_actions([
-            ("Cancel", lambda: self._running or self.app.pop()),
-            ("Sync", self._start)])
+            ("Cancel", app.pop), ("Sync", self._sync)])
         body = NavPile([
-            ("pack", urwid.AttrMap(self._phase, "field")),
-            ("pack", self._bar),
-            ("pack", urwid.Divider("─")),
             ("weight", 1, table),
+            ("pack", self._count),
             ("pack", self._actions),
         ])
         super().__init__(
             app, body, title="Sync Portage Tree",
-            footer_keys=[("F10", "Sync"), ("l", "View log"), ("Esc", "Back")],
+            footer_keys=[("F10", "Sync"), ("Esc", "Back")],
             help_text=(
                 "Sync the Portage ebuild tree — fetch the latest ebuilds/metadata\n"
                 "for the repositories below from their sync URIs over the network.\n"
                 "It refreshes available versions; it does not change installed\n"
                 "packages.\n\n"
-                "Each row shows its status:  · pending   ▸ syncing   ✓ synced"
-                "   ✗ failed\n"
-                "F10 starts the sync; a repo that fails doesn't fail the others "
-                "(the result names each). l views the raw emerge log; Esc goes back."
-            ),
-        )
-        self.configure_pane_cycle(body, [3], action_row=self._actions)
-        app.run_async(self._load())
+                "F10 starts the sync (a full-screen progress screen); a repo that\n"
+                "fails doesn't fail the others. Esc goes back."))
+        self.configure_pane_cycle(body, [0], action_row=self._actions)
+        if preloaded is not None:
+            self._render()
+        else:
+            app.run_async(self._load())
 
     def _footer_context(self):
         if self._on_action_row():
-            return [("Enter", "Activate"), ("l", "View log"),
-                    ("Tab", "Next"), ("Esc", "Back")]
+            return [("Enter", "Activate"), ("Tab", "Next"), ("Esc", "Back")]
         return self._base_footer_keys
 
     async def _load(self) -> None:
         repos = await self.app.run_blocking(reader.enabled_repos)
-        self._repos = [_SyncRepo(r.name, r.sync_type, r.sync_uri) for r in repos
-                       if r.sync_uri and r.auto_sync.strip().lower() != "no"]
-        self._by_name = {sr.name: sr for sr in self._repos}
-        self._total = len(self._repos)
-        self._bar.done = max(self._total, 1)
+        self._repos = _syncable(repos)
         self._render()
-        n = self._total
-        self._set_phase(f"Ready — F10 to sync {n} repositor{'y' if n == 1 else 'ies'}."
-                        if n else "No syncable repositories configured.", "dim")
 
     def _render(self) -> None:
-        rows = [row(_fmt(_GLYPH[r.status], r.name, r.sync_type or "—",
-                         r.sync_uri or "—"), _ATTR[r.status])
-                for r in self._repos] or [urwid.Text(" (no repositories)")]
-        self._walker[:] = rows
-        self._schedule_refresh()
+        self._walker[:] = [
+            row(_fmt(_GLYPH[r.status], r.name, r.sync_type or "—",
+                     r.sync_uri or "—"), _ATTR[r.status])
+            for r in self._repos] or [urwid.Text(" (no repositories)")]
+        n = len(self._repos)
+        self._count.set_text(
+            ("dim", f" {n} repositor{'y' if n == 1 else 'ies'} to sync"
+                    "   ·   F10 Sync") if n
+            else ("dim", " No syncable repositories configured."))
+        self.app.refresh()
 
-    def _set_phase(self, text: str, attr: str = "field") -> None:
-        self._phase.set_text((attr, f" {text}"))
+    def _sync(self) -> None:
+        if not self._repos:
+            self.app.notify("No repositories to sync.", error=True)
+            return
+        self.app.push(SyncRunScreen(self.app, self._repos))
+
+    def handle_key(self, key):
+        if key == "f10":
+            self._sync()
+            return None
+        if key == "esc":
+            self.app.pop()
+            return None
+        return key
+
+
+class SyncRunScreen(StreamLog, LoadingScreen):
+    """Full-screen branded sync: GeST logo + per-repo progress, then a result."""
+
+    def __init__(self, app: App, repos: list[_SyncRepo]) -> None:
+        self._repos = [_SyncRepo(r.name, r.sync_type, r.sync_uri) for r in repos]
+        self._by_name = {r.name: r for r in self._repos}
+        self._total = len(self._repos)
+        self._done = False
+        self._logfile = None
+        self._logpath: str | None = None
+        self._refresh_pending = False
+        super().__init__(
+            app,
+            [{"key": "sync", "label": "Sync repositories",
+              "status": "active", "detail": ""}],
+            title="Sync Portage Tree",
+            subtitle="Syncing the Portage tree",
+            help_text=(
+                "Syncing the Portage tree (emerge --sync).\n"
+                "Each repo:  · pending   ▸ syncing   ✓ synced   ✗ failed\n"
+                "l views the raw emerge log · Esc returns when finished."))
+        self._bar.done = max(self._total, 1)
+        self._render()
+
+    def _sub_rows(self, step: dict) -> list:
+        return [(_ATTR[r.status], f"        {_GLYPH[r.status]}  {r.name}\n")
+                for r in self._repos]
 
     # -- run ----------------------------------------------------------------
 
-    def _start(self) -> None:
-        if self._running or self._done or not self._repos:
-            return
-        self._running = True
-        self.app.run_async(self._run())
-
     async def _run(self) -> None:
+        self._set_phase("Syncing repositories …")
         finished = asyncio.Event()
         code: dict[str, int | None] = {"v": None}
 
@@ -155,7 +212,6 @@ class SyncScreen(StreamLog, Screen):
             await backend.close()
             self._finish(None, "the sync did not start")
             return
-        self._set_phase("Syncing repositories …")
         await finished.wait()
         await backend.close()
         self._close_log()
@@ -182,7 +238,6 @@ class SyncScreen(StreamLog, Screen):
         self._render()
 
     def _finish(self, code: int | None, error: str) -> None:
-        self._running = False
         self._done = True
         if code is not None:                   # settle any repo still in flight
             for r in self._repos:
@@ -191,24 +246,29 @@ class SyncScreen(StreamLog, Screen):
                 elif r.status == "pending" and code == 0:
                     r.status = "synced"
         self._bar.set_completion(self._total)
-        self._render()
         synced = [r.name for r in self._repos if r.status == "synced"]
         failed = [r.name for r in self._repos if r.status == "failed"]
         if code is None:
+            self._set_step("sync", "failed")
             reason = error or ("administrator authentication was declined, or the "
                                "backend was unavailable")
             title, ok, msg = "Not started", False, (
                 f"The sync did not start — {reason}. Nothing was changed.")
         elif not failed:
+            self._set_step("sync", "done", f"{len(synced)} synced")
             title, ok, msg = "Completed", True, (
                 f"All {len(synced)} repositories synced.")
         elif synced:
+            self._set_step("sync", "failed",
+                           f"{len(synced)} of {len(synced) + len(failed)}")
             title, ok, msg = "Partially synced", False, (
                 f"{len(synced)} of {len(synced) + len(failed)} synced; "
                 f"failed: {', '.join(failed)}. The rest were updated.")
         else:
+            self._set_step("sync", "failed")
             title, ok, msg = "Failed", False, (
-                f"All {len(failed)} repositories failed to sync: {', '.join(failed)}.")
+                f"All {len(failed)} repositories failed to sync: "
+                f"{', '.join(failed)}.")
         self._set_phase(f"Sync: {title.lower()}", "ok" if ok else "error")
         self._result_modal(title, ok, msg)
 
@@ -219,7 +279,7 @@ class SyncScreen(StreamLog, Screen):
 
         def back():
             self.app.pop()   # the result modal
-            self.app.pop()   # the sync screen
+            self.app.pop()   # the run screen → back to the review
 
         def view():
             self.app.pop()
@@ -239,12 +299,11 @@ class SyncScreen(StreamLog, Screen):
         self.app.push(RawLogScreen(self.app, self._logpath))
 
     def handle_key(self, key):
-        if key == "f10":
-            self._start()
-        elif key in ("l", "L"):
+        if key in ("l", "L"):
             self._view_log()
-        elif key == "esc" and not self._running:
-            self.app.pop()
-        else:
-            return key
-        return None
+            return None
+        if key == "esc":
+            if self._done:
+                self.app.pop()       # back to the review
+            return None              # ignore Esc mid-sync
+        return key

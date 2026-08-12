@@ -26,7 +26,7 @@ from gest.tui.screens.config import KeywordsScreen, UseFlagScreen
 from gest.tui.screens.loading import _STEP_ATTR, _STEP_GLYPH, LoadingScreen
 from gest.tui.screens.news import NewsScreen
 from gest.tui.screens.proposal import ProposalScreen
-from gest.tui.screens.sync import SyncScreen
+from gest.tui.screens.sync import SyncLoadingScreen
 from gest.tui.screens.update import UpdateLoadingScreen
 
 
@@ -633,7 +633,7 @@ class SoftwareScreen(Screen):
         elif item_id == "update":
             self.app.push(UpdateLoadingScreen(self.app))
         elif item_id == "sync":
-            self.app.push(SyncScreen(self.app))
+            self.app.push(SyncLoadingScreen(self.app))
         elif item_id == "news":
             self.app.push(NewsScreen(self.app))
 

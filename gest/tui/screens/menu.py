@@ -24,7 +24,7 @@ from gest.tui.screens.preferences import PreferencesScreen
 from gest.tui.screens.repos import ReposScreen
 from gest.tui.screens.services import ServicesScreen
 from gest.tui.screens.software import SoftwareLoadingScreen
-from gest.tui.screens.sync import SyncScreen
+from gest.tui.screens.sync import SyncLoadingScreen
 from gest.tui.screens.system import HostnameScreen, LocaleScreen, TimezoneScreen
 from gest.tui.screens.update import UpdateLoadingScreen
 from gest.tui.screens.users import UsersScreen
@@ -158,7 +158,7 @@ class MenuScreen(Screen):
         elif key == "depclean":
             self.app.push(CleanupLoadingScreen(self.app))
         elif key == "sync":
-            self.app.push(SyncScreen(self.app))
+            self.app.push(SyncLoadingScreen(self.app))
         elif key == "repositories":
             self.app.push(ReposScreen(self.app))
         elif key == "licenses":

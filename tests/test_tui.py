@@ -2137,22 +2137,54 @@ def test_update_immediate_mode_updates_at_once(monkeypatch):
     assert updated == [True] and not scr._timer_running
 
 
-def test_sync_screen_lists_repos_and_tracks_progress():
-    from gest.tui.screens.sync import SyncScreen
+def _sync_repos(monkeypatch, repos):
+    from gest.tui.screens import sync as S
+    monkeypatch.setattr(S.reader, "enabled_repos", lambda: repos)
+
+
+def test_sync_loading_hands_off_to_review(monkeypatch):
+    from gest.core.repos.reader import Repo
+    from gest.tui.screens.sync import SyncLoadingScreen, SyncScreen
+    _sync_repos(monkeypatch, [Repo(name="guru", sync_type="git",
+                                   sync_uri="https://h/guru", auto_sync="yes")])
+    app = App()
+    scr = SyncLoadingScreen(app)
+    app._stack.append(scr)
+    assert "#+#" in _render(scr)                      # branded startup (logo)
+    _pump(app, lambda: isinstance(app._stack[-1], SyncScreen), ticks=200)
+    review = app._stack[-1]
+    assert [r.name for r in review._repos] == ["guru"]
+    out = _render(review)
+    assert "[Cancel]" in out and "[Sync]" in out
+
+
+def test_sync_review_f10_opens_branded_run(monkeypatch):
+    from gest.core.repos.reader import Repo
+    from gest.tui.screens.sync import SyncRunScreen, SyncScreen
+    _sync_repos(monkeypatch, [Repo(name="guru", sync_type="git",
+                                   sync_uri="https://h/guru", auto_sync="yes")])
     app = App()
     scr = SyncScreen(app)
     app._stack.append(scr)
-    _pump(app, lambda: scr._repos, ticks=200)   # reads repos.conf
-    if not scr._repos:
-        pytest.skip("no syncable repositories on this host")
-    name = scr._repos[0].name
-    scr._consume(f">>> Syncing repository '{name}' into '/x'...")
-    assert scr._by_name[name].status == "syncing"
-    scr._consume(f"Action: sync for repo: {name}, returned code = 0")
-    assert scr._by_name[name].status == "synced"
-    assert "✓" in _render(scr)
-    scr._finish(0, "")
-    assert scr._done and not scr._running
+    _pump(app, lambda: scr._repos, ticks=200)
+    scr.keypress(_SIZE, "f10")
+    run = app._stack[-1]
+    assert isinstance(run, SyncRunScreen)
+    assert "#+#" in _render(run)                      # branded full-screen run
+
+
+def test_sync_run_tracks_progress():
+    from gest.tui.screens.sync import SyncRunScreen, _SyncRepo
+    app = App()
+    run = SyncRunScreen(app, [_SyncRepo("guru", "git", "https://h/guru")])
+    app._stack.append(run)
+    run._consume(">>> Syncing repository 'guru' into '/x'...")
+    assert run._by_name["guru"].status == "syncing"
+    run._consume("Action: sync for repo: guru, returned code = 0")
+    assert run._by_name["guru"].status == "synced"
+    assert "✓" in _render(run)
+    run._finish(0, "")
+    assert run._done
 
 
 def test_accept_run_screen_tracks_install_and_remove():
