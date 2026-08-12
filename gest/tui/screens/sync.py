@@ -20,7 +20,15 @@ from gest.core import prefs
 from gest.core.repos import reader
 from gest.core.software import sync
 from gest.core.software.backend_client import SoftwareBackend
-from gest.tui.runtime import App, Modal, NavPile, Screen, boxed, focusable_actions
+from gest.tui.runtime import (
+    App,
+    Modal,
+    NavPile,
+    Screen,
+    boxed,
+    focusable_actions,
+    strip_ansi,
+)
 from gest.tui.screens.apply import RawLogScreen, StreamLog
 from gest.tui.screens.autoaccept import AutoAccept
 from gest.tui.screens.loading import LoadingScreen
@@ -29,6 +37,7 @@ from gest.tui.screens.runscreen import clip, row
 _STATUS_W = 2
 _NAME_W = 24
 _TYPE_W = 9
+_MAX_VERBOSE = 2000   # live verbose-view lines kept in memory (the tail that matters)
 
 _GLYPH = {"pending": "·", "syncing": "▸", "synced": "✓", "failed": "✗"}
 _ATTR = {"pending": "dim", "syncing": None, "synced": "dim", "failed": "error"}
@@ -231,13 +240,52 @@ class SyncRunScreen(StreamLog, LoadingScreen):
             help_text=(
                 "Syncing the Portage tree (emerge --sync).\n"
                 "Each repo:  · pending   ▸ syncing   ✓ synced   ✗ failed\n"
-                "l views the raw emerge log · Esc returns when finished."))
+                "Tab switches between the branded overview and the live verbose\n"
+                "output (the raw emerge --sync stream). l opens the full raw log ·\n"
+                "Esc returns when finished."))
         self._bar.done = max(self._total, 1)
+        # The branded per-repo overview is the default; Tab reveals the live
+        # verbose stream (kept to the last _MAX_VERBOSE lines). Both share the
+        # same phase line + progress bar, so either view stays live.
+        self._branded_body = self._frame.body
+        self._verbose = False
+        self._verbose_seeded = False
+        self._verbose_walker = urwid.SimpleFocusListWalker(
+            [urwid.Text(("dim", " (waiting for emerge output …)"))])
+        self._verbose_body = urwid.Pile([
+            ("pack", urwid.AttrMap(self._phase, "field")),
+            ("pack", urwid.Divider("─")),
+            ("weight", 1, boxed(urwid.ListBox(self._verbose_walker),
+                                title="emerge --sync output")),
+            ("pack", urwid.Divider("─")),
+            ("pack", self._bar),
+        ])
         self._render()
+        self._refresh_footer()
 
     def _sub_rows(self, step: dict) -> list:
         return [(_ATTR[r.status], f"        {_GLYPH[r.status]}  {r.name}\n")
                 for r in self._repos]
+
+    # -- verbose view -------------------------------------------------------
+
+    def _append_verbose(self, lines: list[str]) -> None:
+        """Append streamed lines to the live verbose view, capped to the tail."""
+        if not self._verbose_seeded:
+            del self._verbose_walker[:]            # drop the placeholder
+            self._verbose_seeded = True
+        for ln in lines:
+            self._verbose_walker.append(row(strip_ansi(ln)))
+        extra = len(self._verbose_walker) - _MAX_VERBOSE
+        if extra > 0:
+            del self._verbose_walker[:extra]
+        self._verbose_walker.set_focus(len(self._verbose_walker) - 1)   # tail
+        self._schedule_refresh()
+
+    def _toggle_view(self) -> None:
+        self._verbose = not self._verbose
+        self.set_body(self._verbose_body if self._verbose else self._branded_body)
+        self.app.refresh()
 
     # -- run ----------------------------------------------------------------
 
@@ -248,6 +296,7 @@ class SyncRunScreen(StreamLog, LoadingScreen):
 
         def on_progress(lines: list[str]) -> None:
             self._write_log(lines)
+            self._append_verbose(lines)
             for ln in lines:
                 self._consume(ln)
 
@@ -354,7 +403,14 @@ class SyncRunScreen(StreamLog, LoadingScreen):
     def _view_log(self) -> None:
         self.app.push(RawLogScreen(self.app, self._logpath))
 
+    def _footer_context(self):
+        toggle = ("Tab", "Overview") if self._verbose else ("Tab", "Verbose")
+        return [toggle, ("l", "View log"), ("Esc", "Back")]
+
     def handle_key(self, key):
+        if key == "tab":
+            self._toggle_view()
+            return None
         if key in ("l", "L"):
             self._view_log()
             return None

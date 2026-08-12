@@ -2520,6 +2520,25 @@ def test_sync_run_tracks_progress():
     assert run._done
 
 
+def test_sync_run_verbose_view_toggles_and_streams():
+    from gest.tui.screens.sync import SyncRunScreen, _SyncRepo
+    app = App()
+    app._stack.append(urwid.Text("review"))
+    run = SyncRunScreen(app, [_SyncRepo("guru", "git", "https://h/guru")])
+    app._stack.append(run)
+    assert "#+#" in _render(run)                       # opens on the branded overview
+    assert ("Tab", "Verbose") in run._footer_context()
+    run._append_verbose(["Syncing 'guru' …", ">>> update done"])   # streamed output
+    run.keypress(_SIZE, "tab")                         # switch to the verbose view
+    out = _render(run)
+    assert "emerge --sync output" in out               # verbose pane
+    assert "update done" in out                        # live streamed line shown
+    assert "#+#" not in out                            # logo hidden in verbose
+    assert ("Tab", "Overview") in run._footer_context()
+    run.keypress(_SIZE, "tab")                         # back to the overview
+    assert "#+#" in _render(run)
+
+
 def test_accept_run_screen_tracks_install_and_remove():
     from gest.tui.screens.accept import AcceptRunScreen
     app = App()
