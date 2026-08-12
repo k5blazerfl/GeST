@@ -189,6 +189,35 @@ def test_news_full_screen_reader(monkeypatch):
     assert app._stack[-1] is scr
 
 
+def test_news_unread_only_filter(monkeypatch):
+    from gest.core.software.news import NewsItem
+    items = [NewsItem(1, "-", "2018-01-01", "read one"),
+             NewsItem(2, "N", "2019-01-01", "unread two"),
+             NewsItem(3, "N", "2019-02-01", "unread three")]
+    _, scr = _news_screen(monkeypatch, items)
+    scr.keypress(_SIZE, "u")                              # unread only
+    assert scr._unread_only and [it.number for it in scr._visible] == [2, 3]
+    out = _render(scr)
+    assert "Unread only" in out and "read one" not in out
+    scr.keypress(_SIZE, "u")                              # back to all
+    assert not scr._unread_only and len(scr._visible) == 3
+
+
+def test_news_jump_between_unread(monkeypatch):
+    from gest.core.software.news import NewsItem
+    items = [NewsItem(1, "N", "2018-01-01", "unread one"),
+             NewsItem(2, "-", "2019-01-01", "read two"),
+             NewsItem(3, "N", "2019-02-01", "unread three")]
+    _, scr = _news_screen(monkeypatch, items)
+    scr._item_walker.set_focus(0)
+    scr.keypress(_SIZE, "n")                              # next unread (skip read #2)
+    assert scr._current().number == 3
+    scr.keypress(_SIZE, "n")                              # wraps to #1
+    assert scr._current().number == 1
+    scr.keypress(_SIZE, "p")                              # previous unread → #3
+    assert scr._current().number == 3
+
+
 def test_screen_status_line():
     app = App()
     menu = MenuScreen(app)

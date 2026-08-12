@@ -44,7 +44,9 @@ def _content_rows(parsed: news.NewsContent) -> list[urwid.Widget]:
 
 class NewsScreen(Screen):
     def __init__(self, app: App) -> None:
-        self._items: list[NewsItem] = []
+        self._items: list[NewsItem] = []        # every item
+        self._visible: list[NewsItem] = []      # what the list currently shows
+        self._unread_only = False
         self._item_walker = urwid.SimpleFocusListWalker([urwid.Text(" loading …")])
         self._list = urwid.ListBox(self._item_walker)
         self._content_walker = urwid.SimpleFocusListWalker(
@@ -64,6 +66,8 @@ class NewsScreen(Screen):
                 "●   marks an unread item.\n"
                 "Enter   read the item in the preview pane (and mark it read)\n"
                 "f       read the item full-screen (better for long items)\n"
+                "u       toggle showing only unread items\n"
+                "n / p   jump to the next / previous unread item\n"
                 "r       mark the highlighted item read\n"
                 "a       mark all items read\n"
                 "Tab     switch to the content pane   ↑/↓ scrolls it\n"
@@ -74,8 +78,10 @@ class NewsScreen(Screen):
 
     def _footer_context(self):
         if self._pile.focus_position == 0:              # news list
-            return [("Enter", "Read"), ("f", "Full screen"), ("r", "Mark read"),
-                    ("a", "All read"), ("Tab", "Content"), ("Esc", "Back")]
+            return [("Enter", "Read"), ("f", "Full screen"),
+                    ("u", "Show all" if self._unread_only else "Unread only"),
+                    ("n/p", "Jump unread"), ("a", "All read"),
+                    ("Tab", "Content"), ("Esc", "Back")]
         return [("↑↓", "Scroll"), ("f", "Full screen"),
                 ("Tab", "List"), ("Esc", "List")]       # content
 
@@ -85,24 +91,27 @@ class NewsScreen(Screen):
         self._items = await self.app.run_blocking(news.list_news)
         self._render_list()
         # Land on the first unread item so the reader opens where it matters.
-        first_unread = next((i for i, it in enumerate(self._items) if it.unread), 0)
-        if self._items:
-            self._item_walker.set_focus(first_unread)
+        first = next((i for i, it in enumerate(self._visible) if it.unread), 0)
+        if self._visible:
+            self._item_walker.set_focus(first)
         self.app.refresh()
 
     def _render_list(self) -> None:
         focus = self._item_walker.focus or 0
-        rows = [
-            urwid.AttrMap(
-                urwid.SelectableIcon(
-                    f"{'●' if it.unread else ' '} [{it.number}] {it.date}  "
-                    f"{it.title}", 0),
-                "field" if it.unread else None, focus_map="focus")
-            for it in self._items
-        ] or [urwid.Text(" (no news items)")]
-        self._item_walker[:] = rows
-        if self._items:
-            self._item_walker.set_focus(min(focus, len(self._items) - 1))
+        self._visible = ([it for it in self._items if it.unread]
+                         if self._unread_only else self._items)
+        if not self._visible:
+            msg = " No unread news." if self._unread_only else " (no news items)"
+            self._item_walker[:] = [urwid.Text(("dim", msg))]
+        else:
+            self._item_walker[:] = [
+                urwid.AttrMap(
+                    urwid.SelectableIcon(
+                        f"{'●' if it.unread else ' '} [{it.number}] {it.date}  "
+                        f"{it.title}", 0),
+                    "field" if it.unread else None, focus_map="focus")
+                for it in self._visible]
+            self._item_walker.set_focus(min(focus, len(self._visible) - 1))
         self._refresh_count()
         self.app.refresh()
 
@@ -111,10 +120,13 @@ class NewsScreen(Screen):
         unread = sum(1 for it in self._items if it.unread)
         if not n:
             self._count.set_text(("dim", " No news items"))
+        elif self._unread_only:
+            self._count.set_text([("field", f" Unread only — {unread}"),
+                                  ("dim", f"   ·   {n} total   ·   u  show all")])
         elif unread:
             self._count.set_text([("field", f" {unread} unread"),
                                   ("dim", f"  ·  {n} item{'s' if n != 1 else ''}"
-                                          "   ·   a  mark all read")])
+                                          "   ·   u  unread only   ·   a  mark all")])
         else:
             self._count.set_text(("dim", f" {n} item{'s' if n != 1 else ''}"
                                          " · all read"))
@@ -123,7 +135,27 @@ class NewsScreen(Screen):
 
     def _current(self) -> NewsItem | None:
         i = self._item_walker.focus
-        return self._items[i] if self._items and 0 <= i < len(self._items) else None
+        return (self._visible[i]
+                if self._visible and 0 <= i < len(self._visible) else None)
+
+    def _toggle_filter(self) -> None:
+        self._unread_only = not self._unread_only
+        self._render_list()
+        if self._visible:
+            self._item_walker.set_focus(0)
+        self._refresh_footer()
+
+    def _jump_unread(self, delta: int) -> None:
+        """Move focus to the next (delta=1) / previous (delta=-1) unread item."""
+        if not self._visible:
+            return
+        n = len(self._visible)
+        start = self._item_walker.focus or 0
+        for step in range(1, n + 1):
+            i = (start + delta * step) % n           # wrap around
+            if self._visible[i].unread:
+                self._item_walker.set_focus(i)
+                return
 
     async def _read(self, item: NewsItem) -> None:
         raw = await self.app.run_blocking(news.read_news, item.number)
@@ -179,6 +211,15 @@ class NewsScreen(Screen):
                 return None
             if key == "a":
                 self.app.run_async(self._mark("all"))
+                return None
+            if key in ("u", "U"):
+                self._toggle_filter()
+                return None
+            if key == "n":
+                self._jump_unread(1)
+                return None
+            if key == "p":
+                self._jump_unread(-1)
                 return None
         return key
 
