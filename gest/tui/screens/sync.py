@@ -16,11 +16,13 @@ import contextlib
 
 import urwid
 
+from gest.core import prefs
 from gest.core.repos import reader
 from gest.core.software import sync
 from gest.core.software.backend_client import SoftwareBackend
 from gest.tui.runtime import App, Modal, NavPile, Screen, boxed, focusable_actions
 from gest.tui.screens.apply import RawLogScreen, StreamLog
+from gest.tui.screens.autoaccept import AutoAccept
 from gest.tui.screens.loading import LoadingScreen
 from gest.tui.screens.runscreen import clip, row
 
@@ -51,10 +53,17 @@ def _syncable(repos) -> list[_SyncRepo]:
             if r.sync_uri and r.auto_sync.strip().lower() != "no"]
 
 
-class SyncLoadingScreen(LoadingScreen):
-    """Branded startup: read the syncable repositories, then hand off to review."""
+class SyncLoadingScreen(AutoAccept, LoadingScreen):
+    """Branded startup + auto-accept: read the syncable repositories, then apply
+    the accept-mode policy on the branded screen — sync at once (immediate), count
+    down here (timer; Enter syncs now / Esc reviews), or hand off to
+    :class:`SyncScreen` (manual). No syncable repos opens the review so the user
+    reads the message."""
+
+    _auto_action = "Syncing"
 
     def __init__(self, app: App) -> None:
+        self._rows: list[_SyncRepo] = []
         super().__init__(
             app,
             [{"key": "read", "label": "Read repositories",
@@ -63,19 +72,66 @@ class SyncLoadingScreen(LoadingScreen):
             subtitle="Preparing to sync the Portage tree",
             help_text=("Reading the repositories to sync from "
                        "/etc/portage/repos.conf.\n"
+                       "When there is something to sync it starts per your "
+                       "accept-mode preference:\n"
+                       "  · immediate — syncs at once\n"
+                       "  · timer — counts down here; Enter syncs now, Esc reviews\n"
+                       "  · manual — opens the review to confirm\n"
                        "Esc cancels and returns to the main menu."))
 
     async def _run(self) -> None:
         self._set_step("read", "active")
         self._set_phase("Reading /etc/portage/repos.conf …")
         repos = await self.app.run_blocking(reader.enabled_repos)
-        rows = _syncable(repos)
-        self._bar.set_completion(1)
+        self._rows = _syncable(repos)
+        n = len(self._rows)
         self._set_step("read", "done",
-                       f"{len(rows)} repositor{'y' if len(rows) == 1 else 'ies'}")
-        self._set_phase("Ready.", "ok")
-        if self.app._stack and self.app._stack[-1] is self:   # not cancelled
-            self.app.replace(SyncScreen(self.app, preloaded=rows))
+                       f"{n} repositor{'y' if n == 1 else 'ies'}")
+        # No repos to sync, or the user reviews every plan: open the review.
+        # Otherwise apply the accept-mode policy here — immediate syncs at once,
+        # timer counts down on this branded screen.
+        if not self._rows or prefs.accept_mode() == prefs.MANUAL:
+            self._bar.set_completion(1)
+            self._to_review()
+        else:
+            self._set_phase("Ready.", "ok")
+            self.arm_auto_accept()
+
+    # -- auto-accept (AutoAccept hooks) -------------------------------------
+
+    def _auto_progress(self, remaining: int, frac: float) -> None:
+        self._bar.set_completion(frac)
+        self._set_phase(f"{self._auto_action} in {remaining}s — "
+                        "Enter syncs now, Esc reviews.", "ok")
+
+    def _auto_apply(self) -> None:
+        # Applied without a review (immediate / timed): the sync run is itself a
+        # branded screen, so the branded look carries straight through.
+        if self.app._stack and self.app._stack[-1] is self:         # not cancelled
+            self.app.replace(SyncRunScreen(self.app, self._rows))
+
+    def _to_review(self) -> None:
+        if self.app._stack and self.app._stack[-1] is self:         # not cancelled
+            self.app.replace(SyncScreen(self.app, preloaded=self._rows))
+
+    # -- keys / footer ------------------------------------------------------
+
+    def _footer_context(self):
+        if self._timer_running:
+            return [("Enter", "Sync now"), ("Esc", "Review")]
+        return self._base_footer_keys
+
+    def handle_key(self, key):
+        outcome = self._auto_key(key)            # Enter/F10 sync now · Esc review
+        if outcome == "applied":
+            return None
+        if outcome == "stopped":                 # Esc during countdown → review
+            self._to_review()
+            return None
+        if key == "esc":
+            self.app.pop()                       # cancel read → back to the menu
+            return None
+        return key
 
 
 class SyncScreen(Screen):

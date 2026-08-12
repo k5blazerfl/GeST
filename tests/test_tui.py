@@ -2438,6 +2438,59 @@ def test_sync_loading_hands_off_to_review(monkeypatch):
     assert "[Cancel]" in out and "[Sync]" in out
 
 
+def _loading_sync(monkeypatch, app, mode="timer"):
+    """A SyncLoadingScreen with one syncable repo, in ``mode``; pushed onto the
+    stack and returned. Its _run() is scheduled — the caller pumps to drive
+    read → accept-mode policy."""
+    from gest.core.repos.reader import Repo
+    from gest.tui.screens.sync import SyncLoadingScreen
+    _sync_repos(monkeypatch, [Repo(name="guru", sync_type="git",
+                                   sync_uri="https://h/guru", auto_sync="yes")])
+    monkeypatch.setattr("gest.core.prefs.accept_mode", lambda *a, **k: mode)
+    scr = SyncLoadingScreen(app)
+    app._stack.append(scr)
+    return scr
+
+
+def test_sync_loading_manual_opens_review(monkeypatch):
+    from gest.tui.screens.sync import SyncScreen
+    app = App()
+    app._stack.append(urwid.Text("menu"))
+    _loading_sync(monkeypatch, app, mode="manual")
+    _pump(app, lambda: isinstance(app._stack[-1], SyncScreen), ticks=200)
+    assert isinstance(app._stack[-1], SyncScreen)
+
+
+def test_sync_loading_immediate_syncs_without_review(monkeypatch):
+    from gest.tui.screens.sync import SyncRunScreen, SyncScreen
+    app = App()
+    app._stack.append(urwid.Text("menu"))
+    _loading_sync(monkeypatch, app, mode="immediate")
+    _pump(app, lambda: any(isinstance(w, SyncRunScreen) for w in app._stack),
+          ticks=200)
+    assert any(isinstance(w, SyncRunScreen) for w in app._stack)   # synced at once
+    assert not any(isinstance(w, SyncScreen) for w in app._stack)  # no review
+
+
+def test_sync_loading_timer_counts_down_on_screen(monkeypatch):
+    app = App()
+    app._stack.append(urwid.Text("menu"))
+    scr = _loading_sync(monkeypatch, app, mode="timer")
+    _pump(app, lambda: scr._timer_running, ticks=200)   # countdown on the branded
+    assert scr._timer_running                            # startup screen, not review
+    assert ("Enter", "Sync now") in scr._footer_context()
+
+
+def test_sync_loading_esc_during_countdown_opens_review(monkeypatch):
+    from gest.tui.screens.sync import SyncScreen
+    app = App()
+    app._stack.append(urwid.Text("menu"))
+    scr = _loading_sync(monkeypatch, app, mode="timer")
+    _pump(app, lambda: scr._timer_running, ticks=200)
+    scr.keypress(_SIZE, "esc")                           # Esc → drop to review
+    assert isinstance(app._stack[-1], SyncScreen)
+
+
 def test_sync_review_f10_opens_branded_run(monkeypatch):
     from gest.core.repos.reader import Repo
     from gest.tui.screens.sync import SyncRunScreen, SyncScreen
