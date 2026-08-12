@@ -19,6 +19,7 @@ from gest.core.exec.executor import DirectExecutor
 from gest.core.exec.select import choose_executor
 from gest.core.exec.steps import StepError
 from gest.tui.runtime import App, Modal, Screen, boxed, strip_ansi
+from gest.tui.screens.kernel import KernelScreen
 
 
 class BootloaderScreen(Screen):
@@ -36,7 +37,8 @@ class BootloaderScreen(Screen):
         ])
         super().__init__(
             app, pile, title="Bootloader & Kernel",
-            footer_keys=[("r", "Regenerate GRUB"), ("i", "Install GRUB"), ("Esc", "Back")],
+            footer_keys=[("r", "Regenerate GRUB"), ("i", "Install GRUB"),
+                         ("k", "Build kernel"), ("Esc", "Back")],
         )
         app.run_async(self._load())
 
@@ -153,5 +155,8 @@ class BootloaderScreen(Screen):
             return None
         if key in ("i", "I"):
             self._configure_install()
+            return None
+        if key in ("k", "K"):
+            self.app.push(KernelScreen(self.app))
             return None
         return key
