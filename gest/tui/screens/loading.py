@@ -20,8 +20,8 @@ _STEP_GLYPH = {"pending": "·", "active": "▸", "done": "✓",
 _STEP_ATTR = {"pending": "dim", "active": "field", "done": "ok",
               "skipped": "dim", "failed": "error"}
 
-# GeST ASCII logo (from Art/ascii-logo.txt) — top three lines in Gentoo blue,
-# the bottom four in Gentoo purple.
+# GeST ASCII logo — top three lines in Gentoo blue, the bottom four in Gentoo
+# purple.
 _LOGO_LINES = [
     "      ::::::::  :::::::::: :::::::: :::::::::::",
     "    :+:    :+: :+:       :+:    :+:    :+:",
