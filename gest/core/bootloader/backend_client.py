@@ -23,6 +23,13 @@ class BootloaderBackend:
     async def regenerate_grub(self):
         return await self._iface.call_regenerate_grub()
 
+    async def install_grub(self, firmware, efi_directory, bootloader_id,
+                           removable, disk, boot_directory):
+        """Install GRUB (UEFI or BIOS); returns (ok, output). Implements the
+        ``install.GrubInstaller`` protocol with :meth:`regenerate_grub`."""
+        return await self._iface.call_install_grub(
+            firmware, efi_directory, bootloader_id, bool(removable), disk, boot_directory)
+
     async def close(self) -> None:
         if self._bus is not None:
             self._bus.disconnect()
