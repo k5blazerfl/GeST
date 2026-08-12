@@ -147,3 +147,71 @@ def test_apply_stops_at_first_failing_step():
     # wipefs ran, then the first sgdisk failed — nothing after it ran.
     assert [c[0] for c in ex.calls] == ["wipefs", "sgdisk"]
     assert excinfo.value.result.code == 1
+
+
+# --- server-side guards (what the backend re-checks) ------------------------
+
+def test_root_source_finds_root_device():
+    assert provision.root_source(_MOUNTS) == "/dev/nvme0n1p1"
+    assert provision.root_source("proc /proc proc rw 0 0\n") is None
+
+
+def test_guard_whole_disk_refuses_mounted_and_root():
+    # The disk holding the running root is refused for partitioning.
+    with pytest.raises(provision.DiskSafetyError):
+        provision.guard_provision_target("/dev/nvme0n1", _MOUNTS, whole_disk=True)
+    # A clean scratch disk passes.
+    provision.guard_provision_target("/dev/sda", _MOUNTS, whole_disk=True)
+
+
+def test_guard_partition_refuses_mounted_target():
+    with pytest.raises(provision.DiskSafetyError):
+        provision.guard_provision_target("/dev/nvme0n1p1", _MOUNTS, whole_disk=False)
+    provision.guard_provision_target("/dev/sda2", _MOUNTS, whole_disk=False)
+
+
+# --- backend-path orchestration ---------------------------------------------
+
+class _FakeBackend:
+    """Records provisioning calls; fails the op named in ``fail``."""
+
+    def __init__(self, fail: str | None = None) -> None:
+        self.calls: list[str] = []
+        self._fail = fail
+
+    async def _do(self, name: str) -> tuple[bool, str]:
+        self.calls.append(name)
+        return (name != self._fail, f"{name} output")
+
+    async def partition_disk(self, disk, wipe, partitions):
+        return await self._do("partition")
+
+    async def make_filesystem(self, device, kind, label):
+        return await self._do(f"mkfs:{device}")
+
+    async def make_swap(self, device, label):
+        return await self._do(f"mkswap:{device}")
+
+    async def swapon(self, device):
+        return await self._do(f"swapon:{device}")
+
+
+def test_apply_via_backend_calls_partition_then_filesystems():
+    backend = _FakeBackend()
+    asyncio.run(provision.apply_via_backend(_PLAN, backend))
+    assert backend.calls == ["partition", "mkfs:/dev/sda1", "mkfs:/dev/sda2"]
+
+
+def test_apply_via_backend_orders_swap_make_then_on():
+    plan = DiskPlan(disk="/dev/sda", wipe=False, partitions=[Partition(1, "rest", "8200")],
+                    filesystems=[Filesystem("/dev/sda1", "swap", "swp")])
+    backend = _FakeBackend()
+    asyncio.run(provision.apply_via_backend(plan, backend))
+    assert backend.calls == ["partition", "mkswap:/dev/sda1", "swapon:/dev/sda1"]
+
+
+def test_apply_via_backend_raises_on_refusal():
+    backend = _FakeBackend(fail="partition")
+    with pytest.raises(provision.DiskApplyError):
+        asyncio.run(provision.apply_via_backend(_PLAN, backend))
+    assert backend.calls == ["partition"]        # stopped before any mkfs

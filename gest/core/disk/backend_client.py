@@ -34,6 +34,28 @@ class DiskBackend:
     async def remove_fstab_entry(self, mountpoint):
         return await self._iface.call_remove_fstab_entry(mountpoint)
 
+    # --- provisioning (installed-system path) -------------------------------
+    # Each returns (ok, output); the backend re-validates and polkit-gates every
+    # call. These implement the ``provision.DiskProvisioner`` protocol so
+    # ``provision.apply_via_backend`` can drive a whole DiskPlan through them.
+
+    async def partition_disk(self, disk, wipe, partitions):
+        """partitions: list of (number, size, type_guid, label)."""
+        rows = [(int(n), s, g, lbl) for (n, s, g, lbl) in partitions]
+        return await self._iface.call_partition_disk(disk, bool(wipe), rows)
+
+    async def make_filesystem(self, device, kind, label=""):
+        return await self._iface.call_make_filesystem(device, kind, label)
+
+    async def make_swap(self, device, label=""):
+        return await self._iface.call_make_swap(device, label)
+
+    async def swapon(self, device):
+        return await self._iface.call_swap_on(device)
+
+    async def swapoff(self, device):
+        return await self._iface.call_swap_off(device)
+
     async def close(self) -> None:
         if self._bus is not None:
             self._bus.disconnect()

@@ -19,11 +19,12 @@ without touching a disk:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Protocol
 
 from gest.core.disk import commands
 from gest.core.disk.model import BlockDevice, DiskPlan
 from gest.core.exec.executor import Executor
-from gest.core.exec.runner import RunResult
+from gest.core.exec.runner import OnProgress, RunResult
 
 
 @dataclass(slots=True, frozen=True)
@@ -61,6 +62,15 @@ def mounted_sources(proc_mounts_text: str) -> set[str]:
     return sources
 
 
+def root_source(proc_mounts_text: str) -> str | None:
+    """The device mounted at ``/`` — the one we must never provision over."""
+    for line in proc_mounts_text.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[1] == "/" and parts[0].startswith("/dev/"):
+            return parts[0]
+    return None
+
+
 def _device_names(devices: list[BlockDevice], prefix: str = "/dev/") -> set[str]:
     """Every device path in an lsblk tree, walked recursively."""
     names: set[str] = set()
@@ -73,6 +83,36 @@ def _device_names(devices: list[BlockDevice], prefix: str = "/dev/") -> set[str]
 def _touches(source: str, disk: str) -> bool:
     """True if ``source`` is the disk itself or a partition on it."""
     return source == disk or source.startswith(disk)
+
+
+def guard_provision_target(
+    device: str, proc_mounts_text: str, *, whole_disk: bool
+) -> None:
+    """Raise :class:`DiskSafetyError` if ``device`` is unsafe to provision.
+
+    The authoritative, server-side re-check the backend runs before every
+    destructive op — the untrusted frontend's own validation is only a
+    convenience. ``whole_disk`` widens the check to any partition on the disk
+    (for partitioning); otherwise it guards the single partition (for mkfs/swap).
+    A mounted target, or the device backing ``/`` (the running/live system), is
+    always refused.
+    """
+    problems: list[str] = []
+    mounts = mounted_sources(proc_mounts_text)
+    root = root_source(proc_mounts_text)
+    if whole_disk:
+        hit = next((src for src in mounts if _touches(src, device)), None)
+        if hit is not None:
+            problems.append(f"{device} has a mounted partition ({hit})")
+        if root and _touches(root, device):
+            problems.append(f"{device} backs the running system and cannot be repartitioned")
+    else:
+        if device in mounts:
+            problems.append(f"{device} is mounted")
+        if root and device == root:
+            problems.append(f"{device} is the running root filesystem")
+    if problems:
+        raise DiskSafetyError(problems)
 
 
 def validate_plan(
@@ -158,3 +198,64 @@ async def apply_plan(
         if result.code != 0:
             raise DiskApplyError(step, result)
     return steps
+
+
+class DiskProvisioner(Protocol):
+    """The backend calls the frontend makes on the installed-system (D-Bus) path.
+
+    Each method mirrors a root ``org.gentoo.gest.Disk`` provisioning method and
+    returns ``(ok, output)``. Implemented by ``core/disk/backend_client``; a fake
+    stands in for tests.
+    """
+
+    async def partition_disk(
+        self, disk: str, wipe: bool, partitions: list[tuple[int, str, str, str]]
+    ) -> tuple[bool, str]: ...
+
+    async def make_filesystem(self, device: str, kind: str, label: str) -> tuple[bool, str]: ...
+
+    async def make_swap(self, device: str, label: str) -> tuple[bool, str]: ...
+
+    async def swapon(self, device: str) -> tuple[bool, str]: ...
+
+
+async def apply_via_backend(
+    plan: DiskPlan, backend: DiskProvisioner, *, on_progress: OnProgress | None = None
+) -> None:
+    """Apply ``plan`` through the root backend (installed-system path).
+
+    The same plan, same order (partition → filesystems/swap) as the direct path,
+    but each phase is a polkit-gated backend call that re-validates server-side.
+    Raises :class:`DiskApplyError` at the first phase the backend refuses or that
+    fails. (Callers should still pre-validate with :func:`validate_plan` for a
+    friendly message; the backend guard is the authoritative one.)
+    """
+
+    def _fail(label: str, output: str) -> DiskApplyError:
+        return DiskApplyError(Step(label, []), RunResult(1, output))
+
+    def _emit(output: str) -> None:
+        if on_progress and output:
+            on_progress(output.splitlines())
+
+    partitions = [(p.number, p.size, p.type_guid, p.label or "") for p in plan.partitions]
+    ok, out = await backend.partition_disk(plan.disk, plan.wipe, partitions)
+    _emit(out)
+    if not ok:
+        raise _fail(f"partition {plan.disk}", out)
+
+    for fs in plan.filesystems:
+        if fs.kind == "swap":
+            ok, out = await backend.make_swap(fs.device, fs.label or "")
+            _emit(out)
+            if not ok:
+                raise _fail(f"make swap on {fs.device}", out)
+            ok, out = await backend.swapon(fs.device)
+            _emit(out)
+            if not ok:
+                raise _fail(f"enable swap on {fs.device}", out)
+        else:
+            ok, out = await backend.make_filesystem(fs.device, fs.kind, fs.label or "")
+            _emit(out)
+            if not ok:
+                raise _fail(f"make {fs.kind} on {fs.device}", out)
