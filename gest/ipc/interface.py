@@ -41,6 +41,9 @@ ESELECT_POLKIT = "org.gentoo.gest.eselect.manage"
 BOOTLOADER_PATH = "/org/gentoo/gest/Bootloader"
 BOOTLOADER_IFACE = "org.gentoo.gest.Bootloader"
 BOOTLOADER_POLKIT = "org.gentoo.gest.bootloader.manage"
+# Installing a bootloader (grub-install to the ESP/MBR) is more impactful than
+# regenerating its config, so it gets its own action.
+BOOTLOADER_INSTALL_POLKIT = "org.gentoo.gest.bootloader.install"
 
 # Object path + interface for the repositories module (gated by the
 # portage.configure polkit action; repository config is Portage config).
