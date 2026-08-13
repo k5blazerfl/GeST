@@ -1,0 +1,11 @@
+
+  Welcome to the GeST Gentoo installer live image.
+
+  Run:   gest
+
+  and choose "Install Gentoo" (the top menu category) to partition a disk,
+  unpack a stage3, and install Gentoo — the Handbook, driven by a TUI.
+
+  Networking: a wired link usually comes up via DHCP automatically. For Wi-Fi,
+  run `gest` → Network → Wi-Fi (or `wpa_supplicant`/`iw` by hand) before
+  installing, since the install downloads a stage3 and emerges packages.

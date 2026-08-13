@@ -1,0 +1,43 @@
+# Packages for the GeST amd64 installer live image (catalyst livecd/packages).
+# GeST itself (its ebuild RDEPENDs pull portage, pygobject:3, urwid, dbus-next,
+# polkit and dbus) plus every tool GeST's install path shells out to, so the
+# installer works offline-of-Portage on the live medium.
+#
+# Keep this in sync with the `livecd/packages:` block in livecd-stage1.spec.
+
+# GeST (from the GeST overlay — see portage_overlay in the stage1 spec)
+app-admin/gest
+
+# storage provisioning: partition, mkfs, swap, mount
+sys-fs/gptfdisk          # sgdisk
+sys-block/parted
+sys-apps/util-linux      # mount, lsblk, wipefs, swapon
+sys-fs/e2fsprogs         # ext4
+sys-fs/xfsprogs          # xfs
+sys-fs/btrfs-progs       # btrfs
+sys-fs/f2fs-tools        # f2fs
+sys-fs/dosfstools        # vfat (the ESP)
+
+# stage3 fetch + verify + unpack
+net-misc/wget
+app-arch/tar
+app-arch/xz-utils
+app-crypt/gnupg
+
+# kernel + bootloader
+sys-kernel/genkernel
+sys-boot/grub
+sys-boot/efibootmgr
+
+# network (live env + the target's config tools)
+net-misc/dhcpcd
+net-wireless/wpa_supplicant
+net-wireless/iw
+
+# day-2 firewall backends GeST's Firewall module can drive
+net-firewall/nftables
+net-firewall/firewalld
+
+# the D-Bus / polkit runtime the backend needs (also pulled by gest, listed for clarity)
+sys-auth/polkit
+sys-apps/dbus

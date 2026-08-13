@@ -1,0 +1,2 @@
+# The GeST ebuild is published ~amd64; accept it in the livecd build root.
+app-admin/gest ~amd64
