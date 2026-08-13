@@ -25,6 +25,7 @@ from gest.tui.screens.makeconf import MakeconfScreen
 from gest.tui.screens.network import NetworkScreen
 from gest.tui.screens.news import NewsScreen
 from gest.tui.screens.preferences import PreferencesScreen
+from gest.tui.screens.privilege import PrivilegeScreen
 from gest.tui.screens.repos import ReposScreen
 from gest.tui.screens.services import ServicesScreen
 from gest.tui.screens.software import SoftwareLoadingScreen
@@ -79,6 +80,7 @@ CATEGORIES: list[tuple[str, list[tuple[str, str, bool]]]] = [
         ("users", "Users & Groups", True),
         ("firewall", "Firewall (nftables)", True),
         ("sshd", "SSH Server (sshd)", True),
+        ("privilege", "Privilege (sudo/doas)", True),
     ]),
     ("Network", [
         ("network", "Network", True),
@@ -266,6 +268,8 @@ class MenuScreen(Screen):
             self.app.push(FirewallScreen(self.app))
         elif key == "sshd":
             self.app.push(SshdScreen(self.app))
+        elif key == "privilege":
+            self.app.push(PrivilegeScreen(self.app))
         elif key == "network":
             self.app.push(NetworkScreen(self.app))
         elif key == "dns":

@@ -101,6 +101,13 @@ SSHD_PATH = "/org/gentoo/gest/Sshd"
 SSHD_IFACE = "org.gentoo.gest.Sshd"
 SSHD_POLKIT = "org.gentoo.gest.sshd.manage"
 
+# Object path + interface for the privilege-escalation module (sudo / doas).
+# SetSudo installs a validated /etc/sudoers.d drop-in; SetDoas upserts a GeST
+# block in /etc/doas.conf — each checked with the tool's own validator first.
+PRIVILEGE_PATH = "/org/gentoo/gest/Privilege"
+PRIVILEGE_IFACE = "org.gentoo.gest.Privilege"
+PRIVILEGE_POLKIT = "org.gentoo.gest.privilege.manage"
+
 # D-Bus error name the backend returns when a package operation is refused
 # because another is already in progress (another GeST session, or an external
 # emerge). The frontend maps it to a clean "busy" message instead of a raw crash.

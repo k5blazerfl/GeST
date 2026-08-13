@@ -42,6 +42,7 @@ from gest.backend.polkit import (
     caller_uid,
 )
 from gest.backend.portage import PortageService
+from gest.backend.privilege import PrivilegeService
 from gest.backend.repos import ReposService
 from gest.backend.services import ServicesService
 from gest.backend.ssh import SshService
@@ -748,6 +749,7 @@ def main() -> int:
         KernelService(conn)
         FirewallService(conn)
         SshdService(conn)
+        PrivilegeService(conn)
 
     def on_name_lost(conn, name):
         sys.stderr.write(f"gest-backend: lost/could not acquire name {name}\n")
