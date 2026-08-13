@@ -20,13 +20,14 @@ class PrivilegeBackend:
         self._iface = obj.get_interface(PRIVILEGE_IFACE)
         return self
 
-    async def set_sudo(self, group: str, enabled: bool, passwordless: bool):
+    async def set_sudo(self, group: str, enabled: bool, passwordless: bool, root: str = "/"):
         """Install (validated) or remove the GeST sudoers drop-in; (ok, output)."""
-        return await self._iface.call_set_sudo(group, enabled, passwordless)
+        return await self._iface.call_set_sudo(group, enabled, passwordless, root)
 
-    async def set_doas(self, group: str, enabled: bool, passwordless: bool, persist: bool):
+    async def set_doas(self, group: str, enabled: bool, passwordless: bool,
+                       persist: bool, root: str = "/"):
         """Upsert or strip the GeST doas.conf block (validated); (ok, output)."""
-        return await self._iface.call_set_doas(group, enabled, passwordless, persist)
+        return await self._iface.call_set_doas(group, enabled, passwordless, persist, root)
 
     async def close(self) -> None:
         if self._bus is not None:

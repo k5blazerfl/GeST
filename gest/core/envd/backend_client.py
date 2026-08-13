@@ -20,10 +20,10 @@ class EnvdBackend:
         self._iface = obj.get_interface(ENVD_IFACE)
         return self
 
-    async def apply_vars(self, variables: dict[str, str]):
+    async def apply_vars(self, variables: dict[str, str], root: str = "/"):
         """Write the drop-in and run env-update; (ok, output)."""
         pairs = [[k, v] for k, v in variables.items()]
-        return await self._iface.call_apply_vars(pairs)
+        return await self._iface.call_apply_vars(pairs, root)
 
     async def close(self) -> None:
         if self._bus is not None:

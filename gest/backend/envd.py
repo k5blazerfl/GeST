@@ -21,6 +21,7 @@ from gi.repository import Gio, GLib
 
 from gest.backend.audit import audit
 from gest.backend.polkit import caller_uid, check_authorization
+from gest.core import rootpath
 from gest.core.envd import commands, config
 from gest.ipc.interface import ENVD_IFACE, ENVD_PATH, ENVD_POLKIT
 
@@ -29,6 +30,7 @@ _INTROSPECTION = f"""
   <interface name="{ENVD_IFACE}">
     <method name="ApplyVars">
       <arg type="a(ss)" name="variables" direction="in"/>
+      <arg type="s" name="root" direction="in"/>
       <arg type="b" name="ok" direction="out"/>
       <arg type="s" name="output" direction="out"/>
     </method>
@@ -84,8 +86,9 @@ class EnvdService:
                 "Not authorized to change environment variables")
             return
         try:
-            (pairs,) = params.unpack()
-            ok, out = self._apply(pairs)
+            pairs, root = params.unpack()
+            rootpath.guard_config_root(root)
+            ok, out = self._apply(pairs, root)
         except ValueError as exc:
             invocation.return_error_literal(
                 Gio.dbus_error_quark(), Gio.DBusError.INVALID_ARGS, str(exc))
@@ -93,15 +96,20 @@ class EnvdService:
         except OSError as exc:
             invocation.return_value(GLib.Variant("(bs)", (False, f"write failed: {exc}")))
             return
-        audit(method, uid=uid, result="ok" if ok else "failed", detail=f"{len(pairs)} vars")
+        audit(method, uid=uid, result="ok" if ok else "failed",
+              detail=f"{len(pairs)} vars root={root}")
         invocation.return_value(GLib.Variant("(bs)", (ok, out)))
 
-    def _apply(self, pairs):
+    def _apply(self, pairs, root):
         variables = {str(k): str(v) for k, v in pairs}
         for name, value in variables.items():
             if not (config.valid_name(name) and config.valid_value(value)):
                 raise ValueError(f"invalid environment variable: {name!r}")
-        _atomic_write(config.ENVD_DROPIN, config.render_conf(variables))
+        dropin = rootpath.resolve(root, config.ENVD_DROPIN)
+        _atomic_write(dropin, config.render_conf(variables))
+        if rootpath.is_target(root):
+            noun = "cleared" if not variables else f"wrote {len(variables)} variable(s) to"
+            return True, f"{noun} {dropin} (target root; env-update not run)"
         ok, out = _run(commands.env_update_argv(env_update=_ENV_UPDATE))
         if not variables:
             return ok, out or "cleared the GeST env.d drop-in; ran env-update"

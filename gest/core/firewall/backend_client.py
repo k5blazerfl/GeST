@@ -21,11 +21,11 @@ class FirewallBackend:
         self._iface = obj.get_interface(FIREWALL_IFACE)
         return self
 
-    async def apply_policy(self, policy: FirewallPolicy):
+    async def apply_policy(self, policy: FirewallPolicy, root: str = "/"):
         """Validate + render + write /etc/nftables.nft and load it; (ok, output)."""
         return await self._iface.call_apply_policy(
             policy.default_input, policy.allow_ping,
-            list(policy.tcp_ports), list(policy.udp_ports),
+            list(policy.tcp_ports), list(policy.udp_ports), root,
         )
 
     async def enable_at_boot(self):

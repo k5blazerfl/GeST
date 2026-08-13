@@ -23,15 +23,16 @@ class NetworkBackend:
     async def set_link(self, iface, up):
         return await self._iface.call_set_link(iface, up)
 
-    async def set_interface_config(self, iface, method, address="", gateway=""):
-        return await self._iface.call_set_interface_config(iface, method, address, gateway)
+    async def set_interface_config(self, iface, method, address="", gateway="", root: str = "/"):
+        return await self._iface.call_set_interface_config(
+            iface, method, address, gateway, root)
 
-    async def set_resolvers(self, nameservers, search):
-        return await self._iface.call_set_resolvers(nameservers, search)
+    async def set_resolvers(self, nameservers, search, root: str = "/"):
+        return await self._iface.call_set_resolvers(nameservers, search, root)
 
-    async def set_hosts(self, entries):
+    async def set_hosts(self, entries, root: str = "/"):
         """entries: list of (address, [names])."""
-        return await self._iface.call_set_hosts(entries)
+        return await self._iface.call_set_hosts(entries, root)
 
     async def close(self) -> None:
         if self._bus is not None:

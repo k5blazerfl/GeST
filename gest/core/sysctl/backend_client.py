@@ -20,10 +20,10 @@ class SysctlBackend:
         self._iface = obj.get_interface(SYSCTL_IFACE)
         return self
 
-    async def apply_settings(self, settings: dict[str, str]):
+    async def apply_settings(self, settings: dict[str, str], root: str = "/"):
         """Write the drop-in and load it with sysctl -p; (ok, output)."""
         pairs = [[k, v] for k, v in settings.items()]
-        return await self._iface.call_apply_settings(pairs)
+        return await self._iface.call_apply_settings(pairs, root)
 
     async def close(self) -> None:
         if self._bus is not None:

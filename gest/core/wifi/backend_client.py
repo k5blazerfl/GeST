@@ -20,12 +20,12 @@ class WifiBackend:
         self._iface = obj.get_interface(WIFI_IFACE)
         return self
 
-    async def add_network(self, ssid: str, passphrase: str):
+    async def add_network(self, ssid: str, passphrase: str, root: str = "/"):
         """Add/replace a network (blank passphrase = open); (ok, output)."""
-        return await self._iface.call_add_network(ssid, passphrase)
+        return await self._iface.call_add_network(ssid, passphrase, root)
 
-    async def remove_network(self, ssid: str):
-        return await self._iface.call_remove_network(ssid)
+    async def remove_network(self, ssid: str, root: str = "/"):
+        return await self._iface.call_remove_network(ssid, root)
 
     async def scan(self):
         """Scan for nearby SSIDs; returns (ok, [ssid, …])."""

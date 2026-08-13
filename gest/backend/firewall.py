@@ -25,6 +25,7 @@ from gi.repository import Gio, GLib
 
 from gest.backend.audit import audit
 from gest.backend.polkit import caller_uid, check_authorization
+from gest.core import rootpath
 from gest.core.firewall import commands, nft
 from gest.core.firewall.model import FirewallPolicy
 from gest.ipc.interface import FIREWALL_IFACE, FIREWALL_PATH, FIREWALL_POLKIT
@@ -37,6 +38,7 @@ _INTROSPECTION = f"""
       <arg type="b" name="allow_ping" direction="in"/>
       <arg type="ai" name="tcp_ports" direction="in"/>
       <arg type="ai" name="udp_ports" direction="in"/>
+      <arg type="s" name="root" direction="in"/>
       <arg type="b" name="ok" direction="out"/>
       <arg type="s" name="output" direction="out"/>
     </method>
@@ -99,9 +101,11 @@ class FirewallService:
             return
         try:
             if method == "ApplyPolicy":
-                default_input, allow_ping, tcp_ports, udp_ports = params.unpack()
-                ok, out = self._apply_policy(default_input, allow_ping, tcp_ports, udp_ports)
-                detail = f"input={default_input} tcp={list(tcp_ports)} udp={list(udp_ports)}"
+                default_input, allow_ping, tcp_ports, udp_ports, root = params.unpack()
+                rootpath.guard_config_root(root)
+                ok, out = self._apply_policy(default_input, allow_ping, tcp_ports, udp_ports, root)
+                detail = (f"input={default_input} tcp={list(tcp_ports)} "
+                          f"udp={list(udp_ports)} root={root}")
             else:  # EnableAtBoot
                 ok, out = self._enable_at_boot()
                 detail = "enable nftables at boot"
@@ -115,7 +119,7 @@ class FirewallService:
         audit(method, uid=uid, result="ok" if ok else "failed", detail=detail)
         invocation.return_value(GLib.Variant("(bs)", (ok, out)))
 
-    def _apply_policy(self, default_input, allow_ping, tcp_ports, udp_ports):
+    def _apply_policy(self, default_input, allow_ping, tcp_ports, udp_ports, root):
         policy = FirewallPolicy(
             default_input=default_input,
             allow_ping=bool(allow_ping),
@@ -124,12 +128,15 @@ class FirewallService:
         )
         if not nft.valid_policy(policy):
             raise ValueError("invalid firewall policy (bad default or port out of range)")
-        _atomic_write(nft.NFT_PATH, nft.render_ruleset(policy))
-        ok, out = _run(commands.nft_check_argv(nft.NFT_PATH, nft=_NFT))
+        nft_path = rootpath.resolve(root, nft.NFT_PATH)
+        _atomic_write(nft_path, nft.render_ruleset(policy))
+        ok, out = _run(commands.nft_check_argv(nft_path, nft=_NFT))
         if not ok:
             return False, f"ruleset failed validation, not loaded:\n{out}"
-        ok, out = _run(commands.nft_load_argv(nft.NFT_PATH, nft=_NFT))
-        return ok, out or f"firewall applied and saved to {nft.NFT_PATH}"
+        if rootpath.is_target(root):
+            return True, f"firewall ruleset written to {nft_path} (target root; not loaded live)"
+        ok, out = _run(commands.nft_load_argv(nft_path, nft=_NFT))
+        return ok, out or f"firewall applied and saved to {nft_path}"
 
     def _enable_at_boot(self):
         """Persist the live ruleset and enable the nftables service at boot.

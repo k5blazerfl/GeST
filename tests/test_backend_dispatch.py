@@ -95,7 +95,7 @@ def test_sethostname_validates(monkeypatch):
     svc._conn = None
     inv = _FakeInvocation()
     svc._on_call(None, ":1.5", "/p", "i", "SetHostname",
-                 _FakeParams(["bad host"]), inv)
+                 _FakeParams(["bad host", "/"]), inv)
     assert inv.value is None
     assert inv.error[0] == Gio.DBusError.INVALID_ARGS
 
@@ -108,7 +108,7 @@ def test_setinterfaceconfig_bad_address_invalid_args(monkeypatch):
     inv = _FakeInvocation()
     # static with a non-CIDR address must be rejected before any file write
     svc._on_call(None, ":1.5", "/p", "i", "SetInterfaceConfig",
-                 _FakeParams(["eth0", "static", "not-a-cidr", ""]), inv)
+                 _FakeParams(["eth0", "static", "not-a-cidr", "", "/"]), inv)
     assert inv.value is None
     assert inv.error[0] == Gio.DBusError.INVALID_ARGS
 

@@ -21,6 +21,7 @@ from gi.repository import Gio, GLib
 
 from gest.backend.audit import audit
 from gest.backend.polkit import caller_uid, check_authorization
+from gest.core import rootpath
 from gest.core.system import console as console_core
 from gest.core.system import hostname as hostname_core
 from gest.core.system import locale as locale_core
@@ -32,26 +33,31 @@ _INTROSPECTION = f"""
   <interface name="{SYSTEM_IFACE}">
     <method name="SetHostname">
       <arg type="s" name="name" direction="in"/>
+      <arg type="s" name="root" direction="in"/>
       <arg type="b" name="ok" direction="out"/>
       <arg type="s" name="output" direction="out"/>
     </method>
     <method name="SetTimezone">
       <arg type="s" name="zone" direction="in"/>
+      <arg type="s" name="root" direction="in"/>
       <arg type="b" name="ok" direction="out"/>
       <arg type="s" name="output" direction="out"/>
     </method>
     <method name="SetLocale">
       <arg type="s" name="lang" direction="in"/>
+      <arg type="s" name="root" direction="in"/>
       <arg type="b" name="ok" direction="out"/>
       <arg type="s" name="output" direction="out"/>
     </method>
     <method name="SetKeymap">
       <arg type="s" name="keymap" direction="in"/>
+      <arg type="s" name="root" direction="in"/>
       <arg type="b" name="ok" direction="out"/>
       <arg type="s" name="output" direction="out"/>
     </method>
     <method name="SetConsoleFont">
       <arg type="s" name="font" direction="in"/>
+      <arg type="s" name="root" direction="in"/>
       <arg type="b" name="ok" direction="out"/>
       <arg type="s" name="output" direction="out"/>
     </method>
@@ -103,8 +109,9 @@ class SystemService:
                 "Not authorized to change system settings")
             return
         try:
-            (value,) = params.unpack()
-            ok, out = getattr(self, f"_{method.lower()}")(value)
+            value, root = params.unpack()
+            rootpath.guard_config_root(root)
+            ok, out = getattr(self, f"_{method.lower()}")(value, root)
         except ValueError as exc:
             invocation.return_error_literal(
                 Gio.dbus_error_quark(), Gio.DBusError.INVALID_ARGS, str(exc))
@@ -112,36 +119,44 @@ class SystemService:
         except OSError as exc:
             invocation.return_value(GLib.Variant("(bs)", (False, f"write failed: {exc}")))
             return
-        audit(method, uid=uid, result="ok" if ok else "failed", detail=value)
+        audit(method, uid=uid, result="ok" if ok else "failed",
+              detail=f"{value} root={root}")
         invocation.return_value(GLib.Variant("(bs)", (ok, out)))
 
-    def _sethostname(self, name: str) -> tuple[bool, str]:
+    def _sethostname(self, name: str, root: str) -> tuple[bool, str]:
         if not hostname_core.valid_hostname(name):
             raise ValueError("invalid hostname")
-        _atomic_write("/etc/conf.d/hostname", f'hostname="{name}"\n')
+        path = rootpath.resolve(root, "/etc/conf.d/hostname")
+        _atomic_write(path, f'hostname="{name}"\n')
+        if rootpath.is_target(root):
+            return True, f"hostname written to {path} (target root; not set live)"
         proc = subprocess.run([_HOSTNAME_CMD, name], capture_output=True, text=True)
         return proc.returncode == 0, (proc.stderr.strip() or f"hostname set to {name}")
 
-    def _settimezone(self, zone: str) -> tuple[bool, str]:
+    def _settimezone(self, zone: str, root: str) -> tuple[bool, str]:
         if not timezone_core.valid_zone_name(zone):
             raise ValueError("invalid timezone")
         target = os.path.join(_ZONEINFO, zone)
         if not os.path.isfile(target):
             raise ValueError("unknown timezone")
-        _atomic_write("/etc/timezone", f"{zone}\n")
-        # atomically repoint /etc/localtime at the zone file
-        tmp = "/etc/.gest.localtime"
+        _atomic_write(rootpath.resolve(root, "/etc/timezone"), f"{zone}\n")
+        # atomically repoint <root>/etc/localtime at the zone file. The symlink
+        # target stays the absolute /usr/share/zoneinfo path, which is valid
+        # inside the target too, so there is no live command to skip.
+        localtime = rootpath.resolve(root, "/etc/localtime")
+        tmp = rootpath.resolve(root, "/etc/.gest.localtime")
+        os.makedirs(os.path.dirname(localtime), exist_ok=True)
         with contextlib.suppress(OSError):
             os.unlink(tmp)
         os.symlink(target, tmp)
-        os.replace(tmp, "/etc/localtime")
+        os.replace(tmp, localtime)
         return True, f"timezone set to {zone}"
 
-    def _setlocale(self, lang: str) -> tuple[bool, str]:
+    def _setlocale(self, lang: str, root: str) -> tuple[bool, str]:
         if not locale_core.valid_locale(lang):
             raise ValueError("invalid locale")
-        _atomic_write("/etc/env.d/02locale", f'LANG="{lang}"\n')
-        _atomic_write("/etc/locale.conf", f"LANG={lang}\n")
+        _atomic_write(rootpath.resolve(root, "/etc/env.d/02locale"), f'LANG="{lang}"\n')
+        _atomic_write(rootpath.resolve(root, "/etc/locale.conf"), f"LANG={lang}\n")
         return True, f"locale set to {lang} (run env-update or re-login to apply)"
 
     def _upsert_conf(self, path: str, key: str, value: str) -> None:
@@ -153,14 +168,15 @@ class SystemService:
             text = ""
         _atomic_write(path, console_core.set_conf_value(text, key, value))
 
-    def _setkeymap(self, keymap: str) -> tuple[bool, str]:
+    def _setkeymap(self, keymap: str, root: str) -> tuple[bool, str]:
         if not console_core.valid_keymap(keymap):
             raise ValueError("invalid keymap")
-        self._upsert_conf(console_core.KEYMAPS_CONF, "keymap", keymap)
+        self._upsert_conf(rootpath.resolve(root, console_core.KEYMAPS_CONF), "keymap", keymap)
         return True, f"keymap set to {keymap} (applies on next boot / keymaps restart)"
 
-    def _setconsolefont(self, font: str) -> tuple[bool, str]:
+    def _setconsolefont(self, font: str, root: str) -> tuple[bool, str]:
         if not console_core.valid_font(font):
             raise ValueError("invalid console font")
-        self._upsert_conf(console_core.CONSOLEFONT_CONF, "consolefont", font)
+        self._upsert_conf(
+            rootpath.resolve(root, console_core.CONSOLEFONT_CONF), "consolefont", font)
         return True, f"console font set to {font} (applied on next boot or consolefont restart)"

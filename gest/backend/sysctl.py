@@ -22,6 +22,7 @@ from gi.repository import Gio, GLib
 
 from gest.backend.audit import audit
 from gest.backend.polkit import caller_uid, check_authorization
+from gest.core import rootpath
 from gest.core.sysctl import commands, config
 from gest.ipc.interface import SYSCTL_IFACE, SYSCTL_PATH, SYSCTL_POLKIT
 
@@ -30,6 +31,7 @@ _INTROSPECTION = f"""
   <interface name="{SYSCTL_IFACE}">
     <method name="ApplySettings">
       <arg type="a(ss)" name="settings" direction="in"/>
+      <arg type="s" name="root" direction="in"/>
       <arg type="b" name="ok" direction="out"/>
       <arg type="s" name="output" direction="out"/>
     </method>
@@ -85,8 +87,9 @@ class SysctlService:
                 "Not authorized to change kernel parameters")
             return
         try:
-            (pairs,) = params.unpack()
-            ok, out = self._apply(pairs)
+            pairs, root = params.unpack()
+            rootpath.guard_config_root(root)
+            ok, out = self._apply(pairs, root)
         except ValueError as exc:
             invocation.return_error_literal(
                 Gio.dbus_error_quark(), Gio.DBusError.INVALID_ARGS, str(exc))
@@ -94,16 +97,21 @@ class SysctlService:
         except OSError as exc:
             invocation.return_value(GLib.Variant("(bs)", (False, f"write failed: {exc}")))
             return
-        audit(method, uid=uid, result="ok" if ok else "failed", detail=f"{len(pairs)} keys")
+        audit(method, uid=uid, result="ok" if ok else "failed",
+              detail=f"{len(pairs)} keys root={root}")
         invocation.return_value(GLib.Variant("(bs)", (ok, out)))
 
-    def _apply(self, pairs):
+    def _apply(self, pairs, root):
         settings = {str(k): str(v) for k, v in pairs}
         for key, value in settings.items():
             if not (config.valid_key(key) and config.valid_value(value)):
                 raise ValueError(f"invalid sysctl setting: {key!r}")
-        _atomic_write(config.SYSCTL_DROPIN, config.render_conf(settings))
+        dropin = rootpath.resolve(root, config.SYSCTL_DROPIN)
+        _atomic_write(dropin, config.render_conf(settings))
         if not settings:
             return True, "cleared the GeST sysctl drop-in"
-        ok, out = _run(commands.sysctl_load_argv(config.SYSCTL_DROPIN, sysctl=_SYSCTL))
+        if rootpath.is_target(root):
+            return True, (f"wrote {len(settings)} setting(s) to {dropin} "
+                          "(target root; not loaded live)")
+        ok, out = _run(commands.sysctl_load_argv(dropin, sysctl=_SYSCTL))
         return ok, out or f"applied {len(settings)} sysctl setting(s)"

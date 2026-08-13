@@ -20,6 +20,7 @@ from gi.repository import Gio, GLib
 
 from gest.backend.audit import audit
 from gest.backend.polkit import caller_uid, check_authorization
+from gest.core import rootpath
 from gest.core.network import commands, netifrc
 from gest.core.network import hosts as hosts_core
 from gest.core.network import resolv as resolv_core
@@ -39,17 +40,20 @@ _INTROSPECTION = f"""
       <arg type="s" name="method" direction="in"/>
       <arg type="s" name="address" direction="in"/>
       <arg type="s" name="gateway" direction="in"/>
+      <arg type="s" name="root" direction="in"/>
       <arg type="b" name="ok" direction="out"/>
       <arg type="s" name="output" direction="out"/>
     </method>
     <method name="SetResolvers">
       <arg type="as" name="nameservers" direction="in"/>
       <arg type="as" name="search" direction="in"/>
+      <arg type="s" name="root" direction="in"/>
       <arg type="b" name="ok" direction="out"/>
       <arg type="s" name="output" direction="out"/>
     </method>
     <method name="SetHosts">
       <arg type="a(sas)" name="entries" direction="in"/>
+      <arg type="s" name="root" direction="in"/>
       <arg type="b" name="ok" direction="out"/>
       <arg type="s" name="output" direction="out"/>
     </method>
@@ -110,17 +114,20 @@ class NetworkService:
                 ok, out = _run(commands.iplink_argv(name, up, ip=_IP))
                 detail = f"{name} {'up' if up else 'down'}"
             elif method == "SetInterfaceConfig":
-                name, cfg_method, address, gateway = params.unpack()
-                ok, out = self._set_interface_config(name, cfg_method, address, gateway)
-                detail = f"{name} {cfg_method}"
+                name, cfg_method, address, gateway, root = params.unpack()
+                rootpath.guard_config_root(root)
+                ok, out = self._set_interface_config(name, cfg_method, address, gateway, root)
+                detail = f"{name} {cfg_method} root={root}"
             elif method == "SetResolvers":
-                nameservers, search = params.unpack()
-                ok, out = self._set_resolvers(list(nameservers), list(search))
-                detail = f"{len(nameservers)} nameservers"
+                nameservers, search, root = params.unpack()
+                rootpath.guard_config_root(root)
+                ok, out = self._set_resolvers(list(nameservers), list(search), root)
+                detail = f"{len(nameservers)} nameservers root={root}"
             else:  # SetHosts
-                (entries,) = params.unpack()
-                ok, out = self._set_hosts(entries)
-                detail = f"{len(entries)} host entries"
+                entries, root = params.unpack()
+                rootpath.guard_config_root(root)
+                ok, out = self._set_hosts(entries, root)
+                detail = f"{len(entries)} host entries root={root}"
         except ValueError as exc:
             invocation.return_error_literal(
                 Gio.dbus_error_quark(), Gio.DBusError.INVALID_ARGS, str(exc))
@@ -131,7 +138,7 @@ class NetworkService:
         audit(method, uid=uid, result="ok" if ok else "failed", detail=detail)
         invocation.return_value(GLib.Variant("(bs)", (ok, out)))
 
-    def _set_interface_config(self, iface, method, address, gateway):
+    def _set_interface_config(self, iface, method, address, gateway, root):
         if not commands.valid_iface(iface):
             raise ValueError("invalid interface")
         if method not in ("dhcp", "static", "none"):
@@ -141,7 +148,7 @@ class NetworkService:
                 raise ValueError("invalid IP address (need CIDR, e.g. 192.168.1.5/24)")
             if not netifrc.valid_gateway(gateway):
                 raise ValueError("invalid gateway address")
-        path = "/etc/conf.d/net"
+        path = rootpath.resolve(root, "/etc/conf.d/net")
         try:
             with open(path, encoding="utf-8") as fh:
                 text = fh.read()
@@ -155,15 +162,16 @@ class NetworkService:
         _atomic_write(path, netifrc.render_conf_net(text, cfg))
         return True, f"{iface} configured as {method} (restart net.{iface} to apply)"
 
-    def _set_resolvers(self, nameservers, search):
+    def _set_resolvers(self, nameservers, search, root):
         if not resolv_core.valid_resolv(nameservers, search):
             raise ValueError("need at least one valid nameserver; check the search domains")
-        _atomic_write("/etc/resolv.conf", resolv_core.render_resolv(nameservers, search))
+        _atomic_write(rootpath.resolve(root, "/etc/resolv.conf"),
+                      resolv_core.render_resolv(nameservers, search))
         return True, f"resolv.conf updated ({len(nameservers)} nameserver(s))"
 
-    def _set_hosts(self, entries):
+    def _set_hosts(self, entries, root):
         parsed = [hosts_core.HostsEntry(address, list(names)) for address, names in entries]
         if not hosts_core.valid_hosts(parsed):
             raise ValueError("invalid host entries (need a valid IP and hostname on each)")
-        _atomic_write("/etc/hosts", hosts_core.render_hosts(parsed))
+        _atomic_write(rootpath.resolve(root, "/etc/hosts"), hosts_core.render_hosts(parsed))
         return True, f"/etc/hosts updated ({len(parsed)} entr{'y' if len(parsed) == 1 else 'ies'})"

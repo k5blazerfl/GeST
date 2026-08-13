@@ -24,6 +24,7 @@ from gi.repository import Gio, GLib
 
 from gest.backend.audit import audit
 from gest.backend.polkit import caller_uid, check_authorization
+from gest.core import rootpath
 from gest.core.sshd import commands, config
 from gest.core.sshd.model import SshdSettings
 from gest.core.sshd.reader import SSHD_CONFIG
@@ -39,6 +40,7 @@ _INTROSPECTION = f"""
       <arg type="b" name="pubkey_authentication" direction="in"/>
       <arg type="b" name="x11_forwarding" direction="in"/>
       <arg type="b" name="permit_empty_passwords" direction="in"/>
+      <arg type="s" name="root" direction="in"/>
       <arg type="b" name="ok" direction="out"/>
       <arg type="s" name="output" direction="out"/>
     </method>
@@ -81,6 +83,8 @@ class SshdService:
             return
         try:
             values = params.unpack()
+            root = values[-1]
+            rootpath.guard_config_root(root)
             ok, out = self._apply_config(*values)
         except ValueError as exc:
             invocation.return_error_literal(
@@ -89,11 +93,12 @@ class SshdService:
         except OSError as exc:
             invocation.return_value(GLib.Variant("(bs)", (False, f"write failed: {exc}")))
             return
-        audit(method, uid=uid, result="ok" if ok else "failed", detail=f"port={values[0]}")
+        audit(method, uid=uid, result="ok" if ok else "failed",
+              detail=f"port={values[0]} root={root}")
         invocation.return_value(GLib.Variant("(bs)", (ok, out)))
 
     def _apply_config(self, port, permit_root_login, password_auth,
-                      pubkey_auth, x11_forwarding, permit_empty_passwords):
+                      pubkey_auth, x11_forwarding, permit_empty_passwords, root):
         settings = SshdSettings(
             port=int(port),
             permit_root_login=permit_root_login,
@@ -105,8 +110,9 @@ class SshdService:
         if not config.valid_settings(settings):
             raise ValueError("invalid sshd settings (bad port or root-login value)")
 
+        sshd_config = rootpath.resolve(root, SSHD_CONFIG)
         try:
-            with open(SSHD_CONFIG, encoding="utf-8") as fh:
+            with open(sshd_config, encoding="utf-8") as fh:
                 current = fh.read()
         except OSError:
             current = ""
@@ -114,7 +120,7 @@ class SshdService:
 
         # Write the candidate beside the real file, validate it with `sshd -t`,
         # and only swap it in if it passes — so we never break a running sshd.
-        directory = os.path.dirname(SSHD_CONFIG)
+        directory = os.path.dirname(sshd_config)
         os.makedirs(directory, exist_ok=True)
         fd, tmp = tempfile.mkstemp(dir=directory, prefix=".gest.")
         try:
@@ -124,11 +130,15 @@ class SshdService:
             ok, out = _run(commands.sshd_test_argv(tmp, sshd=_SSHD))
             if not ok:
                 return False, f"config rejected by sshd -t, not applied:\n{out}"
-            os.replace(tmp, SSHD_CONFIG)
+            os.replace(tmp, sshd_config)
         except Exception:
             with contextlib.suppress(OSError):
                 os.unlink(tmp)
             raise
+
+        if rootpath.is_target(root):
+            return True, (f"sshd_config written to {sshd_config} "
+                          "(target root; not reloaded live)")
 
         reloaded, rout = _run([_RC_SERVICE, "sshd", "reload"])
         note = "reloaded sshd" if reloaded else f"saved, but reload failed: {rout}"

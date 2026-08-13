@@ -21,7 +21,7 @@ class SshdBackend:
         self._iface = obj.get_interface(SSHD_IFACE)
         return self
 
-    async def apply_config(self, settings: SshdSettings):
+    async def apply_config(self, settings: SshdSettings, root: str = "/"):
         """Upsert + validate (sshd -t) + write sshd_config and reload; (ok, output)."""
         return await self._iface.call_apply_config(
             settings.port,
@@ -30,6 +30,7 @@ class SshdBackend:
             settings.pubkey_authentication,
             settings.x11_forwarding,
             settings.permit_empty_passwords,
+            root,
         )
 
     async def close(self) -> None:

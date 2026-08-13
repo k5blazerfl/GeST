@@ -28,6 +28,7 @@ from gi.repository import Gio, GLib
 
 from gest.backend.audit import audit
 from gest.backend.polkit import caller_uid, check_authorization
+from gest.core import rootpath
 from gest.core.wifi import commands, config
 from gest.ipc.interface import WIFI_IFACE, WIFI_PATH, WIFI_POLKIT
 
@@ -37,11 +38,13 @@ _INTROSPECTION = f"""
     <method name="AddNetwork">
       <arg type="s" name="ssid" direction="in"/>
       <arg type="s" name="passphrase" direction="in"/>
+      <arg type="s" name="root" direction="in"/>
       <arg type="b" name="ok" direction="out"/>
       <arg type="s" name="output" direction="out"/>
     </method>
     <method name="RemoveNetwork">
       <arg type="s" name="ssid" direction="in"/>
+      <arg type="s" name="root" direction="in"/>
       <arg type="b" name="ok" direction="out"/>
       <arg type="s" name="output" direction="out"/>
     </method>
@@ -110,13 +113,15 @@ class WifiService:
                 invocation.return_value(GLib.Variant("(bas)", (ok, ssids)))
                 return
             if method == "AddNetwork":
-                ssid, passphrase = params.unpack()
-                ok, out = self._add_network(ssid, passphrase)
-                detail = f"add {ssid}"
+                ssid, passphrase, root = params.unpack()
+                rootpath.guard_config_root(root)
+                ok, out = self._add_network(ssid, passphrase, root)
+                detail = f"add {ssid} root={root}"
             else:  # RemoveNetwork
-                (ssid,) = params.unpack()
-                ok, out = self._remove_network(ssid)
-                detail = f"remove {ssid}"
+                ssid, root = params.unpack()
+                rootpath.guard_config_root(root)
+                ok, out = self._remove_network(ssid, root)
+                detail = f"remove {ssid} root={root}"
         except ValueError as exc:
             invocation.return_error_literal(
                 Gio.dbus_error_quark(), Gio.DBusError.INVALID_ARGS, str(exc))
@@ -127,21 +132,24 @@ class WifiService:
         audit(method, uid=uid, result="ok" if ok else "failed", detail=detail)
         invocation.return_value(GLib.Variant("(bs)", (ok, out)))
 
-    def _read_conf(self) -> str:
+    def _read_conf(self, root) -> str:
         try:
-            with open(config.WPA_CONF, encoding="utf-8") as fh:
+            with open(rootpath.resolve(root, config.WPA_CONF), encoding="utf-8") as fh:
                 return fh.read()
         except OSError:
             return ""
 
-    def _write_and_reconfigure(self, text: str) -> str:
-        _atomic_write(config.WPA_CONF, text, 0o600)
+    def _write_and_reconfigure(self, text: str, root) -> str:
+        path = rootpath.resolve(root, config.WPA_CONF)
+        _atomic_write(path, text, 0o600)
+        if rootpath.is_target(root):
+            return path
         # Best-effort: a running supplicant re-reads its config; harmless if none.
         with contextlib.suppress(Exception):
             _run(commands.wpa_cli_reconfigure_argv(wpa_cli=_WPA_CLI), timeout=5)
-        return config.WPA_CONF
+        return path
 
-    def _add_network(self, ssid, passphrase):
+    def _add_network(self, ssid, passphrase, root):
         if not config.valid_ssid(ssid):
             raise ValueError("invalid SSID (1-32 bytes, no quotes/backslashes)")
         if passphrase:
@@ -155,16 +163,18 @@ class WifiService:
                 return False, f"wpa_passphrase failed:\n{out}"
         else:
             block = config.render_open_network(ssid)
-        text = config.append_network(config.remove_network(self._read_conf(), ssid), block)
-        path = self._write_and_reconfigure(text)
+        text = config.append_network(config.remove_network(self._read_conf(root), ssid), block)
+        path = self._write_and_reconfigure(text, root)
         kind = "open" if not passphrase else "secured"
-        return True, f"added {kind} network {ssid} to {path}"
+        note = " (target root; not reconfigured live)" if rootpath.is_target(root) else ""
+        return True, f"added {kind} network {ssid} to {path}{note}"
 
-    def _remove_network(self, ssid):
+    def _remove_network(self, ssid, root):
         if not config.valid_ssid(ssid):
             raise ValueError("invalid SSID")
-        path = self._write_and_reconfigure(config.remove_network(self._read_conf(), ssid))
-        return True, f"removed {ssid} from {path}"
+        path = self._write_and_reconfigure(config.remove_network(self._read_conf(root), ssid), root)
+        note = " (target root; not reconfigured live)" if rootpath.is_target(root) else ""
+        return True, f"removed {ssid} from {path}{note}"
 
     def _scan(self):
         from gest.core.wifi import reader

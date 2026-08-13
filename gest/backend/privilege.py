@@ -29,6 +29,7 @@ from gi.repository import Gio, GLib
 
 from gest.backend.audit import audit
 from gest.backend.polkit import caller_uid, check_authorization
+from gest.core import rootpath
 from gest.core.privilege import commands, render
 from gest.core.privilege.model import DOAS_CONF, SUDOERS_DROPIN, EscalationPolicy
 from gest.ipc.interface import PRIVILEGE_IFACE, PRIVILEGE_PATH, PRIVILEGE_POLKIT
@@ -40,6 +41,7 @@ _INTROSPECTION = f"""
       <arg type="s" name="group" direction="in"/>
       <arg type="b" name="enabled" direction="in"/>
       <arg type="b" name="passwordless" direction="in"/>
+      <arg type="s" name="root" direction="in"/>
       <arg type="b" name="ok" direction="out"/>
       <arg type="s" name="output" direction="out"/>
     </method>
@@ -48,6 +50,7 @@ _INTROSPECTION = f"""
       <arg type="b" name="enabled" direction="in"/>
       <arg type="b" name="passwordless" direction="in"/>
       <arg type="b" name="persist" direction="in"/>
+      <arg type="s" name="root" direction="in"/>
       <arg type="b" name="ok" direction="out"/>
       <arg type="s" name="output" direction="out"/>
     </method>
@@ -90,13 +93,15 @@ class PrivilegeService:
             return
         try:
             if method == "SetSudo":
-                group, enabled, passwordless = params.unpack()
-                ok, out = self._set_sudo(group, enabled, passwordless)
-                detail = f"sudo {group} enabled={enabled}"
+                group, enabled, passwordless, root = params.unpack()
+                rootpath.guard_config_root(root)
+                ok, out = self._set_sudo(group, enabled, passwordless, root)
+                detail = f"sudo {group} enabled={enabled} root={root}"
             else:  # SetDoas
-                group, enabled, passwordless, persist = params.unpack()
-                ok, out = self._set_doas(group, enabled, passwordless, persist)
-                detail = f"doas {group} enabled={enabled}"
+                group, enabled, passwordless, persist, root = params.unpack()
+                rootpath.guard_config_root(root)
+                ok, out = self._set_doas(group, enabled, passwordless, persist, root)
+                detail = f"doas {group} enabled={enabled} root={root}"
         except ValueError as exc:
             invocation.return_error_literal(
                 Gio.dbus_error_quark(), Gio.DBusError.INVALID_ARGS, str(exc))
@@ -127,27 +132,29 @@ class PrivilegeService:
                 os.unlink(tmp)
             raise
 
-    def _set_sudo(self, group, enabled, passwordless):
+    def _set_sudo(self, group, enabled, passwordless, root):
         if not render.valid_group(group):
             raise ValueError("invalid group name")
+        sudoers_dropin = rootpath.resolve(root, SUDOERS_DROPIN)
         if not enabled:
             with contextlib.suppress(FileNotFoundError):
-                os.unlink(SUDOERS_DROPIN)
+                os.unlink(sudoers_dropin)
             return True, "sudo wheel escalation removed"
         policy = EscalationPolicy("sudo", group=group, passwordless=bool(passwordless))
         ok, out = self._write_checked(
-            SUDOERS_DROPIN, render.render_sudoers(policy), 0o440,
+            sudoers_dropin, render.render_sudoers(policy), 0o440,
             lambda p: commands.visudo_check_argv(p, visudo=_VISUDO))
         if not ok:
             return False, f"sudoers rejected by visudo, not installed:\n{out}"
         return True, f"sudo: %{group} may escalate" + (
             " without a password" if passwordless else "")
 
-    def _set_doas(self, group, enabled, passwordless, persist):
+    def _set_doas(self, group, enabled, passwordless, persist, root):
         if not render.valid_group(group):
             raise ValueError("invalid group name")
+        doas_conf = rootpath.resolve(root, DOAS_CONF)
         try:
-            with open(DOAS_CONF, encoding="utf-8") as fh:
+            with open(doas_conf, encoding="utf-8") as fh:
                 current = fh.read()
         except OSError:
             current = ""
@@ -158,7 +165,7 @@ class PrivilegeService:
         else:
             candidate = render.strip_doas_block(current)
         ok, out = self._write_checked(
-            DOAS_CONF, candidate, 0o644,
+            doas_conf, candidate, 0o644,
             lambda p: commands.doas_check_argv(p, doas=_DOAS))
         if not ok:
             return False, f"doas.conf rejected by doas -C, not applied:\n{out}"

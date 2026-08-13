@@ -20,20 +20,20 @@ class SystemBackend:
         self._iface = obj.get_interface(SYSTEM_IFACE)
         return self
 
-    async def set_hostname(self, name):
-        return await self._iface.call_set_hostname(name)
+    async def set_hostname(self, name, root: str = "/"):
+        return await self._iface.call_set_hostname(name, root)
 
-    async def set_timezone(self, zone):
-        return await self._iface.call_set_timezone(zone)
+    async def set_timezone(self, zone, root: str = "/"):
+        return await self._iface.call_set_timezone(zone, root)
 
-    async def set_locale(self, lang):
-        return await self._iface.call_set_locale(lang)
+    async def set_locale(self, lang, root: str = "/"):
+        return await self._iface.call_set_locale(lang, root)
 
-    async def set_keymap(self, keymap):
-        return await self._iface.call_set_keymap(keymap)
+    async def set_keymap(self, keymap, root: str = "/"):
+        return await self._iface.call_set_keymap(keymap, root)
 
-    async def set_console_font(self, font):
-        return await self._iface.call_set_console_font(font)
+    async def set_console_font(self, font, root: str = "/"):
+        return await self._iface.call_set_console_font(font, root)
 
     async def close(self) -> None:
         if self._bus is not None:
