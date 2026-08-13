@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200" fill="currentColor" role="img" aria-label="HeDE mark (single colour)">
+  <title>HeDE mark — single colour</title>
+  <defs>
+    <mask id="hubH">
+      <rect x="0" y="0" width="200" height="200" fill="black"/>
+      <circle cx="100" cy="100" r="24" fill="white"/>
+      <rect x="90.5" y="89"  width="6"  height="22" fill="black"/>
+      <rect x="103.5" y="89" width="6"  height="22" fill="black"/>
+      <rect x="90.5" y="97"  width="19" height="6"  fill="black"/>
+    </mask>
+    <g id="unit">
+      <rect x="95.5" y="34" width="9" height="42" rx="3"/>
+      <rect x="94.5" y="1"  width="11" height="24" rx="5.5"/>
+    </g>
+  </defs>
+  <g mask="url(#hubH)">
+    <use href="#unit"/>
+    <use href="#unit" transform="rotate(45 100 100)"/>
+    <use href="#unit" transform="rotate(90 100 100)"/>
+    <use href="#unit" transform="rotate(135 100 100)"/>
+    <use href="#unit" transform="rotate(180 100 100)"/>
+    <use href="#unit" transform="rotate(225 100 100)"/>
+    <use href="#unit" transform="rotate(270 100 100)"/>
+    <use href="#unit" transform="rotate(315 100 100)"/>
+    <circle cx="100" cy="100" r="72" fill="none" stroke="currentColor" stroke-width="13"/>
+    <circle cx="100" cy="100" r="24"/>
+  </g>
+</svg>
