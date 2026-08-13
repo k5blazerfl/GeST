@@ -15,6 +15,7 @@ from gest.tui.screens.cleanup import CleanupLoadingScreen
 from gest.tui.screens.datetime import DateTimeScreen
 from gest.tui.screens.disk import DiskScreen
 from gest.tui.screens.dns import DnsScreen, HostsScreen
+from gest.tui.screens.envd import EnvdScreen
 from gest.tui.screens.eselect import EselectScreen
 from gest.tui.screens.firewall import FirewallScreen
 from gest.tui.screens.hardware import HardwareScreen
@@ -31,6 +32,7 @@ from gest.tui.screens.services import ServicesScreen
 from gest.tui.screens.software import SoftwareLoadingScreen
 from gest.tui.screens.sshd import SshdScreen
 from gest.tui.screens.sync import SyncLoadingScreen
+from gest.tui.screens.sysctl import SysctlScreen
 from gest.tui.screens.system import (
     ConsoleFontScreen,
     HostnameScreen,
@@ -65,6 +67,8 @@ CATEGORIES: list[tuple[str, list[tuple[str, str, bool]]]] = [
         ("bootloader", "Bootloader & Kernel", True),
         ("makeconf", "make.conf editor", True),
         ("datetime", "Date & Time", True),
+        ("sysctl", "Kernel Parameters (sysctl)", True),
+        ("envd", "Environment (env.d)", True),
     ]),
     ("Hardware", [
         ("hardware", "Hardware Information", True),
@@ -256,6 +260,10 @@ class MenuScreen(Screen):
             self.app.push(MakeconfScreen(self.app))
         elif key == "datetime":
             self.app.push(DateTimeScreen(self.app))
+        elif key == "sysctl":
+            self.app.push(SysctlScreen(self.app))
+        elif key == "envd":
+            self.app.push(EnvdScreen(self.app))
         elif key == "hardware":
             self.app.push(HardwareScreen(self.app))
         elif key == "hwflags":

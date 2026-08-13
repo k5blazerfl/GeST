@@ -232,4 +232,24 @@
       <allow_active>auth_admin_keep</allow_active>
     </defaults>
   </action>
+
+  <action id="org.gentoo.gest.sysctl.manage">
+    <description>Configure kernel parameters</description>
+    <message>Authentication is required to change kernel sysctl parameters</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+
+  <action id="org.gentoo.gest.envd.manage">
+    <description>Configure environment variables</description>
+    <message>Authentication is required to change /etc/env.d environment variables</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
 </policyconfig>

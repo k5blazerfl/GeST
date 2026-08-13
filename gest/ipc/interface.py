@@ -108,6 +108,18 @@ PRIVILEGE_PATH = "/org/gentoo/gest/Privilege"
 PRIVILEGE_IFACE = "org.gentoo.gest.Privilege"
 PRIVILEGE_POLKIT = "org.gentoo.gest.privilege.manage"
 
+# Object path + interface for the sysctl module. ApplySettings writes a GeST
+# drop-in in /etc/sysctl.d/ and loads it with `sysctl -p`.
+SYSCTL_PATH = "/org/gentoo/gest/Sysctl"
+SYSCTL_IFACE = "org.gentoo.gest.Sysctl"
+SYSCTL_POLKIT = "org.gentoo.gest.sysctl.manage"
+
+# Object path + interface for the env.d module. ApplyVars writes a GeST drop-in
+# in /etc/env.d/ and runs `env-update`.
+ENVD_PATH = "/org/gentoo/gest/Envd"
+ENVD_IFACE = "org.gentoo.gest.Envd"
+ENVD_POLKIT = "org.gentoo.gest.envd.manage"
+
 # D-Bus error name the backend returns when a package operation is refused
 # because another is already in progress (another GeST session, or an external
 # emerge). The frontend maps it to a clean "busy" message instead of a raw crash.

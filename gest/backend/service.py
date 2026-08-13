@@ -32,6 +32,7 @@ from gest.backend.audit import audit
 from gest.backend.bootloader import BootloaderService
 from gest.backend.datetime import DateTimeService
 from gest.backend.disk import DiskService
+from gest.backend.envd import EnvdService
 from gest.backend.eselect import EselectService
 from gest.backend.firewall import FirewallService
 from gest.backend.kernel import KernelService
@@ -47,6 +48,7 @@ from gest.backend.repos import ReposService
 from gest.backend.services import ServicesService
 from gest.backend.ssh import SshService
 from gest.backend.sshd import SshdService
+from gest.backend.sysctl import SysctlService
 from gest.backend.system import SystemService
 from gest.backend.users import UsersService
 from gest.core.repos import commands as repo_commands
@@ -750,6 +752,8 @@ def main() -> int:
         FirewallService(conn)
         SshdService(conn)
         PrivilegeService(conn)
+        SysctlService(conn)
+        EnvdService(conn)
 
     def on_name_lost(conn, name):
         sys.stderr.write(f"gest-backend: lost/could not acquire name {name}\n")
