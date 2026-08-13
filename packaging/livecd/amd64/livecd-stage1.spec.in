@@ -1,0 +1,25 @@
+# catalyst livecd-stage1 for the GeST amd64 installer image (TEMPLATE).
+#
+# build.sh renders this to build/livecd-stage1.spec by substituting the ${VARS}
+# from config.env and appending the package list from amd64/gest.packages — do
+# not edit the rendered copy; edit this template or config.env.
+#
+# Stage 1 of two: builds app-admin/gest and the install-path tools into a build
+# root seeded from a stage3. Stage 2 adds the kernel + bootloader and packs the ISO.
+
+subarch: amd64
+version_stamp: gest-${TIMESTAMP}
+target: livecd-stage1
+rel_type: default
+profile: ${PROFILE}
+snapshot: ${SNAPSHOT}
+source_subpath: default/${STAGE3}
+
+# Make app-admin/gest resolvable during the build.
+portage_overlay: ${GEST_OVERLAY}
+
+# ~amd64 keyword for the GeST ebuild (packaging/livecd/portage-conf/).
+portage_confdir: ${PORTAGE_CONFDIR}
+
+# The image's package set is appended here by build.sh from amd64/gest.packages.
+livecd/packages:
