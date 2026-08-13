@@ -88,6 +88,12 @@ DATETIME_PATH = "/org/gentoo/gest/DateTime"
 DATETIME_IFACE = "org.gentoo.gest.DateTime"
 DATETIME_POLKIT = "org.gentoo.gest.datetime.manage"
 
+# Object path + interface for the firewall module (nftables). ApplyPolicy renders
+# a ruleset from validated primitives, writes /etc/nftables.nft and loads it.
+FIREWALL_PATH = "/org/gentoo/gest/Firewall"
+FIREWALL_IFACE = "org.gentoo.gest.Firewall"
+FIREWALL_POLKIT = "org.gentoo.gest.firewall.manage"
+
 # D-Bus error name the backend returns when a package operation is refused
 # because another is already in progress (another GeST session, or an external
 # emerge). The frontend maps it to a clean "busy" message instead of a raw crash.

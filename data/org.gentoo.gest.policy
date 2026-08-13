@@ -202,4 +202,14 @@
       <allow_active>auth_admin_keep</allow_active>
     </defaults>
   </action>
+
+  <action id="org.gentoo.gest.firewall.manage">
+    <description>Configure the firewall</description>
+    <message>Authentication is required to change the nftables firewall ruleset</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
 </policyconfig>
