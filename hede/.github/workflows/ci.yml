@@ -16,13 +16,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             cmake ninja-build g++ clang-format \
-            qt6-base-dev qt6-wayland-dev \
-            liblayershellqtinterface-dev
+            qt6-base-dev qt6-wayland qt6-wayland-dev \
+            liblayershellqtinterface-dev \
+            labwc procps coreutils
       - name: Configure
         run: cmake -S . -B build -G Ninja
       - name: Build
         run: cmake --build build
       - name: Test
+        # includes the headless labwc smoke test (skips gracefully if unavailable)
         run: ctest --test-dir build --output-on-failure
       - name: Format check
         run: |
