@@ -17,7 +17,7 @@ from gest.tui.screens.disk import DiskScreen
 from gest.tui.screens.dns import DnsScreen, HostsScreen
 from gest.tui.screens.envd import EnvdScreen
 from gest.tui.screens.eselect import EselectScreen
-from gest.tui.screens.firewall import FirewallScreen
+from gest.tui.screens.firewall_router import open_firewall
 from gest.tui.screens.hardware import HardwareScreen
 from gest.tui.screens.hwflags import HwFlagsScreen
 from gest.tui.screens.licenses import LicensesScreen
@@ -83,7 +83,7 @@ CATEGORIES: list[tuple[str, list[tuple[str, str, bool]]]] = [
     ]),
     ("Security and Users", [
         ("users", "Users & Groups", True),
-        ("firewall", "Firewall (nftables)", True),
+        ("firewall", "Firewall", True),
         ("sshd", "SSH Server (sshd)", True),
         ("privilege", "Privilege (sudo/doas)", True),
     ]),
@@ -275,7 +275,7 @@ class MenuScreen(Screen):
         elif key == "users":
             self.app.push(UsersScreen(self.app))
         elif key == "firewall":
-            self.app.push(FirewallScreen(self.app))
+            open_firewall(self.app)
         elif key == "sshd":
             self.app.push(SshdScreen(self.app))
         elif key == "privilege":

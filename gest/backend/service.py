@@ -35,6 +35,7 @@ from gest.backend.disk import DiskService
 from gest.backend.envd import EnvdService
 from gest.backend.eselect import EselectService
 from gest.backend.firewall import FirewallService
+from gest.backend.firewalld import FirewalldService
 from gest.backend.kernel import KernelService
 from gest.backend.network import NetworkService
 from gest.backend.polkit import (
@@ -753,6 +754,7 @@ def main() -> int:
         KernelService(conn)
         Stage3Service(conn)
         FirewallService(conn)
+        FirewalldService(conn)
         SshdService(conn)
         PrivilegeService(conn)
         SysctlService(conn)

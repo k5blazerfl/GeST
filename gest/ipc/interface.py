@@ -102,6 +102,13 @@ FIREWALL_PATH = "/org/gentoo/gest/Firewall"
 FIREWALL_IFACE = "org.gentoo.gest.Firewall"
 FIREWALL_POLKIT = "org.gentoo.gest.firewall.manage"
 
+# Object path + interface for the firewalld firewall module. ApplyChanges applies
+# a staged services/ports diff at the permanent scope and reloads. Parallel to the
+# nftables Firewall module above; the menu routes to whichever backend is live.
+FIREWALLD_PATH = "/org/gentoo/gest/Firewalld"
+FIREWALLD_IFACE = "org.gentoo.gest.Firewalld"
+FIREWALLD_POLKIT = "org.gentoo.gest.firewalld.manage"
+
 # Object path + interface for the sshd server-config module. ApplyConfig upserts
 # the managed directives into /etc/ssh/sshd_config, validating with `sshd -t`
 # before replacing the live file. Distinct from the deploy-key Ssh helper above.
