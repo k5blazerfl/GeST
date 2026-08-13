@@ -1,0 +1,370 @@
+"""The Gentoo installer (urwid): a YaST-style settings overview that assembles an
+InstallPlan, then a streamed run of the flow engine.
+
+Reached only on the live-CD / root path (see the gated menu entry). The overview
+edits an :class:`InstallSelections` in place; *Install* resolves the stage3, builds
+the plan, and hands ``run_install`` to :class:`InstallRunScreen`. The engine does
+the partitioning (step 1) and everything after — this screen only assembles and
+drives; it never touches a disk itself.
+
+5a wires the boot-critical rows (disk, stage3, kernel, bootloader, root password);
+the system-config rows (hostname/timezone/locale/keymap, user, network) and the
+live-network step land in 5b/5c.
+"""
+
+from __future__ import annotations
+
+import contextlib
+
+import urwid
+
+from gest.core.disk import reader as disk_reader
+from gest.core.exec.chroot import ChrootExecutor
+from gest.core.exec.select import choose_executor
+from gest.core.install import assemble
+from gest.core.install.assemble import InstallSelections
+from gest.core.install.context import InstallContext, StateStore
+from gest.core.install.engine import run_install
+from gest.core.install.registry import build_registry
+from gest.core.stage3.model import VARIANTS
+from gest.tui.runtime import App, Modal, NavPile, Screen, boxed, strip_ansi
+
+
+def _row(text) -> urwid.Widget:
+    return urwid.AttrMap(urwid.SelectableIcon(text, 0), None, focus_map="focus")
+
+
+class InstallOverviewScreen(Screen):
+    """The 'Installation Settings' overview — edit each setting, then Install."""
+
+    def __init__(self, app: App) -> None:
+        self._sel = InstallSelections()
+        self._disks = [d for d in disk_reader.list_block_devices() if d.type == "disk"]
+        self._walker = urwid.SimpleFocusListWalker([])
+        self._list = urwid.ListBox(self._walker)
+        self._pile = NavPile([boxed(self._list, title="Installation Settings")])
+        super().__init__(
+            app, self._pile, title="Install Gentoo",
+            footer_keys=[("Enter", "Edit"), ("F10", "Install"), ("Esc", "Back")],
+            help_text=(
+                "Assemble a Gentoo install. Each row is a setting — Enter edits it,\n"
+                "and F10 starts the install after a typed confirmation of the disk.\n\n"
+                "The installer partitions the target, unpacks a stage3, and runs the\n"
+                "Handbook steps against /mnt/gentoo. Everything here is a plan until\n"
+                "you confirm — nothing touches a disk before then.\n\n"
+                "5a covers disk, stage3, kernel, bootloader and the root password;\n"
+                "the rest use defaults for now."
+            ),
+        )
+        self._rows = [
+            ("Target disk", self._disk_value, self._edit_disk),
+            ("Stage3", lambda: self._sel.variant.label, self._edit_stage3),
+            ("Kernel", self._kernel_value, self._edit_kernel),
+            ("Bootloader", self._bootloader_value, self._edit_bootloader),
+            ("Root password", self._rootpw_value, self._edit_rootpw),
+        ]
+        self._render()
+
+    # --- row value formatters ------------------------------------------------
+
+    def _disk_value(self) -> str:
+        if not self._sel.disk:
+            return "— not selected —"
+        swap = f"swap {self._sel.swap_size}" if self._sel.swap_size else "no swap"
+        return (f"/dev/{self._sel.disk}  (ESP {self._sel.esp_size}, {swap}, "
+                f"root {self._sel.root_fs})")
+
+    def _kernel_value(self) -> str:
+        jobs = "auto" if self._sel.kernel_jobs == 0 else str(self._sel.kernel_jobs)
+        initrd = ", initramfs" if self._sel.kernel_initramfs else ""
+        return f"{self._sel.kernel_method}  (-j {jobs}{initrd})"
+
+    def _bootloader_value(self) -> str:
+        if self._sel.firmware == "uefi":
+            return f"GRUB / UEFI  (ESP {self._sel.efi_directory})"
+        return f"GRUB / BIOS  (disk /dev/{self._sel.boot_disk or '?'})"
+
+    def _rootpw_value(self) -> str:
+        return "•••••• (set)" if self._sel.root_password else "— required —"
+
+    def _render(self) -> None:
+        rows = []
+        for label, value, _edit in self._rows:
+            ready = not value().startswith(("—", "— ")) or label not in ("Target disk",
+                                                                          "Root password")
+            marker = ("field", f" {label:<16}: ")
+            val = value()
+            attr = "ok" if ready else "error"
+            rows.append(urwid.AttrMap(
+                urwid.SelectableIcon([marker, (attr, val)], 0), None, focus_map="focus"))
+        rows.append(urwid.Divider())
+        rows.append(urwid.Text(("hint", " Enter edits the focused row · F10 installs")))
+        self._walker[:] = rows
+        self.app.refresh()
+
+    # --- navigation ----------------------------------------------------------
+
+    def handle_key(self, key):
+        if key == "esc":
+            self.app.pop()
+            return None
+        if key in ("enter", "e"):
+            idx = self._walker.focus
+            if idx is not None and 0 <= idx < len(self._rows):
+                self._rows[idx][2]()
+            return None
+        if key == "f10":
+            self._install()
+            return None
+        return key
+
+    # --- edit dialogs --------------------------------------------------------
+
+    def _edit_disk(self) -> None:
+        names = [d.name for d in self._disks]
+        if not names:
+            self.app.notify("No disks detected.", error=True)
+            return
+        pick = urwid.Edit("Disk (name)     : ", self._sel.disk or names[0])
+        esp = urwid.Edit("ESP size        : ", self._sel.esp_size)
+        swap = urwid.Edit("Swap (blank=none): ", self._sel.swap_size)
+        rootfs = urwid.Edit("Root filesystem : ", self._sel.root_fs)
+
+        def save():
+            name = pick.edit_text.strip()
+            if name not in names:
+                self.app.notify(f"Unknown disk (have: {', '.join(names)}).", error=True)
+                return
+            self._sel.disk = name
+            self._sel.esp_size = esp.edit_text.strip() or "512M"
+            self._sel.swap_size = swap.edit_text.strip()
+            self._sel.root_fs = rootfs.edit_text.strip() or "ext4"
+            self.app.pop()
+            self._render()
+
+        avail = "Disks: " + ", ".join(f"{d.name} ({d.size})" for d in self._disks)
+        modal = Modal(self.app, "Target disk & layout",
+                      [urwid.Text(("hint", avail)),
+                       urwid.Text(("error", " The whole disk is erased on install.")),
+                       urwid.Divider(), pick, esp, swap, rootfs],
+                      [("Save", save), ("Cancel", self.app.pop)])
+        self.app.push_modal(modal, width=("relative", 74), height=("relative", 62))
+
+    def _edit_stage3(self) -> None:
+        walker = urwid.SimpleFocusListWalker([_row(v.label) for v in VARIANTS])
+        with contextlib.suppress(ValueError):
+            walker.set_focus(VARIANTS.index(self._sel.variant))
+
+        def pick(_w=None):
+            self._sel.variant = VARIANTS[walker.focus]
+            self.app.pop()
+            self._render()
+
+        body = urwid.Pile([("pack", urwid.Text(("hint", "Highlight a variant, then Select.")),),
+                           ("pack", urwid.Divider()),
+                           ("weight", 1, urwid.BoxAdapter(urwid.ListBox(walker), 6))])
+        modal = Modal(self.app, "Stage3 variant", [body],
+                      [("Select", pick), ("Cancel", self.app.pop)])
+        self.app.push_modal(modal, width=("relative", 60), height=("relative", 55))
+
+    def _edit_kernel(self) -> None:
+        method = urwid.Edit("Method (make/genkernel): ", self._sel.kernel_method)
+        jobs = urwid.Edit("Jobs (0=auto)          : ", str(self._sel.kernel_jobs))
+        initrd = urwid.CheckBox("Build an initramfs", state=self._sel.kernel_initramfs)
+
+        def save():
+            m = method.edit_text.strip()
+            if m not in ("make", "genkernel"):
+                self.app.notify("Method must be 'make' or 'genkernel'.", error=True)
+                return
+            j = jobs.edit_text.strip()
+            if not j.isdigit():
+                self.app.notify("Jobs must be a number (0 = auto).", error=True)
+                return
+            self._sel.kernel_method = m
+            self._sel.kernel_jobs = int(j)
+            self._sel.kernel_initramfs = initrd.state
+            self.app.pop()
+            self._render()
+
+        modal = Modal(self.app, "Kernel build",
+                      [urwid.Text(("hint", "make = configure+compile; genkernel = automated.")),
+                       urwid.Divider(), method, jobs, initrd],
+                      [("Save", save), ("Cancel", self.app.pop)])
+        self.app.push_modal(modal, width=("relative", 68), height=("relative", 54))
+
+    def _edit_bootloader(self) -> None:
+        fw = urwid.Edit("Firmware (uefi/bios): ", self._sel.firmware)
+        efi = urwid.Edit("ESP mount (uefi)    : ", self._sel.efi_directory)
+        disk = urwid.Edit("Target disk (bios)  : ", self._sel.boot_disk)
+
+        def save():
+            f = fw.edit_text.strip()
+            if f not in ("uefi", "bios"):
+                self.app.notify("Firmware must be 'uefi' or 'bios'.", error=True)
+                return
+            self._sel.firmware = f
+            self._sel.efi_directory = efi.edit_text.strip() or "/efi"
+            self._sel.boot_disk = disk.edit_text.strip()
+            self.app.pop()
+            self._render()
+
+        modal = Modal(self.app, "Bootloader (GRUB)",
+                      [urwid.Text(("hint", "UEFI installs to the ESP; BIOS to a disk's MBR.")),
+                       urwid.Divider(), fw, efi, disk],
+                      [("Save", save), ("Cancel", self.app.pop)])
+        self.app.push_modal(modal, width=("relative", 68), height=("relative", 54))
+
+    def _edit_rootpw(self) -> None:
+        pw1 = urwid.Edit("Password        : ", mask="*")
+        pw2 = urwid.Edit("Confirm         : ", mask="*")
+
+        def save():
+            if pw1.edit_text != pw2.edit_text:
+                self.app.notify("Passwords do not match.", error=True)
+                return
+            if not pw1.edit_text:
+                self.app.notify("The root password can't be empty.", error=True)
+                return
+            self._sel.root_password = pw1.edit_text
+            self.app.pop()
+            self._render()
+
+        modal = Modal(self.app, "Root password",
+                      [urwid.Text(("hint", "Set the installed system's root password.")),
+                       urwid.Divider(), pw1, pw2],
+                      [("Save", save), ("Cancel", self.app.pop)])
+        self.app.push_modal(modal, width=("relative", 60), height=("relative", 48))
+
+    # --- install -------------------------------------------------------------
+
+    def _install(self) -> None:
+        if not self._sel.disk:
+            self.app.notify("Select a target disk first.", error=True)
+            return
+        if not self._sel.root_password:
+            self.app.notify("Set a root password first.", error=True)
+            return
+        name = self._sel.disk
+        entry = urwid.Edit(f"Type '{name}' to confirm erasing /dev/{name}: ")
+
+        def go():
+            if entry.edit_text.strip() != name:
+                self.app.notify(f"Type '{name}' exactly to confirm.", error=True)
+                return
+            self.app.pop()
+            self.app.push(InstallRunScreen(self.app, self._sel))
+
+        modal = Modal(
+            self.app, "Confirm install",
+            [urwid.Text(("error", f" This ERASES /dev/{name} and installs Gentoo onto it.")),
+             urwid.Divider(),
+             urwid.Text("The disk is partitioned, a stage3 is unpacked, and the "
+                        "Handbook steps run against /mnt/gentoo."),
+             urwid.Divider(), entry],
+            [("Erase & Install", go), ("Cancel", self.app.pop)])
+        self.app.push_modal(modal, width=("relative", 72), height=("relative", 56))
+
+
+class InstallRunScreen(Screen):
+    """Resolve the stage3, build the plan, and stream the flow engine's run."""
+
+    def __init__(self, app: App, sel: InstallSelections) -> None:
+        self._sel = sel
+        self._done = False
+        self._labels: list[str] = []
+        self._total = 1
+        self._phase = urwid.Text(("field", " Preparing …"))
+        self._bar = urwid.ProgressBar("pb_normal", "pb_complete", 0, 1)
+        self._log_walker = urwid.SimpleFocusListWalker([])
+        self._log = urwid.ListBox(self._log_walker)
+        body = urwid.Pile([
+            ("pack", urwid.AttrMap(self._phase, "field")),
+            ("pack", urwid.Divider("─")),
+            ("pack", self._bar),
+            ("pack", urwid.Divider("─")),
+            ("weight", 1, boxed(self._log, title="Output")),
+        ])
+        super().__init__(app, body, title="Installing Gentoo",
+                         footer_keys=[("Esc", "Back")])
+        app.run_async(self._run())
+
+    def _log_lines(self, lines) -> None:
+        for ln in lines:
+            self._log_walker.append(urwid.Text(strip_ansi(ln)))
+        del self._log_walker[:-500]
+        with contextlib.suppress(Exception):
+            self._log_walker.set_focus(len(self._log_walker) - 1)
+        self.app.refresh()
+
+    def _on_step(self, index: int) -> None:
+        self._bar.set_completion(min(index, self._total))
+        if 0 <= index < self._total:
+            self._phase.set_text(("field", f" {self._labels[index]}"))
+        self.app.refresh()
+
+    async def _run(self) -> None:
+        # Resolve the stage3 (network) and assemble the plan.
+        self._phase.set_text(("field", " Resolving stage3 …"))
+        self.app.refresh()
+        try:
+            stage3 = await self.app.run_blocking(
+                lambda: assemble.resolve_stage3(self._sel.variant))
+            plan = assemble.assemble_plan(self._sel, stage3)
+        except Exception as exc:
+            self._finish(False, f"Could not prepare the install: {exc}")
+            return
+
+        secret = self._sel.root_password
+        steps = build_registry(plan, root_secret=lambda: secret)
+        self._labels = [s.label for s in steps]
+        self._total = len(steps)
+        self._bar = urwid.ProgressBar("pb_normal", "pb_complete", 0, max(self._total, 1))
+
+        host = choose_executor()
+        root = self._sel.target_root
+        ctx = InstallContext(
+            root=root, host=host, target=ChrootExecutor(host, root),
+            state=StateStore(root=root), plan=plan,
+            devices=disk_reader.list_block_devices(),
+            mounts=disk_reader.read_proc_mounts())
+
+        try:
+            await run_install(ctx, steps, on_progress=self._log_lines, on_step=self._on_step)
+        except Exception as exc:
+            self._finish(False, f"Install failed at: {getattr(exc, 'step', None) or exc}")
+            return
+        self._finish(True, f"Gentoo installed onto /dev/{self._sel.disk}.")
+
+    def _finish(self, ok: bool, message: str) -> None:
+        self._done = True
+        self._bar.set_completion(self._total if ok else self._bar.current)
+        self._phase.set_text(("ok" if ok else "error", " done" if ok else " failed"))
+        self.app.notify("done" if ok else "failed", error=not ok)
+
+        def back():
+            self.app.pop()      # modal
+            self.app.pop()      # run screen → overview
+
+        def reboot():
+            self.app.pop()
+            self.app.run_async(self._reboot())
+
+        buttons = ([("Reboot now", reboot)] if ok else []) + [("Back", back)]
+        modal = Modal(
+            self.app, "Installation complete" if ok else "Installation failed",
+            [urwid.Text(("ok" if ok else "error", message)),
+             urwid.Divider(),
+             urwid.Text(("hint", "Remove the install media before rebooting."
+                         if ok else "The target was left mounted for inspection."))],
+            buttons)
+        self.app.push_modal(modal, width=("relative", 66), height=("relative", 48))
+
+    async def _reboot(self) -> None:
+        with contextlib.suppress(Exception):
+            await choose_executor().run(["reboot"])
+
+    def handle_key(self, key):
+        if key == "esc" and self._done:
+            self.app.pop()
+        return None

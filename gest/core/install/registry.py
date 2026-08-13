@@ -34,6 +34,7 @@ from gest.core.bootloader.install import install_steps
 from gest.core.chroot.prepare import prepare_chroot
 from gest.core.disk import mount as disk_mount
 from gest.core.disk import provision
+from gest.core.disk import reader as disk_reader
 from gest.core.eselect.commands import set_argv
 from gest.core.exec.runner import OnProgress
 from gest.core.exec.steps import Step
@@ -185,7 +186,14 @@ class WriteFstab(FuncStep):
     target_aware = True
 
     async def run(self, ctx: InstallContext, on_progress: OnProgress | None = None) -> None:
-        text = disk_mount.generate_target_fstab(ctx.plan.mount, ctx.uuids)
+        # UUIDs come from ctx.uuids when the caller pre-populated them (tests do);
+        # otherwise read them live from the filesystems the Partition step just
+        # made — the real install path, where nothing filled ctx.uuids in advance.
+        uuids = ctx.uuids or {
+            dev: disk_reader.device_uuid(dev)
+            for dev in disk_mount.fstab_devices(ctx.plan.mount)
+        }
+        text = disk_mount.generate_target_fstab(ctx.plan.mount, uuids)
         path = disk_mount.write_target_fstab_file(ctx.root, text)
         _emit(on_progress, f"wrote {path}")
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import os
 import socket
 
 import urwid
@@ -97,6 +98,12 @@ CATEGORIES: list[tuple[str, list[tuple[str, str, bool]]]] = [
         ("logs", "System Logs", True),
     ]),
 ]
+
+# The installer is offered only on the live-CD / root path (choose_executor →
+# DirectExecutor); an unprivileged installed system administers, it doesn't
+# re-install. Shown as a top category so it's the first thing on the live CD.
+if os.geteuid() == 0:
+    CATEGORIES.insert(0, ("Install Gentoo", [("install", "Install Gentoo", True)]))
 
 
 # Modules that run — or whose edits feed — a package operation. They are locked
@@ -226,7 +233,10 @@ class MenuScreen(Screen):
         self.app.push_modal(modal, width=("relative", 66), height=("relative", 42))
 
     def _open(self, key: str) -> None:
-        if key == "news":
+        if key == "install":
+            from gest.tui.screens.installer import InstallOverviewScreen
+            self.app.push(InstallOverviewScreen(self.app))
+        elif key == "news":
             self.app.push(NewsScreen(self.app))
         elif key == "software":
             self.app.push(SoftwareLoadingScreen(self.app))
