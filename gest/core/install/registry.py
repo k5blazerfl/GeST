@@ -27,6 +27,7 @@ import contextlib
 import os
 import shutil
 import tempfile
+from collections.abc import Callable
 
 from gest.core import rootpath
 from gest.core.bootloader.install import install_steps
@@ -431,7 +432,9 @@ class SetRootPassword(ArgvStep):
         if self.secret is None:
             raise ValueError("no root-password secret supplied to SetRootPassword")
         argv, self.stdin = chpasswd_input("root", self.secret())
-        return [Step("set root password", argv)]
+        # The password rides on the Step's stdin (the executor pipes it to
+        # chpasswd), so it is never in argv, a log, or the process list.
+        return [Step("set root password", argv, stdin=self.stdin)]
 
     async def is_satisfied(self, ctx: InstallContext) -> bool:
         # Idempotent and cheap to re-apply; only skipped when not requested.
@@ -525,12 +528,25 @@ def _tier2_steps(plan: InstallPlan) -> list[InstallStep]:
         f"{', '.join(sorted(plan.tier2))}")
 
 
-def build_registry(plan: InstallPlan) -> list[InstallStep]:
-    """The ordered install steps for ``plan``, in Handbook order (the contract).
+Secret = Callable[[], str]
+
+
+def _root_password_step(root_secret: Secret | None) -> SetRootPassword:
+    """A ``SetRootPassword`` with its run-time secret callable wired in (if given)."""
+    step = SetRootPassword()
+    if root_secret is not None:
+        step.secret = root_secret
+    return step
+
+
+def build_registry(plan: InstallPlan, *, root_secret: Secret | None = None) -> list[InstallStep]:
+    """The full ordered install steps for ``plan``, in Handbook order (the contract).
 
     Row 2 (``MakeFilesystems``) is folded into ``Partition`` and row 20 (teardown)
     is the engine's ``finally``; row 19 (tier-2) expands via :func:`_tier2_steps`
-    (empty by default). The order of this list is what a test pins.
+    (empty by default). ``root_secret`` (a ``Callable[[], str]``) is supplied at run
+    time and wired into ``SetRootPassword`` — never stored in the plan. The order of
+    this list is what a test pins.
     """
     steps: list[InstallStep] = [
         Partition(),
@@ -548,9 +564,39 @@ def build_registry(plan: InstallPlan) -> list[InstallStep]:
         SetConsole(),
         BuildKernel(),
         InstallBootloader(),
-        SetRootPassword(),
+        _root_password_step(root_secret),
         CreateUser(),
         ConfigureNetwork(),
     ]
     steps.extend(_tier2_steps(plan))
     return steps
+
+
+def build_minimal_registry(
+    plan: InstallPlan, *, root_secret: Secret | None = None
+) -> list[InstallStep]:
+    """The smallest ordered set of steps that produces a *bootable* system (§9c).
+
+    A strict subset of :func:`build_registry`: the boot-critical path only —
+    partition → mount → stage3 → fstab → make.conf → prepare-chroot → sync →
+    profile → @world → kernel → bootloader → root password. It drops the
+    day-1-nicety config steps (timezone/locale, hostname, console keymap) and the
+    optional user, network and tier-2 steps; those layer back in via
+    :func:`build_registry`. The installed system boots to a root login; the rest
+    is configured on first boot or a fuller run.
+    """
+    return [
+        Partition(),
+        MakeFilesystems(),
+        MountTarget(),
+        UnpackStage3(),
+        WriteFstab(),
+        WriteMakeConf(),
+        PrepareChroot(),
+        SyncTree(),
+        SetProfile(),
+        EmergeWorld(),
+        BuildKernel(),
+        InstallBootloader(),
+        _root_password_step(root_secret),
+    ]

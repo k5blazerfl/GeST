@@ -40,7 +40,13 @@ class ChrootExecutor:
         return self._root
 
     async def run(
-        self, argv: list[str], *, on_progress: OnProgress | None = None
+        self, argv: list[str], *, on_progress: OnProgress | None = None,
+        stdin: str | None = None,
     ) -> RunResult:
-        """Run ``argv`` inside the target: ``inner.run(["chroot", root, *argv])``."""
-        return await self._inner.run(["chroot", self._root, *argv], on_progress=on_progress)
+        """Run ``argv`` inside the target: ``inner.run(["chroot", root, *argv])``.
+
+        ``stdin`` is forwarded to the inner executor, so an in-chroot tool that
+        reads stdin (e.g. ``chpasswd``) still gets its payload.
+        """
+        return await self._inner.run(
+            ["chroot", self._root, *argv], on_progress=on_progress, stdin=stdin)

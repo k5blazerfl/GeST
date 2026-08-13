@@ -20,10 +20,15 @@ from gest.core.exec.runner import OnProgress, RunResult
 
 @dataclass(slots=True, frozen=True)
 class Step:
-    """One command in a pipeline: a human label and the argv to run."""
+    """One command in a pipeline: a human label and the argv to run.
+
+    ``stdin`` is an optional small text payload fed to the tool (e.g. the
+    ``name:password`` line ``chpasswd`` reads); ``None`` means no stdin.
+    """
 
     label: str
     argv: list[str]
+    stdin: str | None = None
 
 
 class StepError(Exception):
@@ -51,7 +56,7 @@ async def run_steps(
     for index, step in enumerate(steps):
         if on_step is not None:
             on_step(index)
-        result = await executor.run(step.argv, on_progress=on_progress)
+        result = await executor.run(step.argv, on_progress=on_progress, stdin=step.stdin)
         if result.code != 0:
             raise StepError(step, result)
     return steps

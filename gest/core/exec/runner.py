@@ -24,19 +24,31 @@ class RunResult:
     output: str
 
 
-async def stream(argv: list[str], on_progress: OnProgress | None = None) -> RunResult:
+async def stream(
+    argv: list[str], on_progress: OnProgress | None = None, *, stdin: str | None = None
+) -> RunResult:
     """Run ``argv``, forwarding each output line to ``on_progress`` as it arrives.
 
     stdout and stderr are merged (the order the user would see in a terminal).
     Each line is delivered as a one-element batch — callers that coalesce can
     buffer; the batch shape matches the backend's ``Progress`` signal so the two
     executors are interchangeable. Returns a :class:`RunResult`.
+
+    ``stdin`` feeds a small text payload to the tool (e.g. ``chpasswd`` reading
+    ``name:password``): it is written and the pipe closed before stdout is read.
+    This is safe for the tiny inputs it is used for; it is not a general
+    bidirectional stream.
     """
     proc = await asyncio.create_subprocess_exec(
         *argv,
+        stdin=asyncio.subprocess.PIPE if stdin is not None else None,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
     )
+    if stdin is not None and proc.stdin is not None:
+        proc.stdin.write(stdin.encode("utf-8"))
+        await proc.stdin.drain()
+        proc.stdin.close()
     lines: list[str] = []
     assert proc.stdout is not None
     async for raw in proc.stdout:

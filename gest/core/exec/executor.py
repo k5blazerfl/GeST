@@ -23,17 +23,23 @@ from gest.core.exec.runner import OnProgress, RunResult, stream
 
 
 class Executor(Protocol):
-    """Runs one command and streams its output. The core depends on this, not D-Bus."""
+    """Runs one command and streams its output. The core depends on this, not D-Bus.
 
-    async def run(self, argv: list[str], *, on_progress: OnProgress | None = None) -> RunResult:
+    ``stdin`` feeds a small text payload to the tool (e.g. the ``name:password``
+    line ``chpasswd`` reads); it is keyword-only and defaults to ``None``.
+    """
+
+    async def run(self, argv: list[str], *, on_progress: OnProgress | None = None,
+                  stdin: str | None = None) -> RunResult:
         ...
 
 
 class DirectExecutor:
     """Run tools in-process. Only valid when the process is already uid 0."""
 
-    async def run(self, argv: list[str], *, on_progress: OnProgress | None = None) -> RunResult:
-        return await stream(argv, on_progress)
+    async def run(self, argv: list[str], *, on_progress: OnProgress | None = None,
+                  stdin: str | None = None) -> RunResult:
+        return await stream(argv, on_progress, stdin=stdin)
 
 
 class DBusExecutor:
@@ -46,21 +52,30 @@ class DBusExecutor:
     loudly rather than silently no-opping.
     """
 
-    async def run(self, argv: list[str], *, on_progress: OnProgress | None = None) -> RunResult:
+    async def run(self, argv: list[str], *, on_progress: OnProgress | None = None,
+                  stdin: str | None = None) -> RunResult:
         raise NotImplementedError(
             "DBusExecutor is not yet wired; run GeST as root for the direct path"
         )
 
 
 class FakeExecutor:
-    """Test double: records calls and returns codes from ``code_for(argv)``."""
+    """Test double: records calls and returns codes from ``code_for(argv)``.
+
+    ``calls`` holds the argv of each run; ``stdins`` is the parallel list of the
+    ``stdin`` each run was given (``None`` when none), so a test can assert a
+    secret was piped without it appearing in ``calls``.
+    """
 
     def __init__(self, code_for: Callable[[list[str]], int] | None = None) -> None:
         self.calls: list[list[str]] = []
+        self.stdins: list[str | None] = []
         self._code_for = code_for or (lambda _argv: 0)
 
-    async def run(self, argv: list[str], *, on_progress: OnProgress | None = None) -> RunResult:
+    async def run(self, argv: list[str], *, on_progress: OnProgress | None = None,
+                  stdin: str | None = None) -> RunResult:
         self.calls.append(list(argv))
+        self.stdins.append(stdin)
         if on_progress is not None:
             on_progress(["$ " + " ".join(argv)])
         return RunResult(self._code_for(argv), "")
