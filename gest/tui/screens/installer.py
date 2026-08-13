@@ -25,6 +25,7 @@ from gest.core.install import assemble
 from gest.core.install.assemble import InstallSelections
 from gest.core.install.context import InstallContext, StateStore
 from gest.core.install.engine import run_install
+from gest.core.install.netcheck import check_connectivity
 from gest.core.install.registry import build_registry
 from gest.core.network import netifrc, resolv
 from gest.core.stage3.model import VARIANTS
@@ -62,7 +63,9 @@ class InstallOverviewScreen(Screen):
                 "user and network rows carry sensible defaults you can edit."
             ),
         )
+        self._online: bool | None = None      # None = not yet checked
         self._rows = [
+            ("Connect this machine", self._connect_value, self._edit_connect),
             ("Target disk", self._disk_value, self._edit_disk),
             ("Stage3", lambda: self._sel.variant.label, self._edit_stage3),
             ("Hostname", lambda: self._sel.hostname, self._edit_hostname),
@@ -76,6 +79,7 @@ class InstallOverviewScreen(Screen):
             ("Root password", self._rootpw_value, self._edit_rootpw),
         ]
         self._render()
+        app.run_async(self._check_online())
 
     # --- row value formatters ------------------------------------------------
 
@@ -99,6 +103,19 @@ class InstallOverviewScreen(Screen):
     def _rootpw_value(self) -> str:
         return "•••••• (set)" if self._sel.root_password else "— required —"
 
+    def _connect_value(self) -> str:
+        if self._online is None:
+            return "checking …"
+        return "online" if self._online else "offline — connect before installing"
+
+    def _row_attr(self, label: str, val: str) -> str:
+        """The posture colour for a row's value."""
+        if label == "Connect this machine":
+            return "hint" if self._online is None else ("ok" if self._online else "error")
+        if label in ("Target disk", "Root password"):
+            return "error" if val.startswith("—") else "ok"
+        return "ok"
+
     def _user_value(self) -> str:
         if not self._sel.create_user or not self._sel.user_name:
             return "(none)"
@@ -115,11 +132,9 @@ class InstallOverviewScreen(Screen):
     def _render(self) -> None:
         rows = []
         for label, value, _edit in self._rows:
-            ready = not value().startswith(("—", "— ")) or label not in ("Target disk",
-                                                                          "Root password")
-            marker = ("field", f" {label:<16}: ")
             val = value()
-            attr = "ok" if ready else "error"
+            marker = ("field", f" {label:<20}: ")
+            attr = self._row_attr(label, val)
             rows.append(urwid.AttrMap(
                 urwid.SelectableIcon([marker, (attr, val)], 0), None, focus_map="focus"))
         rows.append(urwid.Divider())
@@ -407,6 +422,40 @@ class InstallOverviewScreen(Screen):
                       [("Save", save), ("Cancel", self.app.pop)])
         self.app.push_modal(modal, width=("relative", 60), height=("relative", 48))
 
+    # --- live network --------------------------------------------------------
+
+    async def _check_online(self) -> None:
+        ok, _detail = await self.app.run_blocking(check_connectivity)
+        self._online = ok
+        self._render()
+
+    async def _run_dhcpcd(self) -> None:
+        self.app.notify("Bringing up wired network (dhcpcd) …")
+        with contextlib.suppress(Exception):
+            await choose_executor().run(["dhcpcd"])
+        await self._check_online()
+
+    def _edit_connect(self) -> None:
+        def dhcp():
+            self.app.pop()
+            self.app.run_async(self._run_dhcpcd())
+
+        def recheck():
+            self.app.pop()
+            self.app.run_async(self._check_online())
+
+        modal = Modal(
+            self.app, "Connect this machine",
+            [urwid.Text("The install downloads a stage3 and emerges packages, so this "
+                        "machine must be online."),
+             urwid.Divider(),
+             urwid.Text(("hint", "Wired usually comes up automatically. For Wi-Fi, use "
+                                 "Network → Wi-Fi from the main menu, then Recheck here.")),
+             urwid.Text(("hint", "This connects the LIVE machine — the installed "
+                                 "system's network is the separate Network row."))],
+            [("Bring up wired", dhcp), ("Recheck", recheck), ("Close", self.app.pop)])
+        self.app.push_modal(modal, width=("relative", 70), height=("relative", 50))
+
     # --- install -------------------------------------------------------------
 
     def _install(self) -> None:
@@ -475,6 +524,18 @@ class InstallRunScreen(Screen):
         self.app.refresh()
 
     async def _run(self) -> None:
+        # Pre-flight: the install downloads a stage3 and emerges, so the live
+        # machine must be online. Fail here with a clear message rather than deep
+        # in the stage3 download.
+        self._phase.set_text(("field", " Checking connectivity …"))
+        self.app.refresh()
+        online, detail = await self.app.run_blocking(check_connectivity)
+        self._log_lines([detail])
+        if not online:
+            self._finish(False, "No network connectivity — connect this machine "
+                                "(the 'Connect this machine' row) and try again.")
+            return
+
         # Resolve the stage3 (network) and assemble the plan.
         self._phase.set_text(("field", " Resolving stage3 …"))
         self.app.refresh()
