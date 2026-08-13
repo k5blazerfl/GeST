@@ -54,6 +54,39 @@ def umount_argv(mountpoint: str, *, umount: str = "umount") -> list[str]:
     return [umount, mountpoint]
 
 
+# --- install-target mount (mount a device at an absolute path) --------------
+
+def valid_target_path(path: str) -> bool:
+    """A real absolute path we can `mkdir`/`mount` onto (no `..`, no metachars).
+
+    Unlike `valid_mount_target` (an fstab mount point) this is the *filesystem
+    path* a device is mounted at while provisioning an install target — e.g.
+    ``/mnt/gentoo`` or ``/mnt/gentoo/efi``. `mount.py` restricts it further to the
+    allowed target-root prefixes; here we only reject syntactically unsafe paths.
+    """
+    return valid_mount_target(path) and ".." not in path.split("/")
+
+
+def mkdir_p_argv(path: str, *, mkdir: str = "mkdir") -> list[str]:
+    """Create ``path`` and any missing parents: `mkdir -p <path>`."""
+    if not valid_target_path(path):
+        raise ValueError(f"invalid target path: {path!r}")
+    return [mkdir, "-p", path]
+
+
+def mount_device_argv(device: str, target: str, *, mount: str = "mount") -> list[str]:
+    """Mount a specific ``device`` at an absolute ``target`` path.
+
+    Distinct from :func:`mount_argv` (which mounts an fstab-defined mount point by
+    name); this is used to assemble an install target from freshly-made
+    filesystems, where nothing is in fstab yet.
+    """
+    _require_device(device)
+    if not valid_target_path(target):
+        raise ValueError(f"invalid target path: {target!r}")
+    return [mount, device, target]
+
+
 # --- validation helpers -----------------------------------------------------
 
 def valid_device(device: str) -> bool:

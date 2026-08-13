@@ -32,12 +32,13 @@ from gi.repository import Gio, GLib
 
 from gest.backend.audit import audit
 from gest.backend.polkit import caller_uid, check_authorization
-from gest.core.disk import commands, fstab, provision
+from gest.core.disk import commands, fstab, mount, provision
 from gest.core.disk.fstab import FstabEntry
 from gest.core.disk.model import Partition
 from gest.ipc.interface import (
     DISK_IFACE,
     DISK_MKFS_POLKIT,
+    DISK_MOUNTTARGET_POLKIT,
     DISK_PARTITION_POLKIT,
     DISK_PATH,
     DISK_POLKIT,
@@ -102,6 +103,18 @@ _INTROSPECTION = f"""
       <arg type="b" name="ok" direction="out"/>
       <arg type="s" name="output" direction="out"/>
     </method>
+    <method name="MountAt">
+      <arg type="s" name="device" direction="in"/>
+      <arg type="s" name="path" direction="in"/>
+      <arg type="b" name="ok" direction="out"/>
+      <arg type="s" name="output" direction="out"/>
+    </method>
+    <method name="WriteTargetFstab">
+      <arg type="s" name="target" direction="in"/>
+      <arg type="s" name="text" direction="in"/>
+      <arg type="b" name="ok" direction="out"/>
+      <arg type="s" name="output" direction="out"/>
+    </method>
   </interface>
 </node>
 """
@@ -115,6 +128,7 @@ _UDEVADM = shutil.which("udevadm") or "/sbin/udevadm"
 _MKSWAP = shutil.which("mkswap") or "/sbin/mkswap"
 _SWAPON = shutil.which("swapon") or "/sbin/swapon"
 _SWAPOFF = shutil.which("swapoff") or "/sbin/swapoff"
+_MKDIR = shutil.which("mkdir") or "/bin/mkdir"
 
 FSTAB_PATH = "/etc/fstab"
 FSTAB_BACKUP = "/etc/fstab.gest.bak"
@@ -131,6 +145,8 @@ _POLKIT = {
     "MakeSwap": DISK_SWAP_POLKIT,
     "SwapOn": DISK_SWAP_POLKIT,
     "SwapOff": DISK_SWAP_POLKIT,
+    "MountAt": DISK_MOUNTTARGET_POLKIT,
+    "WriteTargetFstab": DISK_MOUNTTARGET_POLKIT,
 }
 _METHODS = tuple(_POLKIT)
 
@@ -240,10 +256,18 @@ class DiskService:
             (device,) = params.unpack()
             ok, out = self._swapon(device)
             return ok, out, f"swapon {device}"
-        # SwapOff
-        (device,) = params.unpack()
-        ok, out = self._swapoff(device)
-        return ok, out, f"swapoff {device}"
+        if method == "SwapOff":
+            (device,) = params.unpack()
+            ok, out = self._swapoff(device)
+            return ok, out, f"swapoff {device}"
+        if method == "MountAt":
+            device, path = params.unpack()
+            ok, out = self._mount_at(device, path)
+            return ok, out, f"mount {device} at {path}"
+        # WriteTargetFstab
+        target, text = params.unpack()
+        ok, out = self._write_target_fstab(target, text)
+        return ok, out, f"fstab write {target}"
 
     # --- provisioning -------------------------------------------------------
 
@@ -300,6 +324,35 @@ class DiskService:
         self._require_block_device(device)
         ok, out = _run(commands.swapoff_argv(device, swapoff=_SWAPOFF))
         return ok, out or f"swap disabled on {device}"
+
+    # --- install-target assembly --------------------------------------------
+
+    def _mount_at(self, device, path) -> tuple[bool, str]:
+        """Mount ``device`` at ``path`` while assembling an install target.
+
+        Re-validated server-side: ``path`` must be under an allowed target-root
+        prefix (never the running system), ``device`` a real block device that
+        isn't the running root and isn't already mounted.
+        """
+        if not mount.valid_target_root(path):
+            raise ValueError(f"path outside an allowed target root: {path!r}")
+        provision.guard_provision_target(device, self._read_mounts(), whole_disk=False)
+        self._require_block_device(device)
+        steps = [
+            commands.mkdir_p_argv(path, mkdir=_MKDIR),
+            commands.mount_device_argv(device, path, mount=_MOUNT),
+        ]
+        return _run_sequence(steps, f"mounted {device} at {path}")
+
+    def _write_target_fstab(self, target, text) -> tuple[bool, str]:
+        """Write a generated ``/etc/fstab`` under the install target ``target``.
+
+        ``mount.write_target_fstab_file`` re-checks the target root and that the
+        content is a well-formed fstab before the atomic write (raising
+        ``ValueError``, surfaced to the caller as an invalid-args error).
+        """
+        path = mount.write_target_fstab_file(target, text)
+        return True, f"wrote {path}"
 
     # --- mounts & fstab -----------------------------------------------------
 

@@ -56,6 +56,14 @@ class DiskBackend:
     async def swapoff(self, device):
         return await self._iface.call_swap_off(device)
 
+    # --- install-target assembly (implements mount.TargetMounter) -----------
+
+    async def mount_at(self, device, path):
+        return await self._iface.call_mount_at(device, path)
+
+    async def write_target_fstab(self, target, text):
+        return await self._iface.call_write_target_fstab(target, text)
+
     async def close(self) -> None:
         if self._bus is not None:
             self._bus.disconnect()

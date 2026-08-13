@@ -72,6 +72,10 @@ DISK_POLKIT = "org.gentoo.gest.disk.manage"
 DISK_PARTITION_POLKIT = "org.gentoo.gest.disk.partition"
 DISK_MKFS_POLKIT = "org.gentoo.gest.disk.mkfs"
 DISK_SWAP_POLKIT = "org.gentoo.gest.disk.swap"
+# Assembling an install target: mounting freshly-made filesystems under a target
+# root (/mnt/…) and writing that system's own /etc/fstab. Confined server-side to
+# the /mnt|/media|/run/media prefixes so it can never touch the running system.
+DISK_MOUNTTARGET_POLKIT = "org.gentoo.gest.disk.mounttarget"
 
 # Object path + interface for the kernel-build module. Build streams like emerge
 # (Progress/Finished signals); gated by org.gentoo.gest.kernel.build.

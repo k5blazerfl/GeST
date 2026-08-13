@@ -268,12 +268,22 @@ class PartitionApplyScreen(Screen):
             self.app.pop()
             self.app.pop_to_root()
 
+        def mount_target():
+            from gest.tui.screens.mount_target import MountTargetScreen
+            self.app.pop()      # result modal
+            self.app.pop()      # this apply screen → back to the picker
+            self.app.push(MountTargetScreen(
+                self.app, self._plan, self._devices, self._mounts))
+
+        # On success, offer to continue into assembling the install target.
+        buttons = ([("Mount as install target", mount_target)] if ok else []) + \
+            [("Back", back), ("Main menu", to_menu)]
         modal = Modal(
             self.app, "Partitioning complete" if ok else "Partitioning failed",
             [urwid.Text(("ok" if ok else "error", message))],
-            [("Back", back), ("Main menu", to_menu)],
+            buttons,
         )
-        self.app.push_modal(modal, width=("relative", 66), height=("relative", 46))
+        self.app.push_modal(modal, width=("relative", 66), height=("relative", 50))
         self.app.refresh()
 
     def handle_key(self, key):

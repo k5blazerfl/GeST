@@ -79,3 +79,23 @@ def read_proc_mounts(path: str = PROC_MOUNTS) -> str:
             return fh.read()
     except OSError:
         return ""
+
+
+def parse_lsblk_uuid(text: str) -> str:
+    """First non-empty line of `lsblk -no UUID <dev>` output (or "")."""
+    for line in text.splitlines():
+        uuid = line.strip()
+        if uuid:
+            return uuid
+    return ""
+
+
+def device_uuid(device: str, runner: Runner | None = None) -> str:
+    """The filesystem UUID of ``device`` via `lsblk` (unprivileged), or "".
+
+    Used to key a generated install-target fstab. `lsblk -no UUID` reads the
+    already-probed value from the kernel/udev, so it needs no privilege and no
+    device write (unlike `blkid` on some setups).
+    """
+    run = runner or _default_runner
+    return parse_lsblk_uuid(run(["lsblk", "-no", "UUID", device]))
