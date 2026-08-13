@@ -48,6 +48,7 @@ from gest.backend.repos import ReposService
 from gest.backend.services import ServicesService
 from gest.backend.ssh import SshService
 from gest.backend.sshd import SshdService
+from gest.backend.stage3 import Stage3Service
 from gest.backend.sysctl import SysctlService
 from gest.backend.system import SystemService
 from gest.backend.users import UsersService
@@ -750,6 +751,7 @@ def main() -> int:
         DiskService(conn)
         DateTimeService(conn)
         KernelService(conn)
+        Stage3Service(conn)
         FirewallService(conn)
         SshdService(conn)
         PrivilegeService(conn)

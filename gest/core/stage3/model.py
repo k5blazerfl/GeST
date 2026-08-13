@@ -1,0 +1,56 @@
+"""Pure data for the stage3 module: the offered variants and a resolved selection.
+
+``Stage3Variant`` is one entry in the pick-list the installer offers; a variant
+plus a resolved mirror index becomes a ``Stage3Selection`` (concrete URLs, the
+tarball filename, its byte size, and the derived ``.DIGESTS``/``.asc`` URLs). All
+OpenRC — systemd is a project non-goal (see the design doc).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+DEFAULT_ARCH = "amd64"
+
+
+@dataclass(slots=True, frozen=True)
+class Stage3Variant:
+    """One stage3 variant the installer can offer.
+
+    ``flavor`` is the mirror's variant token (the ``<flavor>`` in
+    ``latest-stage3-<flavor>.txt`` and ``stage3-<arch>-<flavor>-<stamp>``);
+    ``label`` is the human description.
+    """
+
+    arch: str
+    flavor: str
+    label: str
+
+
+# The offered OpenRC variants. Order is the pick-list order; the plain openrc
+# variant is the proposed default (design doc, open question 1).
+VARIANTS: tuple[Stage3Variant, ...] = (
+    Stage3Variant(DEFAULT_ARCH, "openrc", "Standard (OpenRC)"),
+    Stage3Variant(DEFAULT_ARCH, "desktop-openrc", "Desktop (OpenRC)"),
+    Stage3Variant(DEFAULT_ARCH, "hardened-openrc", "Hardened (OpenRC)"),
+    Stage3Variant(DEFAULT_ARCH, "nomultilib-openrc", "No-multilib (OpenRC)"),
+)
+
+DEFAULT_VARIANT = VARIANTS[0]
+
+
+@dataclass(slots=True, frozen=True)
+class Stage3Selection:
+    """A fully-resolved stage3 download: everything the backend needs to fetch,
+    verify and unpack one tarball.
+
+    ``url`` is the tarball; ``digests_url``/``signature_url`` are the co-located
+    ``.DIGESTS`` and ``.asc``; ``size`` is the byte size the index advertised (a
+    sanity value, not the integrity check — that is the hash verification).
+    """
+
+    url: str
+    filename: str
+    size: int
+    digests_url: str
+    signature_url: str

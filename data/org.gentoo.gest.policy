@@ -193,6 +193,16 @@
     </defaults>
   </action>
 
+  <action id="org.gentoo.gest.stage3.unpack">
+    <description>Download and unpack a stage3 tarball</description>
+    <message>Authentication is required to download, verify and unpack a Gentoo stage3 into an install target</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+
   <action id="org.gentoo.gest.datetime.manage">
     <description>Set the system clock</description>
     <message>Authentication is required to set the system date and time</message>

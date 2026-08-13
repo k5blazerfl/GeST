@@ -83,6 +83,14 @@ KERNEL_PATH = "/org/gentoo/gest/Kernel"
 KERNEL_IFACE = "org.gentoo.gest.Kernel"
 KERNEL_POLKIT = "org.gentoo.gest.kernel.build"
 
+# Object path + interface for the stage3 module. Unpack downloads a Gentoo
+# stage3 tarball, verifies it (mandatory BLAKE2B+SHA512 against its .DIGESTS,
+# best-effort GPG), and unpacks it into a confined install target root; it
+# streams like emerge (Progress/Finished). Gated by org.gentoo.gest.stage3.unpack.
+STAGE3_PATH = "/org/gentoo/gest/Stage3"
+STAGE3_IFACE = "org.gentoo.gest.Stage3"
+STAGE3_POLKIT = "org.gentoo.gest.stage3.unpack"
+
 # Object path + interface for the date & time module.
 DATETIME_PATH = "/org/gentoo/gest/DateTime"
 DATETIME_IFACE = "org.gentoo.gest.DateTime"

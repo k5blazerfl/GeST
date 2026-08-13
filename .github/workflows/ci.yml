@@ -44,7 +44,8 @@ jobs:
                  tests/test_network_dns_hosts.py tests/test_firewall.py tests/test_sshd.py \
                  tests/test_privilege.py tests/test_sysctl.py tests/test_envd.py \
                  tests/test_wifi.py tests/test_rootpath.py \
-                 tests/test_bootloader_install.py tests/test_kernel_build.py -q
+                 tests/test_bootloader_install.py tests/test_kernel_build.py \
+                 tests/test_stage3.py -q
 
       - name: Syntax-check the ebuilds
         run: |
