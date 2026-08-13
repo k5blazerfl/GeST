@@ -29,6 +29,12 @@ class SystemBackend:
     async def set_locale(self, lang):
         return await self._iface.call_set_locale(lang)
 
+    async def set_keymap(self, keymap):
+        return await self._iface.call_set_keymap(keymap)
+
+    async def set_console_font(self, font):
+        return await self._iface.call_set_console_font(font)
+
     async def close(self) -> None:
         if self._bus is not None:
             self._bus.disconnect()

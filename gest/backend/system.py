@@ -21,6 +21,7 @@ from gi.repository import Gio, GLib
 
 from gest.backend.audit import audit
 from gest.backend.polkit import caller_uid, check_authorization
+from gest.core.system import console as console_core
 from gest.core.system import hostname as hostname_core
 from gest.core.system import locale as locale_core
 from gest.core.system import timezone as timezone_core
@@ -41,6 +42,16 @@ _INTROSPECTION = f"""
     </method>
     <method name="SetLocale">
       <arg type="s" name="lang" direction="in"/>
+      <arg type="b" name="ok" direction="out"/>
+      <arg type="s" name="output" direction="out"/>
+    </method>
+    <method name="SetKeymap">
+      <arg type="s" name="keymap" direction="in"/>
+      <arg type="b" name="ok" direction="out"/>
+      <arg type="s" name="output" direction="out"/>
+    </method>
+    <method name="SetConsoleFont">
+      <arg type="s" name="font" direction="in"/>
       <arg type="b" name="ok" direction="out"/>
       <arg type="s" name="output" direction="out"/>
     </method>
@@ -78,7 +89,7 @@ class SystemService:
         )
 
     def _on_call(self, conn, sender, path, iface, method, params, invocation):
-        methods = {"SetHostname", "SetTimezone", "SetLocale"}
+        methods = {"SetHostname", "SetTimezone", "SetLocale", "SetKeymap", "SetConsoleFont"}
         if method not in methods:
             invocation.return_error_literal(
                 Gio.dbus_error_quark(), Gio.DBusError.UNKNOWN_METHOD,
@@ -132,3 +143,24 @@ class SystemService:
         _atomic_write("/etc/env.d/02locale", f'LANG="{lang}"\n')
         _atomic_write("/etc/locale.conf", f"LANG={lang}\n")
         return True, f"locale set to {lang} (run env-update or re-login to apply)"
+
+    def _upsert_conf(self, path: str, key: str, value: str) -> None:
+        """Read ``path`` (if present), upsert ``key="value"``, write it back."""
+        try:
+            with open(path, encoding="utf-8") as fh:
+                text = fh.read()
+        except OSError:
+            text = ""
+        _atomic_write(path, console_core.set_conf_value(text, key, value))
+
+    def _setkeymap(self, keymap: str) -> tuple[bool, str]:
+        if not console_core.valid_keymap(keymap):
+            raise ValueError("invalid keymap")
+        self._upsert_conf(console_core.KEYMAPS_CONF, "keymap", keymap)
+        return True, f"keymap set to {keymap} (applies on next boot / keymaps restart)"
+
+    def _setconsolefont(self, font: str) -> tuple[bool, str]:
+        if not console_core.valid_font(font):
+            raise ValueError("invalid console font")
+        self._upsert_conf(console_core.CONSOLEFONT_CONF, "consolefont", font)
+        return True, f"console font set to {font} (applied on next boot or consolefont restart)"

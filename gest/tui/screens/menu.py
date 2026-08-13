@@ -14,6 +14,7 @@ from gest.tui.screens.bootloader import BootloaderScreen
 from gest.tui.screens.cleanup import CleanupLoadingScreen
 from gest.tui.screens.datetime import DateTimeScreen
 from gest.tui.screens.disk import DiskScreen
+from gest.tui.screens.dns import DnsScreen, HostsScreen
 from gest.tui.screens.eselect import EselectScreen
 from gest.tui.screens.hardware import HardwareScreen
 from gest.tui.screens.hwflags import HwFlagsScreen
@@ -27,7 +28,13 @@ from gest.tui.screens.repos import ReposScreen
 from gest.tui.screens.services import ServicesScreen
 from gest.tui.screens.software import SoftwareLoadingScreen
 from gest.tui.screens.sync import SyncLoadingScreen
-from gest.tui.screens.system import HostnameScreen, LocaleScreen, TimezoneScreen
+from gest.tui.screens.system import (
+    ConsoleFontScreen,
+    HostnameScreen,
+    KeymapScreen,
+    LocaleScreen,
+    TimezoneScreen,
+)
 from gest.tui.screens.update import UpdateLoadingScreen
 from gest.tui.screens.users import UsersScreen
 from gest.tui.screens.world import WorldScreen
@@ -49,6 +56,8 @@ CATEGORIES: list[tuple[str, list[tuple[str, str, bool]]]] = [
         ("hostname", "Hostname", True),
         ("timezone", "Timezone", True),
         ("locale", "Locale", True),
+        ("keymap", "Console Keymap", True),
+        ("consolefont", "Console Font", True),
         ("eselect", "eselect (selections)", True),
         ("bootloader", "Bootloader & Kernel", True),
         ("makeconf", "make.conf editor", True),
@@ -69,6 +78,8 @@ CATEGORIES: list[tuple[str, list[tuple[str, str, bool]]]] = [
     ]),
     ("Network", [
         ("network", "Network", True),
+        ("dns", "DNS Resolvers", True),
+        ("hosts", "Hosts File", True),
     ]),
     ("Miscellaneous", [
         ("logs", "System Logs", True),
@@ -227,6 +238,10 @@ class MenuScreen(Screen):
             self.app.push(TimezoneScreen(self.app))
         elif key == "locale":
             self.app.push(LocaleScreen(self.app))
+        elif key == "keymap":
+            self.app.push(KeymapScreen(self.app))
+        elif key == "consolefont":
+            self.app.push(ConsoleFontScreen(self.app))
         elif key == "eselect":
             self.app.push(EselectScreen(self.app))
         elif key == "bootloader":
@@ -245,6 +260,10 @@ class MenuScreen(Screen):
             self.app.push(UsersScreen(self.app))
         elif key == "network":
             self.app.push(NetworkScreen(self.app))
+        elif key == "dns":
+            self.app.push(DnsScreen(self.app))
+        elif key == "hosts":
+            self.app.push(HostsScreen(self.app))
         elif key == "logs":
             self.app.push(LogsScreen(self.app))
         elif key == "prefs":

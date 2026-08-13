@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import urwid
 
+from gest.core.system import console as console_core
 from gest.core.system import hostname as hostname_core
 from gest.core.system import locale as locale_core
 from gest.core.system import timezone as timezone_core
@@ -155,3 +156,23 @@ class LocaleScreen(_ChoiceScreen):
 
     def _set(self, backend, value):
         return backend.set_locale(value)
+
+
+class KeymapScreen(_ChoiceScreen):
+    _TITLE = "Console Keymap"
+
+    def _load_choices(self):
+        return console_core.list_keymaps(), console_core.current_keymap()
+
+    def _set(self, backend, value):
+        return backend.set_keymap(value)
+
+
+class ConsoleFontScreen(_ChoiceScreen):
+    _TITLE = "Console Font"
+
+    def _load_choices(self):
+        return console_core.list_fonts(), console_core.current_font()
+
+    def _set(self, backend, value):
+        return backend.set_console_font(value)

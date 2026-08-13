@@ -40,7 +40,8 @@ jobs:
                  tests/test_cleanup.py tests/test_update.py tests/test_sync.py \
                  tests/test_mirrors.py tests/test_edit.py tests/test_sshkey.py \
                  tests/test_disk_core.py tests/test_disk_provision.py tests/test_exec.py \
-                 tests/test_disk_mount_target.py \
+                 tests/test_disk_mount_target.py tests/test_system_console.py \
+                 tests/test_network_dns_hosts.py \
                  tests/test_bootloader_install.py tests/test_kernel_build.py -q
 
       - name: Syntax-check the ebuilds
