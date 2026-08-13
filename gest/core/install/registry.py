@@ -38,6 +38,8 @@ from gest.core.disk import reader as disk_reader
 from gest.core.eselect.commands import set_argv
 from gest.core.exec.runner import OnProgress
 from gest.core.exec.steps import Step
+from gest.core.firewall import nft as fw_nft
+from gest.core.firewall.model import FirewallPolicy
 from gest.core.install.context import InstallContext
 from gest.core.install.plan import InstallPlan, Phase
 from gest.core.install.step import ArgvStep, FuncStep, InstallStep
@@ -48,9 +50,16 @@ from gest.core.network import netifrc
 from gest.core.network import resolv as net_resolv
 from gest.core.portage import paths
 from gest.core.portage.codec import shell
+from gest.core.privilege import render as priv_render
+from gest.core.privilege.model import SUDOERS_DROPIN, EscalationPolicy
+from gest.core.sshd import config as sshd_config
+from gest.core.sshd.model import SshdSettings
+from gest.core.sshd.reader import SSHD_CONFIG
 from gest.core.stage3 import commands as stage3_commands
 from gest.core.stage3 import index as stage3_index
 from gest.core.stage3 import verify as stage3_verify
+from gest.core.sysctl import config as sysctl_config
+from gest.core.sysctl.config import SYSCTL_DROPIN
 from gest.core.system import console as sys_console
 from gest.core.system import hostname as sys_hostname
 from gest.core.system import locale as sys_locale
@@ -522,18 +531,123 @@ class ConfigureNetwork(FuncStep):
 
 # --- phase 6: finish (tier-2 opt-in) ----------------------------------------
 
-def _tier2_steps(plan: InstallPlan) -> list[InstallStep]:
-    """Expand ``plan.tier2`` (row 19) into extra steps — empty by default.
+class WriteConfigStep(FuncStep):
+    """Render a module's config and write it under the target root (seam).
 
-    Day-2 modules (sshd/firewall/privilege/sysctl) are opt-in and off by default
-    (§12 q4); wiring them is a separable follow-on, so a request for one is
-    refused loudly rather than silently skipped.
+    ``target_aware`` and host-side: the target isn't running, so no live command
+    (the write is the whole effect; the service picks it up on first boot).
     """
-    if not plan.tier2:
-        return []
-    raise ValueError(
-        "tier-2 install modules are not wired in step 4b: "
-        f"{', '.join(sorted(plan.tier2))}")
+
+    phase = Phase.FINISH
+    target_aware = True
+
+    def __init__(self, label: str, abs_path: str,
+                 render: Callable[[], str], *, mode: int = 0o644) -> None:
+        self.label = label
+        self._abs_path = abs_path
+        self._render = render
+        self._mode = mode
+
+    async def run(self, ctx: InstallContext, on_progress: OnProgress | None = None) -> None:
+        path = write_under_root(ctx.root, self._abs_path, self._render(), mode=self._mode)
+        _emit(on_progress, f"wrote {path}")
+
+    async def is_satisfied(self, ctx: InstallContext) -> bool:
+        return os.path.exists(rootpath.resolve(ctx.root, self._abs_path))
+
+
+class ChrootCmdStep(ArgvStep):
+    """Run one command inside the target (emerge a package, enable a service)."""
+
+    phase = Phase.FINISH
+    chroot = True
+
+    def __init__(self, label: str, key: str, argv: list[str]) -> None:
+        self.label = label
+        self.key = key
+        self._argv = argv
+
+    def build(self, ctx: InstallContext) -> list[Step]:
+        return [Step(self.label, self._argv)]
+
+    async def is_satisfied(self, ctx: InstallContext) -> bool:
+        return ctx.state.done(self.key)
+
+
+def _emerge_argv(plan: InstallPlan, atom: str) -> list[str]:
+    """`emerge` an atom in-chroot: --noreplace so an already-present package is a
+    quick no-op; --getbinpkg when the plan prefers binaries."""
+    argv = ["emerge", "--color", "n", "--noreplace"]
+    if plan.binary_pref:
+        argv.insert(1, "--getbinpkg")
+    return [*argv, atom]
+
+
+# Sensible install-time defaults for the opt-in day-2 modules.
+def _default_firewall() -> FirewallPolicy:
+    # Locked down, but keep SSH reachable — the common server default.
+    return FirewallPolicy(default_input="drop", allow_ping=True, tcp_ports=[22], udp_ports=[])
+
+
+def _default_sysctl() -> dict[str, str]:
+    return {"net.ipv4.tcp_syncookies": "1", "kernel.kptr_restrict": "1"}
+
+
+def _tier2_module_steps(plan: InstallPlan, key: str) -> list[InstallStep]:
+    """The steps for one opt-in day-2 module (config + package + service enable)."""
+    if key == "sshd":
+        return [
+            ChrootCmdStep("Emerge openssh", "tier2_openssh",
+                          _emerge_argv(plan, "net-misc/openssh")),
+            WriteConfigStep("Configure sshd", SSHD_CONFIG,
+                            lambda: sshd_config.apply_settings("", SshdSettings())),
+            ChrootCmdStep("Enable sshd at boot", "tier2_sshd_enable",
+                          ["rc-update", "add", "sshd", "default"]),
+        ]
+    if key == "firewall":
+        return [
+            ChrootCmdStep("Emerge nftables", "tier2_nftables",
+                          _emerge_argv(plan, "net-firewall/nftables")),
+            WriteConfigStep("Configure the firewall", fw_nft.NFT_PATH,
+                            lambda: fw_nft.render_ruleset(_default_firewall())),
+            ChrootCmdStep("Enable nftables at boot", "tier2_nftables_enable",
+                          ["rc-update", "add", "nftables", "default"]),
+        ]
+    if key == "sudo":
+        return [
+            ChrootCmdStep("Emerge sudo", "tier2_sudo", _emerge_argv(plan, "app-admin/sudo")),
+            WriteConfigStep("Configure sudo (wheel)", SUDOERS_DROPIN,
+                            lambda: priv_render.render_sudoers(
+                                EscalationPolicy("sudo", group="wheel")),
+                            mode=0o440),
+        ]
+    if key == "sysctl":
+        return [
+            WriteConfigStep("Configure sysctl", SYSCTL_DROPIN,
+                            lambda: sysctl_config.render_conf(_default_sysctl())),
+        ]
+    raise ValueError(f"unknown tier-2 module: {key!r}")
+
+
+# The order tier-2 modules expand in (phase 6), and the set of known keys.
+TIER2_MODULES = ("sshd", "firewall", "sudo", "sysctl")
+
+
+def _tier2_steps(plan: InstallPlan) -> list[InstallStep]:
+    """Expand ``plan.tier2`` (row 19) into opt-in day-2 steps — empty by default.
+
+    Each selected module writes its config into the target (via the seam) and, for
+    the service modules, emerges its package and enables the service in the chroot.
+    An unknown key is refused loudly rather than silently skipped.
+    """
+    unknown = set(plan.tier2) - set(TIER2_MODULES)
+    if unknown:
+        raise ValueError(f"unknown tier-2 modules: {', '.join(sorted(unknown))}")
+    steps: list[InstallStep] = []
+    for key in TIER2_MODULES:
+        if key in plan.tier2:
+            steps.extend(_tier2_module_steps(plan, key))
+    return steps
 
 
 Secret = Callable[[], str]

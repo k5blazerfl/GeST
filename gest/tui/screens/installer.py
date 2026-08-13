@@ -41,6 +41,16 @@ def _row(text) -> urwid.Widget:
     return urwid.AttrMap(urwid.SelectableIcon(text, 0), None, focus_map="focus")
 
 
+# Opt-in day-2 modules the installer can set up (keys match registry.TIER2_MODULES).
+_TIER2_ORDER = ("sshd", "firewall", "sudo", "sysctl")
+_TIER2_LABELS = {
+    "sshd": "SSH server (sshd)",
+    "firewall": "Firewall (nftables)",
+    "sudo": "sudo for the wheel group",
+    "sysctl": "sysctl hardening",
+}
+
+
 class InstallOverviewScreen(Screen):
     """The 'Installation Settings' overview — edit each setting, then Install."""
 
@@ -74,6 +84,7 @@ class InstallOverviewScreen(Screen):
             ("Console keymap", lambda: self._sel.keymap, self._edit_keymap),
             ("User account", self._user_value, self._edit_user),
             ("Network", self._network_value, self._edit_network),
+            ("Day-2 setup", self._tier2_value, self._edit_tier2),
             ("Kernel", self._kernel_value, self._edit_kernel),
             ("Bootloader", self._bootloader_value, self._edit_bootloader),
             ("Root password", self._rootpw_value, self._edit_rootpw),
@@ -102,6 +113,11 @@ class InstallOverviewScreen(Screen):
 
     def _rootpw_value(self) -> str:
         return "•••••• (set)" if self._sel.root_password else "— required —"
+
+    def _tier2_value(self) -> str:
+        if not self._sel.tier2:
+            return "(none)"
+        return ", ".join(_TIER2_LABELS[k] for k in _TIER2_ORDER if k in self._sel.tier2)
 
     def _connect_value(self) -> str:
         if self._online is None:
@@ -352,6 +368,23 @@ class InstallOverviewScreen(Screen):
                        urwid.Divider(), iface, dhcp, address, gateway, nameservers],
                       [("Save", save), ("Cancel", self.app.pop)])
         self.app.push_modal(modal, width=("relative", 74), height=("relative", 64))
+
+    def _edit_tier2(self) -> None:
+        boxes = {k: urwid.CheckBox(_TIER2_LABELS[k], state=k in self._sel.tier2)
+                 for k in _TIER2_ORDER}
+
+        def save():
+            self._sel.tier2 = {k for k, b in boxes.items() if b.state}
+            self.app.pop()
+            self._render()
+
+        modal = Modal(
+            self.app, "Day-2 setup (optional)",
+            [urwid.Text(("hint", "Set these up during the install (config written, "
+                                 "package emerged, service enabled at boot).")),
+             urwid.Divider(), *boxes.values()],
+            [("Save", save), ("Cancel", self.app.pop)])
+        self.app.push_modal(modal, width=("relative", 64), height=("relative", 52))
 
     def _edit_kernel(self) -> None:
         method = urwid.Edit("Method (make/genkernel): ", self._sel.kernel_method)

@@ -34,6 +34,12 @@ def test_assemble_builds_a_full_plan():
     assert not hasattr(plan, "root_password") or isinstance(plan.root_password, bool)
 
 
+def test_assemble_carries_tier2_selection():
+    assert assemble_plan(_ok_selection(), _S3).tier2 == frozenset()
+    plan = assemble_plan(_ok_selection(tier2={"sshd", "sysctl"}), _S3)
+    assert plan.tier2 == frozenset({"sshd", "sysctl"})
+
+
 def test_assemble_carries_kernel_and_bootloader_choices():
     sel = _ok_selection(kernel_method="genkernel", kernel_jobs=4, kernel_initramfs=False,
                         firmware="bios", boot_disk="sda")
