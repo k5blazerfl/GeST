@@ -1,20 +1,48 @@
-# Design: the desktop environment (a Qt/Wayland shell over GeST)
+# Design: HeDE — the Helm Desktop Environment (a Qt/Wayland shell over GeST)
 
 *Status: vision · Scope: a new project — the session, the shell (panel/launcher/tray/notifications), and the settings integration — built **on top of** GeST's existing `core` + polkit backend · Depends on: the GeST Qt frontend ([gated](#relationship-to-the-qt-frontend-gate) until the TUI/CLI side is declared complete), the polkit-gated D-Bus backend, `layer-shell` · Defers: writing a compositor, a file manager, a display manager, semantic indexing, systemd · Milestone: the track **after** the Qt frontend lands — this doc scopes the target so the Qt frontend is designed to serve it*
 
-> **Working codename:** **Gust** — pairs with *GeST*, evokes *light/airy* (the
-> whole point), short, one syllable. Placeholder; rename freely. Used below only
-> so the prose has a noun.
+> **Name:** **HeDE — the Helm Desktop Environment.** You take the *Helm* of your
+> system; **GeST** is the wheel; **GeSI** (Gentoo System Installer) gets you
+> aboard. It slots into the `Ge-`/`He-` family, and — branded as *HeDE* — stays
+> distinct from Kubernetes' unrelated "Helm." Session binaries use the `helm-`
+> prefix (`helm-session`, `helm-panel`, …); `XDG_CURRENT_DESKTOP=HeDE`.
+
+## Naming across the ecosystem
+
+The suite splits the way macOS does — a **place/vessel** names the environment,
+plain **things** name the apps. Here the *harbor* names the apps (mostly
+nautical, with two mythological keepers):
+
+| Piece | Name | Role |
+|---|---|---|
+| Desktop environment | **HeDE** (Helm) | the shell you steer from |
+| System settings / Control Center | **GeST** | reused wholesale (§9) |
+| Installer (live image) | **GeSI** | Gentoo System Installer (§11) |
+| File manager | **Seahorse** | Explorer-like browser |
+| Terminal | **Porthole** | the window you peer through |
+| Screenshot / magnifier | **Spyglass** | capture + zoom |
+| Archive manager | **Hold** | the ship's cargo hold |
+| System monitor | **Crow's Nest** | the lookout / watch |
+| Text editor / notes | **Logbook** | the ship's log |
+| Document / PDF viewer | **Chart** | nautical charts |
+| Image viewer | **Portside** | (or fold into Spyglass) |
+| Media player | **Pyrrha** | existing Qt player (mythological) |
+| Calculator | **Metis** | Titaness of measure (mythological) |
+
+App names are working choices; the two locked by prior decision are **Pyrrha**
+(the existing player) and **Metis**. Throughout this doc the desktop is **HeDE**
+and its session binaries carry the `helm-` prefix.
 
 ## 0. The one-sentence thesis
 
-**Gust is not a new desktop stack — it is a thin Qt/Wayland *shell* whose
+**HeDE is not a new desktop stack — it is a thin Qt/Wayland *shell* whose
 "Control Center" *is* GeST.** YaST is the settings backbone of a distro;
 GeST is Gentoo's YaST; a desktop built around it doesn't reinvent a settings
 engine, a privilege path, or a hardware/network/user/software model — it renders
 a panel, a launcher, and a login session around the `core` + backend that
 already exist. Every other lightweight Qt desktop (LXQt above all) has to bolt on
-a settings story after the fact. Gust starts with one.
+a settings story after the fact. HeDE starts with one.
 
 This reframes the "feature-rich but ultra-lightweight" tension. The *features*
 (software management, network, users, services, disk, kernel, firewall, …) are
@@ -26,7 +54,7 @@ budget only on the shell.
 ## 1. The wager (same shape as the installer doc)
 
 The installer doc made the wager that "an installer is not a new subsystem, it's
-an orchestration over the modules GeST already has." Gust makes the parallel
+an orchestration over the modules GeST already has." HeDE makes the parallel
 wager one layer up:
 
 > A desktop environment is not a new subsystem. It is **(a)** a Wayland session
@@ -38,7 +66,7 @@ Consequences, and why this is the right bet:
 
 - **No second settings backend.** Network, display, users, services, software,
   disk, time, firewall — all already flow through `core → backend (polkit)`.
-  Gust's "System Settings" is GeST's Qt Control Center, unmodified. This is the
+  HeDE's "System Settings" is GeST's Qt Control Center, unmodified. This is the
   single largest scope cut available and it falls out of the architecture for
   free.
 - **The golden rule still holds.** GeST's rule — *frontends never touch Portage
@@ -47,7 +75,7 @@ Consequences, and why this is the right bet:
   applet drives `core/network` / `core/wifi`; "Update available" in the tray is
   `core/software`'s reader. No privileged surface is added; the backend is
   reused.
-- **It informs the gated Qt frontend.** Designing Gust now, before the Qt
+- **It informs the gated Qt frontend.** Designing HeDE now, before the Qt
   frontend is built, is the point: it turns "a Qt app" into a concrete
   requirement — the Qt frontend must be **modular and embeddable** so the same
   module widgets run standalone (`gest-settings`) *and* hosted inside the shell.
@@ -57,10 +85,10 @@ Consequences, and why this is the right bet:
 
 "Feature-rich **and** ultra-lightweight" is a real contradiction only if you
 build like Plasma. Plasma is QML top-to-bottom, rides KDE Frameworks (KF6) +
-Baloo + a heavyweight KWin, and pays for it in RAM and Gentoo build time. Gust
+Baloo + a heavyweight KWin, and pays for it in RAM and Gentoo build time. HeDE
 gets rich features from GeST and spends its weight only where it must. The levers:
 
-| Lever | Heavy (Plasma) | Gust's choice | Why it's still rich |
+| Lever | Heavy (Plasma) | HeDE's choice | Why it's still rich |
 |---|---|---|---|
 | Toolkit surface | QML/QtQuick everywhere | **QtWidgets-first** for chrome (panel, menus, tray, settings); QML *only* where motion pays (launcher, overview) | Widgets on Wayland are tiny in RAM and instant to draw; features come from `core`, not from a scene graph |
 | Frameworks | Full KF6 | **QtBase + QtWayland only**, plus one or two micro-deps (`layer-shell-qt`) | The "framework" is `gest/core`, which we already own |
@@ -76,7 +104,7 @@ loses.
 
 ## 3. Adopt vs. build (the most important table in this doc)
 
-Writing a whole DE from scratch is how projects die. Gust *builds* only the parts
+Writing a whole DE from scratch is how projects die. HeDE *builds* only the parts
 that are its identity (the shell + the GeST integration) and *adopts* everything
 that is a solved, undifferentiated problem. On Gentoo especially, adopting is
 cheap — it's a `DEPEND`, and the user compiles it anyway.
@@ -91,7 +119,7 @@ cheap — it's a `DEPEND`, and the user compiles it anyway.
 | **System settings** | **Reuse GeST** | GeST Qt Control Center = the settings app (§9). |
 | Polkit auth agent | **Adopt** (or thin build) | `lxqt-policykit` works today; Qt reimpl later if desired. |
 | File manager | **Adopt** | `pcmanfm-qt` (LXQt) — Explorer-like already. Build later only if it becomes an identity piece. |
-| Display manager (login) | **Adopt** | SDDM (Qt, KDE-adjacent). Ship a Gust session `.desktop`. |
+| Display manager (login) | **Adopt** | SDDM (Qt, KDE-adjacent). Ship a HeDE session `.desktop`. |
 | Screen lock / idle | **Build** (thin) | `ext-session-lock-v1` surface + idle via compositor. |
 | xdg-desktop-portal | **Adopt + config** | `xdg-desktop-portal-wlr` (screenshot/screencast) + a file-chooser portal. |
 | Terminal, text editor, image viewer, archiver | **Adopt** | LXQt/Qt apps or user choice; not our job. |
@@ -99,7 +127,7 @@ cheap — it's a `DEPEND`, and the user compiles it anyway.
 The through-line: **build the shell and the GeST seam; adopt the rest.** This is
 exactly how LXQt stays lightweight and shippable, and LXQt is the closest
 existing thing to what's being asked for — a lightweight, compositor-agnostic Qt
-desktop. Gust's differentiator over LXQt is the deep GeST integration.
+desktop. HeDE's differentiator over LXQt is the deep GeST integration.
 
 ## 4. The compositor decision
 
@@ -134,13 +162,13 @@ Everything the shell draws on-screen is a Wayland **layer-shell** surface
 comes from standard protocols and from `gest/core`. Components, each a small
 process the session supervises:
 
-1. **`gust-session`** — the supervisor. Started by the DM via a
-   `gust.desktop` / `wayland-sessions` entry. Launches: compositor → portals →
+1. **`helm-session`** — the supervisor. Started by the DM via a
+   `helm.desktop` / `wayland-sessions` entry. Launches: compositor → portals →
    polkit agent → panel → notification daemon → wallpaper; then honors
    `$XDG_CONFIG_DIRS/autostart`. Owns clean shutdown. ~one file of glue.
-2. **`gust-panel`** — the taskbar (bottom, Windows-style). A layer-shell surface
+2. **`helm-panel`** — the taskbar (bottom, Windows-style). A layer-shell surface
    hosting applets:
-   - **Launcher button** (Start menu) — opens `gust-menu`.
+   - **Launcher button** (Start menu) — opens `helm-menu`.
    - **Window list** — one button per open toplevel via
      `wlr-foreign-toplevel-management`; click to focus/minimize; grouping later.
    - **System tray** — StatusNotifierItem/`org.kde.StatusNotifierWatcher` host.
@@ -149,15 +177,15 @@ process the session supervises:
      (mutations). *This is where GeST's `core` powers desktop chrome directly.*
    - **Clock / calendar**, **update pill** (`core/software` reader → "N updates,
      click to open GeST"), **session menu** (lock/logout/reboot/shutdown).
-3. **`gust-menu`** — the searchable Start menu. Indexes `.desktop` files
+3. **`helm-menu`** — the searchable Start menu. Indexes `.desktop` files
    (freedesktop menu spec), Win-key to open, type-to-search, categories +
    favorites + recents. Optional: search also queries `core/software` ("install
    *gimp*?") — a natural GeST tie-in.
-4. **`gust-notifyd`** — `org.freedesktop.Notifications` daemon → bottom-right
+4. **`helm-notifyd`** — `org.freedesktop.Notifications` daemon → bottom-right
    toasts + a history flyout. Honors urgency, actions, and (later) do-not-disturb.
-5. **`gust-bg`** — wallpaper as a `background` layer-shell surface; slideshow +
+5. **`helm-bg`** — wallpaper as a `background` layer-shell surface; slideshow +
    per-output config, stored in QSettings.
-6. **`gust-lock`** — `ext-session-lock-v1` lock surface; PAM auth; idle handoff
+6. **`helm-lock`** — `ext-session-lock-v1` lock surface; PAM auth; idle handoff
    from the compositor.
 7. **Settings** — *not a new binary* — this is GeST's Qt Control Center
    (`gest-settings`), plus a handful of desktop-only panels (appearance, panel
@@ -181,17 +209,17 @@ feel like Windows to a switcher. That's a layout-and-defaults problem, not an
 architecture problem — the fdo/KDE norms and the Windows feel are not in conflict,
 they're different layers.
 
-**What a Windows user reaches for → how Gust answers (and the fdo/KDE norm beneath):**
+**What a Windows user reaches for → how HeDE answers (and the fdo/KDE norm beneath):**
 
-| Windows expectation | Gust default | Norm underneath |
+| Windows expectation | HeDE default | Norm underneath |
 |---|---|---|
-| Taskbar at the bottom, Start on the left | `gust-panel`, bottom, launcher left | layer-shell, `.desktop` menu spec |
-| Start menu: press key, type, launch | `gust-menu` on Win/Super, type-to-search | freedesktop menu + `.desktop` |
+| Taskbar at the bottom, Start on the left | `helm-panel`, bottom, launcher left | layer-shell, `.desktop` menu spec |
+| Start menu: press key, type, launch | `helm-menu` on Win/Super, type-to-search | freedesktop menu + `.desktop` |
 | Window buttons min/max/close, top-right | labwc title bars, right-aligned controls | xdg-shell / xdg-decoration |
 | Alt-Tab through windows | Alt-Tab overlay via foreign-toplevel list | `wlr-foreign-toplevel-management` |
 | Aero Snap (drag to edge → half/quarter) | labwc edge-snap + `Super+←/→`; snap zones | compositor tiling/snap |
 | System tray + clock, bottom-right | tray host + clock applet | StatusNotifierItem, MPRIS |
-| Toast notifications, bottom-right | `gust-notifyd` toasts + history | `org.freedesktop.Notifications` |
+| Toast notifications, bottom-right | `helm-notifyd` toasts + history | `org.freedesktop.Notifications` |
 | Explorer-like file manager | pcmanfm-qt (tree left, path bar) | Qt file dialogs, XDG dirs |
 | One "Settings" app, categorized, searchable | **GeST Control Center** | polkit, `core` modules |
 | Right-click context menus everywhere | Qt context menus in shell + apps | — |
@@ -214,7 +242,7 @@ icon/cursor/color-scheme specs so third-party Qt *and* GTK apps theme correctly.
 The weight budget from §2 is enforced by rules, not vibes:
 
 - **QtWidgets for chrome.** The panel, menus, tray, and settings are Widgets.
-  QML/QtQuick (and its GPU scene graph) is loaded *only* by `gust-menu`'s
+  QML/QtQuick (and its GPU scene graph) is loaded *only* by `helm-menu`'s
   animation and an optional overview — and even those can fall back to Widgets.
 - **No KF6 hard dependency.** Allowed micro-deps: `layer-shell-qt` (small, does
   one job well). Anything larger must justify itself against the budget.
@@ -222,7 +250,7 @@ The weight budget from §2 is enforced by rules, not vibes:
   overview, and search-in-`core/software` spin up on first use.
 - **No indexing daemon.** Launcher search is over `.desktop` files (cheap);
   content search is an optional add-on, never default.
-- **Config is files, not a daemon.** QSettings INI under `$XDG_CONFIG_HOME/gust`.
+- **Config is files, not a daemon.** QSettings INI under `$XDG_CONFIG_HOME/helm`.
   GeST reads and writes the same files, so "panel settings" in the Control Center
   and hand-editing agree.
 - **Gentoo-native leanness.** USE flags gate optional features (effects,
@@ -234,7 +262,7 @@ The weight budget from §2 is enforced by rules, not vibes:
 
 A desktop is judged by how *other people's* apps look in it.
 
-- **Qt apps** — Gust ships a Qt **platform theme** plugin (or reuses
+- **Qt apps** — HeDE ships a Qt **platform theme** plugin (or reuses
   `qt6ct`-style config) so all Qt apps pick up the color scheme, icon theme,
   fonts, and cursor from one place — set, of course, in GeST's appearance panel.
 - **GTK apps** — write matching `gtk-3.0`/`gtk-4.0` settings + a GTK theme
@@ -248,7 +276,7 @@ A desktop is judged by how *other people's* apps look in it.
 
 ## 9. GeST integration — the seam, in detail
 
-This is the reason Gust exists and the constraint it places back on the (gated)
+This is the reason HeDE exists and the constraint it places back on the (gated)
 Qt frontend.
 
 **The Qt frontend must be built modular and embeddable.** Today's TUI is a
@@ -258,7 +286,7 @@ as **self-contained widgets** with a common interface — so the exact same
 
 1. **Standalone** — `gest-settings`, a windowed Control Center (the YaST-app
    experience, KDE System Settings-like sidebar + module pane).
-2. **Embedded** — hosted by Gust: the panel's network applet opens the
+2. **Embedded** — hosted by HeDE: the panel's network applet opens the
    `NetworkModule` widget in a popover; the update pill opens the
    `SoftwareModule`; "Display" in a monitor's right-click opens the display
    module. Same widget, different frame.
@@ -266,11 +294,11 @@ as **self-contained widgets** with a common interface — so the exact same
 Design rules that follow, to record now so the Qt frontend is built to fit:
 
 - **Module = widget + a descriptor** (id, title, icon, category, capabilities).
-  The host (standalone shell *or* Gust panel) discovers and frames modules; it
+  The host (standalone shell *or* HeDE panel) discovers and frames modules; it
   doesn't know their internals.
 - **Desktop-only modules live with their subject** (per the *settings live in
   their module* principle): Appearance, Panel Layout, Wallpaper, Shortcuts,
-  Notifications are Gust modules that plug into the *same* frontend registry as
+  Notifications are HeDE modules that plug into the *same* frontend registry as
   the system modules — the Control Center shows both, seamlessly.
 - **Privilege path unchanged.** Embedded or standalone, mutations go
   `widget → core → backend (polkit)`. The panel is unprivileged; it never gains
@@ -288,10 +316,10 @@ further.
 
 ## 10. Session, login, portals, autostart
 
-- **Login** — adopt **SDDM** (Qt). Ship `/usr/share/wayland-sessions/gust.desktop`
-  pointing at `gust-session`.
+- **Login** — adopt **SDDM** (Qt). Ship `/usr/share/wayland-sessions/helm.desktop`
+  pointing at `helm-session`.
 - **Session bring-up order** — compositor → `dbus-activation` env
-  (`XDG_CURRENT_DESKTOP=Gust`, `XDG_SESSION_TYPE=wayland`) → portals → polkit
+  (`XDG_CURRENT_DESKTOP=HeDE`, `XDG_SESSION_TYPE=wayland`) → portals → polkit
   agent → panel/notifyd/wallpaper → XDG autostart.
 - **Portals** — `xdg-desktop-portal` + `-wlr` (screenshot/screencast/screencopy)
   + a file-chooser portal, so Flatpak/browser file dialogs and screen sharing
@@ -301,35 +329,35 @@ further.
 
 ## 11. Live-image tie-in (closes GeST's north-star loop)
 
-`packaging/livecd` already scaffolds a catalyst-built GeST live image. Gust is
-the natural face of it:
+`packaging/livecd` already scaffolds a catalyst-built live image — **GeSI, the
+Gentoo System Installer**. HeDE is the natural face of it:
 
-> Boot the GeST live image → land in the **Gust** desktop → open **GeST** →
+> Boot the **GeSI** live image → land in the **HeDE** desktop → open **GeST** →
 > **install Gentoo** onto disk (the installer track), with a real browser,
 > terminal, and file manager available while you do it.
 
 That's the whole "CLI end goal: Gentoo install" north star delivered as a
 product: a graphical live installer environment that is *also* a preview of the
-desktop you're about to install. It also gives Gust a built-in QA loop — the live
-image is a disposable, reproducible test bed for the shell. Ship Gust to the live
+desktop you're about to install. It also gives HeDE a built-in QA loop — the live
+image is a disposable, reproducible test bed for the shell. Ship HeDE to the live
 image's `gest.packages` set once Phase 1 is drivable.
 
 ## 12. Phased roadmap
 
 Each phase is independently demoable, matching GeST's release cadence.
 
-- **Phase 0 — "Hello Wayland."** `gust-session` starts labwc + a bare
-  `gust-panel` (clock only) that can launch a terminal. Proves the session,
+- **Phase 0 — "Hello Wayland."** `helm-session` starts labwc + a bare
+  `helm-panel` (clock only) that can launch a terminal. Proves the session,
   layer-shell, and SDDM entry. *No `core` yet.*
-- **Phase 1 — Daily-drivable shell.** Launcher (`gust-menu`), window-list
-  taskbar (foreign-toplevel), tray host, `gust-notifyd`, wallpaper. This is the
+- **Phase 1 — Daily-drivable shell.** Launcher (`helm-menu`), window-list
+  taskbar (foreign-toplevel), tray host, `helm-notifyd`, wallpaper. This is the
   first thing a person can *use* all day. Add to the live image.
 - **Phase 2 — GeST is the Control Center.** *(Requires the Qt-frontend gate to
   have lifted.)* Embed GeST modules: settings app + panel applets
   (network/volume/battery/brightness/update) driven by `core`. Polkit agent.
   Appearance panel writing Qt+GTK theming.
 - **Phase 3 — Windows-welcome polish.** Aero-Snap zones + `Super+arrows`,
-  Alt-Tab overlay, session-lock (`gust-lock`), quick-settings flyout,
+  Alt-Tab overlay, session-lock (`helm-lock`), quick-settings flyout,
   do-not-disturb, MPRIS in the tray, jump-list `.desktop` actions.
 - **Phase 4 — Product.** Effects profile (wayfire opt-in), overview/expo,
   multi-monitor layout UI (in GeST), theming polish, and the live-installer
@@ -337,11 +365,11 @@ Each phase is independently demoable, matching GeST's release cadence.
 
 ## 13. Open decisions (resolve before Phase 0)
 
-1. **Name.** "Gust" is a placeholder. (Others in the airy/light vein: Cirrus,
-   Zephyr, Halcyon, Gale.)
+1. ~~**Name.**~~ **Decided: HeDE — the Helm Desktop Environment** (see the
+   naming section up top). App suite named; `Pyrrha` and `Metis` locked.
 2. **Compositor default** — labwc (recommended) vs. wayfire-first. Recommend
    labwc; wayfire as an opt-in profile.
-3. **QML scope** — Widgets-only for v1, or allow QML in `gust-menu` from day one?
+3. **QML scope** — Widgets-only for v1, or allow QML in `helm-menu` from day one?
    Recommend Widgets-first, QML confined to the launcher.
 4. **KF6 micro-deps** — is `layer-shell-qt` acceptable, or bind `wlr-layer-shell`
    ourselves to keep KF6 at absolute zero? Recommend accepting `layer-shell-qt`.
@@ -365,7 +393,7 @@ Each phase is independently demoable, matching GeST's release cadence.
 ## Relationship to the Qt-frontend gate
 
 GeST's standing rule: **the Qt/KDE frontend is not started until the TUI/CLI side
-is declared complete** (polish + broad YaST parity). Gust sits *downstream* of
+is declared complete** (polish + broad YaST parity). HeDE sits *downstream* of
 that frontend — Phase 2 onward literally *is* the Qt frontend embedded — so
 nothing in Phases 0–1 requires the gate to lift, and nothing past Phase 1 begins
 until it does.
