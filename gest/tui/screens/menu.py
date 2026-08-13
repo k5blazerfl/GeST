@@ -42,6 +42,7 @@ from gest.tui.screens.system import (
 )
 from gest.tui.screens.update import UpdateLoadingScreen
 from gest.tui.screens.users import UsersScreen
+from gest.tui.screens.wifi import WifiScreen
 from gest.tui.screens.world import WorldScreen
 
 # Category → [(module_key, label, implemented)]. All modules are implemented.
@@ -88,6 +89,7 @@ CATEGORIES: list[tuple[str, list[tuple[str, str, bool]]]] = [
     ]),
     ("Network", [
         ("network", "Network", True),
+        ("wifi", "Wi-Fi", True),
         ("dns", "DNS Resolvers", True),
         ("hosts", "Hosts File", True),
     ]),
@@ -284,6 +286,8 @@ class MenuScreen(Screen):
             self.app.push(DnsScreen(self.app))
         elif key == "hosts":
             self.app.push(HostsScreen(self.app))
+        elif key == "wifi":
+            self.app.push(WifiScreen(self.app))
         elif key == "logs":
             self.app.push(LogsScreen(self.app))
         elif key == "prefs":

@@ -120,6 +120,13 @@ ENVD_PATH = "/org/gentoo/gest/Envd"
 ENVD_IFACE = "org.gentoo.gest.Envd"
 ENVD_POLKIT = "org.gentoo.gest.envd.manage"
 
+# Object path + interface for the Wi-Fi module (wpa_supplicant). AddNetwork hashes
+# the passphrase and writes a network block; RemoveNetwork strips one; Scan lists
+# nearby SSIDs via `iw`.
+WIFI_PATH = "/org/gentoo/gest/Wifi"
+WIFI_IFACE = "org.gentoo.gest.Wifi"
+WIFI_POLKIT = "org.gentoo.gest.wifi.manage"
+
 # D-Bus error name the backend returns when a package operation is refused
 # because another is already in progress (another GeST session, or an external
 # emerge). The frontend maps it to a clean "busy" message instead of a raw crash.

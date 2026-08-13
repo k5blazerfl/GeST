@@ -51,6 +51,7 @@ from gest.backend.sshd import SshdService
 from gest.backend.sysctl import SysctlService
 from gest.backend.system import SystemService
 from gest.backend.users import UsersService
+from gest.backend.wifi import WifiService
 from gest.core.repos import commands as repo_commands
 from gest.core.software import news, world
 from gest.core.software.running import external_emerge
@@ -754,6 +755,7 @@ def main() -> int:
         PrivilegeService(conn)
         SysctlService(conn)
         EnvdService(conn)
+        WifiService(conn)
 
     def on_name_lost(conn, name):
         sys.stderr.write(f"gest-backend: lost/could not acquire name {name}\n")
