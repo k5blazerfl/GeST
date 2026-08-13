@@ -1,0 +1,34 @@
+# catalyst livecd-stage2 for the GeST arm64 (Apple Silicon / Asahi) image (TEMPLATE).
+#
+# Packs a UEFI-bootable arm64 live image. Apple Silicon can't boot external media
+# directly — this image is booted via the machine's already-installed m1n1+U-Boot
+# chain (provisioned from macOS; see the README), which runs
+# /EFI/BOOT/BOOTAA64.EFI off the USB stick. So the deliverable is a UEFI live USB,
+# NOT an isohybrid CD.
+#
+# UNCERTAIN: catalyst's livecd packing on arm64 → a bootable UEFI USB image is
+# far less trodden than amd64 ISO. Expect to iterate this spec (bootloader type,
+# image layout) against real catalyst output and a real M-series machine.
+
+subarch: arm64
+version_stamp: gest-${TIMESTAMP}
+target: livecd-stage2
+rel_type: default
+profile: ${PROFILE}
+snapshot: ${SNAPSHOT}
+source_subpath: default/livecd-stage1-arm64-gest-${TIMESTAMP}
+
+# kernel: the Asahi kernel (dist-kernel), so the live env boots on M1/M2.
+boot/kernel: gentoo
+boot/kernel/gentoo/sources: virtual/dist-kernel:asahi
+
+# UEFI/GRUB2 image (no BIOS/isolinux on arm64). The exact livecd/type + fstype
+# for a bootable arm64 UEFI USB is the thing to iterate on hardware.
+livecd/type: generic-livecd
+livecd/fstype: squashfs
+livecd/iso: gest-installer-arm64-${TIMESTAMP}.iso
+livecd/volid: GEST_INSTALLER
+livecd/motd: ${MOTD}
+
+# autologin + launch gest + enable dbus/dhcpcd, plus run update-m1n1 wiring notes.
+livecd/fsscript: ${FSSCRIPT}

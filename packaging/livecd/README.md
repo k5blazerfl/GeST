@@ -15,14 +15,13 @@ Two targets boot very differently:
 ## Contents
 
 ```
-config.env                    # host/time-specific values you fill (snapshot, stage3 seed, overlay)
-build.sh                      # render the specs from config.env + build with catalyst
+config.env                    # host/time-specific values you fill (snapshot, stage3 seed, overlays)
+build.sh                      # render the specs from config.env + build with catalyst (arch arg)
+spin-up.sh                    # amd64 turnkey: overlay + snapshot + stage3 + build + QEMU boot
 qemu-test.sh                  # boot a built ISO in QEMU (BIOS or UEFI) with a scratch disk
-amd64/livecd-stage1.spec.in   # catalyst templates (${VARS} filled by build.sh)
-amd64/livecd-stage2.spec.in
-amd64/gest.packages           # the image's package set (gest + install-path tools)
-amd64/fsscript.sh             # runs in the stage2 chroot: autologin root + launch gest
-amd64/motd                    # the console message
+run-on-asahi.sh               # install + run GeST inside an installed Asahi Gentoo (M1/M2)
+amd64/…                       # amd64 spec templates, gest.packages, fsscript, motd
+arm64/…                       # arm64 (Apple Silicon / Asahi) equivalents — scaffold
 portage-conf/                 # ~amd64 keyword for the gest ebuild
 ```
 
@@ -102,34 +101,78 @@ installer end to end (partition → stage3 → install → reboot) against a thr
 target. Verify **both** BIOS and UEFI — GeST's bootloader step installs GRUB for
 whichever firmware the plan selects.
 
-## arm64 / Apple Silicon — why it's not an ISO
+## arm64 / Apple Silicon (Asahi)
 
-Apple Silicon Macs **cannot boot external media directly**: the firmware only
-boots signed objects from internal storage. The Asahi boot chain solves this in
-two steps, and only the second can touch a USB stick:
+This target is **scaffolded** (`arm64/` specs + `run-on-asahi.sh`), not a validated
+build like amd64 — Apple Silicon boots very differently and catalyst's arm64 livecd
+path is far less trodden. Read this section before building.
+
+### Why it's not an ISO
+
+Apple Silicon Macs **cannot boot external media directly**: the firmware only boots
+signed objects from internal storage. The Asahi boot chain solves this in two
+steps, and only the second can touch a USB stick:
 
 1. **One-time, from macOS:** the Asahi installer provisions **m1n1 → U-Boot →
-   GRUB** into an internal EFI system partition (on Gentoo, automated by
-   `chadmed`'s `asahi-gentoosupport` / `asahi-scripts`, which also install the
-   Asahi kernel, device trees and GPU firmware from the **Asahi overlay**).
+   GRUB** into an internal EFI system partition (on Gentoo, automated by `chadmed`'s
+   `asahi-gentoosupport` / `asahi-scripts`, which also install the Asahi kernel,
+   device trees and GPU firmware from the **Asahi overlay**).
 2. **After that,** U-Boot's UEFI can run an arm64 UEFI binary off a USB drive
    (`/EFI/BOOT/BOOTAA64.EFI`) — so a GeST **arm64 live USB** is bootable, but only
    once the internal m1n1+U-Boot chain exists.
 
 So the M2 deliverable is an **arm64 UEFI live-USB image**, not an ISO, and it
-presumes the machine already carries the Asahi boot stub. Practically, for testing
-GeST on an M2, easiest first:
+presumes the machine already carries the Asahi boot stub.
 
-- **Run GeST inside an installed/minimal Asahi Gentoo** (`emerge app-admin/gest`).
-  Exercises every module on real Apple-Silicon hardware today, with none of the
-  live-image plumbing. Recommended first.
-- **Build an arm64 UEFI live image** — a follow-on that reuses this amd64 harness
-  with `subarch: arm64`, an arm64 profile, and the Asahi overlay + kernel/m1n1/
-  U-Boot added to the package set, packed as a UEFI USB image rather than an
-  isohybrid CD, booted via the already-installed U-Boot.
+### Recommended first: run GeST *on* an installed Asahi Gentoo
 
-Caveats: Gentoo Asahi targets M1/M2 (M3+ unsupported), and some monthly Asahi
-images have had M2 boot regressions — pin a known-good Asahi base when testing.
+The fastest way to exercise GeST on real M1/M2 hardware — no image build:
+
+```sh
+# on the Mac, from a GeST checkout, inside an installed Asahi Gentoo:
+sudo packaging/livecd/run-on-asahi.sh --run
+```
+
+It registers this checkout as the GeST overlay, accepts `~arm64`, emerges
+`app-admin/gest`, and launches it. This validates every GeST module on Apple
+Silicon today.
+
+### The arm64 live-USB build (scaffold)
+
+Reuses the same harness with `subarch: arm64`, both overlays (GeST + Asahi), the
+Asahi packages (`sys-apps/asahi-meta`, `virtual/dist-kernel:asahi`,
+`sys-apps/asahi-scripts`, `sys-kernel/linux-firmware`), and an Asahi profile:
+
+```sh
+# register the Asahi overlay (chadmed's), then set config.env for arm64:
+sudo eselect repository enable asahi && sudo emaint sync -r asahi   # → /var/db/repos/asahi
+$EDITOR packaging/livecd/config.env
+#   PROFILE        → an Asahi arm64 profile (NOT the amd64 default)
+#   ASAHI_OVERLAY  → /var/db/repos/asahi
+#   SNAPSHOT, STAGE3 → an arm64 snapshot + stage3-arm64 seed
+sudo packaging/livecd/build.sh arm64
+```
+
+**Expect to iterate** `arm64/livecd-stage2.spec.in` (the `livecd/type`/`fstype` and
+bootloader that produce a UEFI-bootable arm64 USB image) against real catalyst
+output — this is the least-proven part.
+
+### Installer gap on Apple Silicon (important)
+
+GeST's installer runs its module steps, but its **kernel and bootloader steps are
+x86-oriented**: it builds a generic kernel (genkernel/make) and runs `grub-install`.
+Apple Silicon instead needs the **Asahi kernel** (`virtual/dist-kernel:asahi`) and
+`update-m1n1` (from `sys-apps/asahi-scripts`) to pack m1n1 + U-Boot + the
+devicetree into the EFI boot object on the ESP. So installing Gentoo *onto* an
+Apple-Silicon target with GeST is **not yet complete** — you'd finish the boot
+setup by hand in the target chroot per the Gentoo Asahi guide. Making GeST's
+kernel/bootloader steps Asahi-aware (emerge `asahi-meta` + `dist-kernel:asahi`,
+run `update-m1n1` instead of `grub-install`) is the follow-on that closes this.
+
+### Caveats
+
+Gentoo Asahi targets M1/M2 (M3+ unsupported), and some monthly Asahi images have
+had M2 boot regressions — pin a known-good Asahi base when testing.
 
 ## Sequencing
 

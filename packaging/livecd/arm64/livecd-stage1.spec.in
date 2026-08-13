@@ -1,0 +1,28 @@
+# catalyst livecd-stage1 for the GeST arm64 (Apple Silicon / Asahi) image (TEMPLATE).
+#
+# build.sh renders this to build/livecd-stage1.spec (substituting ${VARS} from
+# config.env and appending arm64/gest.packages). See the README "arm64 / Apple
+# Silicon" section — this path is a scaffold to iterate on real hardware, not a
+# validated build like amd64.
+#
+# NOTE: the profile and stage3 seed should be Asahi-appropriate. The Asahi
+# project provides its own profile via the Asahi overlay; ${PROFILE} in config.env
+# should point at it (e.g. an asahi desktop/openrc profile) rather than the plain
+# arm64 profile, so the Apple-Silicon USE/KEYWORDS apply.
+
+subarch: arm64
+version_stamp: gest-${TIMESTAMP}
+target: livecd-stage1
+rel_type: default
+profile: ${PROFILE}
+snapshot: ${SNAPSHOT}
+source_subpath: default/${STAGE3}
+
+# Both overlays: GeST (for app-admin/gest) and Asahi (for asahi-meta / the
+# Asahi kernel / m1n1 / U-Boot). catalyst accepts a space-separated list.
+portage_overlay: ${GEST_OVERLAY} ${ASAHI_OVERLAY}
+
+portage_confdir: ${PORTAGE_CONFDIR}
+
+# The image's package set is appended here by build.sh from arm64/gest.packages.
+livecd/packages:

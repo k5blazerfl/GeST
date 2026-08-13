@@ -1,0 +1,47 @@
+# Packages for the GeST arm64 (Apple Silicon / Asahi) installer live image.
+# The amd64 install-path tool set, plus the Asahi Apple-Silicon support packages
+# (from the Asahi overlay — see ASAHI_OVERLAY in config.env). Keep in sync with
+# the livecd/packages: block appended by build.sh.
+
+# GeST (from the GeST overlay)
+app-admin/gest
+
+# --- Apple Silicon / Asahi support (needs the Asahi overlay) ---------------
+sys-apps/asahi-meta         # pulls m1n1, asahi-fwupdate and the required utils
+sys-apps/asahi-scripts      # installkernel hook + update-m1n1 (packs the ESP boot object)
+virtual/dist-kernel:asahi   # the Asahi kernel (not-yet-upstream Apple-Silicon bits)
+sys-kernel/linux-firmware   # firmware (incl. what Asahi needs)
+
+# storage provisioning: partition, mkfs, swap, mount
+sys-fs/gptfdisk
+sys-block/parted
+sys-apps/util-linux
+sys-fs/e2fsprogs
+sys-fs/xfsprogs
+sys-fs/btrfs-progs
+sys-fs/f2fs-tools
+sys-fs/dosfstools
+
+# stage3 fetch + verify + unpack
+net-misc/wget
+app-arch/tar
+app-arch/xz-utils
+app-crypt/gnupg
+
+# bootloader (UEFI / GRUB2 — Apple Silicon boots via the installed m1n1+U-Boot
+# UEFI chain, so the target install uses GRUB on the ESP)
+sys-boot/grub
+sys-boot/efibootmgr
+
+# network (live env + the target's config tools)
+net-misc/dhcpcd
+net-wireless/wpa_supplicant
+net-wireless/iw
+
+# day-2 firewall backends GeST's Firewall module can drive
+net-firewall/nftables
+net-firewall/firewalld
+
+# the D-Bus / polkit runtime the backend needs
+sys-auth/polkit
+sys-apps/dbus

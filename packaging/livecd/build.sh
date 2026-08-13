@@ -34,8 +34,9 @@ case "${SNAPSHOT}${STAGE3}" in
     *CHANGE-ME*) echo "!! fill SNAPSHOT and STAGE3 in ${here}/config.env first." >&2; exit 2 ;;
 esac
 
-# Paths the templates reference.
+# Paths the templates reference (ASAHI_OVERLAY is arm64-only; harmless on amd64).
 export PROFILE SNAPSHOT STAGE3 GEST_OVERLAY TIMESTAMP
+export ASAHI_OVERLAY="${ASAHI_OVERLAY:-}"
 export PORTAGE_CONFDIR="${here}/portage-conf"
 export MOTD="${specdir}/motd"
 export FSSCRIPT="${specdir}/fsscript.sh"
