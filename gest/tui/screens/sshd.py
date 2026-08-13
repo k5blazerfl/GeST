@@ -1,8 +1,10 @@
 """SSH server config in urwid: edit the managed sshd_config directives.
 
-Reads current settings unprivileged; applying goes through the polkit-gated
-SshdBackend, which validates the candidate with `sshd -t` before replacing the
-live file and reloading the daemon.
+Transactional: edits are staged against a saved baseline, shown as pending
+changes, and either applied as one transaction (F10) or discarded (u). Reads are
+unprivileged; applying goes through the polkit-gated SshdBackend, which validates
+the candidate with `sshd -t` before replacing the live file and reloading the
+daemon.
 """
 
 from __future__ import annotations
@@ -15,12 +17,28 @@ import urwid
 from gest.core.sshd import reader
 from gest.core.sshd.backend_client import SshdBackend
 from gest.core.sshd.config import valid_port
-from gest.core.sshd.model import ROOT_LOGIN_VALUES
+from gest.core.sshd.model import ROOT_LOGIN_VALUES, SshdSettings
 from gest.tui.runtime import App, Modal, Screen, boxed
 
 
 def _yn(value: bool) -> str:
     return "yes" if value else "no"
+
+
+def _fmt(attr: str, value) -> str:
+    """Render a directive value for display (bools as yes/no, else str)."""
+    return _yn(value) if isinstance(value, bool) else str(value)
+
+
+# The managed directives, in display order: (label, dataclass field).
+_FIELDS: tuple[tuple[str, str], ...] = (
+    ("Port", "port"),
+    ("PermitRootLogin", "permit_root_login"),
+    ("PasswordAuthentication", "password_authentication"),
+    ("PubkeyAuthentication", "pubkey_authentication"),
+    ("X11Forwarding", "x11_forwarding"),
+    ("PermitEmptyPasswords", "permit_empty_passwords"),
+)
 
 
 def _mark(text: str, good: bool, *, risky: bool = False):
@@ -35,7 +53,8 @@ def _mark(text: str, good: bool, *, risky: bool = False):
 
 class SshdScreen(Screen):
     def __init__(self, app: App) -> None:
-        self._settings = reader.current_settings()
+        self._saved = reader.current_settings()      # baseline: what's on disk
+        self._settings = self._saved                 # working copy (staged edits)
         self._info = urwid.Text("")
         body = urwid.Filler(boxed(self._info, title="sshd_config"), valign="top")
         super().__init__(
@@ -43,12 +62,13 @@ class SshdScreen(Screen):
             footer_keys=[
                 ("o", "Port"), ("r", "Root login"), ("a", "Password auth"),
                 ("k", "Pubkey auth"), ("x", "X11"), ("e", "Empty pw"),
-                ("F10", "Apply"), ("Esc", "Back"),
+                ("F10", "Apply"), ("u", "Discard"), ("Esc", "Back"),
             ],
             help_text=(
-                "Manage the security-relevant sshd_config directives; every\n"
-                "other line in the file is preserved, and changes are checked\n"
-                "with sshd -t before they are applied.\n\n"
+                "Manage the security-relevant sshd_config directives. Edits are\n"
+                "staged as pending changes and applied as one transaction — the\n"
+                "candidate is checked with sshd -t before it replaces the file.\n"
+                "Every other line in sshd_config is preserved.\n\n"
                 "o   set the listen port\n"
                 "r   cycle PermitRootLogin (no / prohibit-password /\n"
                 "    forced-commands-only / yes)\n"
@@ -56,41 +76,73 @@ class SshdScreen(Screen):
                 "k   toggle PubkeyAuthentication\n"
                 "x   toggle X11Forwarding\n"
                 "e   toggle PermitEmptyPasswords\n"
-                "F10 apply   ·   Esc back\n\n"
-                "Values flagged in red weaken the server; green ones harden it."
+                "F10 apply the pending changes   ·   u   discard them\n"
+                "Esc back (prompts if changes are pending)\n\n"
+                "Changed directives are marked ●; values in red weaken the\n"
+                "server, green ones harden it."
             ),
         )
         self._render()
 
+    def _pending(self) -> list[tuple[str, str, str]]:
+        """Directives that differ from the saved baseline: (label, was, now)."""
+        out = []
+        for label, attr in _FIELDS:
+            was, now = getattr(self._saved, attr), getattr(self._settings, attr)
+            if was != now:
+                out.append((label, _fmt(attr, was), _fmt(attr, now)))
+        return out
+
+    def _value_markup(self, attr: str):
+        """Posture-coloured markup for a directive's current (staged) value."""
+        s = self._settings
+        value = getattr(s, attr)
+        if attr == "permit_root_login":
+            ok = value != "yes"
+            return _mark(value, ok, risky=not ok)
+        if attr == "permit_empty_passwords":
+            return _mark(_yn(value), not value, risky=value)
+        # remaining bools: hardened when the "safe" state holds
+        safe = {"password_authentication": not value,
+                "pubkey_authentication": value,
+                "x11_forwarding": not value}.get(attr)
+        if safe is None:                       # Port — neutral
+            return str(value)
+        return _mark(_yn(value), safe)
+
     def _render(self) -> None:
         s = self._settings
-        # Per-directive posture: (value-markup, is_risky).
-        root_ok = s.permit_root_login != "yes"
-        risks = [not root_ok, s.permit_empty_passwords]
-        n = sum(risks)
-        summary = (("ok", " ✓ Hardened — no risky directives") if n == 0
-                   else ("error", f" ⚠ {n} directive{'s' if n > 1 else ''} weaken this server"))
-        self._info.set_text([
-            summary, "\n\n",
-            ("field", " Port                   : "), f"{s.port}\n",
-            ("field", " PermitRootLogin        : "),
-            _mark(s.permit_root_login, root_ok, risky=not root_ok), "\n",
-            ("field", " PasswordAuthentication : "),
-            _mark(_yn(s.password_authentication), not s.password_authentication), "\n",
-            ("field", " PubkeyAuthentication   : "),
-            _mark(_yn(s.pubkey_authentication), s.pubkey_authentication), "\n",
-            ("field", " X11Forwarding          : "),
-            _mark(_yn(s.x11_forwarding), not s.x11_forwarding), "\n",
-            ("field", " PermitEmptyPasswords   : "),
-            _mark(_yn(s.permit_empty_passwords), not s.permit_empty_passwords,
-                  risky=s.permit_empty_passwords), "\n",
-        ])
+        pending = self._pending()
+        n_risk = sum([s.permit_root_login == "yes", s.permit_empty_passwords])
+        posture = (("ok", " ✓ Hardened — no risky directives") if n_risk == 0
+                   else ("error", f" ⚠ {n_risk} directive"
+                                  f"{'s' if n_risk > 1 else ''} weaken this server"))
+        if pending:
+            txn = ("update", f" ● {len(pending)} pending change"
+                             f"{'s' if len(pending) > 1 else ''} "
+                             "— F10 apply · u discard")
+        else:
+            txn = ("hint", " ○ no pending changes")
+
+        markup: list = [posture, "\n", txn, "\n\n"]
+        for label, attr in _FIELDS:
+            changed = getattr(self._saved, attr) != getattr(self._settings, attr)
+            markup.append(("update", " ● ") if changed else "   ")
+            markup.append(("field", f"{label:<22} : "))
+            markup.append(self._value_markup(attr))
+            if changed:
+                markup.append(("dim", f"   (was {_fmt(attr, getattr(self._saved, attr))})"))
+            markup.append("\n")
+        self._info.set_text(markup)
         self.app.refresh()
 
     def handle_key(self, key):
         s = self._settings
         if key == "esc":
-            self.app.pop()
+            if self._pending():
+                self._confirm_discard_back()
+            else:
+                self.app.pop()
             return None
         if key in ("a", "A"):
             self._settings = replace(s, password_authentication=not s.password_authentication)
@@ -107,6 +159,9 @@ class SshdScreen(Screen):
         elif key in ("o", "O"):
             self._edit_port()
             return None
+        elif key in ("u", "U"):
+            self._discard()
+            return None
         elif key == "f10":
             self._apply()
             return None
@@ -114,6 +169,14 @@ class SshdScreen(Screen):
             return key
         self._render()
         return None
+
+    def _discard(self) -> None:
+        if not self._pending():
+            self.app.notify("No pending changes.")
+            return
+        self._settings = self._saved
+        self._render()
+        self.app.notify("Pending changes discarded.")
 
     def _edit_port(self) -> None:
         entry = urwid.Edit("Port: ", str(self._settings.port))
@@ -135,8 +198,7 @@ class SshdScreen(Screen):
         )
         self.app.push_modal(modal, width=("relative", 60), height=("relative", 42))
 
-    async def _call(self) -> None:
-        settings = self._settings
+    async def _call(self, settings: SshdSettings) -> None:
         backend = SshdBackend()
         try:
             await backend.connect()
@@ -149,8 +211,15 @@ class SshdScreen(Screen):
         with contextlib.suppress(Exception):
             await backend.close()
         self.app.notify(out or ("done" if ok else "failed"), error=not ok)
+        if ok:
+            self._saved = settings          # the transaction committed → new baseline
+            self._render()
 
     def _apply(self) -> None:
+        pending = self._pending()
+        if not pending:
+            self.app.notify("No pending changes to apply.")
+            return
         s = self._settings
         warns = []
         if not s.password_authentication and not s.pubkey_authentication:
@@ -161,13 +230,32 @@ class SshdScreen(Screen):
 
         def go():
             self.app.pop()
-            self.app.run_async(self._call())
+            self.app.run_async(self._call(s))
 
-        body = [urwid.Text(f"Apply the sshd_config changes (port {s.port})?")]
+        body: list = [urwid.Text(("field", " Pending changes:"))]
+        for label, was, now in pending:
+            body.append(urwid.Text(["   ", ("field", f"{label}: "),
+                                    ("dim", was), " → ", ("ok", now)]))
         for w in warns:
             body += [urwid.Divider(), urwid.Text(("error", f" ⚠ {w}"))]
         body += [urwid.Divider(),
                  urwid.Text(("hint", "Validated with sshd -t before it is written."))]
-        modal = Modal(self.app, "Apply sshd config", body,
+        modal = Modal(self.app, "Apply sshd changes", body,
                       [("Apply", go), ("Cancel", self.app.pop)])
-        self.app.push_modal(modal, width=("relative", 68), height=("relative", 50))
+        self.app.push_modal(modal, width=("relative", 70), height=("relative", 58))
+
+    def _confirm_discard_back(self) -> None:
+        n = len(self._pending())
+
+        def go():
+            self.app.pop()      # modal
+            self.app.pop()      # screen
+
+        modal = Modal(
+            self.app, "Discard pending changes?",
+            [urwid.Text(f"You have {n} unsaved sshd change{'s' if n > 1 else ''}."),
+             urwid.Divider(),
+             urwid.Text(("hint", "Going back now discards them (nothing is written)."))],
+            [("Discard & back", go), ("Keep editing", self.app.pop)],
+        )
+        self.app.push_modal(modal, width=("relative", 62), height=("relative", 44))
