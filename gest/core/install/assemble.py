@@ -18,10 +18,16 @@ from dataclasses import dataclass
 from gest.core.bootloader.install import InstallConfig
 from gest.core.disk import mount as disk_mount
 from gest.core.disk import provision
-from gest.core.install.plan import InstallPlan
+from gest.core.install.plan import InstallPlan, NetworkSpec, UserSpec
 from gest.core.kernel.build import BuildConfig
+from gest.core.network import netifrc, resolv
 from gest.core.stage3 import index
 from gest.core.stage3.model import DEFAULT_VARIANT, Stage3Selection, Stage3Variant
+from gest.core.system.console import valid_keymap
+from gest.core.system.hostname import valid_hostname
+from gest.core.system.locale import valid_locale
+from gest.core.system.timezone import valid_zone_name
+from gest.core.users.commands import valid_name as valid_user_name
 
 DEFAULT_TARGET_ROOT = "/mnt/gentoo"
 
@@ -43,11 +49,24 @@ class InstallSelections:
     target_root: str = DEFAULT_TARGET_ROOT
     # stage3
     variant: Stage3Variant = DEFAULT_VARIANT
-    # system (defaults for 5a; editable rows land in 5b)
+    # system (editable rows in 5b; defaults keep a fresh overview valid)
     hostname: str = "gentoo"
     timezone: str = "UTC"
     locale: str = "C.UTF-8"
     keymap: str = "us"
+    # user (optional; created in the target when create_user)
+    create_user: bool = False
+    user_name: str = ""
+    user_comment: str = ""
+    user_shell: str = "/bin/bash"
+    user_wheel: bool = True
+    # target network (the INSTALLED system's netifrc/DNS — not the live env).
+    # net_interface blank leaves it default/unconfigured (the step no-ops).
+    net_interface: str = ""
+    net_dhcp: bool = True
+    net_address: str = ""             # CIDR, e.g. "192.168.1.5/24" (static only)
+    net_gateway: str = ""             # default gateway IP (static only)
+    net_nameservers: tuple[str, ...] = ()
     # kernel
     kernel_method: str = "make"       # "make" | "genkernel"
     kernel_jobs: int = 0              # 0 → the module resolves to CPU count
@@ -80,11 +99,58 @@ def resolve_stage3(variant: Stage3Variant, *, mirror: str = index.MIRROR) -> Sta
     )
 
 
+def _build_user(sel: InstallSelections) -> UserSpec | None:
+    """The optional non-root user (``None`` unless ``create_user``).
+
+    Reuses the shadow-utils name rule from ``users.commands`` — an empty or
+    otherwise invalid name raises rather than assembling a bad plan.
+    """
+    if not sel.create_user:
+        return None
+    if not valid_user_name(sel.user_name):
+        raise ValueError(f"invalid user name: {sel.user_name!r}")
+    return UserSpec(
+        name=sel.user_name,
+        comment=sel.user_comment,
+        shell=sel.user_shell,
+        wheel=sel.user_wheel,
+    )
+
+
+def _build_network(sel: InstallSelections) -> NetworkSpec:
+    """The installed system's netifrc/DNS choice.
+
+    A blank interface means "leave it default" — the ConfigureNetwork step no-ops,
+    so we return a default :class:`NetworkSpec`. When an interface is named, a
+    static config's address/gateway are validated with the netifrc validators and
+    every nameserver with the resolv validator; a bad value raises.
+    """
+    if not sel.net_interface:
+        return NetworkSpec()
+    if not sel.net_dhcp:
+        if not netifrc.valid_address(sel.net_address):
+            raise ValueError(f"invalid static address: {sel.net_address!r}")
+        if not netifrc.valid_gateway(sel.net_gateway):
+            raise ValueError(f"invalid gateway: {sel.net_gateway!r}")
+    for ns in sel.net_nameservers:
+        if not resolv.valid_nameserver(ns):
+            raise ValueError(f"invalid nameserver: {ns!r}")
+    return NetworkSpec(
+        dhcp=sel.net_dhcp,
+        interface=sel.net_interface,
+        address=sel.net_address,
+        gateway=sel.net_gateway,
+        nameservers=tuple(sel.net_nameservers),
+    )
+
+
 def assemble_plan(sel: InstallSelections, stage3: Stage3Selection) -> InstallPlan:
     """Build the frozen :class:`InstallPlan` from ``sel`` and a resolved ``stage3``.
 
     Pure: no I/O. Raises ``ValueError`` on a selection the module validators reject
-    (empty disk, bad filesystem/size, empty root password, bad firmware).
+    (empty disk, bad filesystem/size, empty root password, bad firmware, a bad
+    hostname/timezone/locale/keymap, an invalid user name, or a bad target-network
+    address/gateway/nameserver).
     """
     if not sel.disk:
         raise ValueError("no target disk selected")
@@ -92,6 +158,16 @@ def assemble_plan(sel: InstallSelections, stage3: Stage3Selection) -> InstallPla
         raise ValueError("a root password is required")
     if sel.firmware not in ("uefi", "bios"):
         raise ValueError(f"invalid firmware: {sel.firmware!r}")
+    if not valid_hostname(sel.hostname):
+        raise ValueError(f"invalid hostname: {sel.hostname!r}")
+    if not valid_zone_name(sel.timezone):
+        raise ValueError(f"invalid timezone: {sel.timezone!r}")
+    if not valid_locale(sel.locale):
+        raise ValueError(f"invalid locale: {sel.locale!r}")
+    if not valid_keymap(sel.keymap):
+        raise ValueError(f"invalid keymap: {sel.keymap!r}")
+    user = _build_user(sel)
+    network = _build_network(sel)
     disk = provision.uefi_plan(sel.disk, sel.esp_size, sel.swap_size, sel.root_fs)
     mount = disk_mount.derive_mount_plan(disk, sel.target_root)
     return InstallPlan(
@@ -106,5 +182,7 @@ def assemble_plan(sel: InstallSelections, stage3: Stage3Selection) -> InstallPla
         timezone=sel.timezone,
         locale=sel.locale,
         keymap=sel.keymap,
+        user=user,
+        network=network,
         binary_pref=sel.binary_pref,
     )

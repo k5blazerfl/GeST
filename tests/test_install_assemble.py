@@ -5,6 +5,7 @@ import pytest
 
 from gest.core.install import assemble
 from gest.core.install.assemble import InstallSelections, assemble_plan, resolve_stage3
+from gest.core.install.plan import NetworkSpec, UserSpec
 from gest.core.stage3.model import DEFAULT_VARIANT, Stage3Selection, Stage3Variant
 
 _S3 = Stage3Selection(
@@ -59,6 +60,88 @@ def test_default_selections_need_a_disk_and_password():
     # a fresh overview is not yet installable
     with pytest.raises(ValueError):
         assemble_plan(InstallSelections(), _S3)
+
+
+# --- user account -----------------------------------------------------------
+
+def test_assemble_builds_a_user_when_requested():
+    sel = _ok_selection(create_user=True, user_name="tux", user_comment="Tux",
+                        user_shell="/bin/zsh", user_wheel=True)
+    plan = assemble_plan(sel, _S3)
+    assert isinstance(plan.user, UserSpec)
+    assert plan.user == UserSpec(name="tux", comment="Tux", shell="/bin/zsh", wheel=True)
+
+
+def test_assemble_omits_the_user_by_default():
+    assert assemble_plan(_ok_selection(), _S3).user is None
+    # create_user False even with a name filled in → no user
+    assert assemble_plan(_ok_selection(user_name="tux"), _S3).user is None
+
+
+def test_assemble_rejects_a_bad_or_empty_user_name():
+    with pytest.raises(ValueError, match="user name"):
+        assemble_plan(_ok_selection(create_user=True, user_name=""), _S3)
+    with pytest.raises(ValueError, match="user name"):
+        assemble_plan(_ok_selection(create_user=True, user_name="1bad"), _S3)
+
+
+# --- target network ---------------------------------------------------------
+
+def test_assemble_defaults_the_network_when_interface_blank():
+    plan = assemble_plan(_ok_selection(), _S3)
+    assert plan.network == NetworkSpec()   # default, no raise
+
+
+def test_assemble_carries_a_static_network():
+    sel = _ok_selection(net_interface="eth0", net_dhcp=False,
+                        net_address="192.168.1.5/24", net_gateway="192.168.1.1",
+                        net_nameservers=("1.1.1.1", "9.9.9.9"))
+    plan = assemble_plan(sel, _S3)
+    assert plan.network == NetworkSpec(
+        dhcp=False, interface="eth0", address="192.168.1.5/24",
+        gateway="192.168.1.1", nameservers=("1.1.1.1", "9.9.9.9"))
+
+
+def test_assemble_carries_a_dhcp_network():
+    plan = assemble_plan(_ok_selection(net_interface="eth0"), _S3)
+    assert plan.network.dhcp is True and plan.network.interface == "eth0"
+
+
+def test_assemble_rejects_a_bad_static_network():
+    with pytest.raises(ValueError, match="address"):
+        assemble_plan(_ok_selection(net_interface="eth0", net_dhcp=False,
+                                    net_address="192.168.1.5"), _S3)   # no CIDR
+    with pytest.raises(ValueError, match="gateway"):
+        assemble_plan(_ok_selection(net_interface="eth0", net_dhcp=False,
+                                    net_address="192.168.1.5/24",
+                                    net_gateway="not-an-ip"), _S3)
+    with pytest.raises(ValueError, match="nameserver"):
+        assemble_plan(_ok_selection(net_interface="eth0", net_dhcp=False,
+                                    net_address="192.168.1.5/24",
+                                    net_nameservers=("1.1.1.1", "nope")), _S3)
+
+
+# --- system fields validated ------------------------------------------------
+
+def test_assemble_carries_system_fields():
+    sel = _ok_selection(hostname="workstation", timezone="America/New_York",
+                        locale="en_US.UTF-8", keymap="de-latin1")
+    plan = assemble_plan(sel, _S3)
+    assert plan.hostname == "workstation"
+    assert plan.timezone == "America/New_York"
+    assert plan.locale == "en_US.UTF-8"
+    assert plan.keymap == "de-latin1"
+
+
+def test_assemble_rejects_bad_system_fields():
+    with pytest.raises(ValueError, match="hostname"):
+        assemble_plan(_ok_selection(hostname="bad_host!"), _S3)
+    with pytest.raises(ValueError, match="timezone"):
+        assemble_plan(_ok_selection(timezone="../etc/passwd"), _S3)
+    with pytest.raises(ValueError, match="locale"):
+        assemble_plan(_ok_selection(locale="en US"), _S3)
+    with pytest.raises(ValueError, match="keymap"):
+        assemble_plan(_ok_selection(keymap="bad key"), _S3)
 
 
 # --- resolve_stage3 (I/O, faked) --------------------------------------------

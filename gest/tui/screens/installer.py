@@ -26,7 +26,13 @@ from gest.core.install.assemble import InstallSelections
 from gest.core.install.context import InstallContext, StateStore
 from gest.core.install.engine import run_install
 from gest.core.install.registry import build_registry
+from gest.core.network import netifrc, resolv
 from gest.core.stage3.model import VARIANTS
+from gest.core.system import console as console_core
+from gest.core.system import hostname as hostname_core
+from gest.core.system import locale as locale_core
+from gest.core.system import timezone as timezone_core
+from gest.core.users.commands import valid_name as valid_user_name
 from gest.tui.runtime import App, Modal, NavPile, Screen, boxed, strip_ansi
 
 
@@ -52,13 +58,19 @@ class InstallOverviewScreen(Screen):
                 "The installer partitions the target, unpacks a stage3, and runs the\n"
                 "Handbook steps against /mnt/gentoo. Everything here is a plan until\n"
                 "you confirm — nothing touches a disk before then.\n\n"
-                "5a covers disk, stage3, kernel, bootloader and the root password;\n"
-                "the rest use defaults for now."
+                "Only the target disk and root password are required; the system,\n"
+                "user and network rows carry sensible defaults you can edit."
             ),
         )
         self._rows = [
             ("Target disk", self._disk_value, self._edit_disk),
             ("Stage3", lambda: self._sel.variant.label, self._edit_stage3),
+            ("Hostname", lambda: self._sel.hostname, self._edit_hostname),
+            ("Timezone", lambda: self._sel.timezone, self._edit_timezone),
+            ("Locale", lambda: self._sel.locale, self._edit_locale),
+            ("Console keymap", lambda: self._sel.keymap, self._edit_keymap),
+            ("User account", self._user_value, self._edit_user),
+            ("Network", self._network_value, self._edit_network),
             ("Kernel", self._kernel_value, self._edit_kernel),
             ("Bootloader", self._bootloader_value, self._edit_bootloader),
             ("Root password", self._rootpw_value, self._edit_rootpw),
@@ -86,6 +98,19 @@ class InstallOverviewScreen(Screen):
 
     def _rootpw_value(self) -> str:
         return "•••••• (set)" if self._sel.root_password else "— required —"
+
+    def _user_value(self) -> str:
+        if not self._sel.create_user or not self._sel.user_name:
+            return "(none)"
+        extra = " · wheel (sudo)" if self._sel.user_wheel else ""
+        return f"{self._sel.user_name}{extra}"
+
+    def _network_value(self) -> str:
+        if not self._sel.net_interface:
+            return "(default)"
+        how = "DHCP" if self._sel.net_dhcp else (self._sel.net_address or "static")
+        dns = f", dns {' '.join(self._sel.net_nameservers)}" if self._sel.net_nameservers else ""
+        return f"{self._sel.net_interface}  ({how}{dns})"
 
     def _render(self) -> None:
         rows = []
@@ -166,6 +191,152 @@ class InstallOverviewScreen(Screen):
         modal = Modal(self.app, "Stage3 variant", [body],
                       [("Select", pick), ("Cancel", self.app.pop)])
         self.app.push_modal(modal, width=("relative", 60), height=("relative", 55))
+
+    def _edit_hostname(self) -> None:
+        edit = urwid.Edit("Hostname        : ", self._sel.hostname)
+
+        def save():
+            name = edit.edit_text.strip()
+            if not hostname_core.valid_hostname(name):
+                self.app.notify("Invalid hostname.", error=True)
+                return
+            self._sel.hostname = name
+            self.app.pop()
+            self._render()
+
+        modal = Modal(self.app, "Hostname",
+                      [urwid.Text(("hint", "The installed system's hostname.")),
+                       urwid.Divider(), edit],
+                      [("Save", save), ("Cancel", self.app.pop)])
+        self.app.push_modal(modal, width=("relative", 60), height=("relative", 44))
+
+    def _pick_modal(self, title: str, choices: list[str], current: str, apply) -> None:
+        """A filterable picker modal (filter Edit + scrollable ListBox), modelled on
+        ``system._ChoiceScreen`` — right for the ~hundreds of zones/locales/keymaps."""
+        walker = urwid.SimpleFocusListWalker([])
+        visible = list(choices)
+
+        def fill(items):
+            nonlocal visible
+            visible = items
+            walker[:] = [_row(c) for c in items] or [urwid.Text(" (no matches)")]
+            if items and current in items:
+                walker.set_focus(items.index(current))
+            elif items:
+                walker.set_focus(0)
+
+        filt = urwid.Edit("Filter: ")
+
+        def on_filter(_edit, text):
+            needle = text.strip().lower()
+            fill([c for c in choices if needle in c.lower()])
+
+        urwid.connect_signal(filt, "change", on_filter)
+        fill(choices)
+
+        def select(_w=None):
+            if visible and walker.focus is not None:
+                apply(visible[walker.focus])
+                self.app.pop()
+                self._render()
+
+        body = urwid.Pile([
+            ("pack", urwid.Text(("hint", "Type to filter · ↓ into the list · Select."))),
+            ("pack", filt),
+            ("pack", urwid.Divider()),
+            ("weight", 1, urwid.BoxAdapter(urwid.ListBox(walker), 10)),
+        ])
+        modal = Modal(self.app, title, [body], [("Select", select), ("Cancel", self.app.pop)])
+        self.app.push_modal(modal, width=("relative", 62), height=("relative", 74))
+
+    def _edit_timezone(self) -> None:
+        def apply(value):
+            self._sel.timezone = value
+
+        self._pick_modal("Timezone", timezone_core.list_zones(), self._sel.timezone, apply)
+
+    def _edit_locale(self) -> None:
+        def apply(value):
+            self._sel.locale = value
+
+        self._pick_modal("Locale", locale_core.list_locales(), self._sel.locale, apply)
+
+    def _edit_keymap(self) -> None:
+        def apply(value):
+            self._sel.keymap = value
+
+        self._pick_modal("Console keymap", console_core.list_keymaps(), self._sel.keymap, apply)
+
+    def _edit_user(self) -> None:
+        create = urwid.CheckBox("Create a user", state=self._sel.create_user)
+        name = urwid.Edit("Name            : ", self._sel.user_name)
+        comment = urwid.Edit("Full name/comment: ", self._sel.user_comment)
+        shell = urwid.Edit("Shell           : ", self._sel.user_shell)
+        wheel = urwid.CheckBox("Add to wheel (sudo)", state=self._sel.user_wheel)
+
+        def save():
+            if not create.state:
+                self._sel.create_user = False
+                self.app.pop()
+                self._render()
+                return
+            uname = name.edit_text.strip()
+            if not valid_user_name(uname):
+                self.app.notify("Invalid user name.", error=True)
+                return
+            self._sel.create_user = True
+            self._sel.user_name = uname
+            self._sel.user_comment = comment.edit_text.strip()
+            self._sel.user_shell = shell.edit_text.strip() or "/bin/bash"
+            self._sel.user_wheel = wheel.state
+            self.app.pop()
+            self._render()
+
+        modal = Modal(self.app, "User account",
+                      [urwid.Text(("hint", "An optional non-root user for the target.")),
+                       urwid.Divider(), create, name, comment, shell, wheel],
+                      [("Save", save), ("Cancel", self.app.pop)])
+        self.app.push_modal(modal, width=("relative", 70), height=("relative", 60))
+
+    def _edit_network(self) -> None:
+        iface = urwid.Edit("Interface (blank=default): ", self._sel.net_interface)
+        dhcp = urwid.CheckBox("Use DHCP", state=self._sel.net_dhcp)
+        address = urwid.Edit("Static address (CIDR)   : ", self._sel.net_address)
+        gateway = urwid.Edit("Gateway                 : ", self._sel.net_gateway)
+        nameservers = urwid.Edit("Nameservers (space-sep) : ",
+                                 " ".join(self._sel.net_nameservers))
+
+        def save():
+            name = iface.edit_text.strip()
+            addr = address.edit_text.strip()
+            gw = gateway.edit_text.strip()
+            dns = tuple(nameservers.edit_text.split())
+            if name and not dhcp.state:
+                if not netifrc.valid_address(addr):
+                    self.app.notify("Static address must be CIDR (e.g. 10.0.0.5/24).",
+                                    error=True)
+                    return
+                if not netifrc.valid_gateway(gw):
+                    self.app.notify("Invalid gateway address.", error=True)
+                    return
+            if name and not all(resolv.valid_nameserver(ns) for ns in dns):
+                self.app.notify("Each nameserver must be a valid IP.", error=True)
+                return
+            self._sel.net_interface = name
+            self._sel.net_dhcp = dhcp.state
+            self._sel.net_address = addr
+            self._sel.net_gateway = gw
+            self._sel.net_nameservers = dns
+            self.app.pop()
+            self._render()
+
+        modal = Modal(self.app, "Target network",
+                      [urwid.Text(("hint", "The INSTALLED system's wired network. "
+                                   "Blank interface leaves it default.")),
+                       urwid.Text(("hint", "Static address/gateway apply when DHCP is off.")),
+                       urwid.Divider(), iface, dhcp, address, gateway, nameservers],
+                      [("Save", save), ("Cancel", self.app.pop)])
+        self.app.push_modal(modal, width=("relative", 74), height=("relative", 64))
 
     def _edit_kernel(self) -> None:
         method = urwid.Edit("Method (make/genkernel): ", self._sel.kernel_method)
