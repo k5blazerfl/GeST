@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<!-- HeDE labwc defaults (Phase 0). GeST will generate this file later; for now
+     it ships two keybinds so the desktop is usable before there's a launcher. -->
+<labwc_config>
+  <keyboard>
+    <!-- Super+Return → terminal -->
+    <keybind key="W-Return">
+      <action name="Execute"><command>foot</command></action>
+    </keybind>
+    <!-- Super+Q → close the focused window -->
+    <keybind key="W-q">
+      <action name="Close"/>
+    </keybind>
+  </keyboard>
+</labwc_config>

@@ -1,0 +1,16 @@
+#!/bin/sh
+# helm-session — the HeDE session supervisor (Phase 0).
+#
+# Sets the session environment and execs labwc with HeDE's shipped config,
+# whose autostart launches helm-panel. When labwc exits, the session ends.
+# (A small C++ binary with respawn/hardening replaces this later; a script is
+# the recommended first cut — see docs/design/hede-phase0.md §3.2.)
+
+export XDG_CURRENT_DESKTOP=HeDE
+export XDG_SESSION_TYPE=wayland
+export QT_QPA_PLATFORM=wayland
+
+# Allow an override for development; default to the installed config.
+: "${HELM_LABWC_CONFIG:=/usr/share/hede/labwc}"
+
+exec labwc -C "$HELM_LABWC_CONFIG"
