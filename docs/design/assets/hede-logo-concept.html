@@ -168,12 +168,12 @@
     <!-- clean moat: wheel is knocked out where the seal sits -->
     <mask id="notch">
       <rect x="0" y="0" width="200" height="200" fill="white"/>
-      <circle cx="152" cy="152" r="38" fill="black"/>
+      <rect x="114" y="114" width="76" height="76" rx="18" fill="black"/>
     </mask>
     <!-- H knocked out of the seal (flat version) -->
     <mask id="sealH">
       <rect x="0" y="0" width="200" height="200" fill="black"/>
-      <circle cx="152" cy="152" r="33" fill="white"/>
+      <rect x="119" y="119" width="66" height="66" rx="15" fill="white"/>
       <rect x="143" y="140"   width="6"  height="24" fill="black"/>
       <rect x="155" y="140"   width="6"  height="24" fill="black"/>
       <rect x="143" y="149"   width="18" height="6"  fill="black"/>
@@ -203,9 +203,9 @@
         <circle cx="100" cy="100" r="15" fill="none" stroke="#fbe6ad" stroke-width="1" opacity=".55"/>
         <circle cx="100" cy="100" r="5.5" fill="#8a5a14"/>
       </g>
-      <!-- H seal, lower-right -->
-      <circle cx="152" cy="152" r="33" fill="url(#seal)" stroke="#6d4711" stroke-width="2.4"/>
-      <circle cx="152" cy="152" r="27.5" fill="none" stroke="#fbe6ad" stroke-width="1" opacity=".5"/>
+      <!-- H seal, lower-right (rounded square) -->
+      <rect x="119" y="119" width="66" height="66" rx="15" fill="url(#seal)" stroke="#6d4711" stroke-width="2.4"/>
+      <rect x="124.5" y="124.5" width="55" height="55" rx="11" fill="none" stroke="#fbe6ad" stroke-width="1" opacity=".5"/>
       <g fill="#3f2c0c">
         <rect x="143" y="140" width="6" height="24" rx="1"/>
         <rect x="155" y="140" width="6" height="24" rx="1"/>
@@ -231,7 +231,7 @@
           <circle cx="100" cy="100" r="72" fill="none" stroke="currentColor" stroke-width="13"/>
           <circle cx="100" cy="100" r="22"/>
         </g>
-        <g mask="url(#sealH)"><circle cx="152" cy="152" r="33"/></g>
+        <g mask="url(#sealH)"><rect x="119" y="119" width="66" height="66" rx="15"/></g>
       </g>
     </symbol>
   </defs>
@@ -330,7 +330,7 @@
         <svg viewBox="0 0 200 200" width="230" height="230" aria-label="Helm geometry">
           <g stroke="#33d6c8" stroke-width=".6" opacity=".5" fill="none">
             <circle cx="100" cy="100" r="99"/><circle cx="100" cy="100" r="72"/><circle cx="100" cy="100" r="22"/>
-            <circle cx="152" cy="152" r="38" stroke-dasharray="3 3"/>
+            <rect x="114" y="114" width="76" height="76" rx="18" stroke-dasharray="3 3"/>
             <line x1="100" y1="1" x2="100" y2="199"/><line x1="1" y1="100" x2="199" y2="100"/>
             <line x1="30" y1="30" x2="170" y2="170"/><line x1="170" y1="30" x2="30" y2="170"/>
           </g>

@@ -19,7 +19,7 @@
     </linearGradient>
     <mask id="notch">
       <rect x="0" y="0" width="200" height="200" fill="white"/>
-      <circle cx="152" cy="152" r="38" fill="black"/>
+      <rect x="114" y="114" width="76" height="76" rx="18" fill="black"/>
     </mask>
     <g id="unit">
       <rect x="95.5" y="34" width="9" height="42" rx="3" fill="url(#brass)"/>
@@ -47,9 +47,9 @@
     <circle cx="100" cy="100" r="5.5" fill="#8a5a14"/>
   </g>
 
-  <!-- H seal, lower-right -->
-  <circle cx="152" cy="152" r="33" fill="url(#seal)" stroke="#6d4711" stroke-width="2.4"/>
-  <circle cx="152" cy="152" r="27.5" fill="none" stroke="#fbe6ad" stroke-width="1" opacity=".5"/>
+  <!-- H seal, lower-right (rounded square) -->
+  <rect x="119" y="119" width="66" height="66" rx="15" fill="url(#seal)" stroke="#6d4711" stroke-width="2.4"/>
+  <rect x="124.5" y="124.5" width="55" height="55" rx="11" fill="none" stroke="#fbe6ad" stroke-width="1" opacity=".5"/>
   <g fill="#3f2c0c">
     <rect x="143" y="140" width="6" height="24" rx="1"/>
     <rect x="155" y="140" width="6" height="24" rx="1"/>
