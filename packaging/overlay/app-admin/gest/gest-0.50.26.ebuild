@@ -15,7 +15,7 @@ S="${WORKDIR}/GeST-${PV}"
 
 LICENSE="GPL-2+"
 SLOT="0"
-KEYWORDS="~amd64"
+KEYWORDS="~amd64 ~arm64"
 
 # portage: the query API. PyGObject: GLib/Gio for the root backend.
 # urwid + dbus-next: the TUI frontend and its async D-Bus client.
