@@ -1,6 +1,6 @@
 # Design: HeDE — the Helm Desktop Environment (a Qt/Wayland shell over GeST)
 
-*Status: vision · Scope: a new project — the session, the shell (panel/launcher/tray/notifications), and the settings integration — built **on top of** GeST's existing `core` + polkit backend · Depends on: the GeST Qt frontend ([gated](#relationship-to-the-qt-frontend-gate) until the TUI/CLI side is declared complete), the polkit-gated D-Bus backend, `layer-shell` · Defers: writing a compositor, a file manager, a display manager, semantic indexing, systemd · Milestone: the track **after** the Qt frontend lands — this doc scopes the target so the Qt frontend is designed to serve it*
+*Status: vision · Scope: a new project — the session, the shell (panel/launcher/tray/notifications), and the settings integration — built **on top of** GeST's existing `core` + polkit backend · Depends on: the GeST Qt frontend ([gated](#relationship-to-the-qt-frontend-gate) until the TUI/CLI side is declared complete), the polkit-gated D-Bus backend, `layer-shell` · Defers: writing a compositor, a file manager, or the privileged login daemon (adopt greetd — we build only the greeter UI), semantic indexing, systemd · Milestone: the track **after** the Qt frontend lands — this doc scopes the target so the Qt frontend is designed to serve it*
 
 > **Name:** **HeDE — the Helm Desktop Environment.** You take the *Helm* of your
 > system; **GeST** is the wheel; **GeSI** (Gentoo System Installer) gets you
@@ -119,8 +119,9 @@ cheap — it's a `DEPEND`, and the user compiles it anyway.
 | **System settings** | **Reuse GeST** | GeST Qt Control Center = the settings app (§9). |
 | Polkit auth agent | **Adopt** (or thin build) | `lxqt-policykit` works today; Qt reimpl later if desired. |
 | File manager | **Adopt** | `pcmanfm-qt` (LXQt) — Explorer-like already. Build later only if it becomes an identity piece. |
-| Display manager (login) | **Adopt** | SDDM (Qt, KDE-adjacent). Ship a HeDE session `.desktop`. |
-| Screen lock / idle | **Build** (thin) | `ext-session-lock-v1` surface + idle via compositor. |
+| Login daemon (PAM/seat/VT) | **Adopt** | `greetd` — tiny, UI-less; owns the root/PAM/session-launch plumbing (§10). |
+| Login screen (greeter) | **Build** | `helm-greeter` — our own UI, a greetd client sharing HeDE's toolkit/theme (§10). |
+| Screen lock / idle | **Build** (thin) | `ext-session-lock-v1` surface + idle via compositor; **shares the greeter's UI** (§5). |
 | xdg-desktop-portal | **Adopt + config** | `xdg-desktop-portal-wlr` (screenshot/screencast) + a file-chooser portal. |
 | Terminal, text editor, image viewer, archiver | **Adopt** | LXQt/Qt apps or user choice; not our job. |
 
@@ -162,7 +163,7 @@ Everything the shell draws on-screen is a Wayland **layer-shell** surface
 comes from standard protocols and from `gest/core`. Components, each a small
 process the session supervises:
 
-1. **`helm-session`** — the supervisor. Started by the DM via a
+1. **`helm-session`** — the supervisor. Launched by `greetd` via a
    `helm.desktop` / `wayland-sessions` entry. Launches: compositor → portals →
    polkit agent → panel → notification daemon → wallpaper; then honors
    `$XDG_CONFIG_DIRS/autostart`. Owns clean shutdown. ~one file of glue.
@@ -185,8 +186,12 @@ process the session supervises:
    toasts + a history flyout. Honors urgency, actions, and (later) do-not-disturb.
 5. **`helm-bg`** — wallpaper as a `background` layer-shell surface; slideshow +
    per-output config, stored in QSettings.
-6. **`helm-lock`** — `ext-session-lock-v1` lock surface; PAM auth; idle handoff
-   from the compositor.
+6. **`helm-lock` / `helm-greeter`** — **one login/lock UI, two contexts.**
+   `helm-lock` is the in-session `ext-session-lock-v1` surface; `helm-greeter`
+   is the pre-session `greetd` greeter (§10). Both are the *same* Qt
+   password-prompt over the HeDE wallpaper, doing PAM auth — shared theme,
+   widgets, clock/battery. GNOME and Plasma unify login and lock the same way;
+   `greetd` lets HeDE do it cheaply.
 7. **Settings** — *not a new binary* — this is GeST's Qt Control Center
    (`gest-settings`), plus a handful of desktop-only panels (appearance, panel
    layout, wallpaper, shortcuts) that live as **desktop modules** inside the same
@@ -316,8 +321,24 @@ further.
 
 ## 10. Session, login, portals, autostart
 
-- **Login** — adopt **SDDM** (Qt). Ship `/usr/share/wayland-sessions/helm.desktop`
-  pointing at `helm-session`.
+- **Login — `greetd` + `helm-greeter` (build our own greeter, adopt the daemon).**
+  `greetd` is a tiny, UI-less login daemon that owns the privileged plumbing —
+  PAM auth, seat/VT management, session launch — and nothing else. It runs a
+  minimal compositor (labwc or `cage`) with **`helm-greeter`** as its only
+  client: a layer-shell greeter over the HeDE wallpaper, reusing the shell's
+  widgets and theme (§5), so the login screen *is* a mini-HeDE and genuinely
+  ours — without us reimplementing root/PAM code. On success `greetd` launches
+  `/usr/share/wayland-sessions/helm.desktop` → `helm-session`. Prior art:
+  `qtgreet` (an existing Qt greetd greeter) proves the path.
+  - **The privilege boundary is deliberate.** The greeter runs as **root, before
+    any user session exists**, so it shares HeDE's *code and look*, not its
+    process — the same "frontends never hold privilege directly" discipline as
+    GeST's polkit backend. Writing the DM *daemon* ourselves is a non-goal (too
+    much high-risk root code); building the *greeter UI* is squarely our job.
+  - **GeST owns the login config.** Autologin, default session, the user list,
+    "remember last user" — all written to `/etc/greetd/config.toml` through the
+    polkit backend, exactly as GeST writes labwc's `rc.xml`. First-boot user
+    creation is already `core/users`.
 - **Session bring-up order** — compositor → `dbus-activation` env
   (`XDG_CURRENT_DESKTOP=HeDE`, `XDG_SESSION_TYPE=wayland`) → portals → polkit
   agent → panel/notifyd/wallpaper → XDG autostart.
@@ -348,7 +369,7 @@ Each phase is independently demoable, matching GeST's release cadence.
 
 - **Phase 0 — "Hello Wayland."** `helm-session` starts labwc + a bare
   `helm-panel` (clock only) that can launch a terminal. Proves the session,
-  layer-shell, and SDDM entry. *No `core` yet.*
+  layer-shell, and the `greetd` session entry. *No `core` yet.*
 - **Phase 1 — Daily-drivable shell.** Launcher (`helm-menu`), window-list
   taskbar (foreign-toplevel), tray host, `helm-notifyd`, wallpaper. This is the
   first thing a person can *use* all day. Add to the live image.
@@ -357,7 +378,8 @@ Each phase is independently demoable, matching GeST's release cadence.
   (network/volume/battery/brightness/update) driven by `core`. Polkit agent.
   Appearance panel writing Qt+GTK theming.
 - **Phase 3 — Windows-welcome polish.** Aero-Snap zones + `Super+arrows`,
-  Alt-Tab overlay, session-lock (`helm-lock`), quick-settings flyout,
+  Alt-Tab overlay, the shared login/lock UI (`helm-lock` + the `greetd`
+  `helm-greeter`), quick-settings flyout,
   do-not-disturb, MPRIS in the tray, jump-list `.desktop` actions.
 - **Phase 4 — Product.** Effects profile (wayfire opt-in), overview/expo,
   multi-monitor layout UI (in GeST), theming polish, and the live-installer
@@ -380,7 +402,8 @@ Each phase is independently demoable, matching GeST's release cadence.
 
 ## Non-goals
 
-- Writing a compositor, a display manager, or a file manager (adopt all three).
+- Writing a compositor or a file manager (adopt both), or the privileged login
+  *daemon* — adopt `greetd`; we build only the `helm-greeter` UI on top of it.
 - A second settings/privilege backend — GeST's `core` + polkit backend is *the*
   backend, full stop.
 - systemd support (OpenRC only, per GeST's standing non-goal).
