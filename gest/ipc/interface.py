@@ -94,6 +94,13 @@ FIREWALL_PATH = "/org/gentoo/gest/Firewall"
 FIREWALL_IFACE = "org.gentoo.gest.Firewall"
 FIREWALL_POLKIT = "org.gentoo.gest.firewall.manage"
 
+# Object path + interface for the sshd server-config module. ApplyConfig upserts
+# the managed directives into /etc/ssh/sshd_config, validating with `sshd -t`
+# before replacing the live file. Distinct from the deploy-key Ssh helper above.
+SSHD_PATH = "/org/gentoo/gest/Sshd"
+SSHD_IFACE = "org.gentoo.gest.Sshd"
+SSHD_POLKIT = "org.gentoo.gest.sshd.manage"
+
 # D-Bus error name the backend returns when a package operation is refused
 # because another is already in progress (another GeST session, or an external
 # emerge). The frontend maps it to a clean "busy" message instead of a raw crash.
