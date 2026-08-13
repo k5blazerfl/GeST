@@ -26,3 +26,18 @@ def gpg_verify_argv(sig: str, target: str, *, gpg: str = "gpg") -> list[str]:
     """`gpg --verify <sig> <target>` — check the detached signature over the
     downloaded tarball against the keyring (best-effort; see the backend)."""
     return [gpg, "--verify", sig, target]
+
+
+def download_argv(url: str, dest: str, *, wget: str = "wget", curl: str = "curl") -> list[str]:
+    """Argv to fetch ``url`` to ``dest``, preferring wget, else curl.
+
+    Mirrors the backend's downloader (``backend/stage3.py``) as a pure, testable
+    builder for the installer's direct-path stage3 unpack: wget gives clean,
+    periodic ``dot:giga`` progress; a falsy ``wget`` (e.g. ``wget=""`` when the
+    caller detected it is absent) falls back to a ``curl -L --fail`` download.
+    Both write to ``-O``/``-o dest`` so the URL is the final positional argument
+    and never mistaken for a flag.
+    """
+    if wget:
+        return [wget, "--progress=dot:giga", "-O", dest, url]
+    return [curl, "-L", "--fail", "-o", dest, url]

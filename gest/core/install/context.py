@@ -57,6 +57,8 @@ class InstallContext:
     state: StateStore = field(default_factory=StateStore)
     plan: InstallPlan | None = None
     uuids: dict[str, str] = field(default_factory=dict)
+    devices: list = field(default_factory=list)   # lsblk BlockDevices (Partition step)
+    mounts: str = ""                              # /proc/mounts text (Partition step)
 
     def executor_for(self, chroot: bool) -> Executor:
         """The executor a step should run on: chroot view or the host."""
