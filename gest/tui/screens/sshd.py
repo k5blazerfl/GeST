@@ -19,6 +19,20 @@ from gest.core.sshd.model import ROOT_LOGIN_VALUES
 from gest.tui.runtime import App, Modal, Screen, boxed
 
 
+def _yn(value: bool) -> str:
+    return "yes" if value else "no"
+
+
+def _mark(text: str, good: bool, *, risky: bool = False):
+    """Colour a directive value by its security posture: red when it weakens the
+    server, green when it hardens it, plain when it's neutral/common."""
+    if risky:
+        return ("error", text)
+    if good:
+        return ("ok", text)
+    return text
+
+
 class SshdScreen(Screen):
     def __init__(self, app: App) -> None:
         self._settings = reader.current_settings()
@@ -31,23 +45,45 @@ class SshdScreen(Screen):
                 ("k", "Pubkey auth"), ("x", "X11"), ("e", "Empty pw"),
                 ("F10", "Apply"), ("Esc", "Back"),
             ],
+            help_text=(
+                "Manage the security-relevant sshd_config directives; every\n"
+                "other line in the file is preserved, and changes are checked\n"
+                "with sshd -t before they are applied.\n\n"
+                "o   set the listen port\n"
+                "r   cycle PermitRootLogin (no / prohibit-password /\n"
+                "    forced-commands-only / yes)\n"
+                "a   toggle PasswordAuthentication\n"
+                "k   toggle PubkeyAuthentication\n"
+                "x   toggle X11Forwarding\n"
+                "e   toggle PermitEmptyPasswords\n"
+                "F10 apply   ·   Esc back\n\n"
+                "Values flagged in red weaken the server; green ones harden it."
+            ),
         )
         self._render()
 
     def _render(self) -> None:
         s = self._settings
-        def yn(v: bool) -> str:
-            return "yes" if v else "no"
+        # Per-directive posture: (value-markup, is_risky).
+        root_ok = s.permit_root_login != "yes"
+        risks = [not root_ok, s.permit_empty_passwords]
+        n = sum(risks)
+        summary = (("ok", " ✓ Hardened — no risky directives") if n == 0
+                   else ("error", f" ⚠ {n} directive{'s' if n > 1 else ''} weaken this server"))
         self._info.set_text([
+            summary, "\n\n",
             ("field", " Port                   : "), f"{s.port}\n",
-            ("field", " PermitRootLogin        : "), f"{s.permit_root_login}\n",
-            ("field", " PasswordAuthentication : "), f"{yn(s.password_authentication)}\n",
-            ("field", " PubkeyAuthentication   : "), f"{yn(s.pubkey_authentication)}\n",
-            ("field", " X11Forwarding          : "), f"{yn(s.x11_forwarding)}\n",
-            ("field", " PermitEmptyPasswords   : "), f"{yn(s.permit_empty_passwords)}\n",
-            ("hint", "\n Only these directives are managed; the rest of the file "
-                     "is preserved.\n Changes are validated with sshd -t before they "
-                     "are applied."),
+            ("field", " PermitRootLogin        : "),
+            _mark(s.permit_root_login, root_ok, risky=not root_ok), "\n",
+            ("field", " PasswordAuthentication : "),
+            _mark(_yn(s.password_authentication), not s.password_authentication), "\n",
+            ("field", " PubkeyAuthentication   : "),
+            _mark(_yn(s.pubkey_authentication), s.pubkey_authentication), "\n",
+            ("field", " X11Forwarding          : "),
+            _mark(_yn(s.x11_forwarding), not s.x11_forwarding), "\n",
+            ("field", " PermitEmptyPasswords   : "),
+            _mark(_yn(s.permit_empty_passwords), not s.permit_empty_passwords,
+                  risky=s.permit_empty_passwords), "\n",
         ])
         self.app.refresh()
 

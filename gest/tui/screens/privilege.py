@@ -19,12 +19,16 @@ from gest.core.privilege.model import EscalationPolicy
 from gest.tui.runtime import App, Modal, Screen, boxed
 
 
-def _fmt(policy: EscalationPolicy | None, unknown: str) -> str:
+def _state(policy: EscalationPolicy | None, has_tool: bool, *, unknown: str):
+    """The value markup for one tool: not-installed / configured (green) /
+    unconfigured-or-unknown (hint)."""
+    if not has_tool:
+        return ("hint", "not installed")
     if policy is None:
-        return unknown
+        return ("hint", unknown)
     mode = "passwordless" if policy.passwordless else (
         "password (persist)" if policy.persist else "password")
-    return f"enabled — :{policy.group}, {mode}"
+    return ("ok", f"enabled — :{policy.group}, {mode}")
 
 
 class PrivilegeScreen(Screen):
@@ -35,26 +39,46 @@ class PrivilegeScreen(Screen):
         super().__init__(
             app, body, title="Privilege (sudo / doas)",
             footer_keys=[("s", "Configure sudo"), ("d", "Configure doas"), ("Esc", "Back")],
+            help_text=(
+                "Write the policy that lets a group (default wheel) escalate\n"
+                "privileges. Users already gains wheel membership; this makes\n"
+                "wheel mean something.\n\n"
+                "s   configure sudo — an isolated /etc/sudoers.d drop-in,\n"
+                "    checked with visudo -c before it is installed\n"
+                "d   configure doas — a managed block in /etc/doas.conf,\n"
+                "    checked with doas -C before it is applied\n"
+                "Esc back\n\n"
+                "The sudo drop-in is root-only, so its state reads as\n"
+                "'root-only' unless GeST runs as root."
+            ),
         )
         self._render()
 
     def _render(self) -> None:
         has_sudo = "sudo" in self._tools
         has_doas = "doas" in self._tools
-        sudo_state = (_fmt(reader.sudo_policy(), "unknown (root-only file)")
-                      if has_sudo else "not installed")
-        doas_state = _fmt(reader.doas_policy(), "not configured") if has_doas else "not installed"
+        sudo = _state(reader.sudo_policy(), has_sudo, unknown="installed (state root-only)")
+        doas = _state(reader.doas_policy(), has_doas, unknown="installed, not configured")
+        configured = (has_sudo and reader.sudo_policy() is not None) or \
+            (has_doas and reader.doas_policy() is not None)
+        if not self._tools:
+            summary = ("error", " ⚠ Neither sudo nor doas is installed")
+        elif configured:
+            summary = ("ok", " ● Escalation configured")
+        else:
+            summary = ("hint", " ○ No escalation policy written yet")
         lines = [
-            ("field", " sudo : "), f"{sudo_state}\n",
-            ("field", " doas : "), f"{doas_state}\n",
+            summary, "\n\n",
+            ("field", " sudo : "), sudo, "\n",
+            ("field", " doas : "), doas, "\n",
             ("hint", "\n Grants a group (default wheel) privilege escalation. "
                      "sudo uses an\n isolated /etc/sudoers.d drop-in; doas uses a "
                      "managed block in\n /etc/doas.conf. Each change is validated "
                      "before it is applied."),
         ]
         if not self._tools:
-            lines.append(("error", "\n\n Neither sudo nor doas is installed "
-                                   "(emerge app-admin/sudo or app-admin/doas)."))
+            lines.append(("error", "\n\n Install one first: emerge app-admin/sudo "
+                                   "or app-admin/doas."))
         self._info.set_text(lines)
         self.app.refresh()
 

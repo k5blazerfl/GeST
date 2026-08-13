@@ -42,15 +42,39 @@ class FirewallScreen(Screen):
                 ("u", "UDP ports"), ("F10", "Apply"), ("b", "Enable at boot"),
                 ("Esc", "Back"),
             ],
+            help_text=(
+                "A simple stateful firewall (nftables). Established/related\n"
+                "traffic, loopback and IPv6 neighbour discovery are always\n"
+                "allowed, so a default-drop policy stays usable.\n\n"
+                "p   toggle the default inbound policy\n"
+                "    (drop = locked down · accept = permissive)\n"
+                "i   allow or block ping (ICMP echo)\n"
+                "t   edit the inbound TCP ports to open\n"
+                "u   edit the inbound UDP ports to open\n"
+                "F10 validate (nft -c) and load the ruleset now\n"
+                "b   save the ruleset and enable nftables at boot\n"
+                "Esc back\n\n"
+                "The lower pane previews the exact /etc/nftables.nft that\n"
+                "will be written."
+            ),
         )
         self._render()
 
     def _render(self) -> None:
         p = self._policy
-        managed = ("" if self._managed
-                   else "  (no GeST ruleset yet — showing a default)")
+        drop = p.default_input == "drop"
+        if not self._managed:
+            status = ("hint", " ○ Not applied yet — showing a safe default")
+            default_val = ("hint", f"{p.default_input}")
+        elif drop:
+            status = ("ok", " ● Active — default-drop (locked down)")
+            default_val = ("ok", "drop  (deny inbound by default)")
+        else:
+            status = ("error", " ○ Active — default-accept (permissive)")
+            default_val = ("error", "accept  (allow inbound by default)")
         lines = [
-            ("field", " Default inbound : "), f"{p.default_input}{managed}\n",
+            status, "\n\n",
+            ("field", " Default inbound : "), default_val, "\n",
             ("field", " Allow ping      : "), f"{'yes' if p.allow_ping else 'no'}\n",
             ("field", " Open TCP ports  : "), f"{_ports(p.tcp_ports)}\n",
             ("field", " Open UDP ports  : "), f"{_ports(p.udp_ports)}",
