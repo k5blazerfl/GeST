@@ -1,32 +1,32 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200" role="img" aria-label="HeDE — the Helm Desktop Environment">
   <title>HeDE — Helm Desktop Environment</title>
   <defs>
-    <radialGradient id="brass" cx="38%" cy="30%" r="80%">
-      <stop offset="0%" stop-color="#fbe6ad"/>
-      <stop offset="34%" stop-color="#f6d17a"/>
-      <stop offset="70%" stop-color="#d89a34"/>
-      <stop offset="100%" stop-color="#a9701f"/>
+    <radialGradient id="pew" cx="38%" cy="28%" r="82%">
+      <stop offset="0%" stop-color="#f7f9fa"/>
+      <stop offset="30%" stop-color="#d3d9de"/>
+      <stop offset="66%" stop-color="#9aa4ae"/>
+      <stop offset="100%" stop-color="#5b646d"/>
     </radialGradient>
-    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#fbe6ad"/>
-      <stop offset="48%" stop-color="#d89a34"/>
-      <stop offset="100%" stop-color="#6d4711"/>
+    <linearGradient id="pewrim" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f2f5f7"/>
+      <stop offset="50%" stop-color="#9aa4ae"/>
+      <stop offset="100%" stop-color="#363c44"/>
     </linearGradient>
     <mask id="hubH">
       <rect x="0" y="0" width="200" height="200" fill="black"/>
-      <circle cx="100" cy="100" r="24" fill="white"/>
-      <rect x="90.5" y="89"  width="6"  height="22" fill="black"/>
-      <rect x="103.5" y="89" width="6"  height="22" fill="black"/>
-      <rect x="90.5" y="97"  width="19" height="6"  fill="black"/>
+      <circle cx="100" cy="100" r="25" fill="white"/>
+      <rect x="89.5" y="88"  width="7"  height="24" fill="black"/>
+      <rect x="103.5" y="88" width="7"  height="24" fill="black"/>
+      <rect x="89.5" y="96.5" width="21" height="7" fill="black"/>
     </mask>
     <g id="unit">
-      <rect x="95.5" y="34" width="9" height="42" rx="3" fill="url(#brass)"/>
-      <rect x="94.5" y="1"  width="11" height="24" rx="5.5" fill="url(#brass)"/>
+      <polygon points="88,22 112,22 107.5,5 92.5,5" fill="url(#pew)"/>
+      <rect x="96.5" y="37" width="7" height="39" rx="2.5" fill="url(#pew)"/>
     </g>
   </defs>
 
-  <!-- spokes + handles on 45-degree bearings -->
-  <g stroke="#6d4711" stroke-width="1">
+  <!-- 8 gear teeth + spokes on 45-degree bearings -->
+  <g stroke="#363c44" stroke-width="1" stroke-linejoin="round">
     <use href="#unit"/>
     <use href="#unit" transform="rotate(45 100 100)"/>
     <use href="#unit" transform="rotate(90 100 100)"/>
@@ -37,13 +37,13 @@
     <use href="#unit" transform="rotate(315 100 100)"/>
   </g>
 
-  <!-- rim with bevel edges -->
-  <circle cx="100" cy="100" r="72" fill="none" stroke="url(#rim)" stroke-width="13"/>
-  <circle cx="100" cy="100" r="78" fill="none" stroke="#fbe6ad" stroke-width="1.4" opacity=".7"/>
-  <circle cx="100" cy="100" r="66" fill="none" stroke="#6d4711" stroke-width="1.4" opacity=".8"/>
+  <!-- cog ring with bevel edges -->
+  <circle cx="100" cy="100" r="71" fill="none" stroke="url(#pewrim)" stroke-width="16"/>
+  <circle cx="100" cy="100" r="79" fill="none" stroke="#f2f5f7" stroke-width="1.4" opacity=".65"/>
+  <circle cx="100" cy="100" r="63" fill="none" stroke="#363c44" stroke-width="1.4" opacity=".8"/>
 
   <!-- hub with the H knocked through -->
-  <g mask="url(#hubH)"><circle cx="100" cy="100" r="24" fill="url(#brass)"/></g>
-  <circle cx="100" cy="100" r="24" fill="none" stroke="#6d4711" stroke-width="2.2"/>
-  <circle cx="100" cy="100" r="17.5" fill="none" stroke="#fbe6ad" stroke-width="1" opacity=".6"/>
+  <g mask="url(#hubH)"><circle cx="100" cy="100" r="25" fill="url(#pew)"/></g>
+  <circle cx="100" cy="100" r="25" fill="none" stroke="#363c44" stroke-width="2.4"/>
+  <circle cx="100" cy="100" r="18" fill="none" stroke="#f2f5f7" stroke-width="1" opacity=".55"/>
 </svg>
