@@ -26,6 +26,23 @@ amd64/motd                    # the console message
 portage-conf/                 # ~amd64 keyword for the gest ebuild
 ```
 
+## Quick start — one command
+
+On a Gentoo host with catalyst + qemu installed, from an up-to-date checkout:
+
+```sh
+sudo emerge -av dev-util/catalyst app-emulation/qemu sys-firmware/edk2-ovmf
+sudo packaging/livecd/spin-up.sh            # add --uefi to boot via OVMF
+```
+
+`spin-up.sh` does everything: syncs this checkout's overlay into
+`/var/db/repos/gest` (so the image carries the **latest GeST**), ensures a portage
+snapshot, downloads the latest `stage3-amd64-openrc` seed, writes `config.env`,
+builds the ISO, and boots it in QEMU. `--no-boot` builds only;
+`--snapshot <id>` overrides the snapshot (catalyst's snapshot naming varies by
+version — pass this if the auto value fails). The manual flow below is what it
+wraps.
+
 ## amd64 — build a live ISO with catalyst
 
 The standard Gentoo two-livecd-stage flow on a stage3, wrapped so you don't
