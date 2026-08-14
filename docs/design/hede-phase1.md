@@ -27,8 +27,10 @@ Ordered by self-containment / testability — build top-down:
    unit-tested; toasts are layer-shell surfaces.
 4. **System-tray host.** A `StatusNotifierItem` / `org.kde.StatusNotifierWatcher`
    host applet in the panel (adopt the `StatusNotifier` D-Bus contract).
-5. **`helm-bg` — wallpaper.** A `background`-layer surface per output; solid
-   colour → image → slideshow, config in QSettings.
+5. **`helm-bg` — wallpaper.** *[done]* A `background`-layer surface per output
+   (exclusive-zone −1, under panels), solid colour or an image with fit modes
+   (fill/fit/stretch/center/tile). Pure geometry (`parseFit`,
+   `computeImageTarget`) + config loading unit-tested. Slideshow deferred.
 
 ## 2. This increment — `helm-menu`
 

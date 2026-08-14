@@ -17,6 +17,7 @@ add_subdirectory(src/wayland)
 add_subdirectory(src/taskbar)
 add_subdirectory(src/panel)
 add_subdirectory(src/menu)
+add_subdirectory(src/bg)
 add_subdirectory(tests)
 
 # --- data / session files ---------------------------------------------------

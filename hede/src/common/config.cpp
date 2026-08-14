@@ -24,4 +24,9 @@ QString Config::terminalCommand() const {
     return s.value(QStringLiteral("terminal/command"), QStringLiteral("foot")).toString();
 }
 
+QString Config::string(const QString &key, const QString &def) const {
+    QSettings s(m_path, QSettings::IniFormat);
+    return s.value(key, def).toString();
+}
+
 } // namespace helm

@@ -1,2 +1,3 @@
-# HeDE labwc autostart (Phase 0)
+# HeDE labwc autostart (Phase 1)
+helm-bg &
 helm-panel &
