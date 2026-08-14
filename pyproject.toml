@@ -39,6 +39,9 @@ gest-settings = "gest.qt.app:main"
 keychainctl = "gest.tui.keychain.cli:main"
 # helm-keyringd — the freedesktop Secret Service provider over the keychain vault.
 helm-keyringd = "gest.keyringd.service:main"
+# gangway — manage/launch RDP profiles; gangway-open is the .desktop Exec stub.
+gangway = "gest.tui.gangway.cli:main"
+gangway-open = "gest.tui.gangway.cli:open_main"
 # gestd — the unprivileged core service (HeDE path-B read side); Phase-0 scaffold.
 gest-core = "gest.coreservice.service:main"
 
