@@ -12,7 +12,10 @@ qt_standard_project_setup()
 enable_testing()
 
 add_subdirectory(src/common)
+add_subdirectory(src/apps)
+add_subdirectory(src/wayland)
 add_subdirectory(src/panel)
+add_subdirectory(src/menu)
 add_subdirectory(tests)
 
 # --- data / session files ---------------------------------------------------
