@@ -700,6 +700,7 @@ def test_software_refreshes_only_flagged_non_main_repos_on_open(monkeypatch):
     assert _FakeSoftwareBackend.synced == [["guru"]]
 
 
+@pytest.mark.needs_live_system
 def test_software_loads_marks_and_clears():
     app = App()
     scr = _software(app)
@@ -1043,6 +1044,7 @@ def test_proposal_esc_stops_timer_then_cancels(monkeypatch):
     assert app._stack[-1] is caller
 
 
+@pytest.mark.needs_live_system
 def test_proposal_countdown_auto_applies(monkeypatch):
     from gest.tui.screens.accept import AcceptRunScreen
     monkeypatch.setattr("gest.core.prefs.timer_seconds", lambda *a, **k: 1)  # fast
@@ -1053,6 +1055,7 @@ def test_proposal_countdown_auto_applies(monkeypatch):
     assert isinstance(app._stack[-1], AcceptRunScreen)     # applied on its own
 
 
+@pytest.mark.needs_live_system
 def test_proposal_immediate_mode_applies_without_timer(monkeypatch):
     from gest.tui.screens.accept import AcceptRunScreen
     app = App()
@@ -1088,6 +1091,7 @@ def test_proposal_loading_manual_opens_review(monkeypatch):
     assert not app._stack[-1]._timer_running        # manual → no countdown re-armed
 
 
+@pytest.mark.needs_live_system
 def test_proposal_loading_immediate_applies_without_review(monkeypatch):
     from gest.tui.screens.accept import AcceptRunScreen
     from gest.tui.screens.proposal import ProposalScreen
@@ -1109,6 +1113,7 @@ def test_proposal_loading_timer_counts_down_on_screen(monkeypatch):
     assert ("Enter", "Apply now") in scr._footer_context()
 
 
+@pytest.mark.needs_live_system
 def test_proposal_loading_timer_auto_applies(monkeypatch):
     from gest.tui.screens.accept import AcceptRunScreen
     monkeypatch.setattr("gest.core.prefs.timer_seconds", lambda *a, **k: 1)  # fast
@@ -1529,6 +1534,7 @@ def test_users_footer_changes_per_tab():
     assert any(lbl == "Activate" for _k, lbl in scr._footer_context())
 
 
+@pytest.mark.needs_live_system
 def test_eselect_lists_modules_and_targets():
     app = App()
     scr = EselectScreen(app)
@@ -1578,6 +1584,7 @@ def test_menu_launches_hardware():
     assert isinstance(app._stack[-1], HardwareScreen)
 
 
+@pytest.mark.needs_live_system
 def test_disk_lists_devices_and_fstab():
     app = App()
     scr = DiskScreen(app)
@@ -1588,6 +1595,7 @@ def test_disk_lists_devices_and_fstab():
     assert "Block Devices" in out and "/etc/fstab" in out
 
 
+@pytest.mark.needs_live_system
 def test_disk_tab_switches_panes_and_arrows_stay():
     app = App()
     scr = DiskScreen(app)
@@ -1727,6 +1735,7 @@ def test_software_menu_bar_opens_and_selects():
     assert isinstance(app._stack[-1], NewsScreen)
 
 
+@pytest.mark.needs_live_system
 def test_repos_lists_enabled_and_marks_main():
     app = App()
     scr = ReposScreen(app)
@@ -1770,6 +1779,7 @@ def _focus_main(scr):
     return None
 
 
+@pytest.mark.needs_live_system
 def test_repos_mirror_opens_only_for_main_repo():
     from gest.tui.screens.mirrors import MirrorScreen
     app = App()
@@ -1956,6 +1966,7 @@ def test_repos_tab_reaches_action_buttons_and_activates():
     assert app._stack[-1] is base
 
 
+@pytest.mark.needs_live_system
 def test_repos_arrows_stay_in_list():
     app = App()
     scr = ReposScreen(app)
@@ -2593,6 +2604,7 @@ def test_accept_run_screen_tracks_install_and_remove():
     assert scr._done
 
 
+@pytest.mark.needs_live_system
 def test_accept_removal_hands_straight_to_cleanup_when_orphans(monkeypatch):
     from gest.core.software.cleanup import CleanupPlan, Orphan
     from gest.tui.screens import accept as accept_mod
@@ -2612,6 +2624,7 @@ def test_accept_removal_hands_straight_to_cleanup_when_orphans(monkeypatch):
     assert "orphanlib" in _render(top)
 
 
+@pytest.mark.needs_live_system
 def test_accept_removal_shows_all_clear_when_no_orphans(monkeypatch):
     from gest.core.software.cleanup import CleanupPlan
     from gest.tui.screens import accept as accept_mod

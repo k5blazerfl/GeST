@@ -80,6 +80,10 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Test the urwid frontend
+        # The `needs_live_system` tests query real disks / installed packages /
+        # repos / @world updates, which a bare stage3 container lacks — those run
+        # on the Gentoo host. Everything else (navigation, help, widget logic) runs
+        # here, which is what catches menu-navigation rot.
         run: |
           python3 -c "import portage, gi; from gi.repository import GLib; import urwid, dbus_next; import gest.tui.screens.menu"
-          python3 -m pytest tests/test_tui.py -q
+          python3 -m pytest tests/test_tui.py -m "not needs_live_system" -q
