@@ -269,7 +269,10 @@ class KeyringDaemon:
         self.items: dict[str, ItemInterface] = {}
         self._session_ifaces: dict[str, SessionInterface] = {}
 
-    async def start(self) -> None:
+    async def serve(self) -> None:
+        """Connect, export every object, and claim the well-known name — then
+        return. The daemon is live once this resolves; :meth:`start` blocks after
+        it, while the smoke test drives a client and then disconnects."""
         self.bus = await MessageBus(bus_type=BusType.SESSION).connect()
         self._service = ServiceInterfaceImpl(self)
         self.bus.export(contract.SERVICE_PATH, self._service)
@@ -278,7 +281,14 @@ class KeyringDaemon:
             for iid in list(col.items):
                 self.export_item(col.id, iid)
         await self.bus.request_name(contract.SECRETS_BUS_NAME)
+
+    async def start(self) -> None:
+        await self.serve()
         await self.bus.wait_for_disconnect()
+
+    def disconnect(self) -> None:
+        if self.bus is not None:
+            self.bus.disconnect()
 
     # ---- object export management --------------------------------------
     def export_collection(self, cid: str) -> None:
