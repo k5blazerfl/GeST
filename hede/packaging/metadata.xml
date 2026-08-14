@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<maintainer type="person">
+		<email>k5blazerfl@fastmail.com</email>
+		<name>k5blazerfl</name>
+	</maintainer>
+	<longdescription lang="en">
+		HeDE (the Helm Desktop Environment) is a lightweight Qt/Wayland desktop
+		shell for Gentoo, built around GeST as its Control Center. It provides a
+		session supervisor (helm-session) that runs the labwc compositor, a
+		layer-shell panel (helm-panel) with a clock and a Start button, and a
+		searchable freedesktop application launcher (helm-menu). The shell is
+		QtWidgets-first and depends only on Qt 6 plus layer-shell-qt.
+	</longdescription>
+	<upstream>
+		<remote-id type="github">k5blazerfl/hede</remote-id>
+	</upstream>
+</pkgmetadata>

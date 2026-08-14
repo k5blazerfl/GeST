@@ -3,27 +3,40 @@
 
 EAPI=8
 
-inherit cmake git-r3
+inherit cmake
 
-DESCRIPTION="HeDE — the Helm Desktop Environment (Phase 0 skeleton)"
+DESCRIPTION="HeDE — the Helm Desktop Environment (Qt/Wayland shell for Gentoo)"
 HOMEPAGE="https://github.com/k5blazerfl/hede"
-EGIT_REPO_URI="https://github.com/k5blazerfl/hede.git"
+
+if [[ ${PV} == 9999 ]]; then
+	inherit git-r3
+	EGIT_REPO_URI="https://github.com/k5blazerfl/hede.git"
+else
+	SRC_URI="https://github.com/k5blazerfl/hede/archive/refs/tags/v${PV}.tar.gz -> ${P}.tar.gz"
+	KEYWORDS="~amd64"
+fi
 
 LICENSE="GPL-3"
 SLOT="0"
-KEYWORDS=""
 
+# Qt 6 Widgets + Wayland, and the layer-shell binding (the one KF6 micro-dep).
 DEPEND="
 	dev-qt/qtbase:6[widgets,wayland]
 	kde-frameworks/layer-shell-qt:6
 "
+# Runtime: the compositor HeDE drives and the default terminal helm-panel spawns.
 RDEPEND="
 	${DEPEND}
 	gui-wm/labwc
 	gui-apps/foot
 "
-BDEPEND="dev-qt/qtbase:6[test]"
 
 src_test() {
 	cmake_src_test
+}
+
+pkg_postinst() {
+	elog "HeDE installed. Select 'HeDE' at your Wayland greeter, or run:"
+	elog "    helm-session"
+	elog "Per-user config lives at ~/.config/hede/hede.conf"
 }
