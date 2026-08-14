@@ -2,12 +2,11 @@
 
 A Qt/Wayland desktop shell for Gentoo, built around [GeST](https://github.com/k5blazerfl/GeST)
 as its Control Center. See the design docs in GeST's `docs/design/`:
-[`desktop-environment.md`](../docs/design/desktop-environment.md) (the vision) and
-[`hede-phase0.md`](../docs/design/hede-phase0.md) (this scaffold's spec).
+[`desktop-environment.md`](https://github.com/k5blazerfl/GeST/blob/main/docs/design/desktop-environment.md) (the vision) and
+[`hede-phase0.md`](https://github.com/k5blazerfl/GeST/blob/main/docs/design/hede-phase0.md) (this scaffold's spec).
 
-> **Draft scaffold.** This tree is drafted inside the GeST repo for review. It is
-> meant to become its own repository — extract with
-> `git subtree split -P hede -b hede-main` (or `git filter-repo`).
+> **Early days.** HeDE is in active early development (Phase 1). Design lives in
+> the GeST repo's `docs/design/`; this repository holds the shell itself.
 
 ## Phase 0 — "Hello Wayland"
 

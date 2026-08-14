@@ -6,13 +6,13 @@ EAPI=8
 inherit cmake
 
 DESCRIPTION="HeDE — the Helm Desktop Environment (Qt/Wayland shell for Gentoo)"
-HOMEPAGE="https://github.com/k5blazerfl/hede"
+HOMEPAGE="https://github.com/k5blazerfl/HeDE"
 
 if [[ ${PV} == 9999 ]]; then
 	inherit git-r3
-	EGIT_REPO_URI="https://github.com/k5blazerfl/hede.git"
+	EGIT_REPO_URI="https://github.com/k5blazerfl/HeDE.git"
 else
-	SRC_URI="https://github.com/k5blazerfl/hede/archive/refs/tags/v${PV}.tar.gz -> ${P}.tar.gz"
+	SRC_URI="https://github.com/k5blazerfl/HeDE/archive/refs/tags/v${PV}.tar.gz -> ${P}.tar.gz"
 	KEYWORDS="~amd64"
 fi
 

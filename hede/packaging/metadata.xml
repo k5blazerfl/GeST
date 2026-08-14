@@ -14,6 +14,6 @@
 		QtWidgets-first and depends only on Qt 6 plus layer-shell-qt.
 	</longdescription>
 	<upstream>
-		<remote-id type="github">k5blazerfl/hede</remote-id>
+		<remote-id type="github">k5blazerfl/HeDE</remote-id>
 	</upstream>
 </pkgmetadata>
