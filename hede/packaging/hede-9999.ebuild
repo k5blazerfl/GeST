@@ -13,6 +13,7 @@ if [[ ${PV} == 9999 ]]; then
 	EGIT_REPO_URI="https://github.com/k5blazerfl/HeDE.git"
 else
 	SRC_URI="https://github.com/k5blazerfl/HeDE/archive/refs/tags/v${PV}.tar.gz -> ${P}.tar.gz"
+	S="${WORKDIR}/HeDE-${PV}" # GitHub archives extract to <RepoName>-<version>
 	KEYWORDS="~amd64"
 fi
 
