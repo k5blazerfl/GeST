@@ -211,6 +211,16 @@ class VaultPayload:
         item.modified = _now()
         return item
 
+    def find_item(self, item_id: str) -> tuple[str, Item] | None:
+        """Locate an item by its id across all collections, returning
+        ``(collection_id, item)`` or ``None`` — the id is globally unique, so
+        callers (e.g. the CLI) can address an item without naming its
+        collection."""
+        for cid, col in self.collections.items():
+            if item_id in col.items:
+                return cid, col.items[item_id]
+        return None
+
     def search(self, attributes: Mapping[str, str]) -> list[tuple[str, Item]]:
         """All ``(collection_id, item)`` across every collection whose attributes
         match — freedesktop ``SearchItems`` semantics (query is a subset)."""

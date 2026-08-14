@@ -35,6 +35,8 @@ gest = "gest.tui.app:main"
 gest-backend = "gest.backend.service:main"
 gest-shell = "gest.shell.service:main"
 gest-settings = "gest.qt.app:main"
+# keychainctl — inspect/edit the keychain vault by hand (pre-Secret-Service-daemon).
+keychainctl = "gest.tui.keychain.cli:main"
 # gestd — the unprivileged core service (HeDE path-B read side); Phase-0 scaffold.
 gest-core = "gest.coreservice.service:main"
 
