@@ -18,6 +18,10 @@ qt_add_executable(test-wallpaper test_wallpaper.cpp)
 target_link_libraries(test-wallpaper PRIVATE Qt6::Test Qt6::Gui helm-bg-lib)
 add_test(NAME wallpaper COMMAND test-wallpaper)
 
+qt_add_executable(test-notification test_notification.cpp)
+target_link_libraries(test-notification PRIVATE Qt6::Test helm-notify-lib)
+add_test(NAME notification COMMAND test-notification)
+
 # Headless integration: boot labwc (wlroots headless backend) and assert
 # helm-panel binds a layer-shell surface. Skips (77) when labwc is absent.
 add_test(NAME smoke-headless

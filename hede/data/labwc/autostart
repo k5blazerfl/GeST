@@ -1,3 +1,4 @@
 # HeDE labwc autostart (Phase 1)
 helm-bg &
+helm-notifyd &
 helm-panel &

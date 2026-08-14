@@ -22,9 +22,11 @@ Ordered by self-containment / testability — build top-down:
    activates or minimizes (if already active), middle-click closes, active
    window shown checked. Pure `Toplevel` model (upsert/remove/label) unit-tested;
    the Wayland glue is thin. Fills the stretch the panel reserved.
-3. **`helm-notifyd` — notifications.** A `org.freedesktop.Notifications` D-Bus
-   service rendering bottom-right toasts + a small history. Model (queue/urgency)
-   unit-tested; toasts are layer-shell surfaces.
+3. **`helm-notifyd` — notifications.** *[done]* A `org.freedesktop.Notifications`
+   D-Bus service (Notify/CloseNotification/GetCapabilities/GetServerInformation +
+   NotificationClosed/ActionInvoked) rendering top-right toasts (a layer-shell
+   stack; click to dismiss/invoke default, auto-expire). Pure model
+   (id alloc/timeout/store/capabilities) unit-tested; the adaptor is thin.
 4. **System-tray host.** A `StatusNotifierItem` / `org.kde.StatusNotifierWatcher`
    host applet in the panel (adopt the `StatusNotifier` D-Bus contract).
 5. **`helm-bg` — wallpaper.** *[done]* A `background`-layer surface per output

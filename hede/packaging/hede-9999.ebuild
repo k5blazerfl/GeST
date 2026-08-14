@@ -22,7 +22,7 @@ SLOT="0"
 # Qt 6 Widgets + Wayland, the QtWayland client (foreign-toplevel protocol
 # bindings + qtwaylandscanner), and the layer-shell binding (the KF6 micro-dep).
 DEPEND="
-	dev-qt/qtbase:6[widgets,wayland]
+	dev-qt/qtbase:6[dbus,widgets,wayland]
 	dev-qt/qtwayland:6
 	kde-frameworks/layer-shell-qt:6
 "
