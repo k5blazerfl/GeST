@@ -1,0 +1,19 @@
+<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN" "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
+<!-- The Sysctl interface on the polkit-gated ROOT backend (system bus, name
+     org.gentoo.gest, path /org/gentoo/gest/Sysctl). The WRITE side that pairs with
+     gestd's Sysctl *read* (core1.Sysctl.GetState). ApplySettings takes `a(ss)` — an
+     array of (key, value) structs — so it is the reference's write-side container
+     example: the QtTypeName.In0 annotation binds that arg to the registered
+     SysctlSettings type (see sysctl_types.h). polkit-gated
+     (org.gentoo.gest.sysctl.manage). -->
+<node>
+  <interface name="org.gentoo.gest.Sysctl">
+    <method name="ApplySettings">
+      <arg name="settings" direction="in" type="a(ss)"/>
+      <arg name="root" direction="in" type="s"/>
+      <arg name="ok" direction="out" type="b"/>
+      <arg name="output" direction="out" type="s"/>
+      <annotation name="org.qtproject.QtDBus.QtTypeName.In0" value="SysctlSettings"/>
+    </method>
+  </interface>
+</node>

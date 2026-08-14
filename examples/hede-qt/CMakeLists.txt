@@ -37,6 +37,20 @@ qt_add_dbus_interface(DBUS_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/interfaces/org.gentoo.gest.core1.Catalog.xml
     catalog_interface)
 
+# More of the WRITE side (system bus, polkit) beyond SetHostname: a second write
+# interface (Services) and a container-typed write (Sysctl's a(ss)). The Sysctl
+# proxy references the registered SysctlSettings type, so its generated header must
+# #include our sysctl_types.h — that is what the source-file INCLUDE property does.
+qt_add_dbus_interface(DBUS_SRCS
+    ${CMAKE_CURRENT_SOURCE_DIR}/interfaces/org.gentoo.gest.Services.xml
+    services_write_interface)
+set_source_files_properties(
+    ${CMAKE_CURRENT_SOURCE_DIR}/interfaces/org.gentoo.gest.Sysctl.xml
+    PROPERTIES INCLUDE "${CMAKE_CURRENT_SOURCE_DIR}/sysctl_types.h")
+qt_add_dbus_interface(DBUS_SRCS
+    ${CMAKE_CURRENT_SOURCE_DIR}/interfaces/org.gentoo.gest.Sysctl.xml
+    sysctl_write_interface)
+
 add_executable(gest-hede-ref main.cpp ${DBUS_SRCS})
 # the generated hostname_interface.h lands in the build dir
 target_include_directories(gest-hede-ref PRIVATE ${CMAKE_CURRENT_BINARY_DIR})

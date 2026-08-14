@@ -64,6 +64,33 @@ current hostname, and `--apply` reached the root backend on the system bus, wher
 **polkit denied it** (no auth agent in a headless shell) — proving the gate is
 active and the call is issued correctly.
 
+## The write side, broadened past `SetHostname`
+
+`SetHostname` is only the first write. The reference also drives three more backend
+interfaces headlessly, each pairing with a gestd read the client already does:
+
+| Flag | Backend call | Interface | Shape it demonstrates |
+|---|---|---|---|
+| `--apply <name>` | `System.SetHostname(name, "/")` | `org.gentoo.gest.System` | `(s,s)→(b,s)` |
+| `--apply-timezone <zone>` | `System.SetTimezone(zone, "/")` | same | a second method on one proxy |
+| `--enable-service <name> <0\|1>` | `Services.SetEnabled(name, on, "default")` | `org.gentoo.gest.Services` | a **second write interface**, `bool` arg |
+| `--control-service <name> <act>` | `Services.Control(name, act)` | same | start/stop/restart |
+| `--apply-sysctl <key> <value>` | `Sysctl.ApplySettings([(key,value)], "/")` | `org.gentoo.gest.Sysctl` | a **container write type**, `a(ss)` |
+
+Run headless (no polkit agent) they were verified to reach the backend and be
+**denied at the gate** — and the denials are per-interface distinct (*"Not authorized
+to change system settings"* for System, *"…to manage services"* for Services),
+proving each call lands on the right object.
+
+**The `a(ss)` write type.** `Sysctl.ApplySettings` takes an array of `(key, value)`
+structs — the write-side analogue of the read side's `aa{sv}`. `qdbusxml2cpp` can't
+infer a C++ type for `(ss)`, so `sysctl_types.h` declares a tiny `SysctlSetting`
+struct with `QDBusArgument` streaming operators, registers it
+(`qDBusRegisterMetaType<SysctlSetting>()`), and the XML binds the arg to it with a
+`QtTypeName.In0` annotation (`SysctlSettings = QList<SysctlSetting>`). The generated
+proxy then takes `SysctlSettings` like any value. This is the pattern HeDE reuses for
+every struct-typed argument.
+
 ## The `qdbusxml2cpp` mapping (the one gotcha)
 
 `qdbusxml2cpp` doesn't infer C++ types for D-Bus containers — each container out-arg
@@ -75,6 +102,7 @@ needs a `QtTypeName` annotation in the XML:
 | `as` | `QStringList` | native, no annotation needed |
 | `a{sx}` | `QMap<QString,qlonglong>` | native |
 | `aa{sv}` (lists) | `QList<QVariantMap>` | register once: `qDBusRegisterMetaType<QList<QVariantMap>>()` |
+| `a(ss)` **in-arg** | `SysctlSettings` (`QList<SysctlSetting>`) | `QtTypeName.In0`; register a struct with `QDBusArgument` operators — see the write side below |
 
 So HeDE's package panel (Software: `ListInstalled`/`Search` → `aa{sv}`) registers
 `QList<QVariantMap>` at startup, then iterates the returned list of property bags —

@@ -103,7 +103,8 @@ type, a missing `QtTypeName` annotation on a container out-arg) fails CI.
 ## Next
 
 The core day-2 modules, the `Catalog` descriptor, the paged installed list, and the
-C++ reference are all in place — the path-B surface is complete. Remaining fronts are
-outside gestd: broaden the **write side** (only `SetHostname` is proven from C++ so
-far) and stand up the actual **HeDE shell / standalone Qt Control Center** on top of
-this surface.
+C++ reference are all in place — the path-B surface is complete. The write side is
+proven from C++ across four backend interfaces now (System hostname/timezone,
+Services enable/control, Sysctl's `a(ss)` container write) — see
+`examples/hede-qt/README.md`. Remaining is to stand up the actual **HeDE shell /
+standalone Qt Control Center** on top of this surface.
