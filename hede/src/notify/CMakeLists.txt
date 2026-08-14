@@ -13,6 +13,7 @@ target_link_libraries(helm-notifyd PRIVATE
     Qt6::DBus
     helm-notify-lib
     helm-wayland
+    helm-appearance
     helm-common
 )
 install(TARGETS helm-notifyd RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)

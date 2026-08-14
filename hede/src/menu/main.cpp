@@ -1,5 +1,6 @@
 #include "launchermenu.h"
 #include "layershell.h"
+#include "palette.h"
 
 #include "config.h"
 
@@ -14,6 +15,7 @@ int main(int argc, char **argv) {
     QApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("helm-menu"));
     app.setDesktopFileName(QStringLiteral("helm-menu"));
+    helm::applyAppearance();
 
     const helm::Config cfg;
 

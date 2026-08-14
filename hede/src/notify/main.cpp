@@ -3,6 +3,7 @@
 #include "toast.h"
 
 #include "layershell.h"
+#include "palette.h"
 
 #include <QApplication>
 #include <QDBusConnection>
@@ -17,6 +18,7 @@ int main(int argc, char **argv) {
 
     QApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("helm-notifyd"));
+    helm::applyAppearance();
 
     auto *toasts = new helm::ToastStack;
     toasts->winId();

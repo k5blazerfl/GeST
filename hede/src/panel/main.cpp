@@ -1,6 +1,7 @@
 #include "panel.h"
 
 #include "layershell.h"
+#include "palette.h"
 
 #include <QApplication>
 
@@ -15,6 +16,7 @@ int main(int argc, char **argv) {
     QApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("helm-panel"));
     app.setDesktopFileName(QStringLiteral("helm-panel"));
+    helm::applyAppearance();
 
     helm::Panel panel;
     panel.winId(); // realise the platform window so we can grab its QWindow

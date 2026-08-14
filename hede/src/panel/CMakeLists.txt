@@ -12,6 +12,7 @@ target_link_libraries(helm-panel PRIVATE
     helm-coreclient
     helm-quicksettings
     helm-media
+    helm-appearance
     helm-common
 )
 install(TARGETS helm-panel RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
