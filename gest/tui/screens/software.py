@@ -19,6 +19,7 @@ from gest.core.software import selection as sel
 from gest.core.software.backend_client import SoftwareBackend
 from gest.core.software.model import PackageDetail
 from gest.core.software.selection import Selection
+from gest.core.software.sortpkg import SORTS, order_by
 from gest.tui.menubar import MenuBar, _Dropdown
 from gest.tui.runtime import App, NavPile, Screen, boxed
 from gest.tui.screens.binhost import BinhostScreen
@@ -93,10 +94,12 @@ _CAT_HEADER = "   Category"
 
 
 class SoftwareScreen(Screen):
-    # sidebar widget indices
+    # sidebar widget indices (a Sort selector sits under View, so search/mode
+    # are one row further down than they'd otherwise be)
     _VIEW_IDX = 0
-    _SEARCH_W_IDX = 2
-    _MODE_IDX = 3
+    _SORT_IDX = 1
+    _SEARCH_W_IDX = 3
+    _MODE_IDX = 4
 
     def __init__(self, app: App, preloaded=None) -> None:
         self._cps: list[str] = []
@@ -107,14 +110,17 @@ class SoftwareScreen(Screen):
         self._upgradable_cps: set[str] = set()
         self._summaries: list[str] = []
         self._categories: list[str] = []
+        self._pkg_repos: list[str] = []   # per-row source repository (for sort)
         self._selection = Selection()
         self._view = "installed"
         self._mode = "contains"
+        self._sort = "name"               # "name" | "repo"
         self._table_mode = "packages"  # "packages" | "categories"
         self._drilled: str | None = None
 
         # -- left: filter sidebar ------------------------------------------
         self._view_selector = _row(self._view_label())
+        self._sort_selector = _row(self._sort_label())
         self._search = urwid.Edit("Search: ")
         self._mode_selector = _row(self._mode_label())
         self._ignore_cb = urwid.CheckBox("Ignore case", state=True)
@@ -125,6 +131,7 @@ class SoftwareScreen(Screen):
         self._description_cb = urwid.CheckBox("Description (slow)")
         self._sidebar = urwid.Pile([
             ("pack", self._view_selector),
+            ("pack", self._sort_selector),
             ("pack", urwid.Divider()),
             ("pack", self._search),
             ("pack", self._mode_selector),
@@ -230,6 +237,26 @@ class SoftwareScreen(Screen):
 
     def _on_view_pick(self, _menu_id: str, view_id: str) -> None:
         self._switch_view(view_id)
+
+    # -- sort selector ------------------------------------------------------
+
+    def _sort_label(self) -> str:
+        title = dict(SORTS).get(self._sort, "Name")
+        return f" Sort: {title} ▾"
+
+    def _open_sort_menu(self) -> None:
+        items = [(sid, label, True) for sid, label in SORTS]
+        drop = _Dropdown(self.app, "sort", items, self._on_sort_pick)
+        self.app.push_overlay(drop, align="left", left=2, valign="top", top=4,
+                              width=drop.width, height=drop.height)
+
+    def _on_sort_pick(self, _menu_id: str, sort_id: str) -> None:
+        if sort_id == self._sort:
+            return
+        self._sort = sort_id
+        self._sort_selector.base_widget.set_text(self._sort_label())
+        if self._table_mode == "packages":
+            self._render_rows()          # re-order the current list in place
 
     # -- mode selector ------------------------------------------------------
 
@@ -358,7 +385,8 @@ class SoftwareScreen(Screen):
         self._note_upgradable(pkgs)
         self._fill([(p.cp, (p.description or "")[:60]) for p in pkgs],
                    [p.cp for p in pkgs], [True] * len(pkgs),
-                   [p.from_binary for p in pkgs])
+                   [p.from_binary for p in pkgs],
+                   repos=[p.repository for p in pkgs])
         n_up = len(self._upgradable_cps)
         suffix = f" · {n_up} with updates" if n_up else ""
         self._set_count(f"{len(pkgs)} installed package(s){suffix}")
@@ -370,7 +398,8 @@ class SoftwareScreen(Screen):
             [(p.cp, f"{p.version} → {p.available_version}  {(p.description or '')[:40]}")
              for p in pkgs],
             [p.cp for p in pkgs], [True] * len(pkgs),
-            [p.from_binary for p in pkgs])
+            [p.from_binary for p in pkgs],
+            repos=[p.repository for p in pkgs])
         self._set_count(
             f"{len(pkgs)} package(s) with updates available" if pkgs
             else "no updates available — everything is up to date")
@@ -381,7 +410,8 @@ class SoftwareScreen(Screen):
         world = [p for p in pkgs if p.world_member]
         self._fill([(p.cp, (p.description or "")[:60]) for p in world],
                    [p.cp for p in world], [True] * len(world),
-                   [p.from_binary for p in world])
+                   [p.from_binary for p in world],
+                   repos=[p.repository for p in world])
         n_up = sum(1 for p in world if p.upgradable)
         suffix = f" · {n_up} with updates" if n_up else ""
         self._set_count(f"{len(world)} @world package(s){suffix}")
@@ -405,13 +435,15 @@ class SoftwareScreen(Screen):
             lambda: reader.packages_in_category(category))
         self._drilled = category
         self._fill([(r.cp, (r.description or "")[:60]) for r in results],
-                   [r.cp for r in results], [r.installed for r in results])
+                   [r.cp for r in results], [r.installed for r in results],
+                   repos=[r.repository for r in results])
         self._set_count(f"{category}: {len(results)} package(s)")
 
     async def _run_file_search(self, path: str) -> None:
         results = await self.app.run_blocking(lambda: reader.search_file_owner(path))
         self._fill([(r.cp, (r.description or "")[:60]) for r in results],
-                   [r.cp for r in results], [r.installed for r in results])
+                   [r.cp for r in results], [r.installed for r in results],
+                   repos=[r.repository for r in results])
         self._set_count(
             f"{len(results)} package(s) own {path}" if results
             else f"no installed package owns {path}")
@@ -434,29 +466,47 @@ class SoftwareScreen(Screen):
                                   mode=mode, ignore_case=ignore_case)
         )
         self._fill([(r.cp, (r.description or "")[:60]) for r in results],
-                   [r.cp for r in results], [r.installed for r in results])
+                   [r.cp for r in results], [r.installed for r in results],
+                   repos=[r.repository for r in results])
         self._set_count(f"{len(results)} package(s) found")
 
-    def _fill(self, rows, cps, installed, from_binary=None) -> None:
+    def _fill(self, rows, cps, installed, from_binary=None, repos=None) -> None:
         self._table_mode = "packages"
         self._header.base_widget.set_text(_PKG_HEADER)
-        self._cps = cps
-        self._installed = installed
+        self._cps = list(cps)
+        self._installed = list(installed)
         # Origin (source vs binary) is known only for the installed-derived
         # listings; other views leave it False. The ↑ update flag is driven by
         # the cross-view _upgradable_cps cache, so it works in every view.
-        self._from_binary = from_binary if from_binary is not None else [False] * len(cps)
+        self._from_binary = list(from_binary) if from_binary is not None else [False] * len(cps)
         self._summaries = [summary for _cp, summary in rows]
-        widgets = [_row(self._row_text(i, cp, summary))
-                   for i, (cp, summary) in enumerate(rows)]
+        self._pkg_repos = list(repos) if repos is not None else [""] * len(cps)
+        self._render_rows()
+
+    def _render_rows(self) -> None:
+        """(Re)build the package table from the parallel lists, applying the
+        current sort. All parallel lists are reordered together so row indices
+        stay consistent for ``_status_for``/``_row_text``."""
+        order = order_by(self._cps, self._pkg_repos, self._sort)
+        self._cps = [self._cps[i] for i in order]
+        self._installed = [self._installed[i] for i in order]
+        self._from_binary = [self._from_binary[i] for i in order]
+        self._summaries = [self._summaries[i] for i in order]
+        self._pkg_repos = [self._pkg_repos[i] for i in order]
+        widgets = [_row(self._row_text(i, cp, self._summaries[i]))
+                   for i, cp in enumerate(self._cps)]
         self._walker[:] = widgets or [urwid.Text(" (no packages)")]
-        if cps:
+        if self._cps:
             self._walker.set_focus(0)
         self._update_footer()
         self.app.refresh()
 
     def _row_text(self, i: int, cp: str, summary: str):
         status = self._status_for(i, cp)
+        # When sorting by repository, show each row's repo so the grouping reads.
+        if self._sort == "repo":
+            repo = self._pkg_repos[i] if i < len(self._pkg_repos) else ""
+            summary = f"::{repo}  {summary}" if repo else summary
         line = f"{status} {cp:<32} {summary}"
         if status == "↑":                       # colour just the update flag
             return [("update", "↑"), line[1:]]
@@ -663,6 +713,7 @@ class SoftwareScreen(Screen):
     def handle_key(self, key):
         _in_menu, in_sidebar, in_table, sidebar_focus = self._context()
         on_view = in_sidebar and sidebar_focus == self._VIEW_IDX
+        on_sort = in_sidebar and sidebar_focus == self._SORT_IDX
         on_search = in_sidebar and sidebar_focus == self._SEARCH_W_IDX
         on_mode = in_sidebar and sidebar_focus == self._MODE_IDX
 
@@ -686,6 +737,9 @@ class SoftwareScreen(Screen):
             return None
         if on_view and key in ("enter", " ", "down"):
             self._open_view_menu()
+            return None
+        if on_sort and key in ("enter", " "):
+            self._open_sort_menu()
             return None
         if on_mode and key in ("enter", " "):
             self._open_mode_menu()

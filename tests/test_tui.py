@@ -1465,6 +1465,28 @@ def test_menu_launches_software():
     assert isinstance(app._stack[-1], SoftwareScreen)
 
 
+def test_software_sort_by_repo_reorders_and_tags():
+    # Hermetic: fill the table with fixed data (no live Portage query), then flip
+    # the sort selector and check the rows group by repository.
+    app = App()
+    scr = SoftwareScreen(app)
+    scr._fill([("a/a", "x"), ("b/b", "y"), ("c/c", "z")],
+              ["a/a", "b/b", "c/c"], [True, True, True],
+              repos=["gest", "gentoo", "gest"])
+    assert scr._cps == ["a/a", "b/b", "c/c"]          # default sort: by name (cp)
+    scr._on_sort_pick("sort", "repo")
+    assert scr._cps == ["b/b", "a/a", "c/c"]          # gentoo first, then gest by cp
+    assert scr._pkg_repos == ["gentoo", "gest", "gest"]
+    row0 = "".join(str(p) for p in _flatten(scr._row_text(0, scr._cps[0], scr._summaries[0])))
+    assert "::gentoo" in row0                          # repo tag shown in repo mode
+    scr._on_sort_pick("sort", "name")
+    assert scr._cps == ["a/a", "b/b", "c/c"]          # name order restored
+
+
+def _flatten(markup):
+    return markup if isinstance(markup, list) else [markup]
+
+
 def test_software_loading_screen_shows_steps_and_hands_off():
     from gest.tui.screens.software import SoftwareLoadingScreen
     app = App()

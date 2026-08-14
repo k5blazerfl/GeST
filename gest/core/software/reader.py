@@ -250,8 +250,9 @@ def search(
         if best:
             # DESCRIPTION is always read (shown as the row summary); add the
             # other requested metadata keys.
-            keys = ["DESCRIPTION", *[_META_FIELD_KEYS[f] for f in meta_fields
-                                     if _META_FIELD_KEYS[f] != "DESCRIPTION"]]
+            keys = ["DESCRIPTION", "repository",
+                    *[_META_FIELD_KEYS[f] for f in meta_fields
+                      if _META_FIELD_KEYS[f] != "DESCRIPTION"]]
             try:
                 got = _PORTDB.aux_get(best, keys)
                 values = dict(zip(keys, got, strict=True))
@@ -272,7 +273,8 @@ def search(
             continue
         inst = _VARDB.cp_list(cp)
         inst_ver = cpv_getversion(inst[-1]) if inst else None
-        results.append(SearchResult(cp, version, desc, inst_ver))
+        results.append(SearchResult(cp, version, desc, inst_ver,
+                                    repository=values.get("repository", "")))
         if len(results) >= limit:
             break
     results.sort(key=lambda r: r.cp)
@@ -301,10 +303,10 @@ def search_file_owner(path: str) -> list[SearchResult]:
         seen.add(cp)
         version = cpv_getversion(cpv)
         try:
-            desc = _VARDB.aux_get(cpv, ["DESCRIPTION"])[0]
+            desc, repo = _VARDB.aux_get(cpv, ["DESCRIPTION", "repository"])
         except Exception:
-            desc = ""
-        results.append(SearchResult(cp, version, desc, version))
+            desc, repo = "", ""
+        results.append(SearchResult(cp, version, desc, version, repository=repo))
     results.sort(key=lambda r: r.cp)
     return results
 
@@ -323,15 +325,15 @@ def packages_in_category(category: str, *, limit: int = 500) -> list[SearchResul
             continue
         best = _best_available(cp)
         version = cpv_getversion(best) if best else ""
-        desc = ""
+        desc, repo = "", ""
         if best:
             try:
-                desc = _PORTDB.aux_get(best, ["DESCRIPTION"])[0]
+                desc, repo = _PORTDB.aux_get(best, ["DESCRIPTION", "repository"])
             except Exception:
-                desc = ""
+                desc, repo = "", ""
         inst = _VARDB.cp_list(cp)
         inst_ver = cpv_getversion(inst[-1]) if inst else None
-        results.append(SearchResult(cp, version, desc, inst_ver))
+        results.append(SearchResult(cp, version, desc, inst_ver, repository=repo))
         if len(results) >= limit:
             break
     results.sort(key=lambda r: r.cp)
