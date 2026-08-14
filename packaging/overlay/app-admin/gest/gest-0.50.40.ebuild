@@ -17,8 +17,12 @@ LICENSE="GPL-2+"
 SLOT="0"
 KEYWORDS="~amd64 ~arm64"
 
+IUSE="qt"
+
 # portage: the query API. PyGObject: GLib/Gio for the root backend.
 # urwid + dbus-next: the TUI frontend and its async D-Bus client.
+# qt: PySide6 for the optional Qt/Wayland Control Center (gest-settings), the
+# frontend HeDE embeds; the widgets module set is all the frontend needs.
 RDEPEND="
 	sys-apps/portage[${PYTHON_USEDEP}]
 	dev-python/pygobject:3[${PYTHON_USEDEP}]
@@ -26,6 +30,7 @@ RDEPEND="
 	dev-python/dbus-next[${PYTHON_USEDEP}]
 	sys-auth/polkit
 	sys-apps/dbus
+	qt? ( dev-python/pyside:6[${PYTHON_USEDEP},widgets] )
 "
 
 # Test suite: pytest with the asyncio plugin (pyproject sets asyncio_mode = auto).
@@ -59,4 +64,7 @@ pkg_postinst() {
 	elog "GeST installed. Launch the TUI with: gest"
 	elog "The privileged backend bus-activates on first use (polkit-gated)."
 	elog "If D-Bus doesn't see the new policy yet: rc-service dbus reload"
+	if use qt; then
+		elog "Qt Control Center enabled: run 'gest-settings' (also embedded by HeDE)."
+	fi
 }
