@@ -62,3 +62,11 @@ SOFTWARE_CORE_IFACE = f"{_IFACE}.Software"
 # Starting/stopping/enabling is a WRITE — the polkit root backend's Services iface.
 SERVICES_CORE_PATH = "/org/gentoo/gest/core/Services"
 SERVICES_CORE_IFACE = f"{_IFACE}.Services"
+
+# --- Users & Groups module -------------------------------------------------
+#   ListUsers()  -> aa{sv}  # {name, uid:x, gid:x, gecos, home, shell,
+#                           #  full_name, system:b, groups:as}
+#   ListGroups() -> aa{sv}  # {name, gid:x, members:as, system:b}
+# Creating/modifying/deleting is a WRITE — the polkit root backend's Users iface.
+USERS_CORE_PATH = "/org/gentoo/gest/core/Users"
+USERS_CORE_IFACE = f"{_IFACE}.Users"

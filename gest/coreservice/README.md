@@ -26,7 +26,7 @@ HeDE C++/Qt shell ──(session bus, reads/validate/render)──▶ gestd  ─
 
 A new module = one pure adapter + one `ServiceInterface` (variant packing via the
 shared `varmap.variant_map`) + a line in `service._MODULES`. Modules exported so
-far: **Hostname**, **Software** (Portage), **Services** (OpenRC).
+far: **Hostname**, **Software** (Portage), **Services** (OpenRC), **Users** (passwd/group).
 
 ## Contract (Hostname, `org.gentoo.gest.core1.Hostname`)
 
@@ -84,5 +84,5 @@ thread via `asyncio.to_thread` — the same "reads off the loop" rule the TUI's
   page is the scale story).
 - A reference **C++/Qt view** generated with `qdbusxml2cpp` from the introspection
   XML — the template HeDE follows per module.
-- The remaining day-2 modules (network, users, services, disk, firewall, …) and a
+- The remaining day-2 modules (network, disk, firewall, timezone/locale, …) and a
   **module descriptor** so HeDE's Control Center enumerates/embeds them uniformly.
