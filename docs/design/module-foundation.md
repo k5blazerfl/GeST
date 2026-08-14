@@ -99,6 +99,24 @@ btrfs snapshots, power management, certificates/CA trust. These are desktop/serv
 conveniences unrelated to installing or bootstrapping a system. Revisit after the
 foundation and installer land.
 
+## Beyond the foundation — desktop-era module design docs
+
+Modules that arrive with **HeDE** and are gated behind the Qt frontend (they are
+*not* install-path work, and land after this foundation and the frontend). Each
+already has a full design doc; indexed here so the module surface stays in one
+place:
+
+- [**Keychain**](keychain.md) — GeST/HeDE *becomes* the freedesktop Secret
+  Service provider (`org.freedesktop.secrets`): a vault + a session daemon
+  (`helm-keyringd`) + a management module. GeST's first *session-bus server*
+  (vs. the usual client-of-root-backend pattern); no gnome-keyring/kwallet dep.
+- [**Windows interop (RDP + Wine/Proton)**](hede-windows-interop.md) — two
+  switcher-facing HeDE modules over a shared foreign-app integration layer:
+  **Gangway** (remote Windows via FreeRDP) and **Drydock** (local Windows apps
+  via Wine/Proton), the latter driving USE/`make.conf` prereqs through the same
+  polkit'd Software path these foundation modules already use. Gangway consumes
+  Keychain for credential storage.
+
 ## Forward-compatibility with the installer
 
 Build every Tier 1/Tier 2 module against the **live host now**, but with one
