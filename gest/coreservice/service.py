@@ -15,11 +15,17 @@ from dbus_next import BusType
 from dbus_next.aio import MessageBus
 
 from gest.coreservice.hostname import HostnameInterface
-from gest.ipc.core_contract import CORE_BUS_NAME, HOSTNAME_CORE_PATH
+from gest.coreservice.software import SoftwareInterface
+from gest.ipc.core_contract import (
+    CORE_BUS_NAME,
+    HOSTNAME_CORE_PATH,
+    SOFTWARE_CORE_PATH,
+)
 
 # (object path, interface factory) for every module gestd exports.
 _MODULES = [
     (HOSTNAME_CORE_PATH, HostnameInterface),
+    (SOFTWARE_CORE_PATH, SoftwareInterface),
 ]
 
 

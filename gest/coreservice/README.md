@@ -59,12 +59,28 @@ busctl --user introspect org.gentoo.gest.Core /org/gentoo/gest/core/Hostname
 # gdbus introspect --session -d org.gentoo.gest.Core -o /org/gentoo/gest/core/Hostname
 ```
 
-## Next (Phase 2+)
+## Software module (`org.gentoo.gest.core1.Software`) — path B proven
 
-- **Software** over the contract — the Portage-heavy reads (list/search/detail/USE,
-  the repo-sort), with streaming + pagination. This is the module that proves path
-  B: the C++ side gets rich package data and never touches Portage.
+The Portage-heavy reads, exposed at `/org/gentoo/gest/core/Software`:
+`ListInstalled`/`ListUpgradable` → `aa{sv}`, `Search(term, fields:as, mode, ignore_case, limit)`,
+`PackagesInCategory`, `ListCategories` → `as`, `GetDetail(cp)` → `a{sv}`, `Counts` → `a{sx}`.
+Each package/detail is an extensible property bag; **the C++ client gets rich
+package data and never touches Portage.** Installing/removing stays a write on the
+polkit root backend.
+
+**Lesson (baked into `software.py`):** Portage's synchronous API drives its *own*
+asyncio loop internally (`portdbapi.aux_get` → `run_until_complete`), which raises
+*"event loop is already running"* if called directly inside gestd's dbus event
+loop. So the Software methods are `async` and run the actual read in a worker
+thread via `asyncio.to_thread` — the same "reads off the loop" rule the TUI's
+`run_blocking` follows.
+
+## Next
+
+- **Streaming/pagination** for very large lists (`ListInstalled` is ~1200 rows in
+  one reply today — fine, but a `Progress`/`Finished` stream or an offset/limit
+  page is the scale story).
 - A reference **C++/Qt view** generated with `qdbusxml2cpp` from the introspection
   XML — the template HeDE follows per module.
-- A **module descriptor** so HeDE's Control Center enumerates/embeds modules
-  uniformly.
+- The remaining day-2 modules (network, users, services, disk, firewall, …) and a
+  **module descriptor** so HeDE's Control Center enumerates/embeds them uniformly.

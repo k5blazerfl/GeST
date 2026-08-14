@@ -40,3 +40,18 @@ _IFACE = f"org.gentoo.gest.core{CORE_API_VERSION}"
 # backend's System.SetHostname (gest/ipc/interface.py).
 HOSTNAME_CORE_PATH = "/org/gentoo/gest/core/Hostname"
 HOSTNAME_CORE_IFACE = f"{_IFACE}.Hostname"
+
+# --- Software module (Portage-heavy reads; proves path B) ------------------
+# Every package/detail is an extensible a{sv} property bag; list methods return
+# aa{sv}. The C++ client never touches Portage — it gets structured data here.
+#   ListInstalled()                                   -> aa{sv}
+#   ListUpgradable()                                  -> aa{sv}
+#   Search(term:s, fields:as, mode:s, ignore_case:b, limit:i) -> aa{sv}
+#   PackagesInCategory(category:s, limit:i)           -> aa{sv}
+#   ListCategories()                                  -> as
+#   GetDetail(cp:s)                                   -> a{sv}   ({} if not found)
+#   Counts()                                          -> a{sx}
+# Installing/removing is a WRITE — the polkit root backend's Software interface.
+# (Streaming/pagination for very large lists is a documented follow-on.)
+SOFTWARE_CORE_PATH = "/org/gentoo/gest/core/Software"
+SOFTWARE_CORE_IFACE = f"{_IFACE}.Software"

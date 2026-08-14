@@ -60,3 +60,4 @@ ignore = ["PLW1510", "RUF012"]
 # ("s", "a{sv}", "bs"), which are not Python type expressions — ruff must not try
 # to parse or unquote them.
 "gest/coreservice/hostname.py" = ["F722", "F821", "UP037"]
+"gest/coreservice/software.py" = ["F722", "F821", "UP037"]
