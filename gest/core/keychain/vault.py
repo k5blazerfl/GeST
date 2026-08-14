@@ -185,6 +185,9 @@ class Vault:
     def search(self, attributes: dict[str, str]) -> list[tuple[str, Item]]:
         return self.payload.search(attributes)
 
+    def find_item(self, item_id: str) -> tuple[str, Item] | None:
+        return self.payload.find_item(item_id)
+
     # ---- internals -----------------------------------------------------
     def _require_unlocked(self) -> None:
         if self.is_locked:
