@@ -16,6 +16,11 @@
 		OpenRC services, users and groups, storage (disks and mounts), hardware and
 		CPU/video flags, and network interfaces (netifrc).
 	</longdescription>
+	<use>
+		<flag name="qt">Install the optional Qt/Wayland Control Center
+		(<pkg>dev-python/pyside</pkg>), providing the <c>gest-settings</c>
+		graphical frontend embedded by the Helm Desktop Environment (HeDE).</flag>
+	</use>
 	<upstream>
 		<remote-id type="github">k5blazerfl/GeST</remote-id>
 	</upstream>

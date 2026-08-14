@@ -1,0 +1,426 @@
+<title>HeDE — Identity Concept</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{
+    /* subject palette — warm bronze */
+    --abyss:#0a1633; --abyss-deep:#050b1f;
+    --horizon:#17b7ab; --horizon-glow:#33d6c8;
+    --brass:#d89a34; --brass-hi:#f6d17a; --brass-lo:#a9701f; --brass-shadow:#6d4711;
+    --star:#f4ecd0;
+    /* themeable chrome — light default (aged sea-chart) */
+    --bg:#e9e2d0; --bg-2:#f0ead9; --grid:rgba(23,111,104,.10);
+    --ink:#111b2e; --ink-soft:#41506b; --line:rgba(17,27,46,.14);
+    --card:#f4efe1; --card-line:rgba(17,27,46,.12);
+    --accent:#127e75;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#081025; --bg-2:#0b1730; --grid:rgba(51,214,200,.06);
+      --ink:#eef0e2; --ink-soft:#9fb0c4; --line:rgba(238,240,226,.14);
+      --card:#0e1a34; --card-line:rgba(238,240,226,.10);
+      --accent:#33d6c8;
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#e9e2d0; --bg-2:#f0ead9; --grid:rgba(23,111,104,.10);
+    --ink:#111b2e; --ink-soft:#41506b; --line:rgba(17,27,46,.14);
+    --card:#f4efe1; --card-line:rgba(17,27,46,.12); --accent:#127e75;
+  }
+  :root[data-theme="dark"]{
+    --bg:#081025; --bg-2:#0b1730; --grid:rgba(51,214,200,.06);
+    --ink:#eef0e2; --ink-soft:#9fb0c4; --line:rgba(238,240,226,.14);
+    --card:#0e1a34; --card-line:rgba(238,240,226,.10); --accent:#33d6c8;
+  }
+
+  *{box-sizing:border-box}
+  body{
+    margin:0; color:var(--ink); background:var(--bg);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased; line-height:1.6;
+  }
+  .mono{font-family:ui-monospace,"SFMono-Regular","Cascadia Code","Courier New",monospace}
+  .eyebrow{
+    font-family:ui-monospace,"SFMono-Regular","Cascadia Code","Courier New",monospace;
+    text-transform:uppercase; letter-spacing:.22em; font-size:.72rem;
+    color:var(--accent); font-weight:600;
+  }
+  h2{
+    font-family:"Arial Black","Helvetica Neue",Arial,sans-serif; font-weight:900;
+    letter-spacing:-.02em; font-size:clamp(1.5rem,3.4vw,2.4rem); line-height:1.05;
+    margin:.2em 0 .1em; text-wrap:balance;
+  }
+  p{max-width:64ch}
+  section{padding:clamp(3rem,7vw,6rem) clamp(1.25rem,5vw,3rem); border-top:1px solid var(--line)}
+  .wrap{max-width:1080px;margin:0 auto}
+
+  /* ---------- HERO: committed dark splash ---------- */
+  .hero{
+    position:relative; overflow:hidden; border-top:0;
+    background:radial-gradient(120% 90% at 50% 8%, #12224a 0%, var(--abyss) 42%, #050b1f 100%);
+    color:var(--star); padding:0;
+  }
+  .hero-frame{
+    position:relative; z-index:3; max-width:1080px; margin:0 auto;
+    padding:clamp(2.5rem,6vw,5rem) clamp(1.25rem,5vw,3rem) clamp(3rem,7vw,5.5rem);
+    text-align:center;
+  }
+  .titlebar{
+    display:flex; align-items:center; gap:.55rem; z-index:3; position:relative;
+    max-width:1080px; margin:0 auto; padding:.5rem clamp(1.25rem,5vw,3rem);
+    border-bottom:1px solid rgba(244,236,208,.14);
+    font-family:ui-monospace,"Courier New",monospace; font-size:.75rem; color:#b9c4dd;
+  }
+  .dot{width:11px;height:11px;border-radius:50%;border:1px solid rgba(0,0,0,.35)}
+  .starfield{position:absolute;inset:0;z-index:1}
+  .horizon{
+    position:absolute; left:50%; bottom:-46%; transform:translateX(-50%);
+    width:150%; aspect-ratio:1/1; border-radius:50%; z-index:2; pointer-events:none;
+    background:radial-gradient(circle at 50% 0%, rgba(51,214,200,.55), rgba(51,214,200,.12) 22%, transparent 42%);
+    box-shadow:0 -1px 60px 6px rgba(51,214,200,.25);
+    border-top:2px solid rgba(89,236,222,.55);
+  }
+  .badge{width:min(320px,72vw); height:auto; filter:drop-shadow(0 8px 40px rgba(0,0,0,.55))}
+  .wordmark{width:min(340px,74vw);height:auto;margin-top:1.4rem}
+  .tagline{
+    font-family:ui-monospace,"Courier New",monospace; letter-spacing:.34em;
+    text-transform:uppercase; font-size:.74rem; color:#8fd9d0; margin-top:.85rem;
+  }
+  .hero .eyebrow{color:#7fe0d6}
+
+  @media (prefers-reduced-motion:no-preference){
+    .badge{animation:bloom 1.2s cubic-bezier(.2,.7,.2,1) both}
+    .horizon{animation:rise 1.4s ease-out both}
+    .wordmark{animation:fadeup .8s .55s ease-out both}
+    .tagline{animation:fadeup .8s .75s ease-out both}
+    @keyframes bloom{from{opacity:0;transform:scale(.82) rotate(-16deg)}to{opacity:1;transform:none}}
+    @keyframes rise{from{opacity:0;bottom:-70%}to{opacity:1}}
+    @keyframes fadeup{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+  }
+
+  /* ---------- system grid ---------- */
+  .lede{font-size:clamp(1.05rem,1.6vw,1.2rem);color:var(--ink-soft);max-width:60ch}
+  .grid{display:grid;gap:1.1rem;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));margin-top:2rem}
+  .card{
+    background:var(--card); border:1px solid var(--card-line); border-radius:14px;
+    padding:1.4rem; display:flex; flex-direction:column; align-items:center; gap:1rem;
+    text-align:center;
+  }
+  .card .label{font-family:ui-monospace,"Courier New",monospace;font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft)}
+  .stage-dark{background:radial-gradient(120% 120% at 50% 20%,#13244c,#050b1f);border-radius:10px;width:100%;padding:1.6rem;display:flex;justify-content:center}
+  .stage-brass{background:linear-gradient(135deg,#f6d17a,#a9701f);border-radius:10px;width:100%;padding:1.6rem;display:flex;justify-content:center}
+  .stage-ink{background:var(--abyss);border-radius:10px;width:100%;padding:1.6rem;display:flex;justify-content:center}
+  .icons{display:flex;align-items:flex-end;gap:1.1rem;justify-content:center;flex-wrap:wrap}
+  .app-ico{border-radius:22%;display:block}
+  .app-ico.chip{background:radial-gradient(130% 130% at 32% 22%,#1a2f5e,#0a1226);box-shadow:inset 0 1px 0 rgba(120,160,220,.3),0 4px 14px rgba(0,0,0,.35)}
+  .sz{font-size:.66rem}
+
+  /* construction */
+  .construct{display:grid;gap:2rem;grid-template-columns:minmax(260px,1fr) minmax(260px,1.1fr);align-items:center}
+  @media (max-width:720px){.construct{grid-template-columns:1fr}}
+  .spec{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:.75rem}
+  .spec li{display:flex;gap:.8rem;align-items:baseline;border-bottom:1px dashed var(--line);padding-bottom:.7rem}
+  .spec .k{font-family:ui-monospace,"Courier New",monospace;color:var(--accent);font-size:.78rem;min-width:2.2rem;font-weight:700}
+  .spec .v{color:var(--ink-soft);font-size:.95rem}
+  .spec .v b{color:var(--ink);font-weight:600}
+
+  /* palette */
+  .swatches{display:grid;gap:.9rem;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-top:2rem}
+  .sw{border:1px solid var(--card-line);border-radius:12px;overflow:hidden;background:var(--card)}
+  .sw .chip{height:88px}
+  .sw .meta{padding:.7rem .8rem}
+  .sw .nm{font-weight:600;font-size:.9rem}
+  .sw .hx{font-family:ui-monospace,"Courier New",monospace;font-size:.78rem;color:var(--ink-soft);text-transform:uppercase}
+  .sw .ro{font-size:.74rem;color:var(--ink-soft);margin-top:.15rem}
+
+  /* usage */
+  .rules{display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));margin-top:1.6rem}
+  .rule{border:1px solid var(--card-line);border-radius:12px;padding:1.1rem 1.2rem;background:var(--card)}
+  .rule .h{font-weight:700;font-size:.92rem;margin-bottom:.3rem;display:flex;align-items:center;gap:.5rem}
+  .rule .h .m{font-family:ui-monospace,monospace;color:var(--accent)}
+  .rule p{font-size:.86rem;color:var(--ink-soft);margin:0;max-width:none}
+
+  footer{padding:2.2rem clamp(1.25rem,5vw,3rem);border-top:1px solid var(--line);color:var(--ink-soft);font-size:.82rem;text-align:center}
+
+  .toggle{position:fixed;top:.7rem;right:.7rem;z-index:20;font-family:ui-monospace,monospace;font-size:.72rem;
+    background:var(--card);color:var(--ink);border:1px solid var(--card-line);border-radius:20px;padding:.4rem .8rem;cursor:pointer}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+</style>
+
+<!-- ============ SHARED SVG DEFS + SYMBOLS (bronze wheel + H seal, lower-right) ============ -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <radialGradient id="brass" cx="38%" cy="30%" r="80%">
+      <stop offset="0%" stop-color="#fbe6ad"/>
+      <stop offset="34%" stop-color="#f6d17a"/>
+      <stop offset="70%" stop-color="#d89a34"/>
+      <stop offset="100%" stop-color="#a9701f"/>
+    </radialGradient>
+    <radialGradient id="seal" cx="36%" cy="30%" r="80%">
+      <stop offset="0%" stop-color="#fbe6ad"/>
+      <stop offset="45%" stop-color="#e6ab3d"/>
+      <stop offset="100%" stop-color="#9a6416"/>
+    </radialGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#fbe6ad"/>
+      <stop offset="48%" stop-color="#d89a34"/>
+      <stop offset="100%" stop-color="#6d4711"/>
+    </linearGradient>
+    <!-- clean moat: wheel is knocked out where the seal sits -->
+    <mask id="notch">
+      <rect x="0" y="0" width="200" height="200" fill="white"/>
+      <rect x="114" y="114" width="76" height="76" rx="18" fill="black"/>
+    </mask>
+    <!-- H knocked out of the seal (flat version) -->
+    <mask id="sealH">
+      <rect x="0" y="0" width="200" height="200" fill="black"/>
+      <rect x="119" y="119" width="66" height="66" rx="15" fill="white"/>
+      <rect x="143" y="140"   width="6"  height="24" fill="black"/>
+      <rect x="155" y="140"   width="6"  height="24" fill="black"/>
+      <rect x="143" y="149"   width="18" height="6"  fill="black"/>
+    </mask>
+
+    <!-- FULL-COLOUR BRONZE HELM + H SEAL -->
+    <symbol id="helm" viewBox="0 0 200 200">
+      <g mask="url(#notch)">
+        <g stroke="#6d4711" stroke-width="1">
+          <g id="unit">
+            <rect x="95.5" y="34" width="9" height="42" rx="3" fill="url(#brass)"/>
+            <rect x="94.5" y="1"  width="11" height="24" rx="5.5" fill="url(#brass)"/>
+          </g>
+          <use href="#unit" transform="rotate(45 100 100)"/>
+          <use href="#unit" transform="rotate(90 100 100)"/>
+          <use href="#unit" transform="rotate(135 100 100)"/>
+          <use href="#unit" transform="rotate(180 100 100)"/>
+          <use href="#unit" transform="rotate(225 100 100)"/>
+          <use href="#unit" transform="rotate(270 100 100)"/>
+          <use href="#unit" transform="rotate(315 100 100)"/>
+        </g>
+        <circle cx="100" cy="100" r="72" fill="none" stroke="url(#rim)" stroke-width="13"/>
+        <circle cx="100" cy="100" r="78" fill="none" stroke="#fbe6ad" stroke-width="1.4" opacity=".7"/>
+        <circle cx="100" cy="100" r="66" fill="none" stroke="#6d4711" stroke-width="1.4" opacity=".8"/>
+        <!-- solid hub boss -->
+        <circle cx="100" cy="100" r="22" fill="url(#brass)" stroke="#6d4711" stroke-width="2.2"/>
+        <circle cx="100" cy="100" r="15" fill="none" stroke="#fbe6ad" stroke-width="1" opacity=".55"/>
+        <circle cx="100" cy="100" r="5.5" fill="#8a5a14"/>
+      </g>
+      <!-- H seal, lower-right (rounded square) -->
+      <rect x="119" y="119" width="66" height="66" rx="15" fill="url(#seal)" stroke="#6d4711" stroke-width="2.4"/>
+      <rect x="124.5" y="124.5" width="55" height="55" rx="11" fill="none" stroke="#fbe6ad" stroke-width="1" opacity=".5"/>
+      <g fill="#3f2c0c">
+        <rect x="143" y="140" width="6" height="24" rx="1"/>
+        <rect x="155" y="140" width="6" height="24" rx="1"/>
+        <rect x="143" y="149" width="18" height="6" rx="1"/>
+      </g>
+    </symbol>
+
+    <!-- FLAT SILHOUETTE (currentColor; H knocked out of the seal) -->
+    <symbol id="helm-flat" viewBox="0 0 200 200">
+      <g fill="currentColor">
+        <g mask="url(#notch)">
+          <g id="unitf">
+            <rect x="95.5" y="34" width="9" height="42" rx="3"/>
+            <rect x="94.5" y="1"  width="11" height="24" rx="5.5"/>
+          </g>
+          <use href="#unitf" transform="rotate(45 100 100)"/>
+          <use href="#unitf" transform="rotate(90 100 100)"/>
+          <use href="#unitf" transform="rotate(135 100 100)"/>
+          <use href="#unitf" transform="rotate(180 100 100)"/>
+          <use href="#unitf" transform="rotate(225 100 100)"/>
+          <use href="#unitf" transform="rotate(270 100 100)"/>
+          <use href="#unitf" transform="rotate(315 100 100)"/>
+          <circle cx="100" cy="100" r="72" fill="none" stroke="currentColor" stroke-width="13"/>
+          <circle cx="100" cy="100" r="22"/>
+        </g>
+        <g mask="url(#sealH)"><rect x="119" y="119" width="66" height="66" rx="15"/></g>
+      </g>
+    </symbol>
+  </defs>
+</svg>
+
+<button class="toggle" id="tg" aria-label="Toggle light and dark theme">◐ theme</button>
+
+<!-- ============ HERO ============ -->
+<header class="hero">
+  <div class="titlebar">
+    <span class="dot" style="background:#e6584a"></span>
+    <span class="dot" style="background:#e9b23c"></span>
+    <span class="dot" style="background:#4fb96a"></span>
+    <span style="margin-left:.5rem">helm — the navigator</span>
+    <span style="margin-left:auto;opacity:.7">v0.3 · bronze + H seal</span>
+  </div>
+  <canvas class="starfield" id="stars" aria-hidden="true"></canvas>
+  <div class="horizon" aria-hidden="true"></div>
+  <div class="hero-frame">
+    <div class="eyebrow">Identity concept · ship's wheel</div>
+    <svg class="badge" viewBox="0 0 300 300" role="img" aria-label="HeDE logo — a bronze ship's wheel with an H seal at the lower right, on a starfield">
+      <circle cx="150" cy="150" r="132" fill="none" stroke="#33d6c8" stroke-width="1" opacity=".18"/>
+      <circle cx="150" cy="150" r="112" fill="none" stroke="#33d6c8" stroke-width="1" opacity=".26"/>
+      <use href="#helm" x="50" y="50" width="200" height="200"/>
+    </svg>
+    <svg class="wordmark" viewBox="0 0 520 130" role="img" aria-label="HeDE">
+      <defs>
+        <linearGradient id="wm" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#fbe6ad"/><stop offset="52%" stop-color="#f6d17a"/>
+          <stop offset="53%" stop-color="#d89a34"/><stop offset="100%" stop-color="#a9701f"/>
+        </linearGradient>
+      </defs>
+      <g font-family="Arial Black, Arial, sans-serif" font-weight="900" font-size="118" letter-spacing="-4">
+        <text x="8" y="98" fill="#3f2c0c" opacity=".55">HeDE</text>
+        <text x="4" y="94" fill="url(#wm)" stroke="#6d4711" stroke-width="1.4">HeDE</text>
+      </g>
+    </svg>
+    <div class="tagline">Helm · Desktop · Environment</div>
+  </div>
+</header>
+
+<!-- ============ THE IDEA ============ -->
+<section>
+  <div class="wrap">
+    <div class="eyebrow">The idea</div>
+    <h2>You take the helm.</h2>
+    <p class="lede">HeDE is the desktop you steer your Gentoo system from — so the mark <em>is</em>
+      the ship's wheel: warm bronze, hand-turned, adrift in an early-90s starfield above a glowing
+      horizon. The wheel stays clean and uncluttered; the <b>H</b> of <b>H</b>e<b>DE</b> rides at
+      the lower right as a <b>captain's seal</b>, notched into the rim so it reads like a stamp on
+      the wheel — a monogram, not a hubcap.</p>
+  </div>
+</section>
+
+<!-- ============ THE SYSTEM ============ -->
+<section>
+  <div class="wrap">
+    <div class="eyebrow">The system</div>
+    <h2>One mark, every surface.</h2>
+    <p class="lede">The wheel-and-seal holds up from a login splash down to a 48-pixel icon. At the
+      very smallest sizes, drop to the flat mark so the seal stays crisp.</p>
+    <div class="grid">
+      <div class="card">
+        <div class="stage-dark"><svg viewBox="0 0 200 200" width="120" height="120" aria-label="Primary bronze mark"><use href="#helm"/></svg></div>
+        <div class="label">Primary · full bronze</div>
+      </div>
+      <div class="card">
+        <div class="stage-ink" style="color:#f6d17a"><svg viewBox="0 0 200 200" width="120" height="120" aria-label="Single-colour mark on dark"><use href="#helm-flat"/></svg></div>
+        <div class="label">Monochrome · reversed</div>
+      </div>
+      <div class="card">
+        <div class="stage-brass" style="color:#3f2c0c"><svg viewBox="0 0 200 200" width="120" height="120" aria-label="Knockout mark on bronze"><use href="#helm-flat"/></svg></div>
+        <div class="label">Knockout · one ink</div>
+      </div>
+      <div class="card">
+        <div class="stage-dark">
+          <div class="icons">
+            <svg class="app-ico chip" viewBox="0 0 200 200" width="96" height="96" aria-label="App icon 96px"><g transform="translate(16,16) scale(.84)"><use href="#helm"/></g></svg>
+            <svg class="app-ico chip" viewBox="0 0 200 200" width="48" height="48" aria-label="App icon 48px"><g transform="translate(16,16) scale(.84)"><use href="#helm"/></g></svg>
+            <svg class="app-ico chip" viewBox="0 0 200 200" width="24" height="24" aria-label="Favicon 24px"><g transform="translate(12,12) scale(.88)"><use href="#helm-flat"/></g></svg>
+          </div>
+        </div>
+        <div class="label">App icon · <span class="sz">96 / 48 / 24 px</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ CONSTRUCTION ============ -->
+<section>
+  <div class="wrap">
+    <div class="eyebrow">Construction</div>
+    <h2>Wheel centred, seal at 4 o'clock.</h2>
+    <div class="construct" style="margin-top:1.8rem">
+      <div class="stage-dark" style="padding:2.2rem">
+        <svg viewBox="0 0 200 200" width="230" height="230" aria-label="Helm geometry">
+          <g stroke="#33d6c8" stroke-width=".6" opacity=".5" fill="none">
+            <circle cx="100" cy="100" r="99"/><circle cx="100" cy="100" r="72"/><circle cx="100" cy="100" r="22"/>
+            <rect x="114" y="114" width="76" height="76" rx="18" stroke-dasharray="3 3"/>
+            <line x1="100" y1="1" x2="100" y2="199"/><line x1="1" y1="100" x2="199" y2="100"/>
+            <line x1="30" y1="30" x2="170" y2="170"/><line x1="170" y1="30" x2="30" y2="170"/>
+          </g>
+          <use href="#helm"/>
+        </svg>
+      </div>
+      <ul class="spec">
+        <li><span class="k">8×</span><span class="v"><b>Eight spokes &amp; handles</b> on 45° bearings — the traditional deck helm, and a nod to a compass rose.</span></li>
+        <li><span class="k">H</span><span class="v"><b>The seal sits lower-right</b> (on the 4-o'clock diagonal), so the monogram is off the wheel's face and the spokes stay legible.</span></li>
+        <li><span class="k">◌</span><span class="v"><b>A notched moat</b> knocks the wheel out around the seal, so the badge separates cleanly on any ground — starfield or solid.</span></li>
+        <li><span class="k">◐</span><span class="v"><b>Bevel, not gloss</b> — one warm top-left highlight and a shadow edge. Bronze, never chrome.</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ PALETTE ============ -->
+<section>
+  <div class="wrap">
+    <div class="eyebrow">Palette</div>
+    <h2>Bronze on the abyss.</h2>
+    <p class="lede">One warm family for the metal, one cold ground, and a single teal accent — the
+      horizon glow — used sparingly so it always means "the sea meets the sky."</p>
+    <div class="swatches">
+      <div class="sw"><div class="chip" style="background:linear-gradient(135deg,#f6d17a,#a9701f)"></div><div class="meta"><div class="nm">Bronze</div><div class="hx">#F6D17A→#A9701F</div><div class="ro">The wheel · subject material</div></div></div>
+      <div class="sw"><div class="chip" style="background:#6d4711"></div><div class="meta"><div class="nm">Bronze Shadow</div><div class="hx">#6D4711</div><div class="ro">Edges · the seal's H</div></div></div>
+      <div class="sw"><div class="chip" style="background:#0a1633"></div><div class="meta"><div class="nm">Abyss</div><div class="hx">#0A1633</div><div class="ro">Night sky / sea ground</div></div></div>
+      <div class="sw"><div class="chip" style="background:#33d6c8"></div><div class="meta"><div class="nm">Horizon</div><div class="hx">#33D6C8</div><div class="ro">Accent · glow only</div></div></div>
+      <div class="sw"><div class="chip" style="background:#f4ecd0"></div><div class="meta"><div class="nm">Star</div><div class="hx">#F4ECD0</div><div class="ro">Type on dark · stars</div></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ USAGE ============ -->
+<section>
+  <div class="wrap">
+    <div class="eyebrow">Usage</div>
+    <h2>Keep it seaworthy.</h2>
+    <div class="rules">
+      <div class="rule"><div class="h"><span class="m">↔</span>Clearspace</div><p>Keep clear space of one hub-diameter on every side. The handles and the seal are part of the mark — never crop them.</p></div>
+      <div class="rule"><div class="h"><span class="m">▭</span>Minimum size</div><p>32px in a panel, 48px for the full bronze. At favicon sizes, use the flat mark — the bevel muddies below that.</p></div>
+      <div class="rule"><div class="h"><span class="m">⊘</span>Don't re-hue the bronze</div><p>The metal stays in its warm family. Recolour only the flat mark, and only to one solid ink.</p></div>
+      <div class="rule"><div class="h"><span class="m">◱</span>Grounds</div><p>Prefer the abyss. On light grounds use the knockout mark; never set full-colour bronze on white.</p></div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <span class="mono">HeDE · Helm Desktop Environment</span> — identity concept v0.3 (bronze · H seal) · the harbor names the apps, the helm names the desktop.
+</footer>
+
+<script>
+  var tg=document.getElementById('tg');
+  tg.addEventListener('click',function(){
+    var r=document.documentElement;
+    var cur=r.getAttribute('data-theme');
+    if(!cur){cur=matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';}
+    r.setAttribute('data-theme',cur==='dark'?'light':'dark');
+  });
+
+  var c=document.getElementById('stars'), x=c.getContext('2d'), stars=[], tw=[];
+  var reduce=matchMedia('(prefers-reduced-motion:reduce)').matches;
+  function size(){
+    var h=c.parentElement;
+    c.width=h.clientWidth; c.height=h.clientHeight;
+    stars=[]; tw=[];
+    var n=Math.round(c.width*c.height/6500);
+    for(var i=0;i<n;i++){
+      var s={x:Math.random()*c.width,y:Math.random()*c.height*0.9,r:Math.random()*1.3+0.2,a:Math.random()*0.6+0.25};
+      stars.push(s);
+      if(Math.random()<0.12) tw.push(s);
+    }
+    draw(0);
+  }
+  function draw(t){
+    x.clearRect(0,0,c.width,c.height);
+    for(var i=0;i<stars.length;i++){
+      var s=stars[i];
+      x.globalAlpha=s.a; x.fillStyle=(i%17===0)?'#8fe6dc':'#f4ecd0';
+      x.beginPath(); x.arc(s.x,s.y,s.r,0,6.283); x.fill();
+    }
+    if(!reduce){
+      for(var j=0;j<tw.length;j++){
+        var s2=tw[j];
+        x.globalAlpha=0.4+0.5*Math.abs(Math.sin(t/900+j));
+        x.fillStyle='#f4ecd0'; x.beginPath(); x.arc(s2.x,s2.y,s2.r+0.4,0,6.283); x.fill();
+      }
+      requestAnimationFrame(draw);
+    }
+    x.globalAlpha=1;
+  }
+  addEventListener('resize',size); size();
+</script>

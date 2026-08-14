@@ -41,3 +41,11 @@ net-firewall/firewalld
 # the D-Bus / polkit runtime the backend needs (also pulled by gest, listed for clarity)
 sys-auth/polkit
 sys-apps/dbus
+
+# desktop: HeDE (the Helm Desktop Environment) is the face of the installer.
+# gui-apps/hede's RDEPENDs pull labwc, foot, gest, lxqt-policykit, wireplumber,
+# brightnessctl and swaylock/swayidle; add seat/login + the autologin DM here.
+gui-apps/hede
+sys-auth/elogind         # logind API: seat, brightness, polkit active-session
+sys-auth/seatd           # seat management for the Wayland compositor
+gui-libs/greetd          # autologin into the HeDE session (see overlay/etc/greetd)

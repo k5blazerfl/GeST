@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<!-- HeDE labwc root menu (Phase 0) — right-click the desktop. -->
+<openbox_menu>
+  <menu id="root-menu" label="HeDE">
+    <item label="Terminal">
+      <action name="Execute"><command>foot</command></action>
+    </item>
+    <separator/>
+    <item label="Exit">
+      <action name="Exit"/>
+    </item>
+  </menu>
+</openbox_menu>

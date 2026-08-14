@@ -1,0 +1,18 @@
+# HeDE labwc autostart (Phase 1–3)
+
+# Exactly one polkit agent for the session: auth prompts for GeST's
+# polkit-gated backend when the shell triggers a privileged change (Phase 2b).
+command -v lxqt-policykit-agent >/dev/null 2>&1 && lxqt-policykit-agent &
+
+# GeST read seam (org.gentoo.gest.Shell); harmless/absent-safe.
+command -v gest-shell >/dev/null 2>&1 && gest-shell &
+
+# Idle lock (adopted swayidle + swaylock): lock after 10 min and before sleep.
+if command -v swayidle >/dev/null 2>&1 && command -v swaylock >/dev/null 2>&1; then
+    swayidle -w timeout 600 'swaylock -f' before-sleep 'swaylock -f' &
+fi
+
+# HeDE's own shell components.
+helm-bg &
+helm-notifyd &
+helm-panel &

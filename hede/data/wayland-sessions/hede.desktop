@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=HeDE
+Comment=Helm Desktop Environment
+Exec=helm-session
+Type=Application
+DesktopNames=HeDE

@@ -1,2 +1,7 @@
 # The GeST ebuild is published ~amd64; accept it in the livecd build root.
 app-admin/gest ~amd64
+
+# HeDE (the desktop that fronts the installer) + its autologin DM are ~amd64.
+# Some of HeDE's deps may also need keywording on the build host.
+gui-apps/hede ~amd64
+gui-libs/greetd ~amd64

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gest"
-version = "0.50.40"
+version = "0.51.0"
 description = "GeST — Gentoo System Tool: a modular, YaST-style system administration tool for Gentoo"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -24,10 +24,13 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "pytest-asyncio>=0.23"]
+qt = ["PySide6"]
 
 [project.scripts]
 gest = "gest.tui.app:main"
 gest-backend = "gest.backend.service:main"
+gest-shell = "gest.shell.service:main"
+gest-settings = "gest.qt.app:main"
 # gestd — the unprivileged core service (HeDE path-B read side); Phase-0 scaffold.
 gest-core = "gest.coreservice.service:main"
 

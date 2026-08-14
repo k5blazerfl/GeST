@@ -6,8 +6,11 @@ import json
 import subprocess
 from collections.abc import Callable
 
-from gest.core.network.model import Interface
+from gest.core.network.model import Interface, NetworkStatus
 from gest.core.network.netifrc import InterfaceConfig, parse_conf_net
+
+# Interface-name prefixes that indicate Wi-Fi (predictable + legacy names).
+_WIFI_PREFIXES = ("wl", "wlan", "wlp")
 
 Runner = Callable[[list[str]], str]
 
@@ -37,6 +40,17 @@ def parse_ip_json(text: str) -> list[Interface]:
             )
         )
     return interfaces
+
+
+def network_status(interfaces: list[Interface]) -> NetworkStatus:
+    """Summarise connectivity: the first non-loopback, up interface with an
+    address wins; Wi-Fi vs. ethernet is inferred from the interface name."""
+    for iface in interfaces:
+        if iface.loopback or not iface.up or not iface.addresses:
+            continue
+        kind = "wifi" if iface.name.startswith(_WIFI_PREFIXES) else "ethernet"
+        return NetworkStatus(connected=True, kind=kind, iface=iface.name)
+    return NetworkStatus()
 
 
 def _default_runner(argv: list[str]) -> str:

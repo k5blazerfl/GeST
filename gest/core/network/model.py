@@ -19,3 +19,12 @@ class Interface:
     @property
     def loopback(self) -> bool:
         return self.name == "lo"
+
+
+@dataclass(slots=True)
+class NetworkStatus:
+    """A one-line summary of connectivity, for shell indicators."""
+
+    connected: bool = False
+    kind: str = "none"  # "ethernet" | "wifi" | "none"
+    iface: str = ""
