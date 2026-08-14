@@ -1,5 +1,13 @@
-# HeDE labwc autostart (Phase 1 + 2a)
+# HeDE labwc autostart (Phase 1 + 2a + 2b)
+
+# Exactly one polkit agent for the session: auth prompts for GeST's
+# polkit-gated backend when the shell triggers a privileged change (Phase 2b).
+command -v lxqt-policykit-agent >/dev/null 2>&1 && lxqt-policykit-agent &
+
+# GeST read seam (org.gentoo.gest.Shell); harmless/absent-safe.
+command -v gest-shell >/dev/null 2>&1 && gest-shell &
+
+# HeDE's own shell components.
 helm-bg &
 helm-notifyd &
-gest-shell &          # GeST read seam (org.gentoo.gest.Shell); harmless if absent
 helm-panel &

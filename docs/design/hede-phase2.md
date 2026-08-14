@@ -154,7 +154,9 @@ writes what into `$XDG_CONFIG_HOME/hede/hede.conf` (and friends):
   `core/software.list_upgradable`) + HeDE `CoreClient` + the panel **update
   pill** (graceful when GeST is absent). Remaining datums (Network/Battery/
   Brightness/Volume) follow the same shape.
-- **2b — polkit agent** 🟢 adopt lxqt-policykit in the session.
+- **2b — polkit agent** 🟢 *[done]* adopt `lxqt-policykit` — the session
+  autostarts one `lxqt-policykit-agent`; `lxqt-base/lxqt-policykit` is an RDEPEND
+  (as is `app-admin/gest`, the Control Center + seam).
 - **2c — the module framework** 🔒 the embeddable module = widget + descriptor;
   `gest-settings` standalone shell.
 - **2d — embedded popovers** 🔒 panel applets open real modules.

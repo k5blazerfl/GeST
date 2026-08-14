@@ -27,11 +27,15 @@ DEPEND="
 	dev-qt/qtwayland:6
 	kde-frameworks/layer-shell-qt:6
 "
-# Runtime: the compositor HeDE drives and the default terminal helm-panel spawns.
+# Runtime: the compositor HeDE drives, the default terminal helm-panel spawns,
+# GeST (the Control Center + the org.gentoo.gest.Shell read seam), and a polkit
+# agent for the session (auth prompts for GeST's polkit-gated backend).
 RDEPEND="
 	${DEPEND}
 	gui-wm/labwc
 	gui-apps/foot
+	app-admin/gest
+	lxqt-base/lxqt-policykit
 "
 
 src_test() {
