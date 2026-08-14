@@ -137,3 +137,64 @@ async def test_secret_tool_interop(tmp_path):
         assert b"via-dbus" in stdout
     finally:
         daemon.disconnect()
+
+
+async def test_dh_encrypted_session_roundtrip(tmp_path):
+    """Open a DH-encrypted session, store a secret the daemon must decrypt, and
+    read one back the daemon encrypted — with an independent client-side AES/DH
+    implementation, so this proves the on-the-wire encrypted transport (the path
+    libsecret prefers)."""
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+    from cryptography.hazmat.primitives.padding import PKCS7
+
+    from gest.keyringd import dh
+
+    def aes_cbc_pkcs7_encrypt(key, plaintext):
+        iv = os.urandom(16)
+        padder = PKCS7(128).padder()
+        padded = padder.update(plaintext) + padder.finalize()
+        enc = Cipher(algorithms.AES(key), modes.CBC(iv)).encryptor()
+        return iv, enc.update(padded) + enc.finalize()
+
+    def aes_cbc_pkcs7_decrypt(key, iv, ciphertext):
+        dec = Cipher(algorithms.AES(key), modes.CBC(iv)).decryptor()
+        padded = dec.update(ciphertext) + dec.finalize()
+        unpadder = PKCS7(128).unpadder()
+        return unpadder.update(padded) + unpadder.finalize()
+
+    vault = _unlocked_vault(str(tmp_path / "smoke.vault"))
+    daemon = KeyringDaemon(vault)
+    await daemon.serve()
+    client = await MessageBus(bus_type=BusType.SESSION).connect()
+    try:
+        service = await _proxy(client, contract.SERVICE_PATH, contract.SERVICE_IFACE)
+
+        # DH handshake, client side
+        client_private, client_public = dh.generate_keypair()
+        output, session_path = await service.call_open_session(
+            contract.ALGO_DH, Variant("ay", client_public))
+        server_public = bytes(output.value)
+        aes_key = dh.derive_aes_key(dh.shared_secret(client_private, server_public))
+
+        # store an item we encrypt ourselves
+        coll_path = await service.call_read_alias("default")
+        collection = await _proxy(client, coll_path, contract.COLLECTION_IFACE)
+        iv, ct = aes_cbc_pkcs7_encrypt(aes_key, b"dh-secret-value")
+        props = {
+            ITEM_LABEL_KEY: Variant("s", "dh item"),
+            ITEM_ATTRS_KEY: Variant("a{ss}", {"kind": "dh"}),
+        }
+        item_path, _prompt = await collection.call_create_item(
+            props, [session_path, iv, ct, "text/plain"], False)
+
+        # the daemon stored the *decrypted* value
+        assert vault.search({"kind": "dh"})[0][1].secret == b"dh-secret-value"
+
+        # read it back — the daemon must encrypt to our session key
+        item = await _proxy(client, item_path, contract.ITEM_IFACE)
+        _sess, got_iv, got_ct, _ct = await item.call_get_secret(session_path)
+        assert bytes(got_ct) != b"dh-secret-value"  # encrypted on the wire
+        assert aes_cbc_pkcs7_decrypt(aes_key, bytes(got_iv), bytes(got_ct)) == b"dh-secret-value"
+    finally:
+        client.disconnect()
+        daemon.disconnect()

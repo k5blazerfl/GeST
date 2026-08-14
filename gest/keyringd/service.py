@@ -73,16 +73,17 @@ class ItemInterface(ServiceInterface):
         secret = store.item_secret(self._daemon.vault, self._cid, self._iid)
         if secret is None:
             raise DBusError(ERR_NO_OBJECT, "no such item")
-        return [session, b"", sess.encode(secret), "text/plain"]
+        params, value = sess.encode(secret)
+        return [session, params, value, "text/plain"]
 
     @method()
     def SetSecret(self, secret: "(oayays)"):
-        session_path, _params, value, _ct = secret
+        session_path, params, value, _ct = secret
         sess = self._daemon.sessions.get(session_path)
         if sess is None:
             raise DBusError(ERR_NO_SESSION, "unknown session")
-        if not store.set_item_secret(self._daemon.vault, self._cid, self._iid,
-                                     sess.decode(bytes(value))):
+        plaintext = sess.decode(bytes(params), bytes(value))
+        if not store.set_item_secret(self._daemon.vault, self._cid, self._iid, plaintext):
             raise DBusError(ERR_NO_OBJECT, "no such item")
 
     @method()
@@ -129,12 +130,12 @@ class CollectionInterface(ServiceInterface):
                    replace: "b") -> "oo":
         label = _prop_str(properties, ITEM_LABEL_KEY)
         attrs = _prop_attrs(properties, ITEM_ATTRS_KEY)
-        session_path, _params, value, _ct = secret
+        session_path, params, value, _ct = secret
         sess = self._daemon.sessions.get(session_path)
         if sess is None:
             raise DBusError(ERR_NO_SESSION, "unknown session")
-        iid = store.create_item(self._daemon.vault, self._cid, label, attrs,
-                                sess.decode(bytes(value)), replace)
+        plaintext = sess.decode(bytes(params), bytes(value))
+        iid = store.create_item(self._daemon.vault, self._cid, label, attrs, plaintext, replace)
         if iid is None:
             raise DBusError(ERR_NO_OBJECT, "no such collection")
         item_path = paths.item_path(self._cid, iid)
@@ -190,11 +191,17 @@ class ServiceInterfaceImpl(ServiceInterface):
 
     @method()
     def OpenSession(self, algorithm: "s", input: "v") -> "vo":
-        if algorithm != contract.ALGO_PLAIN:
-            raise DBusError(ERR_NOT_SUPPORTED, f"algorithm {algorithm!r} not supported")
-        path, _sess = self._daemon.sessions.open_plain(paths.session_path)
-        self._daemon.export_session(path)
-        return [Variant("s", ""), path]
+        if algorithm == contract.ALGO_PLAIN:
+            path, _sess = self._daemon.sessions.open_plain(paths.session_path)
+            self._daemon.export_session(path)
+            return [Variant("s", ""), path]
+        if algorithm == contract.ALGO_DH:
+            client_public = bytes(input.value)
+            path, server_public, _sess = self._daemon.sessions.open_dh(
+                client_public, paths.session_path)
+            self._daemon.export_session(path)
+            return [Variant("ay", server_public), path]
+        raise DBusError(ERR_NOT_SUPPORTED, f"algorithm {algorithm!r} not supported")
 
     @method()
     def SearchItems(self, attributes: "a{ss}") -> "aoao":
@@ -220,7 +227,8 @@ class ServiceInterfaceImpl(ServiceInterface):
                 continue
             secret = store.item_secret(self._daemon.vault, parsed[0], parsed[1])
             if secret is not None:
-                out[path] = [session, b"", sess.encode(secret), "text/plain"]
+                params, value = sess.encode(secret)
+                out[path] = [session, params, value, "text/plain"]
         return out
 
     @method()
