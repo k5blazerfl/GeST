@@ -77,3 +77,29 @@ USERS_CORE_IFACE = f"{_IFACE}.Users"
 # Bringing links up/down / writing netifrc is a WRITE — the polkit root backend.
 NETWORK_CORE_PATH = "/org/gentoo/gest/core/Network"
 NETWORK_CORE_IFACE = f"{_IFACE}.Network"
+
+# --- Disks & mounts module -------------------------------------------------
+#   List() -> aa{sv}   # block devices: {name, size, type, fstype, mountpoint}
+DISK_CORE_PATH = "/org/gentoo/gest/core/Disk"
+DISK_CORE_IFACE = f"{_IFACE}.Disk"
+
+# --- Firewall module (nftables + firewalld, smart-detected) ----------------
+#   Status()             -> a{sv}  # firewalld_installed/running, nftables_installed/active, active
+#   GetNftPolicy()       -> a{sv}  # {managed:b, default_input, allow_ping:b, {tcp,udp}_ports:as}
+#   GetFirewalldZone(z:s)-> a{sv}  # {zone, services:as, ports:as}
+FIREWALL_CORE_PATH = "/org/gentoo/gest/core/Firewall"
+FIREWALL_CORE_IFACE = f"{_IFACE}.Firewall"
+
+# --- Localization module (timezone / locale / console keymap) --------------
+#   GetState()               -> a{sv}  # {timezone, locale, keymap}
+#   ListZones()/ListLocales()/ListKeymaps() -> as
+#   Validate(field:s, value:s) -> (ok:b, message:s)   # field: timezone|locale|keymap
+LOCALIZATION_CORE_PATH = "/org/gentoo/gest/core/Localization"
+LOCALIZATION_CORE_IFACE = f"{_IFACE}.Localization"
+
+# --- sysctl module ---------------------------------------------------------
+#   GetSettings()          -> a{ss}   # the GeST sysctl.d drop-in key/values
+#   Validate(a{ss})        -> (ok:b, message:s)
+#   Render(a{ss})          -> s        # the drop-in text a write would produce
+SYSCTL_CORE_PATH = "/org/gentoo/gest/core/Sysctl"
+SYSCTL_CORE_IFACE = f"{_IFACE}.Sysctl"

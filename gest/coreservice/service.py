@@ -14,17 +14,25 @@ import sys
 from dbus_next import BusType
 from dbus_next.aio import MessageBus
 
+from gest.coreservice.disk import DiskInterface
+from gest.coreservice.firewall import FirewallInterface
 from gest.coreservice.hostname import HostnameInterface
+from gest.coreservice.localization import LocalizationInterface
 from gest.coreservice.network import NetworkInterface
 from gest.coreservice.services import ServicesInterface
 from gest.coreservice.software import SoftwareInterface
+from gest.coreservice.sysctl import SysctlInterface
 from gest.coreservice.users import UsersInterface
 from gest.ipc.core_contract import (
     CORE_BUS_NAME,
+    DISK_CORE_PATH,
+    FIREWALL_CORE_PATH,
     HOSTNAME_CORE_PATH,
+    LOCALIZATION_CORE_PATH,
     NETWORK_CORE_PATH,
     SERVICES_CORE_PATH,
     SOFTWARE_CORE_PATH,
+    SYSCTL_CORE_PATH,
     USERS_CORE_PATH,
 )
 
@@ -35,6 +43,10 @@ _MODULES = [
     (SERVICES_CORE_PATH, ServicesInterface),
     (USERS_CORE_PATH, UsersInterface),
     (NETWORK_CORE_PATH, NetworkInterface),
+    (DISK_CORE_PATH, DiskInterface),
+    (FIREWALL_CORE_PATH, FirewallInterface),
+    (LOCALIZATION_CORE_PATH, LocalizationInterface),
+    (SYSCTL_CORE_PATH, SysctlInterface),
 ]
 
 
