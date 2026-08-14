@@ -4,9 +4,8 @@ Services backend (widget → core → backend), same pattern as gest/qt/net.py.
 
 from __future__ import annotations
 
-import asyncio
-
 from gest.core.services.model import Service
+from gest.qt.backend import run_backend
 
 _ACTIONS = ("start", "stop", "restart")
 
@@ -20,17 +19,6 @@ def service_label(service: Service) -> str:
     return label + " · enabled" if service.enabled else label
 
 
-def _call(coro_factory) -> tuple[bool, str]:
-    """Run an async backend call that returns [ok, output]; → (ok, message)."""
-    try:
-        result = asyncio.run(coro_factory())
-        ok = bool(result[0])
-        msg = str(result[1]) if len(result) > 1 else ""
-        return (ok, msg)
-    except Exception as e:  # surface backend/D-Bus/polkit errors to the UI
-        return (False, str(e))
-
-
 def control(name: str, action: str) -> tuple[bool, str]:
     async def run():
         from gest.core.services.backend_client import ServicesBackend
@@ -41,7 +29,7 @@ def control(name: str, action: str) -> tuple[bool, str]:
         finally:
             await backend.close()
 
-    return _call(run)
+    return run_backend(run)
 
 
 def set_enabled(name: str, enabled: bool, runlevel: str = "default") -> tuple[bool, str]:
@@ -54,4 +42,4 @@ def set_enabled(name: str, enabled: bool, runlevel: str = "default") -> tuple[bo
         finally:
             await backend.close()
 
-    return _call(run)
+    return run_backend(run)

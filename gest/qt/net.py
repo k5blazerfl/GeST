@@ -2,16 +2,16 @@
 polkit-gated Network backend (widget → core → backend).
 
 The mutation helpers run the dbus-next backend call in a short-lived asyncio
-loop so a PySide slot can call them synchronously; the polkit prompt is handled
-by the session's polkit agent. dbus-next is imported lazily so validate_static
-stays importable/testable without it.
+loop (via the shared ``run_backend`` bridge) so a PySide slot can call them
+synchronously; the polkit prompt is handled by the session's polkit agent.
+dbus-next is imported lazily so validate_static stays importable/testable
+without it.
 """
 
 from __future__ import annotations
 
-import asyncio
-
 from gest.core.network.netifrc import valid_address, valid_gateway
+from gest.qt.backend import run_backend
 
 
 def validate_static(address: str, gateway: str) -> str:
@@ -23,36 +23,28 @@ def validate_static(address: str, gateway: str) -> str:
     return ""
 
 
-def _run(coro) -> tuple[bool, str]:
-    try:
-        asyncio.run(coro)
-        return (True, "")
-    except Exception as e:
-        return (False, str(e))
-
-
 def apply_interface_config(iface: str, method: str, address: str = "",
                            gateway: str = "") -> tuple[bool, str]:
-    async def run() -> None:
+    async def run():
         from gest.core.network.backend_client import NetworkBackend
 
         backend = await NetworkBackend().connect()
         try:
-            await backend.set_interface_config(iface, method, address, gateway)
+            return await backend.set_interface_config(iface, method, address, gateway)
         finally:
             await backend.close()
 
-    return _run(run())
+    return run_backend(run)
 
 
 def set_link(iface: str, up: bool) -> tuple[bool, str]:
-    async def run() -> None:
+    async def run():
         from gest.core.network.backend_client import NetworkBackend
 
         backend = await NetworkBackend().connect()
         try:
-            await backend.set_link(iface, up)
+            return await backend.set_link(iface, up)
         finally:
             await backend.close()
 
-    return _run(run())
+    return run_backend(run)
