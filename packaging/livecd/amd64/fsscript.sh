@@ -17,7 +17,7 @@ cat > /root/.bash_profile <<'PROFILE'
 if [ -z "${GEST_STARTED:-}" ] && [ "$(tty)" = "/dev/tty1" ]; then
     export GEST_STARTED=1
     clear
-    gest || true          # exit GeST → a normal root shell
+    gest --install || true          # exit GeST → a normal root shell
 fi
 PROFILE
 

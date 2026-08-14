@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import contextlib
-import os
 import socket
 
 import urwid
@@ -99,11 +98,11 @@ CATEGORIES: list[tuple[str, list[tuple[str, str, bool]]]] = [
     ]),
 ]
 
-# The installer is offered only on the live-CD / root path (choose_executor →
-# DirectExecutor); an unprivileged installed system administers, it doesn't
-# re-install. Shown as a top category so it's the first thing on the live CD.
-if os.geteuid() == 0:
-    CATEGORIES.insert(0, ("Install Gentoo", [("install", "Install Gentoo", True)]))
+# The installer is a distinct, destructive mode, not an admin module: it is shown
+# only when GeST is launched for it (``gest --install``, which the live-CD
+# environment runs). A normal ``gest`` administers the running system and never
+# offers to re-install it, whatever the uid.
+_INSTALL_CATEGORY = ("Install Gentoo", [("install", "Install Gentoo", True)])
 
 
 # Modules that run — or whose edits feed — a package operation. They are locked
@@ -119,8 +118,11 @@ def _icon(label: str) -> urwid.Widget:
 
 
 class MenuScreen(Screen):
-    def __init__(self, app: App) -> None:
-        cats = [_icon(name) for name, _mods in CATEGORIES]
+    def __init__(self, app: App, *, installer: bool = False) -> None:
+        # The installer category is prepended only when GeST was launched for it.
+        self._categories = ([_INSTALL_CATEGORY, *CATEGORIES] if installer
+                            else list(CATEGORIES))
+        cats = [_icon(name) for name, _mods in self._categories]
         self._cat_walker = urwid.SimpleFocusListWalker(cats)
         self._left = urwid.ListBox(self._cat_walker)
 
@@ -176,7 +178,7 @@ class MenuScreen(Screen):
         self._populate_modules(self._cat_walker.focus)
 
     def _populate_modules(self, cat_index: int) -> None:
-        _name, modules = CATEGORIES[cat_index]
+        _name, modules = self._categories[cat_index]
         self._mod_keys = [key for key, _label, _impl in modules]
         items = []
         for _key, label, impl in modules:

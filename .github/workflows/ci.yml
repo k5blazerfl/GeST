@@ -27,9 +27,9 @@ jobs:
       - name: Build the package
         run: python -m build
 
-      # Only the pure, dependency-light tests run on CI. The reader/TUI tests
-      # need a live Portage DB, PyGObject, and Textual, which aren't available
-      # on a stock Ubuntu runner — those are validated on the Gentoo host.
+      # The pure, dependency-light tests run here. The urwid frontend tests run in
+      # the separate `tui-test` job (they need GLib/dbus-next). The reader tests
+      # need a live Portage DB, so they stay Gentoo-host-only.
       - name: Test (CI-safe subset)
         run: |
           pytest tests/test_news.py tests/test_preview.py \
@@ -53,3 +53,28 @@ jobs:
       - name: Syntax-check the ebuilds
         run: |
           for e in packaging/overlay/app-admin/gest/*.ebuild; do bash -n "$e"; done
+
+  tui-test:
+    # The urwid frontend tests. urwid pulls in GLib (gi) via its event loop, so we
+    # give a venv access to the runner's apt-installed python3-gi (rather than
+    # compiling PyGObject) and add the pip-only deps on top.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install GLib introspection (system)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-gi gir1.2-glib-2.0
+
+      - name: Set up a venv that can see system python3-gi
+        run: |
+          python3 -m venv --system-site-packages .tuivenv
+          .tuivenv/bin/pip install --upgrade pip
+          .tuivenv/bin/pip install urwid dbus-next pytest pytest-asyncio
+
+      - name: Sanity-check the TUI stack imports
+        run: .tuivenv/bin/python -c "import gi; from gi.repository import GLib; import urwid, dbus_next; import gest.tui.screens.menu"
+
+      - name: Test (urwid frontend)
+        run: .tuivenv/bin/pytest tests/test_tui.py -q
