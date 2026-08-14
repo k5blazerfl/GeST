@@ -25,6 +25,12 @@ repos: ${GEST_OVERLAY} ${HEDE_OVERLAY}
 # genkernel can't compile ("prepare" target fails), so it can't be used here.
 boot/kernel: gentoo
 boot/kernel/gentoo/sources: sys-kernel/gentoo-sources
+# Bundle ALL kernel modules into the initramfs. Without this, genkernel's default
+# initramfs omits iso9660 (it ships squashfs/loop/sr_mod/cdrom but NOT iso9660),
+# so the initramfs can't mount the iso9660 CD to reach /image.squashfs — the live
+# medium is never found and boot drops to a rescue shell. --all-ramdisk-modules
+# guarantees iso9660 (and any storage/fs driver real hardware needs) is present.
+boot/kernel/gentoo/gk_kernargs: --all-ramdisk-modules
 
 # image: a squashfs root packed into a hybrid, UEFI-capable ISO
 livecd/type: generic-livecd
