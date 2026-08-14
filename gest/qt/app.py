@@ -113,15 +113,18 @@ def build_registry() -> Registry:
         logs,
         network,
         privilege,
+        repos,
         services,
         software,
+        sshd,
         sysctl,
         users,
+        wifi,
     )
 
     registry = Registry()
-    for mod in (hardware, disk, software, services, clock, bootloader, users, sysctl, eselect,
-                envd, privilege, logs, firewall, network, appearance):
+    for mod in (hardware, disk, software, repos, services, clock, bootloader, users, sysctl,
+                eselect, envd, privilege, logs, firewall, network, wifi, sshd, appearance):
         registry.register(mod.DESCRIPTOR, mod.factory)
     return registry
 
