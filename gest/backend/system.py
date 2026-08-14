@@ -127,7 +127,7 @@ class SystemService:
         if not hostname_core.valid_hostname(name):
             raise ValueError("invalid hostname")
         path = rootpath.resolve(root, "/etc/conf.d/hostname")
-        _atomic_write(path, f'hostname="{name}"\n')
+        _atomic_write(path, hostname_core.render_conf(name))
         if rootpath.is_target(root):
             return True, f"hostname written to {path} (target root; not set live)"
         proc = subprocess.run([_HOSTNAME_CMD, name], capture_output=True, text=True)

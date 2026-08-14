@@ -1,0 +1,14 @@
+<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN" "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
+<!-- gestd module catalog (the top-level /org/gentoo/gest/core object). A Control
+     Center calls List() once at startup to discover every module — {id, title,
+     category, icon, path, interface} — and builds its sidebar from that, then
+     talks to each module's own object. Register QList<QVariantMap> once to consume
+     the aa{sv} return (see the README type-mapping table). -->
+<node>
+  <interface name="org.gentoo.gest.core1.Catalog">
+    <method name="List">
+      <arg direction="out" type="aa{sv}"/>
+      <annotation name="org.qtproject.QtDBus.QtTypeName.Out0" value="QList&lt;QVariantMap&gt;"/>
+    </method>
+  </interface>
+</node>

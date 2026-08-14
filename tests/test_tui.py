@@ -1,7 +1,8 @@
 """Headless tests for the urwid frontend (drive widgets directly).
 
-These need urwid + a live Portage news source, so they run in the full local
-suite rather than the dependency-light CI subset.
+These need the TUI stack (urwid, which pulls in pygobject/GLib) plus dbus-next,
+so CI runs them in a dedicated ``tui`` job with those deps rather than in the
+dependency-light pure-core subset.
 """
 
 import asyncio
@@ -20,7 +21,7 @@ from gest.tui.screens.eselect import EselectScreen
 from gest.tui.screens.hardware import HardwareScreen
 from gest.tui.screens.logs import LogsScreen
 from gest.tui.screens.makeconf import MakeconfScreen
-from gest.tui.screens.menu import MenuScreen
+from gest.tui.screens.menu import CATEGORIES, MenuScreen
 from gest.tui.screens.network import NetworkScreen
 from gest.tui.screens.news import NewsScreen
 from gest.tui.screens.repos import ReposScreen
@@ -34,6 +35,22 @@ _SIZE = (100, 30)
 
 def _render(widget) -> str:
     return "\n".join(row.decode() for row in widget.render(_SIZE, focus=True).text)
+
+
+def _focus_module(menu, category: str, module_key: str) -> None:
+    """Drive the menu to (category, module_key) by name/key rather than by
+    hardcoded ``down`` counts, leaving the cursor on that module ready for an
+    ``enter`` launch. Computing the offsets from ``CATEGORIES`` keeps these
+    tests from rotting whenever a category gains or loses a row.
+    """
+    cat_idx = next(i for i, (name, _mods) in enumerate(CATEGORIES) if name == category)
+    for _ in range(cat_idx):
+        menu.keypress(_SIZE, "down")
+    menu.keypress(_SIZE, "enter")  # focus the modules pane (lands on the first module)
+    _name, mods = CATEGORIES[cat_idx]
+    mod_idx = next(i for i, (key, _lbl, _impl) in enumerate(mods) if key == module_key)
+    for _ in range(mod_idx):
+        menu.keypress(_SIZE, "down")
 
 
 def test_function_bar_renders_keys():
@@ -88,9 +105,7 @@ def test_menu_launches_news():
     app = App()
     menu = MenuScreen(app)
     app._stack.append(menu)
-    menu.keypress(_SIZE, "enter")        # focus the modules pane (Software)
-    for _ in range(6):
-        menu.keypress(_SIZE, "down")     # to "Portage News"
+    _focus_module(menu, "Software", "news")
     menu.keypress(_SIZE, "enter")        # launch
     assert isinstance(app._stack[-1], NewsScreen)
 
@@ -401,11 +416,7 @@ def test_menu_launches_services():
     app = App()
     menu = MenuScreen(app)
     app._stack.append(menu)
-    menu.keypress(_SIZE, "down")   # System
-    menu.keypress(_SIZE, "down")   # Hardware
-    menu.keypress(_SIZE, "down")   # Storage
-    menu.keypress(_SIZE, "down")   # Services
-    menu.keypress(_SIZE, "enter")  # focus modules
+    _focus_module(menu, "Services", "services")
     menu.keypress(_SIZE, "enter")  # launch Services
     assert isinstance(app._stack[-1], ServicesScreen)
 
@@ -509,8 +520,7 @@ def test_menu_launches_hostname():
     app = App()
     menu = MenuScreen(app)
     app._stack.append(menu)
-    menu.keypress(_SIZE, "down")   # System category
-    menu.keypress(_SIZE, "enter")  # focus modules (Hostname first)
+    _focus_module(menu, "System", "hostname")
     menu.keypress(_SIZE, "enter")  # launch Hostname
     assert isinstance(app._stack[-1], HostnameScreen)
 
@@ -690,6 +700,7 @@ def test_software_refreshes_only_flagged_non_main_repos_on_open(monkeypatch):
     assert _FakeSoftwareBackend.synced == [["guru"]]
 
 
+@pytest.mark.needs_live_system
 def test_software_loads_marks_and_clears():
     app = App()
     scr = _software(app)
@@ -1033,6 +1044,7 @@ def test_proposal_esc_stops_timer_then_cancels(monkeypatch):
     assert app._stack[-1] is caller
 
 
+@pytest.mark.needs_live_system
 def test_proposal_countdown_auto_applies(monkeypatch):
     from gest.tui.screens.accept import AcceptRunScreen
     monkeypatch.setattr("gest.core.prefs.timer_seconds", lambda *a, **k: 1)  # fast
@@ -1043,6 +1055,7 @@ def test_proposal_countdown_auto_applies(monkeypatch):
     assert isinstance(app._stack[-1], AcceptRunScreen)     # applied on its own
 
 
+@pytest.mark.needs_live_system
 def test_proposal_immediate_mode_applies_without_timer(monkeypatch):
     from gest.tui.screens.accept import AcceptRunScreen
     app = App()
@@ -1078,6 +1091,7 @@ def test_proposal_loading_manual_opens_review(monkeypatch):
     assert not app._stack[-1]._timer_running        # manual → no countdown re-armed
 
 
+@pytest.mark.needs_live_system
 def test_proposal_loading_immediate_applies_without_review(monkeypatch):
     from gest.tui.screens.accept import AcceptRunScreen
     from gest.tui.screens.proposal import ProposalScreen
@@ -1099,6 +1113,7 @@ def test_proposal_loading_timer_counts_down_on_screen(monkeypatch):
     assert ("Enter", "Apply now") in scr._footer_context()
 
 
+@pytest.mark.needs_live_system
 def test_proposal_loading_timer_auto_applies(monkeypatch):
     from gest.tui.screens.accept import AcceptRunScreen
     monkeypatch.setattr("gest.core.prefs.timer_seconds", lambda *a, **k: 1)  # fast
@@ -1441,13 +1456,35 @@ def test_menu_launches_software():
     app = App()
     menu = MenuScreen(app)
     app._stack.append(menu)
-    menu.keypress(_SIZE, "enter")  # Software category -> modules (Software Mgmt first)
+    _focus_module(menu, "Software", "software")
     menu.keypress(_SIZE, "enter")  # launch (async: clears the package lock first)
     # the fullscreen loading screen opens first, then hands off to SoftwareScreen
     _pump(app, lambda: isinstance(app._stack[-1], SoftwareLoadingScreen), ticks=200)
     assert isinstance(app._stack[-1], SoftwareLoadingScreen)
     _pump(app, lambda: isinstance(app._stack[-1], SoftwareScreen), ticks=400)
     assert isinstance(app._stack[-1], SoftwareScreen)
+
+
+def test_software_sort_by_repo_reorders_and_tags():
+    # Hermetic: fill the table with fixed data (no live Portage query), then flip
+    # the sort selector and check the rows group by repository.
+    app = App()
+    scr = SoftwareScreen(app)
+    scr._fill([("a/a", "x"), ("b/b", "y"), ("c/c", "z")],
+              ["a/a", "b/b", "c/c"], [True, True, True],
+              repos=["gest", "gentoo", "gest"])
+    assert scr._cps == ["a/a", "b/b", "c/c"]          # default sort: by name (cp)
+    scr._on_sort_pick("sort", "repo")
+    assert scr._cps == ["b/b", "a/a", "c/c"]          # gentoo first, then gest by cp
+    assert scr._pkg_repos == ["gentoo", "gest", "gest"]
+    row0 = "".join(str(p) for p in _flatten(scr._row_text(0, scr._cps[0], scr._summaries[0])))
+    assert "::gentoo" in row0                          # repo tag shown in repo mode
+    scr._on_sort_pick("sort", "name")
+    assert scr._cps == ["a/a", "b/b", "c/c"]          # name order restored
+
+
+def _flatten(markup):
+    return markup if isinstance(markup, list) else [markup]
 
 
 def test_software_loading_screen_shows_steps_and_hands_off():
@@ -1519,6 +1556,7 @@ def test_users_footer_changes_per_tab():
     assert any(lbl == "Activate" for _k, lbl in scr._footer_context())
 
 
+@pytest.mark.needs_live_system
 def test_eselect_lists_modules_and_targets():
     app = App()
     scr = EselectScreen(app)
@@ -1538,10 +1576,7 @@ def test_menu_launches_eselect():
     app = App()
     menu = MenuScreen(app)
     app._stack.append(menu)
-    menu.keypress(_SIZE, "down")   # System category
-    menu.keypress(_SIZE, "enter")  # focus modules
-    for _ in range(3):
-        menu.keypress(_SIZE, "down")  # hostname/timezone/locale -> eselect (4th)
+    _focus_module(menu, "System", "eselect")
     menu.keypress(_SIZE, "enter")
     assert isinstance(app._stack[-1], EselectScreen)
 
@@ -1566,13 +1601,12 @@ def test_menu_launches_hardware():
     app = App()
     menu = MenuScreen(app)
     app._stack.append(menu)
-    menu.keypress(_SIZE, "down")   # System
-    menu.keypress(_SIZE, "down")   # Hardware
-    menu.keypress(_SIZE, "enter")  # focus modules
+    _focus_module(menu, "Hardware", "hardware")
     menu.keypress(_SIZE, "enter")  # launch the single module
     assert isinstance(app._stack[-1], HardwareScreen)
 
 
+@pytest.mark.needs_live_system
 def test_disk_lists_devices_and_fstab():
     app = App()
     scr = DiskScreen(app)
@@ -1583,6 +1617,7 @@ def test_disk_lists_devices_and_fstab():
     assert "Block Devices" in out and "/etc/fstab" in out
 
 
+@pytest.mark.needs_live_system
 def test_disk_tab_switches_panes_and_arrows_stay():
     app = App()
     scr = DiskScreen(app)
@@ -1604,10 +1639,7 @@ def test_menu_launches_disk():
     app = App()
     menu = MenuScreen(app)
     app._stack.append(menu)
-    menu.keypress(_SIZE, "down")   # System
-    menu.keypress(_SIZE, "down")   # Hardware
-    menu.keypress(_SIZE, "down")   # Storage
-    menu.keypress(_SIZE, "enter")  # focus modules
+    _focus_module(menu, "Storage", "disk")
     menu.keypress(_SIZE, "enter")  # launch Disks & Mounts
     assert isinstance(app._stack[-1], DiskScreen)
 
@@ -1626,9 +1658,7 @@ def test_menu_launches_logs():
     app = App()
     menu = MenuScreen(app)
     app._stack.append(menu)
-    for _ in range(7):             # -> Miscellaneous (8th category)
-        menu.keypress(_SIZE, "down")
-    menu.keypress(_SIZE, "enter")  # focus modules
+    _focus_module(menu, "Miscellaneous", "logs")
     menu.keypress(_SIZE, "enter")  # launch System Logs
     assert isinstance(app._stack[-1], LogsScreen)
 
@@ -1646,10 +1676,7 @@ def test_menu_launches_datetime():
     app = App()
     menu = MenuScreen(app)
     app._stack.append(menu)
-    menu.keypress(_SIZE, "down")   # System category
-    menu.keypress(_SIZE, "enter")  # focus modules
-    for _ in range(6):             # -> datetime (7th System module)
-        menu.keypress(_SIZE, "down")
+    _focus_module(menu, "System", "datetime")
     menu.keypress(_SIZE, "enter")
     assert isinstance(app._stack[-1], DateTimeScreen)
 
@@ -1667,10 +1694,7 @@ def test_menu_launches_bootloader():
     app = App()
     menu = MenuScreen(app)
     app._stack.append(menu)
-    menu.keypress(_SIZE, "down")   # System category
-    menu.keypress(_SIZE, "enter")  # focus modules
-    for _ in range(4):
-        menu.keypress(_SIZE, "down")  # hostname/timezone/locale/eselect -> bootloader (5th)
+    _focus_module(menu, "System", "bootloader")
     menu.keypress(_SIZE, "enter")
     assert isinstance(app._stack[-1], BootloaderScreen)
 
@@ -1707,10 +1731,7 @@ def test_menu_launches_makeconf():
     app = App()
     menu = MenuScreen(app)
     app._stack.append(menu)
-    menu.keypress(_SIZE, "down")   # System category
-    menu.keypress(_SIZE, "enter")  # focus modules
-    for _ in range(5):
-        menu.keypress(_SIZE, "down")  # -> makeconf (6th System module)
+    _focus_module(menu, "System", "makeconf")
     menu.keypress(_SIZE, "enter")
     assert isinstance(app._stack[-1], MakeconfScreen)
 
@@ -1736,6 +1757,7 @@ def test_software_menu_bar_opens_and_selects():
     assert isinstance(app._stack[-1], NewsScreen)
 
 
+@pytest.mark.needs_live_system
 def test_repos_lists_enabled_and_marks_main():
     app = App()
     scr = ReposScreen(app)
@@ -1779,6 +1801,7 @@ def _focus_main(scr):
     return None
 
 
+@pytest.mark.needs_live_system
 def test_repos_mirror_opens_only_for_main_repo():
     from gest.tui.screens.mirrors import MirrorScreen
     app = App()
@@ -1965,6 +1988,7 @@ def test_repos_tab_reaches_action_buttons_and_activates():
     assert app._stack[-1] is base
 
 
+@pytest.mark.needs_live_system
 def test_repos_arrows_stay_in_list():
     app = App()
     scr = ReposScreen(app)
@@ -2602,6 +2626,7 @@ def test_accept_run_screen_tracks_install_and_remove():
     assert scr._done
 
 
+@pytest.mark.needs_live_system
 def test_accept_removal_hands_straight_to_cleanup_when_orphans(monkeypatch):
     from gest.core.software.cleanup import CleanupPlan, Orphan
     from gest.tui.screens import accept as accept_mod
@@ -2621,6 +2646,7 @@ def test_accept_removal_hands_straight_to_cleanup_when_orphans(monkeypatch):
     assert "orphanlib" in _render(top)
 
 
+@pytest.mark.needs_live_system
 def test_accept_removal_shows_all_clear_when_no_orphans(monkeypatch):
     from gest.core.software.cleanup import CleanupPlan
     from gest.tui.screens import accept as accept_mod
@@ -2834,9 +2860,7 @@ def test_menu_launches_repos():
     app = App()
     menu = MenuScreen(app)
     app._stack.append(menu)
-    menu.keypress(_SIZE, "enter")          # Software category, focus modules
-    menu.keypress(_SIZE, "down")           # Software Management -> World & Package Sets
-    menu.keypress(_SIZE, "down")           # -> Software Repositories
+    _focus_module(menu, "Software", "repositories")
     menu.keypress(_SIZE, "enter")          # async: clears the package lock first
     _pump(app, lambda: isinstance(app._stack[-1], ReposScreen), ticks=200)
     assert isinstance(app._stack[-1], ReposScreen)

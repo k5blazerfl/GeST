@@ -1,0 +1,10 @@
+
+  GeST Gentoo installer — Apple Silicon (Asahi) live image.
+
+  Run:   gest      →   "Install Gentoo"
+
+  This live USB booted via the machine's installed m1n1 + U-Boot chain. Note:
+  GeST's installer partitions/unpacks/configures the target, but Apple-Silicon
+  boot setup (the Asahi kernel + `update-m1n1` packing the ESP boot object) is
+  not yet automated by GeST — finish that by hand in the target chroot per the
+  Gentoo Asahi guide. See packaging/livecd/README.md.

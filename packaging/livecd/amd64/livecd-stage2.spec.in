@@ -1,0 +1,30 @@
+# catalyst livecd-stage2 for the GeST amd64 installer image (TEMPLATE).
+#
+# build.sh renders this to build/livecd-stage2.spec (substituting ${VARS} from
+# config.env). Stage 2 takes livecd-stage1's build root, adds a kernel +
+# bootloader, runs the fsscript (autologin + auto-launch GeST), and packs a
+# hybrid ISO (BIOS + UEFI) that boots straight into the installer.
+
+subarch: amd64
+version_stamp: gest-${TIMESTAMP}
+target: livecd-stage2
+rel_type: default
+profile: ${PROFILE}
+snapshot: ${SNAPSHOT}
+source_subpath: default/livecd-stage1-amd64-gest-${TIMESTAMP}
+
+# kernel — gentoo-kernel-bin keeps the build fast (prebuilt); swap to
+# sys-kernel/gentoo-sources + genkernel for a from-source kernel.
+boot/kernel: gentoo
+boot/kernel/gentoo/sources: sys-kernel/gentoo-kernel-bin
+
+# image: a squashfs root packed into a hybrid, UEFI-capable ISO
+livecd/type: generic-livecd
+livecd/fstype: squashfs
+livecd/iso: gest-installer-amd64-${TIMESTAMP}.iso
+livecd/volid: GEST_INSTALLER
+livecd/motd: ${MOTD}
+
+# Run inside the stage2 chroot after packages install: autologin root on tty1,
+# launch `gest` on login, and enable dbus so the GeST backend can bus-activate.
+livecd/fsscript: ${FSSCRIPT}

@@ -13,7 +13,7 @@ run time, so a plan is safe to log, diff and snapshot.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from gest.core.bootloader.install import InstallConfig
 from gest.core.disk import mount as disk_mount
@@ -78,6 +78,9 @@ class InstallSelections:
     # secret + toggles
     root_password: str = ""           # in-memory only; never in the plan
     binary_pref: bool = True          # --getbinpkg for @world
+    # opt-in day-2 modules to set up during install (sshd/firewall/sudo/sysctl);
+    # empty by default. See registry.TIER2_MODULES.
+    tier2: set[str] = field(default_factory=set)
 
 
 def resolve_stage3(variant: Stage3Variant, *, mirror: str = index.MIRROR) -> Stage3Selection:
@@ -185,4 +188,5 @@ def assemble_plan(sel: InstallSelections, stage3: Stage3Selection) -> InstallPla
         user=user,
         network=network,
         binary_pref=sel.binary_pref,
+        tier2=frozenset(sel.tier2),
     )

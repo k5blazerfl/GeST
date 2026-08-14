@@ -129,12 +129,41 @@ def test_registry_marker_keys():
     assert keyed == _MARKER_KEYS
 
 
-def test_tier2_default_empty_but_requesting_one_raises():
+def test_tier2_default_empty():
     assert len(build_registry(_plan())) == 18            # rows 1-18; 2 folded, 20 in finally
+
+
+def _plan_tier2(*keys):
     plan = _plan()
-    object.__setattr__(plan, "tier2", frozenset({"sshd"}))
-    with pytest.raises(ValueError, match="tier-2"):
-        build_registry(plan)
+    object.__setattr__(plan, "tier2", frozenset(keys))
+    return plan
+
+
+def test_tier2_expands_selected_modules_in_order():
+    from gest.core.install.registry import TIER2_MODULES, _tier2_steps
+    assert _tier2_steps(_plan()) == []                   # empty by default
+    labels = [s.label for s in _tier2_steps(_plan_tier2("sshd", "sysctl"))]
+    assert labels == ["Emerge openssh", "Configure sshd", "Enable sshd at boot",
+                      "Configure sysctl"]
+    # module order follows TIER2_MODULES regardless of set iteration order
+    assert TIER2_MODULES == ("sshd", "firewall", "sudo", "sysctl")
+
+
+def test_tier2_step_markers_and_boundary():
+    from gest.core.install.registry import _tier2_steps
+    steps = {s.label: s for s in _tier2_steps(_plan_tier2("sshd", "firewall", "sudo", "sysctl"))}
+    # emerges + service-enables run in the chroot; config writes are host-side seam
+    assert steps["Emerge openssh"].chroot and steps["Enable sshd at boot"].chroot
+    assert steps["Configure sshd"].target_aware and not steps["Configure sshd"].chroot
+    assert steps["Configure sysctl"].target_aware
+    # the chroot emerges are marker-gated (no cheap probe)
+    assert steps["Emerge nftables"].key == "tier2_nftables"
+
+
+def test_tier2_unknown_module_raises():
+    from gest.core.install.registry import _tier2_steps
+    with pytest.raises(ValueError, match="unknown tier-2"):
+        _tier2_steps(_plan_tier2("bogus"))
 
 
 # --- argv / chroot-boundary over a FakeExecutor -----------------------------

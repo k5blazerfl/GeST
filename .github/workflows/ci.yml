@@ -27,9 +27,10 @@ jobs:
       - name: Build the package
         run: python -m build
 
-      # Only the pure, dependency-light tests run on CI. The reader/TUI tests
-      # need a live Portage DB, PyGObject, and Textual, which aren't available
-      # on a stock Ubuntu runner — those are validated on the Gentoo host.
+      # Only the pure, dependency-light tests run here. The urwid frontend tests
+      # (test_tui) and the reader tests import the Portage Python API and pull in
+      # PyGObject/GLib (via urwid), neither available on a stock Ubuntu runner —
+      # those are validated on the Gentoo host (or a Gentoo-container job).
       - name: Test (CI-safe subset)
         run: |
           pytest tests/test_news.py tests/test_preview.py \
@@ -48,8 +49,66 @@ jobs:
                  tests/test_bootloader_install.py tests/test_kernel_build.py \
                  tests/test_stage3.py tests/test_chroot.py tests/test_install_engine.py \
                  tests/test_install_registry.py tests/test_install_bootable.py \
-                 tests/test_install_state.py tests/test_install_assemble.py -q
+                 tests/test_install_state.py tests/test_install_assemble.py \
+                 tests/test_install_netcheck.py tests/test_software_sort.py tests/test_coreservice_hostname.py tests/test_coreservice_software.py tests/test_coreservice_services.py tests/test_coreservice_users.py tests/test_coreservice_network.py tests/test_coreservice_disk.py tests/test_coreservice_firewall.py tests/test_coreservice_localization.py tests/test_coreservice_sysctl.py tests/test_coreservice_catalog.py -q
 
       - name: Syntax-check the ebuilds
         run: |
           for e in packaging/overlay/app-admin/gest/*.ebuild; do bash -n "$e"; done
+
+  tui-test:
+    # test_tui imports the Portage Python API and pulls in PyGObject/GLib (via
+    # urwid), neither of which exists on a stock Ubuntu runner. Run it in a Gentoo
+    # container and pull the deps from the official binary host (fast, no compile).
+    runs-on: ubuntu-latest
+    container:
+      image: gentoo/stage3:latest
+      options: --user root
+    steps:
+      - name: Portage tree, binhost and TUI deps
+        run: |
+          set -eux
+          emerge-webrsync
+          mkdir -p /etc/portage/binrepos.conf
+          printf '[gentoobinhost]\npriority = 1\nsync-uri = https://distfiles.gentoo.org/releases/amd64/binpackages/23.0/x86-64/\n' \
+            > /etc/portage/binrepos.conf/gentoobinhost.conf
+          # skip binpkg signature enforcement in CI (keeps the deps step simple)
+          echo 'FEATURES="-binpkg-request-signature"' >> /etc/portage/make.conf
+          emerge --getbinpkg --quiet-build=y \
+            dev-vcs/git dev-python/urwid dev-python/dbus-next dev-python/pygobject \
+            dev-python/pytest dev-python/pytest-asyncio
+
+      - uses: actions/checkout@v4
+
+      - name: Test the urwid frontend
+        # The `needs_live_system` tests query real disks / installed packages /
+        # repos / @world updates, which a bare stage3 container lacks — those run
+        # on the Gentoo host. Everything else (navigation, help, widget logic) runs
+        # here, which is what catches menu-navigation rot.
+        run: |
+          python3 -c "import portage, gi; from gi.repository import GLib; import urwid, dbus_next; import gest.tui.screens.menu"
+          python3 -m pytest tests/test_tui.py -m "not needs_live_system" -q
+
+  cpp-reference:
+    # Build the C++/Qt reference client (examples/hede-qt) so the qdbusxml2cpp path
+    # — the exact way HeDE's C++/Qt Control Center consumes gestd — can't rot. The
+    # CMake target generates and compiles a typed proxy for *every* interface XML
+    # (Hostname/System/Software/Catalog), so a broken template — a bad D-Bus type or
+    # a missing QtTypeName annotation on a container out-arg — fails this build even
+    # before a view wires it up. No display and no gestd needed: this only compiles.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Qt6 + build tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake g++ qt6-base-dev qt6-base-dev-tools libgl1-mesa-dev
+
+      - name: Build the reference client
+        run: |
+          set -eux
+          cmake -S examples/hede-qt -B examples/hede-qt/build
+          cmake --build examples/hede-qt/build
+          test -x examples/hede-qt/build/gest-hede-ref

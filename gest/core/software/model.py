@@ -63,6 +63,7 @@ class SearchResult:
     best_version: str
     description: str = ""
     installed_version: str | None = None
+    repository: str = ""          # repo the shown version comes from (may be "")
 
     @property
     def installed(self) -> bool:
