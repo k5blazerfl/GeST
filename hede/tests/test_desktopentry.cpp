@@ -24,6 +24,36 @@ private slots:
         QCOMPARE(e.id, QStringLiteral("editor"));
     }
 
+    void parsesJumpListActions() {
+        const QString text = QStringLiteral("[Desktop Entry]\n"
+                                            "Type=Application\n"
+                                            "Name=Browser\n"
+                                            "Exec=browser %U\n"
+                                            "Actions=new-window;private;\n"
+                                            "\n"
+                                            "[Desktop Action new-window]\n"
+                                            "Name=New Window\n"
+                                            "Exec=browser --new-window\n"
+                                            "\n"
+                                            "[Desktop Action private]\n"
+                                            "Name=New Private Window\n"
+                                            "Exec=browser --private %u\n");
+        const helm::DesktopEntry e = helm::parseDesktopEntry(text, QStringLiteral("browser"));
+        QCOMPARE(e.name, QStringLiteral("Browser"));
+        QCOMPARE(e.actions.size(), 2);
+        QCOMPARE(e.actions[0].id, QStringLiteral("new-window"));
+        QCOMPARE(e.actions[0].name, QStringLiteral("New Window"));
+        QCOMPARE(e.actions[1].name, QStringLiteral("New Private Window"));
+        // field codes stripped in an action's exec too
+        QCOMPARE(helm::commandArgv(e.actions[1].exec),
+                 (QStringList{QStringLiteral("browser"), QStringLiteral("--private")}));
+    }
+
+    void noActionsWhenAbsent() {
+        const QString text = QStringLiteral("[Desktop Entry]\nType=Application\nName=X\nExec=x\n");
+        QCOMPARE(helm::parseDesktopEntry(text, QStringLiteral("x")).actions.size(), 0);
+    }
+
     void fieldCodesStripped() {
         helm::DesktopEntry e;
         e.exec = QStringLiteral("editor --flag %U %i");

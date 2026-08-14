@@ -21,9 +21,13 @@ class LauncherMenu : public QWidget {
   protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
 
+  private slots:
+    void showActions(const QPoint &pos); // right-click → jump-list actions
+
   private:
     void refilter(const QString &query);
     void launch(QListWidgetItem *item);
+    void run(const QString &exec);
 
     QLineEdit *m_search;
     QListWidget *m_list;
