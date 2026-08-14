@@ -1,11 +1,11 @@
 cmake_minimum_required(VERSION 3.21)
-project(hede VERSION 0.0.0 LANGUAGES CXX)
+project(hede VERSION 0.0.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets Test)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Test WaylandClient)
 find_package(LayerShellQt REQUIRED)
 
 qt_standard_project_setup()
@@ -14,6 +14,7 @@ enable_testing()
 add_subdirectory(src/common)
 add_subdirectory(src/apps)
 add_subdirectory(src/wayland)
+add_subdirectory(src/taskbar)
 add_subdirectory(src/panel)
 add_subdirectory(src/menu)
 add_subdirectory(tests)

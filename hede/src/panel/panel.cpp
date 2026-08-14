@@ -3,6 +3,7 @@
 #include "clock.h"
 #include "config.h"
 #include "launcherbutton.h"
+#include "taskbarwidget.h"
 
 #include <QCoreApplication>
 #include <QFileInfo>
@@ -31,7 +32,7 @@ Panel::Panel(QWidget *parent) : QWidget(parent) {
     layout->setSpacing(6);
 
     layout->addWidget(new LauncherButton(tr("≡ Apps"), resolveMenuCommand(), this));
-    layout->addStretch(1); // window list goes here next
+    layout->addWidget(new TaskbarWidget(this), 1); // window list fills the middle
     layout->addWidget(new Clock(this));
 }
 

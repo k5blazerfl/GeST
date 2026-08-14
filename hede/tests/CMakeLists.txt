@@ -10,6 +10,10 @@ qt_add_executable(test-desktopentry test_desktopentry.cpp)
 target_link_libraries(test-desktopentry PRIVATE Qt6::Test helm-apps)
 add_test(NAME desktopentry COMMAND test-desktopentry)
 
+qt_add_executable(test-toplevelmodel test_toplevelmodel.cpp)
+target_link_libraries(test-toplevelmodel PRIVATE Qt6::Test helm-taskbar)
+add_test(NAME toplevelmodel COMMAND test-toplevelmodel)
+
 # Headless integration: boot labwc (wlroots headless backend) and assert
 # helm-panel binds a layer-shell surface. Skips (77) when labwc is absent.
 add_test(NAME smoke-headless

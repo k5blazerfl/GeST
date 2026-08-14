@@ -12,14 +12,16 @@ After Phase 1, HeDE is a real (if plain) desktop you could live in.
 
 Ordered by self-containment / testability — build top-down:
 
-1. **`helm-menu` — the launcher (Start menu).** *[this increment]* Reads
-   freedesktop `.desktop` files from the XDG dirs, searchable, launches apps.
-   Pure core (parse/scan/filter/argv) → fully unit-tested; a layer-shell popup UI.
-   Opened by the panel's Start button.
-2. **Window-list taskbar.** A panel applet over
-   `wlr-foreign-toplevel-management-v1`: one button per open toplevel, click to
-   focus/minimize, shows title + app-id. This is the defining Windows-taskbar
-   feature; it fills the stretch the panel already reserves.
+1. **`helm-menu` — the launcher (Start menu).** *[done]* Reads freedesktop
+   `.desktop` files from the XDG dirs, searchable, launches apps. Pure core
+   (parse/scan/filter/argv) → fully unit-tested; a layer-shell popup UI. Opened
+   by the panel's Start button.
+2. **Window-list taskbar.** *[done]* A panel applet (`src/taskbar`) over
+   `wlr-foreign-toplevel-management-v1` (vendored XML → `qtwaylandscanner` +
+   `QWaylandClientExtension`): one button per open toplevel, left-click
+   activates or minimizes (if already active), middle-click closes, active
+   window shown checked. Pure `Toplevel` model (upsert/remove/label) unit-tested;
+   the Wayland glue is thin. Fills the stretch the panel reserved.
 3. **`helm-notifyd` — notifications.** A `org.freedesktop.Notifications` D-Bus
    service rendering bottom-right toasts + a small history. Model (queue/urgency)
    unit-tested; toasts are layer-shell surfaces.
