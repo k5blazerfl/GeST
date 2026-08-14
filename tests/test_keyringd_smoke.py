@@ -15,9 +15,9 @@ It is excluded from the default CI subset and skips unless ``dbus_next``,
 
 from __future__ import annotations
 
+import asyncio
 import os
 import shutil
-import subprocess
 
 import pytest
 
@@ -125,11 +125,15 @@ async def test_secret_tool_interop(tmp_path):
         client.disconnect()
 
     try:
-        result = subprocess.run(
-            ["secret-tool", "lookup", "service", "smoke-st"],
-            capture_output=True, text=True, timeout=20,
+        # An ASYNC subprocess: the daemon lives on this event loop, so a blocking
+        # subprocess.run would deadlock (the loop can't answer secret-tool while
+        # it waits). Awaiting keeps the loop servicing the daemon.
+        proc = await asyncio.create_subprocess_exec(
+            "secret-tool", "lookup", "service", "smoke-st",
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         )
-        assert result.returncode == 0, result.stderr
-        assert "via-dbus" in result.stdout
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=20)
+        assert proc.returncode == 0, stderr.decode()
+        assert b"via-dbus" in stdout
     finally:
         daemon.disconnect()
