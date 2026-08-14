@@ -54,3 +54,32 @@ jobs:
       - name: Syntax-check the ebuilds
         run: |
           for e in packaging/overlay/app-admin/gest/*.ebuild; do bash -n "$e"; done
+
+  tui-test:
+    # test_tui imports the Portage Python API and pulls in PyGObject/GLib (via
+    # urwid), neither of which exists on a stock Ubuntu runner. Run it in a Gentoo
+    # container and pull the deps from the official binary host (fast, no compile).
+    runs-on: ubuntu-latest
+    container:
+      image: gentoo/stage3:latest
+      options: --user root
+    steps:
+      - name: Portage tree, binhost and TUI deps
+        run: |
+          set -eux
+          emerge-webrsync
+          mkdir -p /etc/portage/binrepos.conf
+          printf '[gentoobinhost]\npriority = 1\nsync-uri = https://distfiles.gentoo.org/releases/amd64/binpackages/23.0/x86-64/\n' \
+            > /etc/portage/binrepos.conf/gentoobinhost.conf
+          # skip binpkg signature enforcement in CI (keeps the deps step simple)
+          echo 'FEATURES="-binpkg-request-signature"' >> /etc/portage/make.conf
+          emerge --getbinpkg --quiet-build=y \
+            dev-vcs/git dev-python/urwid dev-python/dbus-next dev-python/pygobject \
+            dev-python/pytest dev-python/pytest-asyncio
+
+      - uses: actions/checkout@v4
+
+      - name: Test the urwid frontend
+        run: |
+          python3 -c "import portage, gi; from gi.repository import GLib; import urwid, dbus_next; import gest.tui.screens.menu"
+          python3 -m pytest tests/test_tui.py -q
