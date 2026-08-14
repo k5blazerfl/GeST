@@ -228,11 +228,11 @@ class VaultPayload:
 
 
 __all__ = [
+    "DEFAULT_ALIAS",
+    "DEFAULT_COLLECTION_LABEL",
     "FORMAT",
     "PAYLOAD_VERSION",
-    "DEFAULT_COLLECTION_LABEL",
-    "DEFAULT_ALIAS",
-    "Item",
     "Collection",
+    "Item",
     "VaultPayload",
 ]

@@ -225,4 +225,4 @@ def _aad(header: dict) -> bytes:
     return json.dumps(header, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
-__all__ = ["Vault", "KdfParams", "BadPassphrase", "DEFAULT_VAULT_PATH"]
+__all__ = ["DEFAULT_VAULT_PATH", "BadPassphrase", "KdfParams", "Vault"]

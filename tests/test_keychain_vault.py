@@ -13,8 +13,8 @@ import pytest
 
 pytest.importorskip("cryptography")
 
-from gest.core.keychain.crypto import KdfParams  # noqa: E402
-from gest.core.keychain.errors import (  # noqa: E402
+from gest.core.keychain.crypto import KdfParams
+from gest.core.keychain.errors import (
     BadPassphrase,
     UnknownCollection,
     VaultCorrupt,
@@ -22,7 +22,7 @@ from gest.core.keychain.errors import (  # noqa: E402
     VaultLocked,
     VaultNotFound,
 )
-from gest.core.keychain.vault import Vault  # noqa: E402
+from gest.core.keychain.vault import Vault
 
 # Cheap KDF for tests: 1 pass, 8 KiB, 1 lane (Argon2id requires memory >= 8*lanes).
 CHEAP = dict(time_cost=1, memory_cost=8, parallelism=1)
