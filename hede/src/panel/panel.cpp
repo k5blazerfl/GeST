@@ -5,6 +5,7 @@
 #include "launcherbutton.h"
 #include "taskbarwidget.h"
 #include "traywidget.h"
+#include "updatepill.h"
 
 #include <QCoreApplication>
 #include <QFileInfo>
@@ -34,6 +35,7 @@ Panel::Panel(QWidget *parent) : QWidget(parent) {
 
     layout->addWidget(new LauncherButton(tr("≡ Apps"), resolveMenuCommand(), this));
     layout->addWidget(new TaskbarWidget(this), 1); // window list fills the middle
+    layout->addWidget(new UpdatePill(this));       // "N updates" (via GeST seam)
     layout->addWidget(new TrayWidget(this));       // system tray
     layout->addWidget(new Clock(this));
 }

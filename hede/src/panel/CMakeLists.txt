@@ -9,6 +9,7 @@ target_link_libraries(helm-panel PRIVATE
     helm-wayland
     helm-taskbar
     helm-tray
+    helm-coreclient
     helm-common
 )
 install(TARGETS helm-panel RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)

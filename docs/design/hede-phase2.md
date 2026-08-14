@@ -148,8 +148,12 @@ writes what into `$XDG_CONFIG_HOME/hede/hede.conf` (and friends):
 
 ## 9. Sub-milestones
 
-- **2a — the read seam** 🟢 `org.gentoo.gest.Shell` (session bus) over `core`
-  readers + HeDE `src/coreclient` stubs + indicator-only applets.
+- **2a — the read seam** 🟢 *[started]* `org.gentoo.gest.Shell` (session bus)
+  over `core` readers + HeDE `src/coreclient` stubs + indicator-only applets.
+  **Done: `UpdateCount`** — GeST `gest/shell` service (dbus-next, backed by
+  `core/software.list_upgradable`) + HeDE `CoreClient` + the panel **update
+  pill** (graceful when GeST is absent). Remaining datums (Network/Battery/
+  Brightness/Volume) follow the same shape.
 - **2b — polkit agent** 🟢 adopt lxqt-policykit in the session.
 - **2c — the module framework** 🔒 the embeddable module = widget + descriptor;
   `gest-settings` standalone shell.

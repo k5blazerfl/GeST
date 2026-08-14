@@ -26,6 +26,10 @@ qt_add_executable(test-snimodel test_snimodel.cpp)
 target_link_libraries(test-snimodel PRIVATE Qt6::Test helm-tray)
 add_test(NAME snimodel COMMAND test-snimodel)
 
+qt_add_executable(test-coreclient test_coreclient.cpp)
+target_link_libraries(test-coreclient PRIVATE Qt6::Test helm-coreclient)
+add_test(NAME coreclient COMMAND test-coreclient)
+
 # Headless integration: boot labwc (wlroots headless backend) and assert
 # helm-panel binds a layer-shell surface. Skips (77) when labwc is absent.
 add_test(NAME smoke-headless

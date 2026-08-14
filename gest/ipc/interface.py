@@ -12,6 +12,15 @@ BUS_NAME = "org.gentoo.gest"
 SOFTWARE_PATH = "/org/gentoo/gest/Software"
 SOFTWARE_IFACE = "org.gentoo.gest.Software"
 
+# Unprivileged **session-bus** read service for the desktop shell (HeDE). It
+# exposes read-only `core` data (e.g. the pending @world update count) plus
+# change signals, so the C++ shell can render indicators without re-implementing
+# `core`. Reads only — mutations still go through the polkit-gated *system*
+# backend above. (HeDE Phase 2, sub-milestone 2a.)
+SHELL_BUS_NAME = "org.gentoo.gest.Shell"
+SHELL_PATH = "/org/gentoo/gest/Shell"
+SHELL_IFACE = "org.gentoo.gest.Shell"
+
 # Object path + interface for the services (OpenRC/systemd) module.
 SERVICES_PATH = "/org/gentoo/gest/Services"
 SERVICES_IFACE = "org.gentoo.gest.Services"
