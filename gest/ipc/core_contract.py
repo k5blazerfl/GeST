@@ -70,3 +70,10 @@ SERVICES_CORE_IFACE = f"{_IFACE}.Services"
 # Creating/modifying/deleting is a WRITE — the polkit root backend's Users iface.
 USERS_CORE_PATH = "/org/gentoo/gest/core/Users"
 USERS_CORE_IFACE = f"{_IFACE}.Users"
+
+# --- Network module --------------------------------------------------------
+#   ListInterfaces()   -> aa{sv}  # {name, state, mac, addresses:as, up:b, loopback:b}
+#   GetConfig(iface:s) -> a{sv}   # netifrc: {iface, method, address, gateway}
+# Bringing links up/down / writing netifrc is a WRITE — the polkit root backend.
+NETWORK_CORE_PATH = "/org/gentoo/gest/core/Network"
+NETWORK_CORE_IFACE = f"{_IFACE}.Network"

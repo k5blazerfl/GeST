@@ -15,12 +15,14 @@ from dbus_next import BusType
 from dbus_next.aio import MessageBus
 
 from gest.coreservice.hostname import HostnameInterface
+from gest.coreservice.network import NetworkInterface
 from gest.coreservice.services import ServicesInterface
 from gest.coreservice.software import SoftwareInterface
 from gest.coreservice.users import UsersInterface
 from gest.ipc.core_contract import (
     CORE_BUS_NAME,
     HOSTNAME_CORE_PATH,
+    NETWORK_CORE_PATH,
     SERVICES_CORE_PATH,
     SOFTWARE_CORE_PATH,
     USERS_CORE_PATH,
@@ -32,6 +34,7 @@ _MODULES = [
     (SOFTWARE_CORE_PATH, SoftwareInterface),
     (SERVICES_CORE_PATH, ServicesInterface),
     (USERS_CORE_PATH, UsersInterface),
+    (NETWORK_CORE_PATH, NetworkInterface),
 ]
 
 
