@@ -5,6 +5,7 @@ skip on a host without it."""
 from __future__ import annotations
 
 import importlib.util
+from typing import NamedTuple
 
 import pytest
 
@@ -17,7 +18,14 @@ requires_crypto = pytest.mark.skipif(not _HAS_CRYPTO, reason="cryptography not i
 
 
 # ---- scripted IO -------------------------------------------------------
-def make_io(passphrases=(), secrets=()):
+class IOCtx(NamedTuple):
+    io: "cli.CliIO"
+    out: list[str]
+    err: list[str]
+    secret: dict[str, bytes]  # {"bytes": <accumulated stdout secret>}
+
+
+def make_io(passphrases=(), secrets=()) -> IOCtx:
     out: list[str] = []
     err: list[str] = []
     box = {"bytes": b""}
@@ -34,7 +42,7 @@ def make_io(passphrases=(), secrets=()):
         ask_passphrase=lambda prompt: next(pp),
         ask_secret=lambda prompt: next(sec),
     )
-    return io, out, err, box
+    return IOCtx(io, out, err, box)
 
 
 def cheap_vault_cls():
@@ -115,107 +123,99 @@ def test_init_add_search_get_roundtrip(tmp_path):
     path = str(tmp_path / "v.vault")
     vc = cheap_vault_cls()
 
-    io, out, err, _ = make_io(passphrases=["pw", "pw"])
-    assert cli.run(["--vault", path, "init"], io=io, vault_cls=vc) == 0
+    c = make_io(passphrases=["pw", "pw"])
+    assert cli.run(["--vault", path, "init"], io=c.io, vault_cls=vc) == 0
 
-    io, out, err, _ = make_io(passphrases=["pw"], secrets=["s3cr3t"])
+    c = make_io(passphrases=["pw"], secrets=["s3cr3t"])
     rc = cli.run(["--vault", path, "add", "default", "work rdp", "--attr", "host=pc"],
-                 io=io, vault_cls=vc)
+                 io=c.io, vault_cls=vc)
     assert rc == 0
-    item_id = out[-1]
+    item_id = c.out[-1]
 
-    io, out, err, _ = make_io(passphrases=["pw"])
-    assert cli.run(["--vault", path, "search", "--attr", "host=pc"], io=io, vault_cls=vc) == 0
-    assert any(item_id in line for line in out)
-    assert not any("s3cr3t" in line for line in out)  # search never prints secrets
+    c = make_io(passphrases=["pw"])
+    assert cli.run(["--vault", path, "search", "--attr", "host=pc"], io=c.io, vault_cls=vc) == 0
+    assert any(item_id in line for line in c.out)
+    assert not any("s3cr3t" in line for line in c.out)  # search never prints secrets
 
-    io, out, err, box = make_io(passphrases=["pw"])
-    assert cli.run(["--vault", path, "get", item_id], io=io, vault_cls=vc) == 0
-    assert box["bytes"] == b"s3cr3t"
+    c = make_io(passphrases=["pw"])
+    assert cli.run(["--vault", path, "get", item_id], io=c.io, vault_cls=vc) == 0
+    assert c.secret["bytes"] == b"s3cr3t"
 
 
 @requires_crypto
 def test_get_by_attribute(tmp_path):
     path = str(tmp_path / "v.vault")
     vc = cheap_vault_cls()
-    io, *_ = make_io(passphrases=["pw", "pw"])
-    cli.run(["--vault", path, "init"], io=io, vault_cls=vc)
-    io, *_ = make_io(passphrases=["pw"], secrets=["hunter2"])
-    cli.run(["--vault", path, "add", "default", "l", "--attr", "u=alice"], io=io, vault_cls=vc)
+    cli.run(["--vault", path, "init"], io=make_io(passphrases=["pw", "pw"]).io, vault_cls=vc)
+    cli.run(["--vault", path, "add", "default", "l", "--attr", "u=alice"],
+            io=make_io(passphrases=["pw"], secrets=["hunter2"]).io, vault_cls=vc)
 
-    io, out, err, box = make_io(passphrases=["pw"])
-    assert cli.run(["--vault", path, "get", "--attr", "u=alice"], io=io, vault_cls=vc) == 0
-    assert box["bytes"] == b"hunter2"
+    c = make_io(passphrases=["pw"])
+    assert cli.run(["--vault", path, "get", "--attr", "u=alice"], io=c.io, vault_cls=vc) == 0
+    assert c.secret["bytes"] == b"hunter2"
 
 
 @requires_crypto
 def test_get_ambiguous_attribute_errors(tmp_path):
     path = str(tmp_path / "v.vault")
     vc = cheap_vault_cls()
-    io, *_ = make_io(passphrases=["pw", "pw"])
-    cli.run(["--vault", path, "init"], io=io, vault_cls=vc)
+    cli.run(["--vault", path, "init"], io=make_io(passphrases=["pw", "pw"]).io, vault_cls=vc)
     for secret in ("one", "two"):
-        io, *_ = make_io(passphrases=["pw"], secrets=[secret])
-        cli.run(["--vault", path, "add", "default", "l", "--attr", "k=dup"], io=io, vault_cls=vc)
+        cli.run(["--vault", path, "add", "default", "l", "--attr", "k=dup"],
+                io=make_io(passphrases=["pw"], secrets=[secret]).io, vault_cls=vc)
 
-    io, out, err, box = make_io(passphrases=["pw"])
-    rc = cli.run(["--vault", path, "get", "--attr", "k=dup"], io=io, vault_cls=vc)
+    c = make_io(passphrases=["pw"])
+    rc = cli.run(["--vault", path, "get", "--attr", "k=dup"], io=c.io, vault_cls=vc)
     assert rc == 1
-    assert box["bytes"] == b""
-    assert any("match" in e for e in err)
+    assert c.secret["bytes"] == b""
+    assert any("match" in e for e in c.err)
 
 
 @requires_crypto
 def test_get_requires_exactly_one_selector(tmp_path):
     path = str(tmp_path / "v.vault")
     vc = cheap_vault_cls()
-    io, *_ = make_io(passphrases=["pw", "pw"])
-    cli.run(["--vault", path, "init"], io=io, vault_cls=vc)
+    cli.run(["--vault", path, "init"], io=make_io(passphrases=["pw", "pw"]).io, vault_cls=vc)
     # neither id nor --attr
-    io, out, err, _ = make_io(passphrases=["pw"])
-    assert cli.run(["--vault", path, "get"], io=io, vault_cls=vc) == 2
+    c = make_io(passphrases=["pw"])
+    assert cli.run(["--vault", path, "get"], io=c.io, vault_cls=vc) == 2
 
 
 @requires_crypto
 def test_wrong_passphrase_fails(tmp_path):
     path = str(tmp_path / "v.vault")
     vc = cheap_vault_cls()
-    io, *_ = make_io(passphrases=["right", "right"])
-    cli.run(["--vault", path, "init"], io=io, vault_cls=vc)
+    cli.run(["--vault", path, "init"], io=make_io(passphrases=["right", "right"]).io, vault_cls=vc)
 
-    io, out, err, _ = make_io(passphrases=["wrong"])
-    rc = cli.run(["--vault", path, "ls"], io=io, vault_cls=vc)
-    assert rc == 1
-    assert err  # an error was reported
+    c = make_io(passphrases=["wrong"])
+    assert cli.run(["--vault", path, "ls"], io=c.io, vault_cls=vc) == 1
+    assert c.err  # an error was reported
 
 
 @requires_crypto
 def test_init_refuses_to_clobber(tmp_path):
     path = str(tmp_path / "v.vault")
     vc = cheap_vault_cls()
-    io, *_ = make_io(passphrases=["pw", "pw"])
-    assert cli.run(["--vault", path, "init"], io=io, vault_cls=vc) == 0
-    io, out, err, _ = make_io(passphrases=["pw2", "pw2"])
-    assert cli.run(["--vault", path, "init"], io=io, vault_cls=vc) == 1
+    assert cli.run(["--vault", path, "init"],
+                   io=make_io(passphrases=["pw", "pw"]).io, vault_cls=vc) == 0
+    assert cli.run(["--vault", path, "init"],
+                   io=make_io(passphrases=["pw2", "pw2"]).io, vault_cls=vc) == 1
 
 
 @requires_crypto
 def test_rm_and_passwd(tmp_path):
     path = str(tmp_path / "v.vault")
     vc = cheap_vault_cls()
-    io, *_ = make_io(passphrases=["old", "old"])
-    cli.run(["--vault", path, "init"], io=io, vault_cls=vc)
-    io, out, *_ = make_io(passphrases=["old"], secrets=["x"])
-    cli.run(["--vault", path, "add", "default", "l", "--attr", "a=1"], io=io, vault_cls=vc)
-    item_id = out[-1]
+    cli.run(["--vault", path, "init"], io=make_io(passphrases=["old", "old"]).io, vault_cls=vc)
+    c = make_io(passphrases=["old"], secrets=["x"])
+    cli.run(["--vault", path, "add", "default", "l", "--attr", "a=1"], io=c.io, vault_cls=vc)
+    item_id = c.out[-1]
 
-    io, out, err, _ = make_io(passphrases=["old"])
-    assert cli.run(["--vault", path, "rm", item_id], io=io, vault_cls=vc) == 0
+    assert cli.run(["--vault", path, "rm", item_id],
+                   io=make_io(passphrases=["old"]).io, vault_cls=vc) == 0
 
     # change passphrase, then old must fail and new must work
-    io, *_ = make_io(passphrases=["old", "new", "new"])
-    assert cli.run(["--vault", path, "passwd"], io=io, vault_cls=vc) == 0
-    io, out, err, _ = make_io(passphrases=["old"])
-    assert cli.run(["--vault", path, "ls"], io=io, vault_cls=vc) == 1
-    io, out, err, _ = make_io(passphrases=["new"])
-    assert cli.run(["--vault", path, "ls"], io=io, vault_cls=vc) == 0
+    assert cli.run(["--vault", path, "passwd"],
+                   io=make_io(passphrases=["old", "new", "new"]).io, vault_cls=vc) == 0
+    assert cli.run(["--vault", path, "ls"], io=make_io(passphrases=["old"]).io, vault_cls=vc) == 1
+    assert cli.run(["--vault", path, "ls"], io=make_io(passphrases=["new"]).io, vault_cls=vc) == 0
