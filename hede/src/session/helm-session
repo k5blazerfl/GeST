@@ -1,16 +1,23 @@
 #!/bin/sh
-# helm-session — the HeDE session supervisor (Phase 0).
+# helm-session — the HeDE session supervisor.
 #
-# Sets the session environment and execs labwc with HeDE's shipped config,
-# whose autostart launches helm-panel. When labwc exits, the session ends.
-# (A small C++ binary with respawn/hardening replaces this later; a script is
-# the recommended first cut — see docs/design/hede-phase0.md §3.2.)
+# Sets the session environment and execs a Wayland compositor with HeDE's
+# shipped config; the compositor's autostart brings up the HeDE shell. When the
+# compositor exits, the session ends. Pick the compositor with HELM_COMPOSITOR
+# (default labwc; "wayfire" for the opt-in effects profile). See
+# docs/design/hede-phase0.md §3.2 and desktop-environment.md §4.
 
 export XDG_CURRENT_DESKTOP=HeDE
 export XDG_SESSION_TYPE=wayland
 export QT_QPA_PLATFORM=wayland
 
-# Allow an override for development; default to the installed config.
-: "${HELM_LABWC_CONFIG:=/usr/share/hede/labwc}"
+: "${HELM_COMPOSITOR:=labwc}"
 
-exec labwc -C "$HELM_LABWC_CONFIG"
+case "$HELM_COMPOSITOR" in
+wayfire)
+	exec wayfire -c "${HELM_WAYFIRE_CONFIG:-/usr/share/hede/wayfire/wayfire.ini}"
+	;;
+*)
+	exec labwc -C "${HELM_LABWC_CONFIG:-/usr/share/hede/labwc}"
+	;;
+esac

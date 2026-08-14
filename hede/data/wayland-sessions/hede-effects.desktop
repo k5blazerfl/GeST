@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=HeDE (Effects)
+Comment=Helm Desktop Environment with wayfire effects
+Exec=env HELM_COMPOSITOR=wayfire helm-session
+Type=Application
+DesktopNames=HeDE

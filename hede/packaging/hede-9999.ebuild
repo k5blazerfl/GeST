@@ -19,6 +19,7 @@ fi
 
 LICENSE="GPL-3"
 SLOT="0"
+IUSE="wayfire" # opt-in "effects" compositor profile
 
 # Qt 6 Widgets + Wayland, the QtWayland client (foreign-toplevel protocol
 # bindings + qtwaylandscanner), and the layer-shell binding (the KF6 micro-dep).
@@ -40,10 +41,20 @@ RDEPEND="
 	media-video/wireplumber
 	gui-apps/swaylock
 	gui-apps/swayidle
+	wayfire? ( gui-wm/wayfire )
 "
 
 src_test() {
 	cmake_src_test
+}
+
+src_install() {
+	cmake_src_install
+	# The effects profile (wayfire session + config) only ships with USE=wayfire.
+	if ! use wayfire; then
+		rm -f "${ED}"/usr/share/wayland-sessions/hede-effects.desktop || die
+		rm -rf "${ED}"/usr/share/hede/wayfire || die
+	fi
 }
 
 pkg_postinst() {

@@ -29,6 +29,7 @@ add_subdirectory(tests)
 install(PROGRAMS src/session/helm-session
         DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
 install(FILES data/wayland-sessions/hede.desktop
+              data/wayland-sessions/hede-effects.desktop
         DESTINATION ${CMAKE_INSTALL_PREFIX}/share/wayland-sessions)
-install(DIRECTORY data/labwc
+install(DIRECTORY data/labwc data/wayfire
         DESTINATION ${CMAKE_INSTALL_PREFIX}/share/hede)
