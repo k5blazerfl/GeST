@@ -105,22 +105,20 @@ def build_registry() -> Registry:
         appearance,
         bootloader,
         clock,
+        disk,
+        eselect,
         hardware,
         network,
         services,
         software,
+        sysctl,
         users,
     )
 
     registry = Registry()
-    registry.register(hardware.DESCRIPTOR, hardware.factory)
-    registry.register(software.DESCRIPTOR, software.factory)
-    registry.register(services.DESCRIPTOR, services.factory)
-    registry.register(clock.DESCRIPTOR, clock.factory)
-    registry.register(bootloader.DESCRIPTOR, bootloader.factory)
-    registry.register(users.DESCRIPTOR, users.factory)
-    registry.register(network.DESCRIPTOR, network.factory)
-    registry.register(appearance.DESCRIPTOR, appearance.factory)
+    for mod in (hardware, disk, software, services, clock, bootloader, users, sysctl, eselect,
+                network, appearance):
+        registry.register(mod.DESCRIPTOR, mod.factory)
     return registry
 
 
