@@ -19,10 +19,12 @@ source_subpath: default/livecd-stage1-amd64-gest-${TIMESTAMP}
 # fsscript step touches still resolves.
 repos: ${GEST_OVERLAY} ${HEDE_OVERLAY}
 
-# kernel — gentoo-kernel-bin keeps the build fast (prebuilt); swap to
-# sys-kernel/gentoo-sources + genkernel for a from-source kernel.
+# kernel — full sources: catalyst's livecd flow runs genkernel to build the
+# kernel AND the livecd initramfs (which knows how to find + mount the ISO's
+# squashfs). A dist-kernel (gentoo-kernel-bin) ships a stripped source tree that
+# genkernel can't compile ("prepare" target fails), so it can't be used here.
 boot/kernel: gentoo
-boot/kernel/gentoo/sources: sys-kernel/gentoo-kernel-bin
+boot/kernel/gentoo/sources: sys-kernel/gentoo-sources
 
 # image: a squashfs root packed into a hybrid, UEFI-capable ISO
 livecd/type: generic-livecd
