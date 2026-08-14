@@ -54,7 +54,7 @@ class SessionInterface(ServiceInterface):
         self._path = path
 
     @method()
-    def Close(self) -> None:
+    def Close(self):
         self._daemon.close_session(self._path)
 
 
@@ -76,7 +76,7 @@ class ItemInterface(ServiceInterface):
         return [session, b"", sess.encode(secret), "text/plain"]
 
     @method()
-    def SetSecret(self, secret: "(oayays)") -> None:
+    def SetSecret(self, secret: "(oayays)"):
         session_path, _params, value, _ct = secret
         sess = self._daemon.sessions.get(session_path)
         if sess is None:
@@ -103,7 +103,7 @@ class ItemInterface(ServiceInterface):
         return store.item_label(self._daemon.vault, self._cid, self._iid) or ""
 
     @Label.setter
-    def Label(self, value: "s") -> None:
+    def Label(self, value: "s"):
         self._daemon.vault.update_item(self._cid, self._iid, label=value)
         self._daemon.vault.save()
 
@@ -238,7 +238,7 @@ class ServiceInterfaceImpl(ServiceInterface):
         return paths.collection_path(cid) if cid else "/"
 
     @method()
-    def SetAlias(self, name: "s", collection: "o") -> None:
+    def SetAlias(self, name: "s", collection: "o"):
         parsed = paths.parse_collection_path(collection)
         if parsed is not None:
             store.set_alias(self._daemon.vault, name, parsed)
