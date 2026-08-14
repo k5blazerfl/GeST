@@ -6,8 +6,11 @@ in-process. It proves the **full path-B loop** on the *C++* side (v0.50.30–35 
 the Python service; this is a consumer): read/validate/render via gestd, and
 **apply via the polkit root backend**.
 
-Wired for the **Hostname** module (the simplest, complete example). The **Software**
-interface XML is included as the next-step template.
+`main.cpp` drives the **Hostname** module (the simplest, complete example) plus a
+**System** write. The CMake build additionally generates and compiles typed proxies
+for the **Software** and **Catalog** interfaces — they aren't wired into a view yet,
+but compiling them keeps those templates honest (the `cpp-reference` CI job builds
+the whole thing on every push, so a broken interface XML fails CI).
 
 ## The two buses
 

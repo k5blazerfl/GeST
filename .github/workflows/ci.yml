@@ -88,3 +88,27 @@ jobs:
         run: |
           python3 -c "import portage, gi; from gi.repository import GLib; import urwid, dbus_next; import gest.tui.screens.menu"
           python3 -m pytest tests/test_tui.py -m "not needs_live_system" -q
+
+  cpp-reference:
+    # Build the C++/Qt reference client (examples/hede-qt) so the qdbusxml2cpp path
+    # — the exact way HeDE's C++/Qt Control Center consumes gestd — can't rot. The
+    # CMake target generates and compiles a typed proxy for *every* interface XML
+    # (Hostname/System/Software/Catalog), so a broken template — a bad D-Bus type or
+    # a missing QtTypeName annotation on a container out-arg — fails this build even
+    # before a view wires it up. No display and no gestd needed: this only compiles.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Qt6 + build tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake g++ qt6-base-dev qt6-base-dev-tools libgl1-mesa-dev
+
+      - name: Build the reference client
+        run: |
+          set -eux
+          cmake -S examples/hede-qt -B examples/hede-qt/build
+          cmake --build examples/hede-qt/build
+          test -x examples/hede-qt/build/gest-hede-ref

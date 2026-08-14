@@ -19,7 +19,10 @@ set(CMAKE_AUTOMOC ON)
 find_package(Qt6 REQUIRED COMPONENTS Core DBus Widgets)
 
 # Generate typed proxies: the gestd read side (session bus) and the polkit root
-# backend write side (system bus).
+# backend write side (system bus). main.cpp only drives Hostname + System, but we
+# generate and compile *every* interface XML so a broken template (a bad type, a
+# missing QtTypeName annotation on a container out-arg) fails the build even before
+# a view wires it up — this is what the cpp-reference CI job guards.
 set(DBUS_SRCS)
 qt_add_dbus_interface(DBUS_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/interfaces/org.gentoo.gest.core1.Hostname.xml
@@ -27,6 +30,12 @@ qt_add_dbus_interface(DBUS_SRCS
 qt_add_dbus_interface(DBUS_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/interfaces/org.gentoo.gest.System.xml
     system_interface)
+qt_add_dbus_interface(DBUS_SRCS
+    ${CMAKE_CURRENT_SOURCE_DIR}/interfaces/org.gentoo.gest.core1.Software.xml
+    software_interface)
+qt_add_dbus_interface(DBUS_SRCS
+    ${CMAKE_CURRENT_SOURCE_DIR}/interfaces/org.gentoo.gest.core1.Catalog.xml
+    catalog_interface)
 
 add_executable(gest-hede-ref main.cpp ${DBUS_SRCS})
 # the generated hostname_interface.h lands in the build dir

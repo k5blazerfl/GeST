@@ -91,9 +91,19 @@ loop. So the Software methods are `async` and run the actual read in a worker
 thread via `asyncio.to_thread` — the same "reads off the loop" rule the TUI's
 `run_blocking` follows.
 
+## The C++/Qt reference
+
+`examples/hede-qt/` is the HeDE-side template: `qt_add_dbus_interface`
+(`qdbusxml2cpp`) turns each interface XML in `interfaces/` into a typed C++ proxy the
+view calls like a local object — reads via gestd on the session bus, writes via the
+polkit root backend on the system bus, no Portage and no Python in-process. The
+`cpp-reference` CI job builds it on every push, so a broken template (a bad D-Bus
+type, a missing `QtTypeName` annotation on a container out-arg) fails CI.
+
 ## Next
 
-- A reference **C++/Qt view** generated with `qdbusxml2cpp` from the introspection
-  XML — the template HeDE follows per module.
-- The core day-2 modules are covered; remaining is a
-  **module descriptor** so HeDE's Control Center enumerates/embeds them uniformly.
+The core day-2 modules, the `Catalog` descriptor, the paged installed list, and the
+C++ reference are all in place — the path-B surface is complete. Remaining fronts are
+outside gestd: broaden the **write side** (only `SetHostname` is proven from C++ so
+far) and stand up the actual **HeDE shell / standalone Qt Control Center** on top of
+this surface.
