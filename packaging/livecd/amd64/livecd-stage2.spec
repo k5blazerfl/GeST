@@ -25,10 +25,14 @@ livecd/fstype: squashfs
 livecd/iso: gest-installer-amd64-@TIMESTAMP@.iso
 livecd/volid: GEST_INSTALLER
 
-# what the user sees at the console; the installer is the gated "Install Gentoo"
-# menu category, shown because the live env runs as root.
+# what the user sees at the console (fallback / TTY); the installer is the gated
+# "Install Gentoo" menu category, shown because the live env runs as root.
 livecd/motd: @THIS_DIR@/motd
 
-# To auto-launch GeST on tty1 instead of a bare login, drop a start script into
-# the image's /etc/local.d/ (via a bind/overlay) that runs `gest` for root — an
-# iteration once the plain "boots to a console with gest on PATH" image works.
+# --- Boot into HeDE (the Helm Desktop Environment) -------------------------
+# The overlay drops greetd's autologin config (overlay/etc/greetd/config.toml),
+# which logs root straight into the HeDE session; the user then runs GeST to
+# install. Files are laid over the image root; services are added to runlevels.
+# (Catalyst keys — verify/tune on the build host; service names are OpenRC's.)
+livecd/overlay: @THIS_DIR@/overlay
+livecd/rcadd: dbus|default seatd|default elogind|boot greetd|default

@@ -360,8 +360,15 @@ Gentoo System Installer**. HeDE is the natural face of it:
 That's the whole "CLI end goal: Gentoo install" north star delivered as a
 product: a graphical live installer environment that is *also* a preview of the
 desktop you're about to install. It also gives HeDE a built-in QA loop — the live
-image is a disposable, reproducible test bed for the shell. Ship HeDE to the live
-image's `gest.packages` set once Phase 1 is drivable.
+image is a disposable, reproducible test bed for the shell.
+
+**Done (Phase 4 start):** HeDE is wired into `packaging/livecd` — `gui-apps/hede`
+(+ elogind/seatd/greetd) is in the image package set (both `gest.packages` and
+the stage1 spec), and a greetd **autologin** overlay boots root straight into
+the HeDE session (`overlay/etc/greetd/config.toml`, services via `livecd/rcadd`).
+So the ISO now boots into the desktop; the motd points at GeST's "Install
+Gentoo". (Unverified end-to-end — building the ISO needs catalyst on a Gentoo
+host; the catalyst keys/service names may need per-host tuning.)
 
 ## 12. Phased roadmap
 

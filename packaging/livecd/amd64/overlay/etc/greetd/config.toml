@@ -1,0 +1,15 @@
+# greetd on the GeSI live image: no password on the live medium, so autologin
+# root straight into HeDE (the Helm Desktop Environment). helm-session starts
+# labwc + the HeDE shell; the user then runs GeST to install Gentoo.
+[terminal]
+vt = 1
+
+# Autologin at boot.
+[initial_session]
+command = "dbus-run-session helm-session"
+user = "root"
+
+# Fallback session (if the greeter is ever shown instead of autologin).
+[default_session]
+command = "dbus-run-session helm-session"
+user = "root"

@@ -52,3 +52,7 @@ livecd/packages:
 	net-firewall/firewalld
 	sys-auth/polkit
 	sys-apps/dbus
+	gui-apps/hede
+	sys-auth/elogind
+	sys-auth/seatd
+	gui-libs/greetd

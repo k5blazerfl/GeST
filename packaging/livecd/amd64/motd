@@ -1,11 +1,16 @@
 
-  Welcome to the GeST Gentoo installer live image.
+  Welcome to the GeSI Gentoo installer — the HeDE desktop.
 
-  Run:   gest
+  The image boots into HeDE (the Helm Desktop Environment). Open GeST from the
+  ≡ Apps menu (or run `gest` in a terminal) and choose "Install Gentoo" to
+  partition a disk, unpack a stage3, and install Gentoo — the Handbook, driven
+  by GeST, with a real desktop, terminal, and file manager available while you
+  work.
 
-  and choose "Install Gentoo" (the top menu category) to partition a disk,
-  unpack a stage3, and install Gentoo — the Handbook, driven by a TUI.
+  If you land on this console instead of the desktop, the HeDE session failed
+  to start — run `gest` here to install from the TUI.
 
   Networking: a wired link usually comes up via DHCP automatically. For Wi-Fi,
-  run `gest` → Network → Wi-Fi (or `wpa_supplicant`/`iw` by hand) before
-  installing, since the install downloads a stage3 and emerges packages.
+  use the panel's network indicator, GeST → Network → Wi-Fi, or
+  `wpa_supplicant`/`iw` by hand before installing (the install downloads a
+  stage3 and emerges packages).
