@@ -101,11 +101,12 @@ def embed_window(registry: Registry, module_id: str) -> QWidget | None:
 
 
 def build_registry() -> Registry:
-    from gest.qt.modules import hardware, software
+    from gest.qt.modules import appearance, hardware, software
 
     registry = Registry()
     registry.register(hardware.DESCRIPTOR, hardware.factory)
     registry.register(software.DESCRIPTOR, software.factory)
+    registry.register(appearance.DESCRIPTOR, appearance.factory)
     return registry
 
 
