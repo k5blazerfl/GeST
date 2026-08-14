@@ -37,6 +37,9 @@ esac
 # Paths the templates reference (ASAHI_OVERLAY is arm64-only; harmless on amd64).
 export PROFILE SNAPSHOT STAGE3 GEST_OVERLAY TIMESTAMP
 export ASAHI_OVERLAY="${ASAHI_OVERLAY:-}"
+# The Amphitheater overlay, where gui-apps/hede (the amd64 desktop) lives. Only
+# the amd64 specs reference it; harmless (empty) on arm64.
+export HEDE_OVERLAY="${HEDE_OVERLAY:-}"
 export PORTAGE_CONFDIR="${here}/portage-conf"
 export MOTD="${specdir}/motd"
 export FSSCRIPT="${specdir}/fsscript.sh"

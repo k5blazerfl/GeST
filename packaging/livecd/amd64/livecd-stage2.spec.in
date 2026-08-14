@@ -11,8 +11,12 @@ version_stamp: gest-${TIMESTAMP}
 target: livecd-stage2
 rel_type: default
 profile: ${PROFILE}
-snapshot: ${SNAPSHOT}
+snapshot_treeish: ${SNAPSHOT}
 source_subpath: default/livecd-stage1-amd64-gest-${TIMESTAMP}
+
+# Same overlays as stage1 (catalyst 4.x `repos` key), so anything the kernel/
+# fsscript step touches still resolves.
+repos: ${GEST_OVERLAY} ${HEDE_OVERLAY}
 
 # kernel — gentoo-kernel-bin keeps the build fast (prebuilt); swap to
 # sys-kernel/gentoo-sources + genkernel for a from-source kernel.

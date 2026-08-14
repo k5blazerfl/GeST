@@ -15,7 +15,7 @@ version_stamp: gest-${TIMESTAMP}
 target: livecd-stage2
 rel_type: default
 profile: ${PROFILE}
-snapshot: ${SNAPSHOT}
+snapshot_treeish: ${SNAPSHOT}
 source_subpath: default/livecd-stage1-arm64-gest-${TIMESTAMP}
 
 # kernel: the Asahi kernel (dist-kernel), so the live env boots on M1/M2.

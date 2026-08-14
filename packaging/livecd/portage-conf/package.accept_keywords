@@ -5,3 +5,7 @@ app-admin/gest ~amd64
 # Some of HeDE's deps may also need keywording on the build host.
 gui-apps/hede ~amd64
 gui-libs/greetd ~amd64
+
+# The HeDE desktop stack (labwc, wlroots, foot, Qt6, PySide6, hede, …) is ~amd64
+# across the board; accept ~amd64 image-wide rather than enumerate ~150 atoms.
+*/* ~amd64
