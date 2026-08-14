@@ -17,6 +17,10 @@ private slots:
         QVERIFY(!helm::updatePillVisible(0));
         QVERIFY(helm::updatePillVisible(1));
     }
+    void embedArgs() {
+        QCOMPARE(helm::settingsEmbedArgs(QStringLiteral("software")),
+                 (QStringList{QStringLiteral("--embed"), QStringLiteral("software")}));
+    }
 
     void networkIcon() {
         QCOMPARE(helm::networkIconName(false, QStringLiteral("wifi")),

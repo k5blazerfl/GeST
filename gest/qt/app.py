@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QStackedWidget,
     QTreeWidget,
     QTreeWidgetItem,
+    QVBoxLayout,
     QWidget,
 )
 
@@ -73,6 +74,32 @@ class ControlCenter(QWidget):
                 return
 
 
+def parse_embed_arg(args: list[str]) -> str | None:
+    """The module id from ``--embed <id>``, or None (full Control Center)."""
+    for i, a in enumerate(args):
+        if a == "--embed":
+            return args[i + 1] if i + 1 < len(args) else None
+    return None
+
+
+def embed_window(registry: Registry, module_id: str) -> QWidget | None:
+    """A top-level window hosting a single module (for HeDE popovers, 2d).
+
+    Same module widget as the Control Center — just a different frame. Returns
+    None if the id is unknown.
+    """
+    entry = next((e for e in registry.entries() if e.descriptor.id == module_id), None)
+    if entry is None:
+        return None
+    host = QWidget()
+    host.setWindowTitle(f"GeST — {entry.descriptor.title}")
+    host.resize(480, 520)
+    layout = QVBoxLayout(host)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.addWidget(entry.factory())
+    return host
+
+
 def build_registry() -> Registry:
     from gest.qt.modules import hardware, software
 
@@ -85,8 +112,18 @@ def build_registry() -> Registry:
 def main() -> None:
     app = QApplication(sys.argv)
     app.setApplicationName("gest-settings")
-    window = ControlCenter(build_registry())
-    window.select_first()
+    registry = build_registry()
+
+    embed = parse_embed_arg(app.arguments()[1:])
+    if embed is not None:
+        window = embed_window(registry, embed)
+        if window is None:
+            print(f"gest-settings: no such module '{embed}'", file=sys.stderr)
+            sys.exit(2)
+    else:
+        window = ControlCenter(registry)
+        window.select_first()
+
     window.show()
     sys.exit(app.exec())
 
