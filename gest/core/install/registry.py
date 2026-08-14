@@ -30,6 +30,7 @@ import tempfile
 from collections.abc import Callable
 
 from gest.core import rootpath
+from gest.core.bootloader import m1n1
 from gest.core.bootloader.install import install_steps
 from gest.core.chroot.prepare import prepare_chroot
 from gest.core.disk import mount as disk_mount
@@ -424,6 +425,32 @@ class InstallBootloader(ArgvStep):
         return ctx.state.done(self.key)
 
 
+class InstallBootStub(ArgvStep):
+    """Write the Apple Silicon (Asahi) m1n1 + U-Boot boot stub (``update-m1n1``).
+
+    The stage *before* GRUB in the Asahi boot chain (iBoot → m1n1 → U-Boot → GRUB).
+    Arch-gated: on anything but arm64 this no-ops (empty pipeline, satisfied), so it
+    is inert on x86 while still living at its correct place in the fixed step list.
+    """
+
+    label = "Install the m1n1 boot stub"
+    phase = Phase.KERNEL_BOOT
+    chroot = True
+    target_aware = True          # writes into the mounted ESP (efi_directory)
+    key = "install_boot_stub"
+
+    def build(self, ctx: InstallContext) -> list[Step]:
+        if ctx.plan.arch != "arm64":
+            return []
+        boot_bin = m1n1.default_boot_bin(ctx.plan.bootloader.efi_directory)
+        return [Step("write m1n1 boot stub", m1n1.update_m1n1_argv(boot_bin))]
+
+    async def is_satisfied(self, ctx: InstallContext) -> bool:
+        if ctx.plan.arch != "arm64":
+            return True          # nothing to do off Apple Silicon
+        return ctx.state.done(self.key)
+
+
 # --- phase 5: users & network -----------------------------------------------
 
 class SetRootPassword(ArgvStep):
@@ -686,6 +713,7 @@ def build_registry(plan: InstallPlan, *, root_secret: Secret | None = None) -> l
         SetConsole(),
         BuildKernel(),
         InstallBootloader(),
+        InstallBootStub(),          # arm64/Asahi only; no-op on x86
         _root_password_step(root_secret),
         CreateUser(),
         ConfigureNetwork(),
@@ -701,7 +729,8 @@ def build_minimal_registry(
 
     A strict subset of :func:`build_registry`: the boot-critical path only —
     partition → mount → stage3 → fstab → make.conf → prepare-chroot → sync →
-    profile → @world → kernel → bootloader → root password. It drops the
+    profile → @world → kernel → bootloader → (arm64: m1n1 boot stub) → root
+    password. It drops the
     day-1-nicety config steps (timezone/locale, hostname, console keymap) and the
     optional user, network and tier-2 steps; those layer back in via
     :func:`build_registry`. The installed system boots to a root login; the rest
@@ -720,5 +749,6 @@ def build_minimal_registry(
         EmergeWorld(),
         BuildKernel(),
         InstallBootloader(),
+        InstallBootStub(),          # arm64/Asahi only; no-op on x86 — boot-critical there
         _root_password_step(root_secret),
     ]

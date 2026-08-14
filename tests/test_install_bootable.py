@@ -100,7 +100,7 @@ _MINIMAL_LABELS = [
     "Unpack the stage3 tarball", "Generate /etc/fstab", "Write make.conf",
     "Prepare the chroot", "Sync the Portage tree", "Select the profile",
     "Emerge @world", "Build the kernel", "Install the bootloader",
-    "Set the root password",
+    "Install the m1n1 boot stub", "Set the root password",
 ]
 
 

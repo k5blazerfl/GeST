@@ -5,7 +5,7 @@ import asyncio
 
 import pytest
 
-from gest.core.bootloader import commands, install
+from gest.core.bootloader import commands, install, m1n1
 from gest.core.exec.executor import FakeExecutor
 from gest.core.exec.steps import StepError, run_steps
 
@@ -71,6 +71,25 @@ def test_install_steps_threads_arch_to_target():
     cfg = install.InstallConfig(firmware="uefi", regenerate=False)
     steps = install.install_steps(cfg, arch="arm64")
     assert "--target=arm64-efi" in steps[0].argv
+
+
+# --- m1n1 boot stub (Apple Silicon / Asahi) ---------------------------------
+
+def test_m1n1_default_boot_bin():
+    assert m1n1.default_boot_bin("/efi") == "/efi/m1n1/boot.bin"
+    assert m1n1.default_boot_bin("/boot/efi/") == "/boot/efi/m1n1/boot.bin"
+
+
+def test_update_m1n1_argv():
+    assert m1n1.update_m1n1_argv() == ["update-m1n1"]           # tool uses its config
+    assert m1n1.update_m1n1_argv("/efi/m1n1/boot.bin") == [
+        "update-m1n1", "/efi/m1n1/boot.bin"]
+
+
+@pytest.mark.parametrize("bad", ["rel/path", "/etc/../x", "/a\nb"])
+def test_update_m1n1_rejects_bad_path(bad):
+    with pytest.raises(ValueError):
+        m1n1.update_m1n1_argv(bad)
 
 
 # --- pipeline ---------------------------------------------------------------

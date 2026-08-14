@@ -48,6 +48,7 @@ _EXPECTED_LABELS = [
     "Set the console keymap",
     "Build the kernel",
     "Install the bootloader",
+    "Install the m1n1 boot stub",
     "Set the root password",
     "Create the user account",
     "Configure the network",
@@ -61,11 +62,12 @@ _MARKER_KEYS = {
     "Emerge @world": "emerge_world",
     "Build the kernel": "build_kernel",
     "Install the bootloader": "install_bootloader",
+    "Install the m1n1 boot stub": "install_boot_stub",
 }
 _CHROOT_LABELS = {
     "Sync the Portage tree", "Select the profile", "Emerge @world",
-    "Build the kernel", "Install the bootloader", "Set the root password",
-    "Create the user account",
+    "Build the kernel", "Install the bootloader", "Install the m1n1 boot stub",
+    "Set the root password", "Create the user account",
 }
 _PHASE_ORDER = list(Phase)
 
@@ -112,8 +114,8 @@ def test_registry_phases_are_non_decreasing():
     assert [s.phase for s in reg[:3]] == [Phase.PREPARE_DISK] * 3
     assert [s.phase for s in reg[3:10]] == [Phase.BASE_SYSTEM] * 7
     assert [s.phase for s in reg[10:13]] == [Phase.CONFIGURE] * 3
-    assert [s.phase for s in reg[13:15]] == [Phase.KERNEL_BOOT] * 2
-    assert [s.phase for s in reg[15:18]] == [Phase.USERS_NETWORK] * 3
+    assert [s.phase for s in reg[13:16]] == [Phase.KERNEL_BOOT] * 3  # +m1n1 boot stub
+    assert [s.phase for s in reg[16:19]] == [Phase.USERS_NETWORK] * 3
 
 
 def test_registry_chroot_and_opens_chroot_flags():
@@ -130,7 +132,24 @@ def test_registry_marker_keys():
 
 
 def test_tier2_default_empty():
-    assert len(build_registry(_plan())) == 18            # rows 1-18; 2 folded, 20 in finally
+    # rows 1-18 + the arm64-gated m1n1 boot stub (inert on x86); 2 folded, 20 in finally
+    assert len(build_registry(_plan())) == 19
+
+
+def test_boot_stub_step_is_arm64_gated():
+    from gest.core.install.registry import InstallBootStub
+    step = InstallBootStub()
+    # amd64 (default plan): inert — no pipeline, and satisfied so the engine skips it
+    amd = _ctx(FakeExecutor())
+    assert step.build(amd) == []
+    assert asyncio.run(step.is_satisfied(amd)) is True
+    # arm64: emits the update-m1n1 write into the mounted ESP (efi_directory default /efi)
+    plan = _plan()
+    object.__setattr__(plan, "arch", "arm64")
+    arm = _ctx(FakeExecutor(), plan=plan)
+    steps = step.build(arm)
+    assert [s.argv for s in steps] == [["update-m1n1", "/efi/m1n1/boot.bin"]]
+    assert asyncio.run(step.is_satisfied(arm)) is False        # not yet done → runs
 
 
 def _plan_tier2(*keys):
