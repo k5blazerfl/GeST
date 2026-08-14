@@ -8,6 +8,10 @@ Phase 0 proved the frame stands. Phase 1 hangs the everyday components on it, ea
 a small process the session supervises, each still **shell-only** (no `core` yet).
 After Phase 1, HeDE is a real (if plain) desktop you could live in.
 
+> **Status: Phase 1 complete** (all five components below shipped). Cut as HeDE
+> **v0.1.0**. Next: Phase 2 — GeST as the Control Center (needs the Qt-frontend
+> gate to lift).
+
 ## 1. Components & delivery order
 
 Ordered by self-containment / testability — build top-down:
@@ -27,8 +31,13 @@ Ordered by self-containment / testability — build top-down:
    NotificationClosed/ActionInvoked) rendering top-right toasts (a layer-shell
    stack; click to dismiss/invoke default, auto-expire). Pure model
    (id alloc/timeout/store/capabilities) unit-tested; the adaptor is thin.
-4. **System-tray host.** A `StatusNotifierItem` / `org.kde.StatusNotifierWatcher`
-   host applet in the panel (adopt the `StatusNotifier` D-Bus contract).
+4. **System-tray host.** *[done]* A panel applet hosting
+   `org.kde.StatusNotifierWatcher` + registering as a host: one icon per
+   registered `StatusNotifierItem` (icon/title via D-Bus properties, live
+   NewIcon/NewTitle refresh), left-click Activate / middle SecondaryActivate /
+   right ContextMenu; items dropped on NameOwnerChanged. Pure parsing/registry
+   (`hostName`, `parseItemService`, `splitKey`) unit-tested. DBusMenu rendering
+   deferred (apps show their own menu via ContextMenu for now).
 5. **`helm-bg` — wallpaper.** *[done]* A `background`-layer surface per output
    (exclusive-zone −1, under panels), solid colour or an image with fit modes
    (fill/fit/stretch/center/tile). Pure geometry (`parseFit`,

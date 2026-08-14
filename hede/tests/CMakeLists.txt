@@ -22,6 +22,10 @@ qt_add_executable(test-notification test_notification.cpp)
 target_link_libraries(test-notification PRIVATE Qt6::Test helm-notify-lib)
 add_test(NAME notification COMMAND test-notification)
 
+qt_add_executable(test-snimodel test_snimodel.cpp)
+target_link_libraries(test-snimodel PRIVATE Qt6::Test helm-tray)
+add_test(NAME snimodel COMMAND test-snimodel)
+
 # Headless integration: boot labwc (wlroots headless backend) and assert
 # helm-panel binds a layer-shell surface. Skips (77) when labwc is absent.
 add_test(NAME smoke-headless
