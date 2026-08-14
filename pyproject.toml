@@ -80,3 +80,5 @@ ignore = ["PLW1510", "RUF012"]
 "gest/coreservice/localization.py" = ["F722", "F821", "UP037"]
 "gest/coreservice/sysctl.py" = ["F722", "F821", "UP037"]
 "gest/coreservice/catalog.py" = ["F722", "F821", "UP037"]
+# helm-keyringd's Secret Service objects — same D-Bus-signature annotations.
+"gest/keyringd/service.py" = ["F722", "F821", "UP037"]
