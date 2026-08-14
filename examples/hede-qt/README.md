@@ -1,26 +1,42 @@
 # HeDE C++/Qt reference view for gestd
 
-The concrete template for HeDE's Control Center: a Qt6 client that consumes gestd
-over D-Bus through **`qdbusxml2cpp`-generated bindings** — no Portage, no Python
-in-process. It proves the read side of the HeDE path-B integration on the *C++*
-side (v0.50.30–35 built the Python service; this is a consumer).
+The concrete template for HeDE's Control Center: a Qt6 client that drives GeST over
+D-Bus through **`qdbusxml2cpp`-generated bindings** — no Portage, no Python
+in-process. It proves the **full path-B loop** on the *C++* side (v0.50.30–35 built
+the Python service; this is a consumer): read/validate/render via gestd, and
+**apply via the polkit root backend**.
 
-Wired for the **Hostname** module (the simplest, complete: read + validate +
-render). The **Software** interface XML is included as the next-step template.
+Wired for the **Hostname** module (the simplest, complete example). The **Software**
+interface XML is included as the next-step template.
+
+## The two buses
+
+```
+                 session bus (unprivileged)                 system bus (polkit)
+Qt view ──▶ org.gentoo.gest.Core / …core1.Hostname   ▶ org.gentoo.gest / …System
+              GetState / Validate / Render (gestd)        SetHostname … (root backend)
+              — read / validate / render —               — WRITE, polkit-gated —
+```
+
+The view reads through **gestd** and writes through the **root backend**; two
+generated proxies, two buses. This is exactly HeDE's model.
 
 ## What it shows
 
 ```
-interfaces/*.xml   ← gestd interface definitions (captured via `gdbus introspect`,
-                     + QtTypeName annotations mapping D-Bus containers to C++ types)
-CMakeLists.txt     ← qt_add_dbus_interface() runs qdbusxml2cpp to generate a typed proxy
-main.cpp           ← a QWidget panel that calls the proxy like a local object
+interfaces/org.gentoo.gest.core1.Hostname.xml  ← gestd read side (session bus)
+interfaces/org.gentoo.gest.System.xml          ← polkit root backend write side (system bus)
+interfaces/org.gentoo.gest.core1.Software.xml  ← the package-panel template (aa{sv})
+CMakeLists.txt     ← qt_add_dbus_interface() runs qdbusxml2cpp per interface
+main.cpp           ← a QWidget panel that calls the proxies like local objects
 ```
 
 `main.cpp` builds a Hostname panel: the current hostname (from `GetState`, an
 `a{sv}` → `QVariantMap`), a field validated live (`Validate` → `(bool, QString)`),
-and a preview of the config a write would produce (`Render` → `QString`). Applying
-is a **write** — that goes to the polkit root backend, not gestd.
+a preview of the config a write would produce (`Render` → `QString`), and an
+**Apply** button that calls `SetHostname` on the root backend (`(bool, QString)`),
+then re-reads the current value from gestd. Apply is **polkit-gated**: a session
+with a polkit agent prompts for the admin password; without one it is denied.
 
 ## Build & run
 
@@ -33,10 +49,17 @@ cmake -S examples/hede-qt -B examples/hede-qt/build
 cmake --build examples/hede-qt/build
 
 gest-core &                                     # start gestd on the session bus
-examples/hede-qt/build/gest-hede-ref            # the GUI (needs a display)
-QT_QPA_PLATFORM=offscreen examples/hede-qt/build/gest-hede-ref --once   # headless proof
+examples/hede-qt/build/gest-hede-ref            # the GUI (needs a display + a polkit agent for Apply)
+QT_QPA_PLATFORM=offscreen examples/hede-qt/build/gest-hede-ref --once   # headless read proof
 # → GetState -> hostname=emperor | Validate('emperor') -> ✓ valid | Render -> hostname="emperor"
+examples/hede-qt/build/gest-hede-ref --apply myhost    # headless write proof (needs gest-backend)
+# → SetHostname('myhost') -> ok=… output=…   (or a polkit "Not authorized" denial without an agent)
 ```
+
+Both round-trips were run against a live system here: the read path returned the
+current hostname, and `--apply` reached the root backend on the system bus, where
+**polkit denied it** (no auth agent in a headless shell) — proving the gate is
+active and the call is issued correctly.
 
 ## The `qdbusxml2cpp` mapping (the one gotcha)
 

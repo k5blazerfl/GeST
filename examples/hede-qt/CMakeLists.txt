@@ -18,11 +18,15 @@ set(CMAKE_AUTOMOC ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Core DBus Widgets)
 
-# Generate the typed proxy from the gestd Hostname interface XML.
+# Generate typed proxies: the gestd read side (session bus) and the polkit root
+# backend write side (system bus).
 set(DBUS_SRCS)
 qt_add_dbus_interface(DBUS_SRCS
     ${CMAKE_CURRENT_SOURCE_DIR}/interfaces/org.gentoo.gest.core1.Hostname.xml
     hostname_interface)
+qt_add_dbus_interface(DBUS_SRCS
+    ${CMAKE_CURRENT_SOURCE_DIR}/interfaces/org.gentoo.gest.System.xml
+    system_interface)
 
 add_executable(gest-hede-ref main.cpp ${DBUS_SRCS})
 # the generated hostname_interface.h lands in the build dir
