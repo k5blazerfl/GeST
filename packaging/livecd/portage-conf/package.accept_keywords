@@ -17,3 +17,9 @@ dev-util/glslang ~amd64
 dev-util/spirv-tools ~amd64
 media-libs/vulkan-loader ~amd64
 gui-wm/labwc ~amd64
+
+# Version-locked companions of the above (must match their keyworded siblings):
+# wayland-scanner↔wayland, vulkan-headers↔vulkan-loader, spirv-headers↔spirv-tools.
+dev-util/wayland-scanner ~amd64
+dev-util/vulkan-headers ~amd64
+dev-util/spirv-headers ~amd64
