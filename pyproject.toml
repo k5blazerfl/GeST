@@ -61,3 +61,4 @@ ignore = ["PLW1510", "RUF012"]
 # to parse or unquote them.
 "gest/coreservice/hostname.py" = ["F722", "F821", "UP037"]
 "gest/coreservice/software.py" = ["F722", "F821", "UP037"]
+"gest/coreservice/services.py" = ["F722", "F821", "UP037"]

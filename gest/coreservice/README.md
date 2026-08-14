@@ -24,7 +24,9 @@ HeDE C++/Qt shell ──(session bus, reads/validate/render)──▶ gestd  ─
 | `coreservice/service.py` | `gest-core` — claims the session-bus name, exports the modules |
 | `coreservice/refclient.py` | a HeDE Qt view in miniature (Python), proving the round-trip |
 
-A new module = one adapter + one `ServiceInterface` + a line in `service._MODULES`.
+A new module = one pure adapter + one `ServiceInterface` (variant packing via the
+shared `varmap.variant_map`) + a line in `service._MODULES`. Modules exported so
+far: **Hostname**, **Software** (Portage), **Services** (OpenRC).
 
 ## Contract (Hostname, `org.gentoo.gest.core1.Hostname`)
 

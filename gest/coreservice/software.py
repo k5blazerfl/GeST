@@ -15,28 +15,12 @@ mirrors the TUI's ``run_blocking`` — Portage reads must run off the loop.
 from __future__ import annotations
 
 import asyncio
-from typing import Any
 
-from dbus_next import Variant
 from dbus_next.service import ServiceInterface, method
 
 from gest.coreservice import software_adapter as adapter
+from gest.coreservice.varmap import variant_map as _vmap
 from gest.ipc.core_contract import SOFTWARE_CORE_IFACE
-
-
-def _v(value: Any) -> Variant:
-    """Wrap a Python scalar/list in the right D-Bus Variant (bool before int!)."""
-    if isinstance(value, bool):
-        return Variant("b", value)
-    if isinstance(value, int):
-        return Variant("x", value)          # int64 (sizes can be large)
-    if isinstance(value, list):
-        return Variant("as", [str(x) for x in value])
-    return Variant("s", str(value))
-
-
-def _vmap(d: dict[str, Any]) -> dict[str, Variant]:
-    return {k: _v(v) for k, v in d.items()}
 
 
 class SoftwareInterface(ServiceInterface):

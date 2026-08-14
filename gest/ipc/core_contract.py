@@ -55,3 +55,10 @@ HOSTNAME_CORE_IFACE = f"{_IFACE}.Hostname"
 # (Streaming/pagination for very large lists is a documented follow-on.)
 SOFTWARE_CORE_PATH = "/org/gentoo/gest/core/Software"
 SOFTWARE_CORE_IFACE = f"{_IFACE}.Software"
+
+# --- Services module (OpenRC) ----------------------------------------------
+#   List()            -> aa{sv}   # {"name","status","runlevels":as,"enabled":b,"running":b}
+#   Describe(name: s) -> a{sv}    # + description/needs/uses/wants/needed_by (as)
+# Starting/stopping/enabling is a WRITE — the polkit root backend's Services iface.
+SERVICES_CORE_PATH = "/org/gentoo/gest/core/Services"
+SERVICES_CORE_IFACE = f"{_IFACE}.Services"
