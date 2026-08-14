@@ -30,6 +30,10 @@ qt_add_executable(test-coreclient test_coreclient.cpp)
 target_link_libraries(test-coreclient PRIVATE Qt6::Test helm-coreclient)
 add_test(NAME coreclient COMMAND test-coreclient)
 
+qt_add_executable(test-quicksettings test_quicksettings.cpp)
+target_link_libraries(test-quicksettings PRIVATE Qt6::Test helm-quicksettings)
+add_test(NAME quicksettings COMMAND test-quicksettings)
+
 # Headless integration: boot labwc (wlroots headless backend) and assert
 # helm-panel binds a layer-shell surface. Skips (77) when labwc is absent.
 add_test(NAME smoke-headless

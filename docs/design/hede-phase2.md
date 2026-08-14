@@ -156,6 +156,12 @@ writes what into `$XDG_CONFIG_HOME/hede/hede.conf` (and friends):
   `CoreClient` + panel indicators (update pill, network icon, battery %), all
   graceful when GeST is absent. Remaining datums (Brightness/Volume) follow the
   same shape; those are mutable, so they also need backend write paths.
+  **Update:** Brightness/Volume are implemented as the §2 **direct-to-system
+  fallback** — live session/hardware state GeST doesn't model, and writing them
+  through the polkit root backend would prompt on every tick. HeDE reads+writes
+  them unprivileged via the standard tools (`wpctl` for PipeWire volume,
+  `brightnessctl` for backlight) in `src/quicksettings/`, separate from the
+  GeST-seam `coreclient`. Documented fallback, not a seam datum.
 - **2b — polkit agent** 🟢 *[done]* adopt `lxqt-policykit` — the session
   autostarts one `lxqt-policykit-agent`; `lxqt-base/lxqt-policykit` is an RDEPEND
   (as is `app-admin/gest`, the Control Center + seam).

@@ -36,6 +36,8 @@ RDEPEND="
 	gui-apps/foot
 	app-admin/gest
 	lxqt-base/lxqt-policykit
+	app-misc/brightnessctl
+	media-video/wireplumber
 "
 
 src_test() {

@@ -11,6 +11,9 @@
 #include "networkpill.h"
 #include "updatepill.h"
 
+#include "brightness.h"
+#include "volume.h"
+
 #include <QCoreApplication>
 #include <QFileInfo>
 #include <QHBoxLayout>
@@ -45,6 +48,10 @@ Panel::Panel(QWidget *parent) : QWidget(parent) {
     layout->addWidget(new UpdatePill(core, this));  // "N updates"
     layout->addWidget(new NetworkPill(core, this)); // wired / wifi / offline
     layout->addWidget(new BatteryPill(core, this)); // NN%
+
+    // Direct-to-system quick settings (scroll to adjust).
+    layout->addWidget(new BrightnessApplet(this)); // brightnessctl
+    layout->addWidget(new VolumeApplet(this));     // wpctl (PipeWire)
 
     layout->addWidget(new TrayWidget(this)); // system tray
     layout->addWidget(new Clock(this));
