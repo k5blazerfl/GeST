@@ -1,0 +1,42 @@
+"""The `gestd` core-service D-Bus contract (Phase-0 scaffold; Hostname module).
+
+Path-B for HeDE: a C++/Qt shell can't consume GeST's Python ``core`` in-process,
+so ``core``'s *unprivileged* read/validate/render surface is promoted to a
+D-Bus service — ``gestd`` — that any language can call. Writes stay on the
+existing polkit-gated root backend (``gest/ipc/interface.py``); this file is the
+*read side*.
+
+Design decisions this scaffold pins down (see gest/coreservice/README.md):
+
+* **Bus:** the user *session* bus. Reads are per-user and unprivileged, so gestd
+  runs in the session like other desktop services (no polkit, no root).
+* **Versioned:** the interface name carries the contract major version
+  (``org.gentoo.gest.core1.*``). HeDE codes against ``core1``; a breaking change
+  becomes ``core2`` and both can coexist, so GeST and HeDE evolve independently.
+* **Per-module object:** one object path + interface per module, matching the
+  Control Center's "modular and embeddable" requirement — each module is a gestd
+  object plus a Qt/QML view on the HeDE side.
+* **State as an extensible property bag:** ``GetState`` returns ``a{sv}`` (a
+  variant map) rather than a fixed struct, so a module can gain fields without a
+  breaking arity change. ``Validate`` returns ``(ok, message)``; ``Render``
+  returns the exact config text the write would produce (a preview), keeping all
+  parsing/validation/rendering logic in Python ``core`` — the C++ side never
+  reimplements it.
+"""
+
+# Well-known name gestd claims on the SESSION bus.
+CORE_BUS_NAME = "org.gentoo.gest.Core"
+
+# Contract major version. Bump (and mint core2.* interfaces) on a breaking change.
+CORE_API_VERSION = 1
+_IFACE = f"org.gentoo.gest.core{CORE_API_VERSION}"
+
+# --- Hostname module -------------------------------------------------------
+# Interface surface (all unprivileged):
+#   GetState()            -> state: a{sv}     # {"hostname": <s>}
+#   Validate(name: s)     -> (ok: b, message: s)
+#   Render(name: s)       -> text: s          # /etc/conf.d/hostname preview
+# Applying a change is NOT here — that is a write, handled by the polkit root
+# backend's System.SetHostname (gest/ipc/interface.py).
+HOSTNAME_CORE_PATH = "/org/gentoo/gest/core/Hostname"
+HOSTNAME_CORE_IFACE = f"{_IFACE}.Hostname"

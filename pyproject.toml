@@ -28,6 +28,8 @@ dev = ["pytest>=8", "pytest-asyncio>=0.23"]
 [project.scripts]
 gest = "gest.tui.app:main"
 gest-backend = "gest.backend.service:main"
+# gestd — the unprivileged core service (HeDE path-B read side); Phase-0 scaffold.
+gest-core = "gest.coreservice.service:main"
 
 [tool.setuptools.packages.find]
 include = ["gest*"]
@@ -54,3 +56,7 @@ ignore = ["PLW1510", "RUF012"]
 [tool.ruff.lint.per-file-ignores]
 # gi.require_version() must run before importing from gi.repository.
 "gest/backend/*" = ["E402"]
+# dbus_next service interfaces annotate methods with D-Bus type SIGNATURES
+# ("s", "a{sv}", "bs"), which are not Python type expressions — ruff must not try
+# to parse or unquote them.
+"gest/coreservice/hostname.py" = ["F722", "F821", "UP037"]

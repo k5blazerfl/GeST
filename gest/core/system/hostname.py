@@ -23,6 +23,12 @@ def parse_conf_hostname(text: str) -> str:
     return match.group(1).strip() if match else ""
 
 
+def render_conf(name: str) -> str:
+    """The OpenRC /etc/conf.d/hostname content for ``name`` (single source of the
+    rendered form — used by the backend writer and the gestd Render method)."""
+    return f'hostname="{name}"\n'
+
+
 def current_hostname(conf: str = "/etc/conf.d/hostname") -> str:
     try:
         with open(conf, encoding="utf-8") as fh:

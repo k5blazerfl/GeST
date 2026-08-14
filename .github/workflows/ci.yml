@@ -50,7 +50,7 @@ jobs:
                  tests/test_stage3.py tests/test_chroot.py tests/test_install_engine.py \
                  tests/test_install_registry.py tests/test_install_bootable.py \
                  tests/test_install_state.py tests/test_install_assemble.py \
-                 tests/test_install_netcheck.py tests/test_software_sort.py -q
+                 tests/test_install_netcheck.py tests/test_software_sort.py tests/test_coreservice_hostname.py -q
 
       - name: Syntax-check the ebuilds
         run: |
