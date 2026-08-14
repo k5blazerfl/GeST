@@ -24,11 +24,13 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "pytest-asyncio>=0.23"]
+qt = ["PySide6"]
 
 [project.scripts]
 gest = "gest.tui.app:main"
 gest-backend = "gest.backend.service:main"
 gest-shell = "gest.shell.service:main"
+gest-settings = "gest.qt.app:main"
 
 [tool.setuptools.packages.find]
 include = ["gest*"]
