@@ -9,6 +9,21 @@
       <arg direction="out" type="aa{sv}"/>
       <annotation name="org.qtproject.QtDBus.QtTypeName.Out0" value="QList&lt;QVariantMap&gt;"/>
     </method>
+    <!-- Paged installed list: CountInstalled for the total, ListInstalledPage for a
+         window (limit 0 = the rest), RefreshInstalled to re-read Portage. Reads snapshot
+         once server-side, so a QAbstractItemModel can fetchMore() without re-reading. -->
+    <method name="CountInstalled">
+      <arg direction="out" type="u"/>
+    </method>
+    <method name="ListInstalledPage">
+      <arg name="offset" direction="in" type="u"/>
+      <arg name="limit" direction="in" type="u"/>
+      <arg direction="out" type="aa{sv}"/>
+      <annotation name="org.qtproject.QtDBus.QtTypeName.Out0" value="QList&lt;QVariantMap&gt;"/>
+    </method>
+    <method name="RefreshInstalled">
+      <arg direction="out" type="u"/>
+    </method>
     <method name="ListUpgradable">
       <arg direction="out" type="aa{sv}"/>
       <annotation name="org.qtproject.QtDBus.QtTypeName.Out0" value="QList&lt;QVariantMap&gt;"/>

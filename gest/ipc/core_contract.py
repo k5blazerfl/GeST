@@ -51,7 +51,10 @@ HOSTNAME_CORE_IFACE = f"{_IFACE}.Hostname"
 # --- Software module (Portage-heavy reads; proves path B) ------------------
 # Every package/detail is an extensible a{sv} property bag; list methods return
 # aa{sv}. The C++ client never touches Portage — it gets structured data here.
-#   ListInstalled()                                   -> aa{sv}
+#   ListInstalled()                                   -> aa{sv}  (whole list; small callers)
+#   CountInstalled()                                  -> u       (snapshot total)
+#   ListInstalledPage(offset:u, limit:u)              -> aa{sv}  (limit 0 = the rest)
+#   RefreshInstalled()                                -> u       (drop snapshot, re-read, new total)
 #   ListUpgradable()                                  -> aa{sv}
 #   Search(term:s, fields:as, mode:s, ignore_case:b, limit:i) -> aa{sv}
 #   PackagesInCategory(category:s, limit:i)           -> aa{sv}
@@ -59,7 +62,9 @@ HOSTNAME_CORE_IFACE = f"{_IFACE}.Hostname"
 #   GetDetail(cp:s)                                   -> a{sv}   ({} if not found)
 #   Counts()                                          -> a{sx}
 # Installing/removing is a WRITE — the polkit root backend's Software interface.
-# (Streaming/pagination for very large lists is a documented follow-on.)
+# The installed list is paged: CountInstalled + ListInstalledPage read Portage once
+# into a snapshot and slice it, so a lazy list scrolls without re-reading; a client
+# calls RefreshInstalled to pick up installs/removes.
 SOFTWARE_CORE_PATH = "/org/gentoo/gest/core/Software"
 SOFTWARE_CORE_IFACE = f"{_IFACE}.Software"
 

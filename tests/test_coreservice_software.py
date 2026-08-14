@@ -47,3 +47,25 @@ def test_detail_to_dict_scalars_and_lists():
 def test_software_contract_shape():
     assert core_contract.SOFTWARE_CORE_IFACE == "org.gentoo.gest.core1.Software"
     assert core_contract.SOFTWARE_CORE_PATH == "/org/gentoo/gest/core/Software"
+
+
+def test_paginate_windows_and_bounds():
+    rows = list(range(10))
+    # a normal window
+    assert adapter.paginate(rows, 0, 3) == [0, 1, 2]
+    assert adapter.paginate(rows, 3, 3) == [3, 4, 5]
+    # a tail page shorter than the limit
+    assert adapter.paginate(rows, 8, 5) == [8, 9]
+    # limit == 0 means "the rest from offset"
+    assert adapter.paginate(rows, 7, 0) == [7, 8, 9]
+    assert adapter.paginate(rows, 0, 0) == rows
+    # offset at/past the end clamps to an empty page rather than raising
+    assert adapter.paginate(rows, 10, 5) == []
+    assert adapter.paginate(rows, 99, 5) == []
+
+
+def test_paginate_does_not_alias_source():
+    rows = [1, 2, 3]
+    page = adapter.paginate(rows, 0, 0)
+    page.append(4)
+    assert rows == [1, 2, 3]  # a page is a copy — mutating it can't corrupt the snapshot

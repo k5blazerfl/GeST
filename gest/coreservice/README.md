@@ -75,6 +75,15 @@ Each package/detail is an extensible property bag; **the C++ client gets rich
 package data and never touches Portage.** Installing/removing stays a write on the
 polkit root backend.
 
+**Paged installed list.** `ListInstalled` returns the whole set (~1200 rows) in one
+reply — fine for small callers, wasteful to re-fetch. For a scrolling list use the
+paged trio: `CountInstalled` → `u`, `ListInstalledPage(offset:u, limit:u)` → `aa{sv}`
+(`limit == 0` means the rest), `RefreshInstalled` → `u`. gestd reads Portage **once**
+into a snapshot; pages are consistent slices of it, so nothing shifts under a scrolling
+client and no page re-reads Portage. A Qt `QAbstractItemModel` maps straight onto it:
+`CountInstalled` sizes the model, `fetchMore()` calls `ListInstalledPage`, a refresh
+button calls `RefreshInstalled`.
+
 **Lesson (baked into `software.py`):** Portage's synchronous API drives its *own*
 asyncio loop internally (`portdbapi.aux_get` → `run_until_complete`), which raises
 *"event loop is already running"* if called directly inside gestd's dbus event
@@ -84,9 +93,6 @@ thread via `asyncio.to_thread` — the same "reads off the loop" rule the TUI's
 
 ## Next
 
-- **Streaming/pagination** for very large lists (`ListInstalled` is ~1200 rows in
-  one reply today — fine, but a `Progress`/`Finished` stream or an offset/limit
-  page is the scale story).
 - A reference **C++/Qt view** generated with `qdbusxml2cpp` from the introspection
   XML — the template HeDE follows per module.
 - The core day-2 modules are covered; remaining is a

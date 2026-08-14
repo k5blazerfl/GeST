@@ -5,8 +5,9 @@ The row/detail converters take a model instance and return a plain dict (the
 unit-testable with hand-built model instances — no Portage. The *live* functions
 import ``reader`` (Portage) lazily, so importing this module stays Portage-free.
 
-Streaming/pagination for the big lists (ListInstalled) is a follow-on; Phase 2
-returns bounded/whole lists in one reply, which D-Bus handles fine.
+The big installed list is paged: ``paginate`` (pure, below) slices a snapshot the
+D-Bus layer reads once, so a lazy-loading list fetches offset/limit windows without
+re-reading Portage per page. ``ListInstalled`` (whole list) stays for small callers.
 """
 
 from __future__ import annotations
@@ -64,6 +65,14 @@ def detail_to_dict(d: Any) -> dict[str, Any]:
 
 
 # --- live functions (import Portage lazily) --------------------------------
+
+def paginate(rows: list[Any], offset: int, limit: int) -> list[Any]:
+    """One page of ``rows``: ``limit`` items from ``offset`` (``limit == 0`` means
+    the rest). Out-of-range offsets clamp to an empty page rather than raising, so
+    a lazy-loading list can page past the end safely."""
+    start = min(offset, len(rows))
+    return list(rows[start:] if limit == 0 else rows[start:start + limit])
+
 
 def list_installed() -> list[dict[str, Any]]:
     from gest.core.software import reader

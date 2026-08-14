@@ -26,11 +26,41 @@ from gest.ipc.core_contract import SOFTWARE_CORE_IFACE
 class SoftwareInterface(ServiceInterface):
     def __init__(self) -> None:
         super().__init__(SOFTWARE_CORE_IFACE)
+        # Snapshot of the installed set for paged reads. Portage is read *once*
+        # per snapshot (see _installed_snapshot); pages are then consistent slices
+        # of it, not re-reads, so scrolling a big list stays cheap and stable.
+        self._installed: list | None = None
+
+    async def _installed_snapshot(self) -> list:
+        if self._installed is None:
+            self._installed = await asyncio.to_thread(adapter.list_installed)
+        return self._installed
 
     @method()
     async def ListInstalled(self) -> "aa{sv}":
         rows = await asyncio.to_thread(adapter.list_installed)
         return [_vmap(d) for d in rows]
+
+    @method()
+    async def CountInstalled(self) -> "u":
+        """Total installed packages in the current snapshot (reads once if cold).
+        Pair with ListInstalledPage to drive a lazy-loading list."""
+        return len(await self._installed_snapshot())
+
+    @method()
+    async def ListInstalledPage(self, offset: "u", limit: "u") -> "aa{sv}":
+        """One page of the installed snapshot: ``limit`` rows from ``offset``
+        (``limit == 0`` means the rest). Consistent across pages — all slices come
+        from a single snapshot, so nothing shifts under a scrolling client."""
+        rows = adapter.paginate(await self._installed_snapshot(), offset, limit)
+        return [_vmap(d) for d in rows]
+
+    @method()
+    async def RefreshInstalled(self) -> "u":
+        """Drop the cached snapshot, re-read Portage, and return the new total.
+        A client calls this to pick up installs/removes since the list was opened."""
+        self._installed = await asyncio.to_thread(adapter.list_installed)
+        return len(self._installed)
 
     @method()
     async def ListUpgradable(self) -> "aa{sv}":
