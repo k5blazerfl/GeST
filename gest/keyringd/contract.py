@@ -28,5 +28,7 @@ ALIAS_BASE = "/org/freedesktop/secrets/aliases"
 # vault is unlocked at daemon startup (Phase 2), every operation returns this.
 NO_PROMPT = "/"
 
-# The only session algorithm implemented in Phase 2; the DH transport is Phase 3.
+# Session algorithms. `plain` sends the secret as-is; the DH algorithm agrees a
+# key and AES-128-CBC-encrypts the secret over the bus (what libsecret prefers).
 ALGO_PLAIN = "plain"
+ALGO_DH = "dh-ietf1024-sha256-aes128-cbc-pkcs7"

@@ -9,10 +9,17 @@ delegation without ``cryptography`` or a disk, and without importing the
 
 from __future__ import annotations
 
+import importlib.util
+
+import pytest
+
 from gest.core.keychain.model import VaultPayload
 from gest.core.keychain.vault import Vault
-from gest.keyringd import contract, paths, store
-from gest.keyringd.session import SessionRegistry
+from gest.keyringd import contract, dh, paths, store
+from gest.keyringd.session import DhSession, SessionRegistry
+
+_HAS_CRYPTO = importlib.util.find_spec("cryptography") is not None
+requires_crypto = pytest.mark.skipif(not _HAS_CRYPTO, reason="cryptography not installed")
 
 
 class _FakeVault(Vault):
@@ -68,15 +75,49 @@ def test_unsafe_ids_are_rejected_on_build():
 
 
 # ---- session registry --------------------------------------------------
-def test_session_open_get_close_and_identity_transport():
+def test_plain_session_open_get_close_and_identity_transport():
     reg = SessionRegistry()
     path, sess = reg.open_plain(paths.session_path)
     assert reg.get(path) is sess
-    assert sess.encode(b"\x00secret\xff") == b"\x00secret\xff"  # plain = identity
-    assert sess.decode(b"abc") == b"abc"
+    params, value = sess.encode(b"\x00secret\xff")
+    assert params == b"" and value == b"\x00secret\xff"  # plain = identity, no IV
+    assert sess.decode(b"", b"abc") == b"abc"
     assert reg.close(path) is True
     assert reg.get(path) is None
     assert reg.close(path) is False  # idempotent
+
+
+def test_dh_key_agreement_matches_between_peers():
+    # A client generates a keypair; the registry does the server side. Both must
+    # independently derive the *same* AES key — pure stdlib (pow + HKDF), so this
+    # catches a broken DH group / HKDF without cryptography or a bus.
+    client_private, client_public = dh.generate_keypair()
+    reg = SessionRegistry()
+    path, server_public, session = reg.open_dh(client_public, paths.session_path)
+    client_key = dh.derive_aes_key(dh.shared_secret(client_private, server_public))
+    assert client_key == session.aes_key
+    assert len(session.aes_key) == 16  # AES-128
+    assert len(server_public) == dh.KEY_BYTES == 128
+    assert reg.get(path) is session
+
+
+def test_dh_public_keys_are_fixed_width():
+    _priv, pub = dh.generate_keypair()
+    assert len(pub) == 128  # left-zero-padded even when the value is short
+
+
+@requires_crypto
+def test_dh_transport_encrypts_and_round_trips():
+    key = dh.derive_aes_key(b"\x11" * dh.KEY_BYTES)
+    session = DhSession(id="s1", aes_key=key)
+    plaintext = b"a rather secret value \x00\xff"
+    params, value = session.encode(plaintext)
+    assert len(params) == 16  # the IV
+    assert value != plaintext  # actually encrypted
+    assert session.decode(params, value) == plaintext
+    # a second encryption uses a fresh IV, so ciphertext differs
+    params2, value2 = session.encode(plaintext)
+    assert params2 != params and value2 != value
 
 
 # ---- store adapter -----------------------------------------------------
