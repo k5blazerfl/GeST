@@ -15,6 +15,8 @@
 #include "dndtoggle.h"
 #include "volume.h"
 
+#include "mpris.h"
+
 #include <QCoreApplication>
 #include <QFileInfo>
 #include <QHBoxLayout>
@@ -43,6 +45,8 @@ Panel::Panel(QWidget *parent) : QWidget(parent) {
 
     layout->addWidget(new LauncherButton(tr("≡ Apps"), resolveMenuCommand(), this));
     layout->addWidget(new TaskbarWidget(this), 1); // window list fills the middle
+
+    layout->addWidget(new MprisApplet(this)); // media controls (MPRIS)
 
     // Quick-settings indicators, all sharing one seam client (GeST reads).
     auto *core = new CoreClient(this);
