@@ -25,29 +25,86 @@ def _build_interface():
         def __init__(self) -> None:
             super().__init__(SHELL_IFACE)
             self._update_count = 0
+            self._net = (False, "none", "")  # connected, kind, iface
+            self._bat = (False, 0, "Unknown")  # present, percent, status
 
+        # --- software updates ---
         @dbus_property(access=PropertyAccess.READ)
         def UpdateCount(self) -> "u":  # noqa: F821, UP037
             return self._update_count
-
-        @method()
-        async def Refresh(self) -> None:
-            await self.refresh()
 
         @signal()
         def UpdatesChanged(self, count: "u") -> "u":  # noqa: F821, UP037
             return count
 
+        # --- network (scalar props; NetworkChanged says "re-read") ---
+        @dbus_property(access=PropertyAccess.READ)
+        def NetworkConnected(self) -> "b":  # noqa: F821, UP037
+            return self._net[0]
+
+        @dbus_property(access=PropertyAccess.READ)
+        def NetworkKind(self) -> "s":  # noqa: F821, UP037
+            return self._net[1]
+
+        @dbus_property(access=PropertyAccess.READ)
+        def NetworkIface(self) -> "s":  # noqa: F821, UP037
+            return self._net[2]
+
+        @signal()
+        def NetworkChanged(self) -> None:
+            pass
+
+        # --- battery ---
+        @dbus_property(access=PropertyAccess.READ)
+        def BatteryPresent(self) -> "b":  # noqa: F821, UP037
+            return self._bat[0]
+
+        @dbus_property(access=PropertyAccess.READ)
+        def BatteryPercent(self) -> "i":  # noqa: F821, UP037
+            return self._bat[1]
+
+        @dbus_property(access=PropertyAccess.READ)
+        def BatteryStatus(self) -> "s":  # noqa: F821, UP037
+            return self._bat[2]
+
+        @signal()
+        def BatteryChanged(self) -> None:
+            pass
+
+        @method()
+        async def Refresh(self) -> None:
+            await self.refresh()
+
         async def refresh(self) -> None:
-            # Portage reads are blocking; keep the event loop responsive.
+            # Portage / ip / sysfs reads are blocking; keep the loop responsive.
             loop = asyncio.get_running_loop()
-            count = await loop.run_in_executor(None, update_count)
+            count, net, bat = await loop.run_in_executor(None, _collect)
             if count != self._update_count:
                 self._update_count = count
                 self.emit_properties_changed({"UpdateCount": count})
                 self.UpdatesChanged(count)
+            if net != self._net:
+                self._net = net
+                self.NetworkChanged()
+            if bat != self._bat:
+                self._bat = bat
+                self.BatteryChanged()
 
     return ShellInterface()
+
+
+def _collect() -> tuple:
+    """Gather all seam data in one blocking call (run off the event loop)."""
+    from gest.core.hardware.battery import read_battery
+    from gest.core.network.reader import list_interfaces, network_status
+
+    ns = network_status(list_interfaces())
+    b = read_battery()
+    return (
+        update_count(),
+        (ns.connected, ns.kind, ns.iface),
+        (b.present, b.percent, b.status),
+    )
 
 
 async def _amain() -> None:

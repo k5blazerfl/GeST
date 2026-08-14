@@ -5,6 +5,10 @@
 #include "launcherbutton.h"
 #include "taskbarwidget.h"
 #include "traywidget.h"
+
+#include "batterypill.h"
+#include "coreclient.h"
+#include "networkpill.h"
 #include "updatepill.h"
 
 #include <QCoreApplication>
@@ -35,8 +39,14 @@ Panel::Panel(QWidget *parent) : QWidget(parent) {
 
     layout->addWidget(new LauncherButton(tr("≡ Apps"), resolveMenuCommand(), this));
     layout->addWidget(new TaskbarWidget(this), 1); // window list fills the middle
-    layout->addWidget(new UpdatePill(this));       // "N updates" (via GeST seam)
-    layout->addWidget(new TrayWidget(this));       // system tray
+
+    // Quick-settings indicators, all sharing one seam client (GeST reads).
+    auto *core = new CoreClient(this);
+    layout->addWidget(new UpdatePill(core, this));  // "N updates"
+    layout->addWidget(new NetworkPill(core, this)); // wired / wifi / offline
+    layout->addWidget(new BatteryPill(core, this)); // NN%
+
+    layout->addWidget(new TrayWidget(this)); // system tray
     layout->addWidget(new Clock(this));
 }
 

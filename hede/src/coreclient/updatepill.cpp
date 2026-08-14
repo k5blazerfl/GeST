@@ -16,14 +16,16 @@ bool updatePillVisible(int count) {
     return count > 0;
 }
 
-UpdatePill::UpdatePill(QWidget *parent) : QToolButton(parent), m_client(new CoreClient(this)) {
+UpdatePill::UpdatePill(CoreClient *client, QWidget *parent)
+    : QToolButton(parent), m_client(client) {
     setAutoRaise(true);
     setToolButtonStyle(Qt::ToolButtonTextOnly);
-    apply(m_client->updateCount());
-    connect(m_client, &CoreClient::updateCountChanged, this, &UpdatePill::apply);
+    apply();
+    connect(m_client, &CoreClient::updateCountChanged, this, [this] { apply(); });
 }
 
-void UpdatePill::apply(int count) {
+void UpdatePill::apply() {
+    const int count = m_client->updateCount();
     setText(updatePillText(count));
     setToolTip(count > 0 ? tr("%n update(s) available — open GeST", nullptr, count) : QString());
     setVisible(updatePillVisible(count));

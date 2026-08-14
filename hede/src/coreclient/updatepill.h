@@ -11,15 +11,15 @@ class CoreClient;
 QString updatePillText(int count); // "" / "1 update" / "N updates"
 bool updatePillVisible(int count); // count > 0
 
-// A panel indicator: "N updates" when GeST reports pending @world updates,
-// hidden otherwise. Reads via CoreClient (the seam); no privilege.
+// Panel indicator: "N updates" when GeST reports pending @world updates, hidden
+// otherwise. Reads via a shared CoreClient (the seam); no privilege.
 class UpdatePill : public QToolButton {
     Q_OBJECT
   public:
-    explicit UpdatePill(QWidget *parent = nullptr);
+    explicit UpdatePill(CoreClient *client, QWidget *parent = nullptr);
 
   private:
-    void apply(int count);
+    void apply();
     CoreClient *m_client;
 };
 

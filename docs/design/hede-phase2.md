@@ -150,10 +150,12 @@ writes what into `$XDG_CONFIG_HOME/hede/hede.conf` (and friends):
 
 - **2a — the read seam** 🟢 *[started]* `org.gentoo.gest.Shell` (session bus)
   over `core` readers + HeDE `src/coreclient` stubs + indicator-only applets.
-  **Done: `UpdateCount`** — GeST `gest/shell` service (dbus-next, backed by
-  `core/software.list_upgradable`) + HeDE `CoreClient` + the panel **update
-  pill** (graceful when GeST is absent). Remaining datums (Network/Battery/
-  Brightness/Volume) follow the same shape.
+  **Done: `UpdateCount`, `Network`, `Battery`** — GeST `gest/shell` service
+  (dbus-next) over `core` readers (`software.list_upgradable`,
+  `network.network_status` on `list_interfaces`, new `hardware.battery`) + HeDE
+  `CoreClient` + panel indicators (update pill, network icon, battery %), all
+  graceful when GeST is absent. Remaining datums (Brightness/Volume) follow the
+  same shape; those are mutable, so they also need backend write paths.
 - **2b — polkit agent** 🟢 *[done]* adopt `lxqt-policykit` — the session
   autostarts one `lxqt-policykit-agent`; `lxqt-base/lxqt-policykit` is an RDEPEND
   (as is `app-admin/gest`, the Control Center + seam).
