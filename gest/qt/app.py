@@ -103,6 +103,7 @@ def embed_window(registry: Registry, module_id: str) -> QWidget | None:
 def build_registry() -> Registry:
     from gest.qt.modules import (
         appearance,
+        binhost,
         bootloader,
         clock,
         disk,
@@ -110,7 +111,9 @@ def build_registry() -> Registry:
         eselect,
         firewall,
         hardware,
+        licenses,
         logs,
+        makeconf,
         network,
         privilege,
         repos,
@@ -123,8 +126,9 @@ def build_registry() -> Registry:
     )
 
     registry = Registry()
-    for mod in (hardware, disk, software, repos, services, clock, bootloader, users, sysctl,
-                eselect, envd, privilege, logs, firewall, network, wifi, sshd, appearance):
+    for mod in (hardware, disk, software, repos, makeconf, binhost, licenses, services,
+                clock, bootloader, users, sysctl, eselect, envd, privilege, logs,
+                firewall, network, wifi, sshd, appearance):
         registry.register(mod.DESCRIPTOR, mod.factory)
     return registry
 
