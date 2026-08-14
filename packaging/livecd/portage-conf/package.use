@@ -17,3 +17,6 @@ net-firewall/nftables json python xtables
 # Break the docutils<->pillow<->harfbuzz<->glib build cycle (Sphinx doc toolchain
 # pulled transitively); portage's suggested cycle-breaker.
 dev-python/pillow -truetype
+
+# gentoo-kernel-bin[initramfs] (dist-kernel) needs installkernel's dracut backend.
+sys-kernel/installkernel dracut
