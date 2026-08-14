@@ -14,6 +14,8 @@ import sys
 from dbus_next import BusType
 from dbus_next.aio import MessageBus
 
+from gest.coreservice.catalog import CatalogInterface
+from gest.coreservice.descriptors import MODULES
 from gest.coreservice.disk import DiskInterface
 from gest.coreservice.firewall import FirewallInterface
 from gest.coreservice.hostname import HostnameInterface
@@ -23,37 +25,30 @@ from gest.coreservice.services import ServicesInterface
 from gest.coreservice.software import SoftwareInterface
 from gest.coreservice.sysctl import SysctlInterface
 from gest.coreservice.users import UsersInterface
-from gest.ipc.core_contract import (
-    CORE_BUS_NAME,
-    DISK_CORE_PATH,
-    FIREWALL_CORE_PATH,
-    HOSTNAME_CORE_PATH,
-    LOCALIZATION_CORE_PATH,
-    NETWORK_CORE_PATH,
-    SERVICES_CORE_PATH,
-    SOFTWARE_CORE_PATH,
-    SYSCTL_CORE_PATH,
-    USERS_CORE_PATH,
-)
+from gest.ipc.core_contract import CATALOG_CORE_PATH, CORE_BUS_NAME
 
-# (object path, interface factory) for every module gestd exports.
-_MODULES = [
-    (HOSTNAME_CORE_PATH, HostnameInterface),
-    (SOFTWARE_CORE_PATH, SoftwareInterface),
-    (SERVICES_CORE_PATH, ServicesInterface),
-    (USERS_CORE_PATH, UsersInterface),
-    (NETWORK_CORE_PATH, NetworkInterface),
-    (DISK_CORE_PATH, DiskInterface),
-    (FIREWALL_CORE_PATH, FirewallInterface),
-    (LOCALIZATION_CORE_PATH, LocalizationInterface),
-    (SYSCTL_CORE_PATH, SysctlInterface),
-]
+# Descriptor id -> the ServiceInterface class that implements it. The registry in
+# ``descriptors`` is the single source of the paths/metadata; this maps each to
+# its implementation. The assertion fails loudly if the two ever drift.
+_FACTORIES = {
+    "hostname": HostnameInterface,
+    "localization": LocalizationInterface,
+    "sysctl": SysctlInterface,
+    "services": ServicesInterface,
+    "users": UsersInterface,
+    "software": SoftwareInterface,
+    "network": NetworkInterface,
+    "firewall": FirewallInterface,
+    "disk": DiskInterface,
+}
+assert {m.id for m in MODULES} == set(_FACTORIES), "descriptor/factory registry drift"
 
 
 async def _serve() -> None:
     bus = await MessageBus(bus_type=BusType.SESSION).connect()
-    for path, factory in _MODULES:
-        bus.export(path, factory())
+    for m in MODULES:
+        bus.export(m.path, _FACTORIES[m.id]())
+    bus.export(CATALOG_CORE_PATH, CatalogInterface())   # module enumeration
     await bus.request_name(CORE_BUS_NAME)
     await bus.wait_for_disconnect()
 

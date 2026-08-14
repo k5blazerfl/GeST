@@ -31,6 +31,13 @@ CORE_BUS_NAME = "org.gentoo.gest.Core"
 CORE_API_VERSION = 1
 _IFACE = f"org.gentoo.gest.core{CORE_API_VERSION}"
 
+# --- Catalog (module enumeration) ------------------------------------------
+# The top-level core object. A Control Center calls List() to discover every
+# module without hardcoding it, then talks to each module's own object/interface.
+#   List() -> aa{sv}   # per module: {id, title, category, icon, path, interface}
+CATALOG_CORE_PATH = "/org/gentoo/gest/core"
+CATALOG_CORE_IFACE = f"{_IFACE}.Catalog"
+
 # --- Hostname module -------------------------------------------------------
 # Interface surface (all unprivileged):
 #   GetState()            -> state: a{sv}     # {"hostname": <s>}

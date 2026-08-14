@@ -19,13 +19,18 @@ HeDE C++/Qt shell ──(session bus, reads/validate/render)──▶ gestd  ─
 | File | Role |
 |---|---|
 | `gest/ipc/core_contract.py` | the **versioned** contract: names, paths, `core1.*` interfaces |
+| `coreservice/descriptors.py` | the module registry — one source of truth for id/title/category/icon/path/iface |
+| `coreservice/catalog.py` | the **Catalog** object (`List()`) — a Control Center enumerates modules from it |
 | `coreservice/hostname_adapter.py` | **pure** `core ↔ dict/tuple` marshalling — unit-tested, no D-Bus |
 | `coreservice/hostname.py` | thin `dbus_next` `ServiceInterface` (variant packing only) |
 | `coreservice/service.py` | `gest-core` — claims the session-bus name, exports the modules |
 | `coreservice/refclient.py` | a HeDE Qt view in miniature (Python), proving the round-trip |
 
 A new module = one pure adapter + one `ServiceInterface` (variant packing via the
-shared `varmap.variant_map`) + a line in `service._MODULES`. Modules exported so
+shared `varmap.variant_map`) + a line in `descriptors.MODULES` and its factory in
+`service._FACTORIES` (an assertion fails loudly if those two drift). A Control
+Center enumerates everything by calling `Catalog.List()` on `/org/gentoo/gest/core`
+— it never hardcodes the module list. Modules exported so
 far: **Hostname**, **Software** (Portage), **Services** (OpenRC), **Users** (passwd/group), **Network** (ip/netifrc), **Disk**, **Firewall** (nft+firewalld), **Localization** (tz/locale/keymap), **Sysctl**.
 
 ## Contract (Hostname, `org.gentoo.gest.core1.Hostname`)
