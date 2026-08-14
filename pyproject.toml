@@ -36,6 +36,9 @@ include = ["gest*"]
 asyncio_mode = "auto"
 # Import gest straight from the repo root so CI needn't install the package.
 pythonpath = ["."]
+markers = [
+    "needs_live_system: test_tui tests that need live Gentoo state (disks, installed packages, configured repos, @world updates) — run on a Gentoo host, deselected in the container CI job",
+]
 
 [tool.ruff]
 line-length = 100
