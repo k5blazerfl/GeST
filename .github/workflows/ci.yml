@@ -114,3 +114,28 @@ jobs:
           cmake -S examples/hede-qt -B examples/hede-qt/build
           cmake --build examples/hede-qt/build
           test -x examples/hede-qt/build/gest-hede-ref
+
+  keyringd-smoke:
+    # The real-bus end-to-end proof for helm-keyringd: bring the Secret Service
+    # daemon up on a private session bus and drive it with a dbus_next client and
+    # (if installed) libsecret's `secret-tool`. This is the only place the
+    # service.py D-Bus wiring is *executed* — the lint-build-test job has neither
+    # dbus_next nor a bus, so it only covers the pure adapter layer.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps + a session bus + libsecret
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-asyncio cryptography dbus-next
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends dbus libsecret-tools
+
+      - name: Real-bus smoke test
+        run: dbus-run-session -- python -m pytest tests/test_keyringd_smoke.py -q
