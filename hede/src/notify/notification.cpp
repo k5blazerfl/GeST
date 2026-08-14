@@ -6,6 +6,10 @@ uint nextNotificationId(uint last) {
     return (last == 0xffffffffu) ? 1u : last + 1u;
 }
 
+bool shouldShowToast(bool doNotDisturb, int urgency) {
+    return !doNotDisturb || urgency >= UrgencyCritical;
+}
+
 int resolveTimeout(int expireTimeout, int defaultMs) {
     if (expireTimeout < 0)
         return defaultMs;

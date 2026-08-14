@@ -31,4 +31,23 @@ class NotifyAdaptor : public QDBusAbstractAdaptor {
     NotifyService *m_service;
 };
 
+// HeDE-specific extension interface on the same object: do-not-disturb toggle.
+class HedeNotifyAdaptor : public QDBusAbstractAdaptor {
+    Q_OBJECT
+    Q_CLASSINFO("D-Bus Interface", "org.gentoo.hede.Notifications")
+    Q_PROPERTY(bool DoNotDisturb READ doNotDisturb)
+  public:
+    explicit HedeNotifyAdaptor(NotifyService *service);
+    bool doNotDisturb() const;
+
+  public slots: // NOLINT
+    void SetDoNotDisturb(bool on);
+
+  signals:
+    void DoNotDisturbChanged(bool on);
+
+  private:
+    NotifyService *m_service;
+};
+
 } // namespace helm

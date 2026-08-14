@@ -12,6 +12,7 @@
 #include "updatepill.h"
 
 #include "brightness.h"
+#include "dndtoggle.h"
 #include "volume.h"
 
 #include <QCoreApplication>
@@ -52,6 +53,7 @@ Panel::Panel(QWidget *parent) : QWidget(parent) {
     // Direct-to-system quick settings (scroll to adjust).
     layout->addWidget(new BrightnessApplet(this)); // brightnessctl
     layout->addWidget(new VolumeApplet(this));     // wpctl (PipeWire)
+    layout->addWidget(new DndToggle(this));        // do-not-disturb (helm-notifyd)
 
     layout->addWidget(new TrayWidget(this)); // system tray
     layout->addWidget(new Clock(this));

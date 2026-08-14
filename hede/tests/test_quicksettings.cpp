@@ -1,6 +1,7 @@
 #include <QtTest>
 
 #include "brightness.h"
+#include "dndtoggle.h"
 #include "volume.h"
 
 class TestQuickSettings : public QObject {
@@ -24,6 +25,11 @@ private slots:
         QCOMPARE(helm::volumeIconName(50, false), QStringLiteral("audio-volume-medium"));
         QCOMPARE(helm::volumeIconName(90, false), QStringLiteral("audio-volume-high"));
     }
+    void dndIcons() {
+        QCOMPARE(helm::dndIconName(true), QStringLiteral("notifications-disabled"));
+        QCOMPARE(helm::dndIconName(false), QStringLiteral("notifications"));
+    }
+
     void brightnessParse() {
         QCOMPARE(helm::parseBrightnessPercent(QStringLiteral("amdgpu_bl1,backlight,120,47%,255")), 47);
         QCOMPARE(helm::parseBrightnessPercent(QStringLiteral("dev,backlight,255,100%,255")), 100);

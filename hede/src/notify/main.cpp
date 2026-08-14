@@ -30,7 +30,8 @@ int main(int argc, char **argv) {
     toasts->show();
 
     auto *service = new helm::NotifyService(toasts, &app);
-    new helm::NotifyAdaptor(service); // parented to service
+    new helm::NotifyAdaptor(service);     // org.freedesktop.Notifications
+    new helm::HedeNotifyAdaptor(service); // org.gentoo.hede.Notifications (DND)
 
     QDBusConnection bus = QDBusConnection::sessionBus();
     if (!bus.registerObject(QStringLiteral("/org/freedesktop/Notifications"), service)) {

@@ -17,6 +17,16 @@ private slots:
         QCOMPARE(helm::resolveTimeout(3000, 5000), 3000);
     }
 
+    void dndSuppressesExceptCritical() {
+        // DND off → always show
+        QVERIFY(helm::shouldShowToast(false, helm::UrgencyLow));
+        QVERIFY(helm::shouldShowToast(false, helm::UrgencyCritical));
+        // DND on → suppress, unless critical
+        QVERIFY(!helm::shouldShowToast(true, helm::UrgencyLow));
+        QVERIFY(!helm::shouldShowToast(true, helm::UrgencyNormal));
+        QVERIFY(helm::shouldShowToast(true, helm::UrgencyCritical));
+    }
+
     void capabilitiesAdvertiseBodyAndActions() {
         const QStringList caps = helm::serverCapabilities();
         QVERIFY(caps.contains(QStringLiteral("body")));
