@@ -18,18 +18,25 @@ Ordered by self-containment (build top-down):
 2. **Jump-list `.desktop` actions.** *[this increment]* Right-click a launcher
    result → its declared actions (e.g. "New Window", "New Private Window").
    Parse `Actions=`/`[Desktop Action …]`; pure, unit-tested.
-3. **Alt-Tab overlay.** A centred overlay listing open toplevels, cycled with
-   Alt-Tab. Reuses the foreign-toplevel model from `helm-taskbar`. (labwc has a
-   native cycler; the overlay is the themed HeDE version — optional.)
-4. **Shared login/lock UI** — `helm-lock` (`ext-session-lock-v1`) + `helm-greeter`
-   (the greetd greeter), one component (design-doc §5). PAM. The bigger lift.
-5. **Do-not-disturb.** A notifyd toggle that suppresses toasts (queued to
-   history). Small, testable.
-6. **MPRIS media controls.** A tray/panel applet over `org.mpris.MediaPlayer2.*`
-   (play/pause/next/prev + title). Testable model.
-7. **Quick-settings flyout.** The slider popover deferred in Phase 2 — needs
-   xdg-popup-on-layer-shell; the risky-Wayland bit, so it comes once the simpler
-   items are in.
+3. **Alt-Tab overlay.** *[deferred — compositor-gated]* A normal Wayland client
+   can't globally grab Alt-Tab; **labwc's native cycler already handles it**. A
+   themed HeDE overlay would need a compositor protocol/hook — not simple client
+   work, so it stays on labwc's cycler for now.
+4. **Lock screen.** *[done — adopted]* A native `helm-lock` is blocked:
+   **QtWidgets can't take the `ext-session-lock` surface role** (no Qt
+   integration, unlike LayerShellQt for layer-shell). So HeDE **adopts
+   `swaylock` + `swayidle`** (like labwc/lxqt-policykit): `Super+L` locks,
+   `swayidle` locks after 10 min and before sleep. Native themed `helm-lock` /
+   `helm-greeter` deferred until a Qt session-lock integration exists.
+5. **Do-not-disturb.** *[done]* notifyd suppresses toasts under DND (critical
+   urgency breaks through); `org.gentoo.hede.Notifications` interface + panel
+   bell toggle. Pure `shouldShowToast` unit-tested.
+6. **MPRIS media controls.** *[done]* `src/media` panel applet over
+   `org.mpris.MediaPlayer2.*` (prev/play-pause/next + track), live via
+   PropertiesChanged/NameOwnerChanged. Pure helpers unit-tested.
+7. **Quick-settings flyout.** *[deferred]* The slider popover — needs
+   xdg-popup-on-layer-shell; scroll-to-adjust (Phase 2) covers the function
+   meanwhile.
 
 ## 2. This increment
 

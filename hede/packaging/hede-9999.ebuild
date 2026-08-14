@@ -38,6 +38,8 @@ RDEPEND="
 	lxqt-base/lxqt-policykit
 	app-misc/brightnessctl
 	media-video/wireplumber
+	gui-apps/swaylock
+	gui-apps/swayidle
 "
 
 src_test() {

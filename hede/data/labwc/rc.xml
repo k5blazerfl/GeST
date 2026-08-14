@@ -11,6 +11,10 @@
     <keybind key="W-q">
       <action name="Close"/>
     </keybind>
+    <!-- Super+L → lock the screen (adopted swaylock) -->
+    <keybind key="W-l">
+      <action name="Execute"><command>swaylock -f</command></action>
+    </keybind>
     <!-- Aero-Snap: Super+arrows (edge-drag snapping is labwc-native) -->
     <keybind key="W-Left">
       <action name="SnapToEdge" direction="left"/>
