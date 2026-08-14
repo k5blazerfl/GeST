@@ -1,0 +1,7 @@
+# USE flags for the GeST installer live image (applied via portage_confdir in
+# the stage1 spec).
+
+# The live image boots into HeDE, whose Control Center *is* GeST's Qt frontend
+# (gest-settings). Build gest with USE=qt so PySide6 and gest-settings are
+# present — without this the desktop comes up but its Settings do nothing.
+app-admin/gest qt
