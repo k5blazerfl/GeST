@@ -138,11 +138,13 @@ every other GeST module uses. This is the piece no other tool has.
 
 ## 8. Runner strategy
 
-**Default a new bottle to Proton-via-umu** — protonfixes + bundled DXVK/VKD3D +
-the SLR container are what make it "just work" for games and most modern apps,
-matching the Steam experience. **Offer plain Wine** as the lightweight,
-fully-in-tree option for simple apps (no GURU dep, no container). One launch
-pipeline serves both; the runner just changes the env + the executable.
+**The runner is chosen per bottle, with no default** (*resolved*): `drydock
+create <name> --runner {proton|wine}` is explicit. Proton-via-umu gives the
+Steam-like "just works" (protonfixes + bundled DXVK/VKD3D + the SLR container);
+plain Wine is the lightweight, fully-in-tree option (no GURU dep, no container).
+One launch pipeline serves both — the runner only changes the env + the
+executable — so requiring the choice costs nothing and keeps Drydock unopinionated
+about games-vs-apps.
 
 ## 9. Buildable now vs. the locked door
 
@@ -169,14 +171,18 @@ pipeline serves both; the runner just changes the env + the executable.
 6. **Later** — sandboxing (bubblewrap + portals, like Bottles); install-script
    library; optional Lutris/Bottles prefix adoption.
 
-## 11. Open decisions
+## 11. Decisions
 
-1. **Default runner:** Proton-via-umu (recommended) vs. plain Wine.
-2. **Desktop entries:** synthesize-only vs. also harvest wine's auto-generated
-   `.desktop`s (recommended: both).
-3. **Sandboxing:** defer (recommended) vs. bwrap from v1.
-4. **umu dependency:** it's GURU-only — do we require the overlay, vendor a
-   fallback, or make Proton bottles opt-in behind "enable GURU"?
+1. **Runner — chosen per bottle, no default** (*resolved*). `--runner
+   {proton|wine}` is required at create time.
+2. **Desktop entries — synthesize *and* harvest** (*resolved*). Synthesize a
+   Customs launcher on register; `drydock scan <bottle>` adopts wine's
+   auto-generated `.desktop`s, rewriting their `Exec` through `drydock-run`.
+3. **umu (GURU-only) — offer to enable GURU** (*resolved*). Proton bottles work;
+   the prereq checker offers to enable the GURU overlay (via GeST's repos module)
+   and install umu when it's missing — overlay opt-in, explicit, never silent.
+4. **Sandboxing — deferred** (*resolved*). v1 runs apps directly; bubblewrap +
+   portals is a later phase (§10.6).
 
 ## 12. Non-goals
 
