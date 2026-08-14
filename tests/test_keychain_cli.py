@@ -19,7 +19,7 @@ requires_crypto = pytest.mark.skipif(not _HAS_CRYPTO, reason="cryptography not i
 
 # ---- scripted IO -------------------------------------------------------
 class IOCtx(NamedTuple):
-    io: "cli.CliIO"
+    io: cli.CliIO
     out: list[str]
     err: list[str]
     secret: dict[str, bytes]  # {"bytes": <accumulated stdout secret>}
