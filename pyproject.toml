@@ -23,8 +23,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "pytest-asyncio>=0.23"]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "cryptography>=44"]
 qt = ["PySide6"]
+# Keychain vault (docs/design/keychain.md): Argon2id KDF + ChaCha20-Poly1305 AEAD.
+# cryptography>=44 provides both the Argon2id KDF and the AEAD, so the vault needs
+# no other crypto dependency. Maps to a `keychain` USE flag in the ebuild.
+keychain = ["cryptography>=44"]
 
 [project.scripts]
 gest = "gest.tui.app:main"
