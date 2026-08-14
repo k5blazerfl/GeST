@@ -40,6 +40,9 @@ export ASAHI_OVERLAY="${ASAHI_OVERLAY:-}"
 export PORTAGE_CONFDIR="${here}/portage-conf"
 export MOTD="${specdir}/motd"
 export FSSCRIPT="${specdir}/fsscript.sh"
+# Files copied verbatim into the image root (e.g. /etc/greetd/config.toml, which
+# autologins into HeDE). Optional — only wired if the arch ships an overlay/ dir.
+export ROOT_OVERLAY="${specdir}/overlay"
 
 mkdir -p "${outdir}"
 

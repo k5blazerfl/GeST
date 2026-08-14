@@ -2,8 +2,9 @@
 #
 # build.sh renders this to build/livecd-stage2.spec (substituting ${VARS} from
 # config.env). Stage 2 takes livecd-stage1's build root, adds a kernel +
-# bootloader, runs the fsscript (autologin + auto-launch GeST), and packs a
-# hybrid ISO (BIOS + UEFI) that boots straight into the installer.
+# bootloader, lays down the root overlay + runs the fsscript (enable the seat/
+# login + greeter services), and packs a hybrid ISO (BIOS + UEFI) that boots
+# straight into the HeDE desktop, from which GeST installs Gentoo.
 
 subarch: amd64
 version_stamp: gest-${TIMESTAMP}
@@ -25,6 +26,11 @@ livecd/iso: gest-installer-amd64-${TIMESTAMP}.iso
 livecd/volid: GEST_INSTALLER
 livecd/motd: ${MOTD}
 
-# Run inside the stage2 chroot after packages install: autologin root on tty1,
-# launch `gest` on login, and enable dbus so the GeST backend can bus-activate.
+# Files copied into the image root before fsscript runs: /etc/greetd/config.toml,
+# which autologins the boot straight into the HeDE session.
+livecd/root_overlay: ${ROOT_OVERLAY}
+
+# Run inside the stage2 chroot after packages install: enable the seat/login +
+# greeter services so the image boots into HeDE (the Helm Desktop Environment),
+# from which the user runs GeST to install Gentoo.
 livecd/fsscript: ${FSSCRIPT}

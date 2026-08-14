@@ -1,9 +1,12 @@
 # A GeST installer live image
 
 GeST's north star is to facilitate a full Gentoo install. The natural delivery is
-a **bootable live image that boots straight into GeST's installer** — a Gentoo
-minimal environment plus `app-admin/gest` and the tools its install path drives,
-with the image autologging in and launching `gest` on the console.
+a **bootable live image that boots straight into a desktop** — a Gentoo
+environment plus `app-admin/gest` and the tools its install path drives. The
+amd64 image comes up in **HeDE** (the Helm Desktop Environment), whose Control
+Center *is* GeST's Qt frontend; the user installs Gentoo from GeST (its TUI or
+the graphical Control Center, both present). The arm64 image is still a
+console-only `gest` installer (see the Apple-Silicon gap below).
 
 Two targets boot very differently:
 
@@ -82,11 +85,18 @@ placeholders. The rendered `build/` specs are throwaway output (git-ignored).
 
 ### The image on boot
 
-`fsscript.sh` (catalyst's `livecd/fsscript`) sets the image up to **autologin
-root on tty1 and launch `gest`** — the gated **Install Gentoo** menu category
-(shown because the live env is root) is the entry point. Exiting GeST drops to a
-root shell. D-Bus and dhcpcd are enabled so the polkit-gated backend activates and
-wired networking comes up for the stage3 download / emerges.
+**amd64** boots into **HeDE**. `gest.packages` pulls `gui-apps/hede` (which drags
+in labwc, foot, gest, the polkit agent, wireplumber, …) plus `elogind`, `seatd`
+and `greetd`; `app-admin/gest` is built with `USE=qt` (see
+`portage-conf/package.use`) so the graphical Control Center is present. The root
+overlay lays down `/etc/greetd/config.toml`, which **autologins the boot into the
+HeDE session** (`dbus-run-session helm-session`) on vt1, and `fsscript.sh`
+enables the `elogind` / `seatd` / `dbus` / `greetd` / `dhcpcd` services and frees
+tty1 from the default getty. Inside HeDE the user runs GeST — TUI or Control
+Center — to install; tty2-6 stay as rescue shells with `gest` on `PATH`.
+
+**arm64** has no desktop: `fsscript.sh` there still autologins root on tty1 and
+launches `gest` on the console.
 
 ### Test in QEMU before real hardware
 
