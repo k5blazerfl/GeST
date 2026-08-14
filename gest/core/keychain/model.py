@@ -204,10 +204,19 @@ class VaultPayload:
             col.modified = _now()
 
     def set_secret(self, collection_id: str, item_id: str, secret: bytes) -> Item:
+        return self.update_item(collection_id, item_id, secret=secret)
+
+    def update_item(self, collection_id: str, item_id: str, *,
+                    label: str | None = None, secret: bytes | None = None) -> Item:
+        """Update an item's label and/or secret in place, bumping ``modified``.
+        Raises ``KeyError`` for an unknown item."""
         item = self.get_item(collection_id, item_id)
         if item is None:
             raise KeyError(item_id)
-        item.secret = bytes(secret)
+        if label is not None:
+            item.label = label
+        if secret is not None:
+            item.secret = bytes(secret)
         item.modified = _now()
         return item
 

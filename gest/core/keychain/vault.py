@@ -188,6 +188,13 @@ class Vault:
     def find_item(self, item_id: str) -> tuple[str, Item] | None:
         return self.payload.find_item(item_id)
 
+    def update_item(self, collection_ref: str, item_id: str, *,
+                    label: str | None = None, secret: bytes | None = None) -> Item:
+        col = self.payload.resolve_collection(collection_ref)
+        if col is None:
+            raise UnknownCollection(collection_ref)
+        return self.payload.update_item(col.id, item_id, label=label, secret=secret)
+
     # ---- internals -----------------------------------------------------
     def _require_unlocked(self) -> None:
         if self.is_locked:
