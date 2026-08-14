@@ -69,6 +69,9 @@ class InstallPlan:
     timezone: str
     locale: str
     keymap: str
+    arch: str = "amd64"            # target CPU arch: "amd64" | "arm64" (Asahi).
+    # Derived from the chosen stage3 variant; the one arch-aware step (bootloader
+    # → GRUB --target) branches on it. Disk/mount/kernel are arch-neutral.
     profile: int = 1               # eselect profile target number
     root_password: bool = True     # whether to set it (secret prompted at run)
     user: UserSpec | None = None

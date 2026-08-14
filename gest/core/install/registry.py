@@ -418,7 +418,7 @@ class InstallBootloader(ArgvStep):
     key = "install_bootloader"
 
     def build(self, ctx: InstallContext) -> list[Step]:
-        return install_steps(ctx.plan.bootloader)
+        return install_steps(ctx.plan.bootloader, arch=ctx.plan.arch)
 
     async def is_satisfied(self, ctx: InstallContext) -> bool:
         return ctx.state.done(self.key)

@@ -91,6 +91,22 @@ def test_variants_are_all_openrc_amd64():
     assert model.DEFAULT_VARIANT.flavor == "openrc"
 
 
+def test_arm64_variants_and_variants_for():
+    # Apple Silicon (Asahi) groundwork: arm64 OpenRC variants, kept out of the
+    # default offered list; variants_for() dispatches per arch.
+    assert model.variants_for("amd64") is model.VARIANTS
+    assert model.variants_for("arm64") is model.ARM64_VARIANTS
+    assert model.ARM64_VARIANTS and all(v.arch == "arm64" for v in model.ARM64_VARIANTS)
+    assert all("openrc" in v.flavor for v in model.ARM64_VARIANTS)  # no systemd
+    assert "arm64" in model.SUPPORTED_ARCHES
+
+
+def test_arm64_stage3_url_uses_the_arm64_autobuilds_path():
+    url = index.latest_url(index.MIRROR, "arm64", "openrc")
+    assert "/releases/arm64/autobuilds/" in url
+    assert url.endswith("latest-stage3-openrc.txt")
+
+
 def test_selection_carries_the_resolved_urls():
     sel = model.Stage3Selection(
         url="https://m/x/stage3.tar.xz", filename="stage3.tar.xz", size=42,

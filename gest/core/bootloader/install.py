@@ -34,12 +34,17 @@ class InstallConfig:
     regenerate: bool = True
 
 
-def install_steps(config: InstallConfig) -> list[Step]:
-    """The ordered pipeline: install GRUB, then (optionally) regenerate its config."""
+def install_steps(config: InstallConfig, *, arch: str = "amd64") -> list[Step]:
+    """The ordered pipeline: install GRUB, then (optionally) regenerate its config.
+
+    ``arch`` selects the GRUB ``--target`` platform (amd64 x86_64-efi / arm64-efi
+    for Apple Silicon); it is a plan-level property threaded in by the caller.
+    """
     steps = [Step(
         f"install GRUB ({config.firmware})",
         commands.grub_install_argv(
             config.firmware,
+            arch=arch,
             efi_directory=config.efi_directory,
             bootloader_id=config.bootloader_id,
             removable=config.removable,
@@ -56,11 +61,12 @@ async def install(
     config: InstallConfig,
     executor: Executor,
     *,
+    arch: str = "amd64",
     on_progress: OnProgress | None = None,
     on_step: Callable[[int], None] | None = None,
 ) -> None:
     """Install directly through ``executor`` (root/live-CD path)."""
-    await run_steps(install_steps(config), executor,
+    await run_steps(install_steps(config, arch=arch), executor,
                     on_progress=on_progress, on_step=on_step)
 
 

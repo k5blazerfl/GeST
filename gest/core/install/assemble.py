@@ -22,7 +22,13 @@ from gest.core.install.plan import InstallPlan, NetworkSpec, UserSpec
 from gest.core.kernel.build import BuildConfig
 from gest.core.network import netifrc, resolv
 from gest.core.stage3 import index
-from gest.core.stage3.model import DEFAULT_VARIANT, Stage3Selection, Stage3Variant
+from gest.core.stage3.model import (
+    ARM64_ARCH,
+    DEFAULT_VARIANT,
+    SUPPORTED_ARCHES,
+    Stage3Selection,
+    Stage3Variant,
+)
 from gest.core.system.console import valid_keymap
 from gest.core.system.hostname import valid_hostname
 from gest.core.system.locale import valid_locale
@@ -161,6 +167,13 @@ def assemble_plan(sel: InstallSelections, stage3: Stage3Selection) -> InstallPla
         raise ValueError("a root password is required")
     if sel.firmware not in ("uefi", "bios"):
         raise ValueError(f"invalid firmware: {sel.firmware!r}")
+    # Target arch flows from the chosen stage3 variant; the bootloader step branches
+    # on it (GRUB --target). arm64 (Apple Silicon/Asahi) is UEFI-only — no BIOS GRUB.
+    arch = sel.variant.arch
+    if arch not in SUPPORTED_ARCHES:
+        raise ValueError(f"unsupported target arch: {arch!r}")
+    if arch == ARM64_ARCH and sel.firmware != "uefi":
+        raise ValueError("arm64 installs are UEFI-only (no BIOS GRUB target)")
     if not valid_hostname(sel.hostname):
         raise ValueError(f"invalid hostname: {sel.hostname!r}")
     if not valid_zone_name(sel.timezone):
@@ -181,6 +194,7 @@ def assemble_plan(sel: InstallSelections, stage3: Stage3Selection) -> InstallPla
             method=sel.kernel_method, jobs=sel.kernel_jobs, initramfs=sel.kernel_initramfs),
         bootloader=InstallConfig(
             firmware=sel.firmware, efi_directory=sel.efi_directory, disk=sel.boot_disk),
+        arch=arch,
         hostname=sel.hostname,
         timezone=sel.timezone,
         locale=sel.locale,

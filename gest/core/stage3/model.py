@@ -11,6 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 DEFAULT_ARCH = "amd64"
+ARM64_ARCH = "arm64"                 # Apple Silicon (Asahi) and other AArch64
+SUPPORTED_ARCHES = (DEFAULT_ARCH, ARM64_ARCH)
 
 
 @dataclass(slots=True, frozen=True)
@@ -36,7 +38,21 @@ VARIANTS: tuple[Stage3Variant, ...] = (
     Stage3Variant(DEFAULT_ARCH, "nomultilib-openrc", "No-multilib (OpenRC)"),
 )
 
+# Apple Silicon (Asahi) groundwork: a stock arm64 OpenRC stage3 is the base
+# userland. The Asahi kernel (asahi-sources / overlay) and the m1n1 boot stub are a
+# separate install increment; arch flows through the plan so the bootloader step
+# emits arm64-efi GRUB. Not merged into the default offered VARIANTS yet.
+ARM64_VARIANTS: tuple[Stage3Variant, ...] = (
+    Stage3Variant(ARM64_ARCH, "openrc", "Standard (OpenRC, arm64)"),
+    Stage3Variant(ARM64_ARCH, "desktop-openrc", "Desktop (OpenRC, arm64)"),
+)
+
 DEFAULT_VARIANT = VARIANTS[0]
+
+
+def variants_for(arch: str) -> tuple[Stage3Variant, ...]:
+    """The offered stage3 variants for a target ``arch`` (the installer's pick-list)."""
+    return ARM64_VARIANTS if arch == ARM64_ARCH else VARIANTS
 
 
 @dataclass(slots=True, frozen=True)

@@ -3,10 +3,16 @@ is pure, validated, and stage3-resolution parses a mirror index over a fake fetc
 
 import pytest
 
+from gest.core.bootloader.install import install_steps
 from gest.core.install import assemble
 from gest.core.install.assemble import InstallSelections, assemble_plan, resolve_stage3
 from gest.core.install.plan import NetworkSpec, UserSpec
-from gest.core.stage3.model import DEFAULT_VARIANT, Stage3Selection, Stage3Variant
+from gest.core.stage3.model import (
+    ARM64_VARIANTS,
+    DEFAULT_VARIANT,
+    Stage3Selection,
+    Stage3Variant,
+)
 
 _S3 = Stage3Selection(
     url="https://m/stage3.tar.xz", filename="stage3.tar.xz", size=9,
@@ -38,6 +44,32 @@ def test_assemble_carries_tier2_selection():
     assert assemble_plan(_ok_selection(), _S3).tier2 == frozenset()
     plan = assemble_plan(_ok_selection(tier2={"sshd", "sysctl"}), _S3)
     assert plan.tier2 == frozenset({"sshd", "sysctl"})
+
+
+# --- target arch (Apple Silicon / Asahi groundwork) -------------------------
+
+def test_assemble_defaults_to_amd64_arch():
+    assert assemble_plan(_ok_selection(), _S3).arch == "amd64"
+
+
+def test_assemble_arm64_variant_sets_arch_and_uefi_target():
+    # picking an arm64 stage3 variant makes the whole plan arm64; the bootloader
+    # step then emits an arm64-efi grub-install (firmware defaults to uefi).
+    plan = assemble_plan(_ok_selection(variant=ARM64_VARIANTS[0]), _S3)
+    assert plan.arch == "arm64"
+    assert "--target=arm64-efi" in install_steps(plan.bootloader, arch=plan.arch)[0].argv
+
+
+def test_assemble_arm64_rejects_bios():
+    with pytest.raises(ValueError):
+        assemble_plan(
+            _ok_selection(variant=ARM64_VARIANTS[0], firmware="bios", boot_disk="sda"), _S3)
+
+
+def test_assemble_rejects_unsupported_arch():
+    bad = Stage3Variant("riscv", "openrc", "RISC-V")
+    with pytest.raises(ValueError):
+        assemble_plan(_ok_selection(variant=bad), _S3)
 
 
 def test_assemble_carries_kernel_and_bootloader_choices():

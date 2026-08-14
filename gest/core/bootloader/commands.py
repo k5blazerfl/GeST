@@ -18,6 +18,24 @@ _DEVICE_RE = re.compile(r"\A/dev/[A-Za-z0-9][A-Za-z0-9/_-]*\Z")
 
 FIRMWARES = frozenset({"uefi", "bios"})
 
+# The GRUB platform target per (arch, firmware) — the ``--target=`` value.
+# amd64 UEFI/BIOS are the x86 defaults; arm64 UEFI is the Apple Silicon (Asahi)
+# path, where GRUB runs as an EFI app under U-Boot. arm64 has no BIOS target.
+_GRUB_TARGETS = {
+    ("amd64", "uefi"): "x86_64-efi",
+    ("amd64", "bios"): "i386-pc",
+    ("arm64", "uefi"): "arm64-efi",
+}
+
+
+def grub_target(arch: str, firmware: str) -> str:
+    """The GRUB ``--target=`` platform for ``arch``/``firmware`` (e.g. arm64+uefi
+    → ``arm64-efi``). Raises on an unsupported combination (e.g. arm64 BIOS)."""
+    try:
+        return _GRUB_TARGETS[(arch, firmware)]
+    except KeyError:
+        raise ValueError(f"no GRUB target for arch={arch!r} firmware={firmware!r}") from None
+
 
 def _valid_path(path: str) -> bool:
     return path.startswith("/") and "\n" not in path and "\0" not in path
@@ -34,6 +52,7 @@ def grub_mkconfig_argv(
 def grub_install_argv(
     firmware: str,
     *,
+    arch: str = "amd64",
     efi_directory: str = "/efi",
     bootloader_id: str = "GRUB",
     removable: bool = False,
@@ -43,28 +62,31 @@ def grub_install_argv(
 ) -> list[str]:
     """Build the `grub-install` argv for a UEFI or BIOS install.
 
+    The ``--target`` platform is derived from ``arch``/``firmware`` (:func:`grub_target`)
+    — amd64 UEFI is ``x86_64-efi``, arm64 UEFI (Apple Silicon/Asahi) is ``arm64-efi``.
     UEFI writes the loader into ``efi_directory`` (a mounted ESP) and registers an
     efibootmgr entry named ``bootloader_id``; ``removable`` also drops the
-    fallback ``/EFI/BOOT/BOOTX64.EFI``. BIOS writes boot code to ``disk``'s MBR.
+    fallback ``/EFI/BOOT/BOOT*.EFI``. BIOS writes boot code to ``disk``'s MBR.
     ``boot_directory`` (e.g. ``/mnt/gentoo/boot``) targets an install root other
     than the running system; empty means the live host's ``/boot``.
     """
     if firmware not in FIRMWARES:
         raise ValueError(f"unknown firmware: {firmware!r}")
+    target = grub_target(arch, firmware)   # validates the (arch, firmware) pair
     argv = [grub_install]
     if firmware == "uefi":
         if not _valid_path(efi_directory):
             raise ValueError(f"invalid EFI directory: {efi_directory!r}")
         if not _ID_RE.match(bootloader_id):
             raise ValueError(f"invalid bootloader id: {bootloader_id!r}")
-        argv += ["--target=x86_64-efi", f"--efi-directory={efi_directory}",
+        argv += [f"--target={target}", f"--efi-directory={efi_directory}",
                  f"--bootloader-id={bootloader_id}"]
         if removable:
             argv.append("--removable")
     else:  # bios
         if not _DEVICE_RE.match(disk) or ".." in disk:
             raise ValueError(f"invalid target disk: {disk!r}")
-        argv.append("--target=i386-pc")
+        argv.append(f"--target={target}")
     if boot_directory:
         if not _valid_path(boot_directory):
             raise ValueError(f"invalid boot directory: {boot_directory!r}")

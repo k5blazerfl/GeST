@@ -44,6 +44,35 @@ def test_grub_install_rejects_bad_input(call):
         call()
 
 
+# --- arch → GRUB target -----------------------------------------------------
+
+def test_grub_target_mapping():
+    assert commands.grub_target("amd64", "uefi") == "x86_64-efi"
+    assert commands.grub_target("amd64", "bios") == "i386-pc"
+    assert commands.grub_target("arm64", "uefi") == "arm64-efi"  # Apple Silicon/Asahi
+
+
+@pytest.mark.parametrize("arch,firmware", [
+    ("arm64", "bios"),   # no BIOS GRUB on arm64
+    ("riscv", "uefi"),   # unknown arch
+])
+def test_grub_target_rejects_unsupported(arch, firmware):
+    with pytest.raises(ValueError):
+        commands.grub_target(arch, firmware)
+
+
+def test_grub_install_uefi_arm64_target():
+    assert commands.grub_install_argv("uefi", arch="arm64") == [
+        "grub-install", "--target=arm64-efi", "--efi-directory=/efi",
+        "--bootloader-id=GRUB"]
+
+
+def test_install_steps_threads_arch_to_target():
+    cfg = install.InstallConfig(firmware="uefi", regenerate=False)
+    steps = install.install_steps(cfg, arch="arm64")
+    assert "--target=arm64-efi" in steps[0].argv
+
+
 # --- pipeline ---------------------------------------------------------------
 
 def test_install_steps_install_then_regenerate():
