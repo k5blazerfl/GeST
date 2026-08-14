@@ -3,6 +3,8 @@ all with injected spawn / credential-store / IO, so no FreeRDP, keychain, or bus
 
 from __future__ import annotations
 
+from typing import NamedTuple
+
 from gest.core.rdp import creds, launcher, run, store
 from gest.core.rdp.model import RdpProfile
 from gest.tui.gangway.cli import CliIO, GangwayEnv, run_cli
@@ -49,7 +51,15 @@ def test_launch_without_password_has_no_stdin_or_from_stdin():
 
 
 # ---- CLI ---------------------------------------------------------------
-def _env(tmp_path, password="pw"):
+class GEnv(NamedTuple):
+    env: GangwayEnv
+    out: list
+    err: list
+    launched: list
+    stored: list
+
+
+def _env(tmp_path, password="pw") -> GEnv:
     out: list[str] = []
     err: list[str] = []
     launched: list = []
@@ -67,67 +77,66 @@ def _env(tmp_path, password="pw"):
     env = GangwayEnv(io=io, store_base=str(tmp_path / "cfg"),
                      applications_dir=str(tmp_path / "apps"),
                      launch_fn=launch_fn, cred_store=cred_store)
-    return env, out, err, launched, stored
+    return GEnv(env, out, err, launched, stored)
 
 
 def test_add_list_show(tmp_path):
-    env, out, err, *_ = _env(tmp_path)
-    assert run_cli(["add", "work", "--host", "pc.corp", "--user", "bob"], env=env) == 0
-    out.clear()
-    assert run_cli(["list"], env=env) == 0
-    assert out == ["work"]
-    out.clear()
-    assert run_cli(["show", "work"], env=env) == 0
-    joined = "\n".join(out)
+    g = _env(tmp_path)
+    assert run_cli(["add", "work", "--host", "pc.corp", "--user", "bob"], env=g.env) == 0
+    g.out.clear()
+    assert run_cli(["list"], env=g.env) == 0
+    assert g.out == ["work"]
+    g.out.clear()
+    assert run_cli(["show", "work"], env=g.env) == 0
+    joined = "\n".join(g.out)
     assert "pc.corp:3389" in joined and "bob" in joined
     assert "pw" not in joined  # never shows the password
 
 
 def test_add_rejects_invalid(tmp_path):
-    env, out, err, *_ = _env(tmp_path)
-    # empty host is rejected by argparse (required), so test an invalid quality path
-    rc = run_cli(["add", "x", "--host", "h", "--port", "99999"], env=env)
-    assert rc == 2 and err
+    g = _env(tmp_path)
+    rc = run_cli(["add", "x", "--host", "h", "--port", "99999"], env=g.env)
+    assert rc == 2 and g.err
 
 
 def test_set_password_stores_via_keychain(tmp_path):
-    env, out, err, _launched, stored = _env(tmp_path, password="hunter2")
-    run_cli(["add", "work", "--host", "pc", "--user", "bob"], env=env)
-    assert run_cli(["set-password", "work"], env=env) == 0
-    assert len(stored) == 1
-    attrs, label, pw = stored[0]
+    g = _env(tmp_path, password="hunter2")
+    run_cli(["add", "work", "--host", "pc", "--user", "bob"], env=g.env)
+    assert run_cli(["set-password", "work"], env=g.env) == 0
+    assert len(g.stored) == 1
+    attrs, label, pw = g.stored[0]
     assert attrs == {"service": "gangway", "host": "pc", "port": "3389", "user": "bob"}
     assert label == "Gangway: work" and pw == "hunter2"
 
 
 def test_install_writes_launcher(tmp_path):
-    env, out, *_ = _env(tmp_path)
-    run_cli(["add", "work", "--host", "pc"], env=env)
-    assert run_cli(["install", "work"], env=env) == 0
+    g = _env(tmp_path)
+    run_cli(["add", "work", "--host", "pc"], env=g.env)
+    assert run_cli(["install", "work"], env=g.env) == 0
     desktop = tmp_path / "apps" / f"{launcher.desktop_id('work')}.desktop"
     assert desktop.exists()
     assert "gangway-open work" in desktop.read_text()
 
 
 def test_open_invokes_launch(tmp_path):
-    env, out, err, launched, _ = _env(tmp_path)
-    run_cli(["add", "work", "--host", "pc"], env=env)
-    assert run_cli(["open", "work"], env=env) == 0
-    assert len(launched) == 1
-    profile, share = launched[0]
+    g = _env(tmp_path)
+    run_cli(["add", "work", "--host", "pc"], env=g.env)
+    assert run_cli(["open", "work"], env=g.env) == 0
+    assert len(g.launched) == 1
+    profile, share = g.launched[0]
     assert profile.host == "pc" and share is not None  # drive_redirect on by default
 
 
 def test_rm_removes_profile_and_launcher(tmp_path):
-    env, out, err, *_ = _env(tmp_path)
-    run_cli(["add", "work", "--host", "pc"], env=env)
-    run_cli(["install", "work"], env=env)
-    assert run_cli(["rm", "work"], env=env) == 0
-    assert store.list_profiles(env.store_base) == []
+    g = _env(tmp_path)
+    run_cli(["add", "work", "--host", "pc"], env=g.env)
+    run_cli(["install", "work"], env=g.env)
+    assert run_cli(["rm", "work"], env=g.env) == 0
+    assert store.list_profiles(g.env.store_base) == []
     assert not (tmp_path / "apps" / f"{launcher.desktop_id('work')}.desktop").exists()
 
 
 def test_open_unknown_profile(tmp_path):
-    env, out, err, *_ = _env(tmp_path)
-    assert run_cli(["open", "nope"], env=env) == 1
-    assert err
+    g = _env(tmp_path)
+    assert run_cli(["open", "nope"], env=g.env) == 1
+    assert g.err
