@@ -54,7 +54,7 @@ jobs:
                  tests/test_keychain_model.py tests/test_keychain_vault.py \
                  tests/test_keychain_cli.py tests/test_keyringd.py \
                  tests/test_customs.py tests/test_rdp.py \
-                 tests/test_gangway_cli.py -q
+                 tests/test_gangway_cli.py tests/test_drydock_core.py -q
 
       - name: Syntax-check the ebuilds
         run: |
