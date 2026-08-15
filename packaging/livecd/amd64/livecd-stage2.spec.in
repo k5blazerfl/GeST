@@ -25,12 +25,15 @@ repos: ${GEST_OVERLAY} ${HEDE_OVERLAY}
 # genkernel can't compile ("prepare" target fails), so it can't be used here.
 boot/kernel: gentoo
 boot/kernel/gentoo/sources: sys-kernel/gentoo-sources
-# Bundle ALL kernel modules into the initramfs. Without this, genkernel's default
-# initramfs omits iso9660 (it ships squashfs/loop/sr_mod/cdrom but NOT iso9660),
-# so the initramfs can't mount the iso9660 CD to reach /image.squashfs — the live
-# medium is never found and boot drops to a rescue shell. --all-ramdisk-modules
-# guarantees iso9660 (and any storage/fs driver real hardware needs) is present.
-boot/kernel/gentoo/gk_kernargs: --all-ramdisk-modules
+# Kernel config with the CD-boot filesystems built IN (=y): iso9660, squashfs,
+# loop, sr, cdrom. This is why we don't use genkernel's --all-ramdisk-modules:
+# that pulled EVERY module (incl. GPU drivers like amdgpu) into the initramfs,
+# and genkernel's initramfs coldplugs the display controller — so amdgpu loaded
+# early WITHOUT its firmware (firmware lives on the squashfs, not the initramfs)
+# and failed to init the GPU on real AMD hardware → no /dev/dri → no compositor.
+# Building the CD-boot FS in-kernel keeps the live medium mountable while leaving
+# GPU drivers as normal modules that load AFTER root-pivot, when firmware exists.
+boot/kernel/gentoo/config: ${KERNEL_CONFIG}
 
 # image: a squashfs root packed into a hybrid, UEFI-capable ISO
 livecd/type: generic-livecd

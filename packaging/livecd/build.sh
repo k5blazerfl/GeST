@@ -46,6 +46,9 @@ export FSSCRIPT="${specdir}/fsscript.sh"
 # Files copied verbatim into the image root (e.g. /etc/greetd/config.toml, which
 # autologins into HeDE). Optional — only wired if the arch ships an overlay/ dir.
 export ROOT_OVERLAY="${specdir}/overlay"
+# Kernel .config genkernel builds from (CD-boot filesystems compiled in). Only
+# referenced by the amd64 stage2 spec.
+export KERNEL_CONFIG="${specdir}/kernel-config"
 
 mkdir -p "${outdir}"
 
