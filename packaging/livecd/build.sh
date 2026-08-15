@@ -68,6 +68,21 @@ fi
 
 command -v catalyst >/dev/null || { echo "catalyst not installed (emerge dev-util/catalyst)" >&2; exit 3; }
 
+# catalyst runs grub-mkrescue on the BUILD HOST (not in the chroot) to pack the
+# ISO, so the host's sys-boot/grub decides which El Torito boot images the ISO
+# gets. A UEFI-only host grub yields a UEFI-only ISO that BIOS machines can't
+# boot. Warn loudly if the BIOS (i386-pc) platform is missing on x86 arches.
+case "${arch}" in
+    amd64|x86|i?86)
+        if [ ! -d /usr/lib/grub/i386-pc ]; then
+            echo "!! WARNING: host sys-boot/grub has no i386-pc platform — the ISO" >&2
+            echo "!! will be UEFI-ONLY (BIOS machines won't boot it). Rebuild grub with" >&2
+            echo "!!   GRUB_PLATFORMS=\"pc efi-64\" emerge -1 sys-boot/grub" >&2
+            echo "!! then re-run this build for a BIOS+UEFI hybrid ISO." >&2
+        fi
+        ;;
+esac
+
 echo "== livecd-stage1 =="
 catalyst -f "${outdir}/livecd-stage1.spec"
 echo "== livecd-stage2 =="
