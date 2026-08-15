@@ -5,3 +5,21 @@ app-admin/gest ~amd64
 # Some of HeDE's deps may also need keywording on the build host.
 gui-apps/hede ~amd64
 gui-libs/greetd ~amd64
+
+# The rest of the HeDE desktop stack that is still ~amd64. Deliberately targeted
+# rather than a blanket `*/* ~amd64`: a global unstable keyword pulls the
+# toolchain (notably dev-lang/perl 5.44) ahead of the stable stage3 seed's perl
+# 5.42, causing a perl:0 slot conflict against the seed's installed dev-perl
+# modules. Keywording only these keeps the base/toolchain at the seed's stable
+# versions. (Most of the stack — wlroots, foot, Qt6, PySide6 — is already stable.)
+dev-libs/wayland ~amd64
+dev-util/glslang ~amd64
+dev-util/spirv-tools ~amd64
+media-libs/vulkan-loader ~amd64
+gui-wm/labwc ~amd64
+
+# Version-locked companions of the above (must match their keyworded siblings):
+# wayland-scanner↔wayland, vulkan-headers↔vulkan-loader, spirv-headers↔spirv-tools.
+dev-util/wayland-scanner ~amd64
+dev-util/vulkan-headers ~amd64
+dev-util/spirv-headers ~amd64

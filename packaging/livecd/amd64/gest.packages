@@ -9,7 +9,7 @@
 app-admin/gest
 
 # storage provisioning: partition, mkfs, swap, mount
-sys-fs/gptfdisk          # sgdisk
+sys-apps/gptfdisk          # sgdisk
 sys-block/parted
 sys-apps/util-linux      # mount, lsblk, wipefs, swapon
 sys-fs/e2fsprogs         # ext4

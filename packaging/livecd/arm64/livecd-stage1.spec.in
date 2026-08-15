@@ -15,12 +15,12 @@ version_stamp: gest-${TIMESTAMP}
 target: livecd-stage1
 rel_type: default
 profile: ${PROFILE}
-snapshot: ${SNAPSHOT}
+snapshot_treeish: ${SNAPSHOT}
 source_subpath: default/${STAGE3}
 
 # Both overlays: GeST (for app-admin/gest) and Asahi (for asahi-meta / the
 # Asahi kernel / m1n1 / U-Boot). catalyst accepts a space-separated list.
-portage_overlay: ${GEST_OVERLAY} ${ASAHI_OVERLAY}
+repos: ${GEST_OVERLAY} ${ASAHI_OVERLAY}
 
 portage_confdir: ${PORTAGE_CONFDIR}
 

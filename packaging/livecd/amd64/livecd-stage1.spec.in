@@ -12,11 +12,12 @@ version_stamp: gest-${TIMESTAMP}
 target: livecd-stage1
 rel_type: default
 profile: ${PROFILE}
-snapshot: ${SNAPSHOT}
+snapshot_treeish: ${SNAPSHOT}
 source_subpath: default/${STAGE3}
 
-# Make app-admin/gest resolvable during the build.
-portage_overlay: ${GEST_OVERLAY}
+# Make app-admin/gest (GeST overlay) and gui-apps/hede (Amphitheater overlay)
+# resolvable during the build. catalyst 4.x spec key is `repos` (space-separated).
+repos: ${GEST_OVERLAY} ${HEDE_OVERLAY}
 
 # ~amd64 keyword for the GeST ebuild (packaging/livecd/portage-conf/).
 portage_confdir: ${PORTAGE_CONFDIR}

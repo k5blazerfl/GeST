@@ -54,15 +54,25 @@ hand-edit spec files. `build.sh` renders `amd64/*.spec.in` (substituting
 ### Prerequisites (on a Gentoo build host)
 
 ```sh
-sudo emerge -av dev-util/catalyst app-emulation/qemu sys-firmware/edk2-ovmf
+sudo emerge -av dev-util/catalyst app-emulation/qemu sys-firmware/edk2-bin
+
+# IMPORTANT: catalyst packs the ISO with grub-mkrescue ON THE HOST, so the host's
+# grub decides the ISO's boot images. A UEFI-only host grub → a UEFI-only ISO
+# that BIOS machines can't boot. Ensure the BIOS (pc) platform is built:
+sudo GRUB_PLATFORMS="pc efi-64" emerge -1 sys-boot/grub   # /usr/lib/grub/i386-pc must exist
+# (build.sh warns if it's missing.)
+
 # configure catalyst: /etc/catalyst/catalyst.conf (storedir, distdir, …)
 # stage a portage snapshot and a stage3 seed under catalyst's builds/:
-sudo catalyst -s stable            # a snapshot id, e.g. 2026-08-13
+sudo catalyst -s stable            # snapshot treeish; sets SNAPSHOT=stable
 # (download a stage3-amd64-openrc tarball into <storedir>/builds/default/)
 
-# make app-admin/gest resolvable during the build — clone this repo's overlay:
+# Overlays the build needs, cloned where config.env points (GEST_OVERLAY,
+# HEDE_OVERLAY): app-admin/gest lives in this repo's overlay; gui-apps/hede lives
+# in Amphitheater.
 sudo git clone https://github.com/k5blazerfl/GeST /tmp/gest \
   && sudo cp -a /tmp/gest/packaging/overlay /var/db/repos/gest
+sudo git clone https://github.com/k5blazerfl/Amphitheater /var/db/repos/amphitheater
 ```
 
 ### Configure + build

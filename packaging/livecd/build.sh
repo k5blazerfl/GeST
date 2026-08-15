@@ -37,6 +37,9 @@ esac
 # Paths the templates reference (ASAHI_OVERLAY is arm64-only; harmless on amd64).
 export PROFILE SNAPSHOT STAGE3 GEST_OVERLAY TIMESTAMP
 export ASAHI_OVERLAY="${ASAHI_OVERLAY:-}"
+# The Amphitheater overlay, where gui-apps/hede (the amd64 desktop) lives. Only
+# the amd64 specs reference it; harmless (empty) on arm64.
+export HEDE_OVERLAY="${HEDE_OVERLAY:-}"
 export PORTAGE_CONFDIR="${here}/portage-conf"
 export MOTD="${specdir}/motd"
 export FSSCRIPT="${specdir}/fsscript.sh"
@@ -64,6 +67,21 @@ if [ "${RENDER_ONLY:-}" = "1" ]; then
 fi
 
 command -v catalyst >/dev/null || { echo "catalyst not installed (emerge dev-util/catalyst)" >&2; exit 3; }
+
+# catalyst runs grub-mkrescue on the BUILD HOST (not in the chroot) to pack the
+# ISO, so the host's sys-boot/grub decides which El Torito boot images the ISO
+# gets. A UEFI-only host grub yields a UEFI-only ISO that BIOS machines can't
+# boot. Warn loudly if the BIOS (i386-pc) platform is missing on x86 arches.
+case "${arch}" in
+    amd64|x86|i?86)
+        if [ ! -d /usr/lib/grub/i386-pc ]; then
+            echo "!! WARNING: host sys-boot/grub has no i386-pc platform — the ISO" >&2
+            echo "!! will be UEFI-ONLY (BIOS machines won't boot it). Rebuild grub with" >&2
+            echo "!!   GRUB_PLATFORMS=\"pc efi-64\" emerge -1 sys-boot/grub" >&2
+            echo "!! then re-run this build for a BIOS+UEFI hybrid ISO." >&2
+        fi
+        ;;
+esac
 
 echo "== livecd-stage1 =="
 catalyst -f "${outdir}/livecd-stage1.spec"

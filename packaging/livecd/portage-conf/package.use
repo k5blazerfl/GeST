@@ -5,3 +5,18 @@
 # (gest-settings). Build gest with USE=qt so PySide6 and gest-settings are
 # present — without this the desktop comes up but its Settings do nothing.
 app-admin/gest qt
+
+# HeDE is a Qt/Wayland shell: qtbase needs the wayland client (+ opengl/gui,
+# required by wayland; widgets/dbus for the Control Center). The rest of the Qt/
+# wlroots stack resolves from the desktop profile defaults.
+dev-qt/qtbase:6 dbus gui opengl wayland widgets
+
+# firewalld drives nftables with the json/python/xtables backends.
+net-firewall/nftables json python xtables
+
+# Break the docutils<->pillow<->harfbuzz<->glib build cycle (Sphinx doc toolchain
+# pulled transitively); portage's suggested cycle-breaker.
+dev-python/pillow -truetype
+
+# gentoo-kernel-bin[initramfs] (dist-kernel) needs installkernel's dracut backend.
+sys-kernel/installkernel dracut
