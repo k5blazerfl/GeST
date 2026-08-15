@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Install Gentoo (GeST)
+GenericName=Gentoo System Installer
+Comment=Install Gentoo Linux with the GeST TUI installer
+Exec=foot -T "GeST — Install Gentoo" gest
+Icon=system-software-install
+Terminal=false
+Categories=System;Settings;
+Keywords=install;installer;gentoo;gest;gesi;

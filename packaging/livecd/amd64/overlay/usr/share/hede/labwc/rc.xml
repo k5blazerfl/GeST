@@ -20,6 +20,14 @@
     <keepBorder>yes</keepBorder>
   </theme>
 
+  <!-- Force labwc's server-side titlebar on EVERY window, even clients that ask
+       for client-side decorations (many Qt apps request CSD but then don't draw
+       one → frameless, e.g. wpa_gui). This gives a consistent titlebar+buttons
+       across all apps. -->
+  <windowRules>
+    <windowRule identifier="*" serverDecoration="yes"/>
+  </windowRules>
+
   <keyboard>
     <!-- Super+Return → terminal -->
     <keybind key="W-Return">

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=GeST Control Center
+GenericName=System Settings
+Comment=Configure the system with GeST's Qt Control Center
+Exec=gest-settings
+Icon=preferences-system
+Terminal=false
+Categories=System;Settings;
+Keywords=settings;control;system;gest;configure;
