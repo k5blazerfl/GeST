@@ -20,13 +20,12 @@
     <keepBorder>yes</keepBorder>
   </theme>
 
-  <!-- Force labwc's server-side titlebar on EVERY window, even clients that ask
-       for client-side decorations (many Qt apps request CSD but then don't draw
-       one → frameless, e.g. wpa_gui). This gives a consistent titlebar+buttons
-       across all apps. -->
-  <windowRules>
-    <windowRule identifier="*" serverDecoration="yes"/>
-  </windowRules>
+  <!-- Qt apps (e.g. wpa_gui) request client-side decorations but don't draw one,
+       so they came up frameless. Rather than force SSD compositor-side (labwc's
+       forceSSD didn't reliably override the client here), the session exports
+       QT_WAYLAND_DECORATION=bradient (see the greetd config) so every Qt app draws
+       its own titlebar. Wayland-native apps (foot) still use labwc SSD; GTK apps
+       self-decorate. -->
 
   <keyboard>
     <!-- Super+Return → terminal -->
