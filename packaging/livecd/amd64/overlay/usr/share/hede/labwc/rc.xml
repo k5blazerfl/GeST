@@ -12,20 +12,28 @@
   </core>
 
   <theme>
-    <!-- Server-side decorations so every window gets a titlebar + buttons. -->
+    <!-- Server-side decorations so every window gets a titlebar + buttons.
+         Button token is 'max' (not 'maximize'). maximizedDecoration=titlebar keeps
+         the titlebar on MAXIMIZED windows — helm-menu launches apps maximized, and
+         labwc's default (none) otherwise hides their titlebar, so menu-launched
+         apps came up frameless while terminal-launched ones were fine. -->
     <titlebar>
-      <layout>icon:iconify,maximize,close</layout>
+      <layout>icon:iconify,max,close</layout>
+      <showTitle>yes</showTitle>
     </titlebar>
     <cornerRadius>6</cornerRadius>
     <keepBorder>yes</keepBorder>
+    <maximizedDecoration>titlebar</maximizedDecoration>
   </theme>
 
-  <!-- Qt apps (e.g. wpa_gui) request client-side decorations but don't draw one,
-       so they came up frameless. Rather than force SSD compositor-side (labwc's
-       forceSSD didn't reliably override the client here), the session exports
-       QT_WAYLAND_DECORATION=bradient (see the greetd config) so every Qt app draws
-       its own titlebar. Wayland-native apps (foot) still use labwc SSD; GTK apps
-       self-decorate. -->
+  <!-- Qt apps came up frameless: Qt's client-side decoration wasn't drawing, and
+       Qt ignores QT_WAYLAND_DECORATION once SSD is on the table. The session now
+       exports QT_WAYLAND_DISABLE_WINDOWDECORATION=1 (see the greetd config) so Qt
+       drops its CSD and relies on the compositor's server-side titlebar — the same
+       path foot uses. This windowRule tells labwc to serve SSD for every window. -->
+  <windowRules>
+    <windowRule identifier="*" serverDecoration="yes"/>
+  </windowRules>
 
   <keyboard>
     <!-- Super+Return → terminal -->

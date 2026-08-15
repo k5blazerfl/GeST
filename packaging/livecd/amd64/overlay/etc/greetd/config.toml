@@ -6,10 +6,10 @@ vt = 1
 
 # Autologin at boot.
 [initial_session]
-command = "env QT_WAYLAND_DECORATION=bradient dbus-run-session helm-session"
+command = "env QT_WAYLAND_DISABLE_WINDOWDECORATION=1 dbus-run-session helm-session"
 user = "root"
 
 # Fallback session (if the greeter is ever shown instead of autologin).
 [default_session]
-command = "env QT_WAYLAND_DECORATION=bradient dbus-run-session helm-session"
+command = "env QT_WAYLAND_DISABLE_WINDOWDECORATION=1 dbus-run-session helm-session"
 user = "root"
