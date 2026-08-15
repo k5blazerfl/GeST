@@ -53,7 +53,8 @@ jobs:
                  tests/test_install_netcheck.py tests/test_software_sort.py tests/test_coreservice_hostname.py tests/test_coreservice_software.py tests/test_coreservice_services.py tests/test_coreservice_users.py tests/test_coreservice_network.py tests/test_coreservice_disk.py tests/test_coreservice_firewall.py tests/test_coreservice_localization.py tests/test_coreservice_sysctl.py tests/test_coreservice_catalog.py \
                  tests/test_keychain_model.py tests/test_keychain_vault.py \
                  tests/test_keychain_cli.py tests/test_keyringd.py \
-                 tests/test_customs.py tests/test_drydock_core.py -q
+                 tests/test_customs.py tests/test_rdp.py \
+                 tests/test_gangway_cli.py tests/test_drydock_core.py -q
 
       - name: Syntax-check the ebuilds
         run: |
