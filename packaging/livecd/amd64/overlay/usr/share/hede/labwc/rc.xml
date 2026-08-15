@@ -1,0 +1,127 @@
+<?xml version="1.0"?>
+<!-- HeDE labwc config — livecd override of the package's Phase-0 stub.
+     Adds the full <mouse> window-management set (titlebar move, edge resize,
+     click-to-focus/raise, titlebar buttons, root menu) + a <theme> for real
+     decorations + window cycling, on top of HeDE's keyboard binds. Shipped via
+     the GeSI root overlay so the live desktop is fully mouse-manageable; upstream
+     into gui-apps/hede when convenient. -->
+<labwc_config>
+  <core>
+    <gap>0</gap>
+    <adaptiveSync>no</adaptiveSync>
+  </core>
+
+  <theme>
+    <!-- Server-side decorations so every window gets a titlebar + buttons. -->
+    <titlebar>
+      <layout>icon:iconify,maximize,close</layout>
+    </titlebar>
+    <cornerRadius>6</cornerRadius>
+    <keepBorder>yes</keepBorder>
+  </theme>
+
+  <keyboard>
+    <!-- Super+Return → terminal -->
+    <keybind key="W-Return">
+      <action name="Execute"><command>foot</command></action>
+    </keybind>
+    <!-- Super+Q → close the focused window -->
+    <keybind key="W-q">
+      <action name="Close"/>
+    </keybind>
+    <!-- Super+L → lock the screen (adopted swaylock) -->
+    <keybind key="W-l">
+      <action name="Execute"><command>swaylock -f</command></action>
+    </keybind>
+    <!-- Aero-Snap: Super+arrows -->
+    <keybind key="W-Left">
+      <action name="SnapToEdge" direction="left"/>
+    </keybind>
+    <keybind key="W-Right">
+      <action name="SnapToEdge" direction="right"/>
+    </keybind>
+    <keybind key="W-Up">
+      <action name="ToggleMaximize"/>
+    </keybind>
+    <keybind key="W-Down">
+      <action name="Iconify"/>
+    </keybind>
+    <!-- Window cycling (labwc-native OSD cycler) -->
+    <keybind key="A-Tab">
+      <action name="NextWindow"/>
+    </keybind>
+    <keybind key="A-S-Tab">
+      <action name="PreviousWindow"/>
+    </keybind>
+  </keyboard>
+
+  <mouse>
+    <!-- Edges + corners → resize -->
+    <context name="Left">
+      <mousebind button="Left" action="Press"><action name="Resize"/></mousebind>
+    </context>
+    <context name="Right">
+      <mousebind button="Left" action="Press"><action name="Resize"/></mousebind>
+    </context>
+    <context name="Top">
+      <mousebind button="Left" action="Press"><action name="Resize"/></mousebind>
+    </context>
+    <context name="Bottom">
+      <mousebind button="Left" action="Press"><action name="Resize"/></mousebind>
+    </context>
+    <context name="TLCorner">
+      <mousebind button="Left" action="Press"><action name="Resize"/></mousebind>
+    </context>
+    <context name="TRCorner">
+      <mousebind button="Left" action="Press"><action name="Resize"/></mousebind>
+    </context>
+    <context name="BLCorner">
+      <mousebind button="Left" action="Press"><action name="Resize"/></mousebind>
+    </context>
+    <context name="BRCorner">
+      <mousebind button="Left" action="Press"><action name="Resize"/></mousebind>
+    </context>
+
+    <!-- Alt+drag anywhere on the window: move / resize (Windows-familiar) -->
+    <context name="Frame">
+      <mousebind button="W-Left" action="Press"><action name="Focus"/><action name="Raise"/></mousebind>
+      <mousebind button="W-Left" action="Drag"><action name="Move"/></mousebind>
+      <mousebind button="W-Right" action="Press"><action name="Focus"/><action name="Raise"/></mousebind>
+      <mousebind button="W-Right" action="Drag"><action name="Resize"/></mousebind>
+    </context>
+
+    <!-- Titlebar: click focuses/raises, drag moves, double-click maximizes -->
+    <context name="Titlebar">
+      <mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/></mousebind>
+      <mousebind button="Left" action="Drag"><action name="Move"/></mousebind>
+      <mousebind button="Left" action="DoubleClick"><action name="ToggleMaximize"/></mousebind>
+      <mousebind button="Right" action="Click"><action name="Focus"/><action name="Raise"/><action name="ShowMenu" menu="client-menu"/></mousebind>
+    </context>
+
+    <!-- Titlebar buttons -->
+    <context name="Close">
+      <mousebind button="Left" action="Click"><action name="Close"/></mousebind>
+    </context>
+    <context name="Iconify">
+      <mousebind button="Left" action="Click"><action name="Iconify"/></mousebind>
+    </context>
+    <context name="Maximize">
+      <mousebind button="Left" action="Click"><action name="ToggleMaximize"/></mousebind>
+    </context>
+    <context name="WindowMenu">
+      <mousebind button="Left" action="Click"><action name="ShowMenu" menu="client-menu"/></mousebind>
+    </context>
+
+    <!-- Client area: click to focus + raise -->
+    <context name="Client">
+      <mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/></mousebind>
+      <mousebind button="Right" action="Press"><action name="Focus"/><action name="Raise"/></mousebind>
+    </context>
+
+    <!-- Desktop: right/middle click → root menu -->
+    <context name="Root">
+      <mousebind button="Right" action="Press"><action name="ShowMenu" menu="root-menu"/></mousebind>
+      <mousebind button="Middle" action="Press"><action name="ShowMenu" menu="root-menu"/></mousebind>
+    </context>
+  </mouse>
+</labwc_config>
