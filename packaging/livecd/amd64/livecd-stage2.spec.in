@@ -35,6 +35,10 @@ boot/kernel/gentoo/gk_kernargs: --all-ramdisk-modules
 # image: a squashfs root packed into a hybrid, UEFI-capable ISO
 livecd/type: generic-livecd
 livecd/fstype: squashfs
+# gensquashfs opts: 1 MiB blocks + xz level 9 (default is 128 KiB / level 6).
+# Bigger blocks + a higher level shrink the squashfs enough to keep the ISO under
+# GitHub's 2 GiB release-asset limit, at a small cost in boot-time decompression.
+livecd/fsops: -b 1048576 -X level=9
 livecd/iso: gest-installer-amd64-${TIMESTAMP}.iso
 livecd/volid: GEST_INSTALLER
 livecd/motd: ${MOTD}
