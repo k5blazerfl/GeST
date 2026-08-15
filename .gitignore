@@ -7,3 +7,7 @@ dist/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+
+# Built live ISOs — large binaries, never commit (see packaging/livecd/).
+/iso/
+*.iso
