@@ -24,15 +24,24 @@ Three layers, packaged together:
 3. **World skins** (schema `helm.world/0.1` / `helm.skin/0.4`) — the painterly
    art + palette. One **accent per world** re-tints every surface at once.
 
-A world is `{frame scene, wallpaper scene, panel art, accent, bar tint}`.
-Switching worlds swaps art and re-tints the entire shell off the single accent —
-no per-surface recolor. Default world: **Harbor** (Mistreef skin, teal).
+A theme is a **biome** `{scene art, accent, bar tint}` (window-frame + wallpaper
+skins per theme are follow-up work). Switching themes swaps art and re-tints the
+entire shell off the single accent — no per-surface recolor. The set is **6
+themes**, default **Harbor**:
 
-| World | Skin | Accent | Feel |
-|-------|------|--------|------|
-| Harbor | `mistreef` (+ `palmshore` alt) | teal `#3aa6c4` | soft, hazy, light water |
-| Emberforge | `emberforge` | ember `#c8632f` | forge-lit, warm, ocean |
-| Stormwatch | `stormwatch` | slate `#5b7a8c` | cold, overcast, open sea |
+| Theme | Biome | Accent | Feel |
+|-------|-------|--------|------|
+| **Harbor** *(default)* | ocean | teal `#3aa6c4` | calm, hazy, light water |
+| River | red-rock canyon | turquoise `#23b3a6` | turquoise water, warm cliffs |
+| Alpine | snow peaks | sky-blue `#5b9bd5` | crisp, luminous, high |
+| Desert | dunes | amber `#e0a33f` | warm, golden, open |
+| Aurora | tundra | aurora-green `#3ad6ad` | night sky, green ribbons |
+| Blossom | cherry woods | pink `#eb8fb0` | soft, springlike, petals |
+
+The classic launcher's **caption / start art** is the active theme's biome scene
+(§ launcher / § Open-Shell provenance): one continuous painterly image with **Tux**
+and the live **`Linux <kernel>`** on a **frosted-glass** panel (feathered in, no
+seam) over the lower art — sectioned so it 9-slices cleanly on resize.
 
 ## Three materials
 

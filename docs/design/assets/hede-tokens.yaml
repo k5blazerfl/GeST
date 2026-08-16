@@ -169,14 +169,29 @@ skin_model:
   conditional_variants: [small_icons, caption, two_column, large_font]  # toggles in one token set
 
 # ---- World skins (the art + palette these tokens frame) ------------------
-worlds:
+worlds:   # a "world" == a theme; the set is biome-based
   default: harbor
-  # helm.world/0.1 bundles; art rendered locally via the hiedi Voyage
-  # (SDXL/ComfyUI on gfx1151, gemma4:12b QA). See resources/dist/*.helmtheme.
-  harbor:     {skin: mistreef,   accent: '#3aa6c4', accent_2: '#7fe0ef', bar_tint: 'rgba(11,38,46,.44)'}
-  emberforge: {skin: emberforge, accent: '#c8632f', accent_2: '#f6b26b', bar_tint: 'rgba(38,20,14,.44)'}
-  stormwatch: {skin: stormwatch, accent: '#5b7a8c', accent_2: '#a9c6d6', bar_tint: 'rgba(20,28,34,.46)'}
-  # palmshore ships as an alternate Harbor skin (helm.skin/0.4).
+  # Six biome themes, each driving the whole UI off its own accent. Art rendered
+  # locally via the hiedi Voyage (SDXL/ComfyUI on gfx1151). Per-theme CAPTION /
+  # start-art is done (resources/renders/start-*-caption); full per-theme window
+  # frame + wallpaper skins (helm.skin/0.4) are follow-up work.
+  harbor:  {biome: ocean,  accent: '#3aa6c4', accent_2: '#7fe0ef', bar_tint: 'rgba(11,38,46,.44)'}
+  river:   {biome: canyon, accent: '#23b3a6', accent_2: '#74e6da', bar_tint: 'rgba(12,40,38,.44)'}
+  alpine:  {biome: peaks,  accent: '#5b9bd5', accent_2: '#a9d0f0', bar_tint: 'rgba(18,32,48,.46)'}
+  desert:  {biome: dunes,  accent: '#e0a33f', accent_2: '#f6cd82', bar_tint: 'rgba(40,28,12,.44)'}
+  aurora:  {biome: tundra, accent: '#3ad6ad', accent_2: '#9ff0d6', bar_tint: 'rgba(12,30,30,.46)'}
+  blossom: {biome: woods,  accent: '#eb8fb0', accent_2: '#ffc3d6', bar_tint: 'rgba(40,20,28,.42)'}
+
+# The classic launcher's caption ("start art") is the ACTIVE theme's biome scene:
+# one continuous painterly image, with Tux (Larry Ewing, MIT/attribution) + the
+# distro/kernel on a FROSTED-GLASS panel (acrylic, feathered in — no seam) over
+# the lower art. Sectioned so it 9-slices cleanly on resize.
+start_art:
+  source: active_theme_biome
+  caption_text: ['Linux', live_kernel]     # e.g. "Linux 7.1.8-gentoo-dist" (uname -r)
+  mark: tux
+  text_surface: frosted_glass              # blur + tint + feather-mask; art reads through
+  sectioned: true
 
 credit:
   art: Generated locally — SDXL (ComfyUI) on AMD Radeon 8060S (gfx1151)
