@@ -16,8 +16,15 @@ from __future__ import annotations
 import os
 
 from PySide6.QtCore import QSettings, Qt
-from PySide6.QtGui import QColor, QGuiApplication, QPalette
+from PySide6.QtGui import QColor, QFont, QFontDatabase, QGuiApplication, QPalette
 from PySide6.QtWidgets import QApplication
+
+
+def fixed_font() -> QFont:
+    """The platform fixed-width font — for terminal-like views (emerge output,
+    plan previews, the sysctl dump). Typography, not colour, so it never fights
+    the shared Helm palette."""
+    return QFontDatabase.systemFont(QFontDatabase.FixedFont)
 
 
 def hede_conf_path() -> str:

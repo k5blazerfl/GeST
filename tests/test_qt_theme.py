@@ -3,10 +3,16 @@ hede.conf read, so the Control Center matches the shell's buildPalette/applyAppe
 """
 
 from PySide6.QtCore import QSettings, Qt
-from PySide6.QtGui import QColor, QPalette
+from PySide6.QtGui import QColor, QFont, QPalette
 from PySide6.QtWidgets import QApplication
 
-from gest.qt.theme import apply_appearance, build_palette, contrast_text, read_appearance
+from gest.qt.theme import (
+    apply_appearance,
+    build_palette,
+    contrast_text,
+    fixed_font,
+    read_appearance,
+)
 
 
 def _app():
@@ -56,3 +62,8 @@ def test_apply_appearance_is_noop_when_unthemed(tmp_path):
     dark, accent = read_appearance(empty)
     assert dark is False and not accent.isValid()
     assert apply_appearance(app, path=empty) is False
+
+
+def test_fixed_font_is_a_font():
+    _app()
+    assert isinstance(fixed_font(), QFont)

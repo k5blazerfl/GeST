@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from gest.qt.software import package_status
+from gest.qt.theme import fixed_font
 
 # op(backend, on_progress, on_finished) -> Awaitable ; callbacks match the backend:
 #   on_progress: Callable[[list[str]], None]   (batched output lines)
@@ -84,10 +85,12 @@ class OperationModule(QWidget):
 
         self._summary = QPlainTextEdit()
         self._summary.setReadOnly(True)
+        self._summary.setFont(fixed_font())
         self._reload = QPushButton("Reload")
         self._run = QPushButton(run_label)
         self._output = QPlainTextEdit()
         self._output.setReadOnly(True)
+        self._output.setFont(fixed_font())
         self._status = QLabel()
 
         layout = QVBoxLayout(self)
