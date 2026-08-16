@@ -8,7 +8,7 @@ from gest.core.disk.reader import list_block_devices
 from gest.qt.disk import device_label
 from gest.qt.registry import ModuleDescriptor
 
-DESCRIPTOR = ModuleDescriptor(id="disk", title="Disks", category="System", icon="drive-harddisk")
+DESCRIPTOR = ModuleDescriptor(id="disk", title="Disks", category="Hardware", icon="drive-harddisk")
 
 
 class DiskModule(QWidget):

@@ -21,7 +21,7 @@ from gest.qt.registry import ModuleDescriptor
 from gest.qt.users import add_user, delete_user, set_password, user_label
 
 DESCRIPTOR = ModuleDescriptor(
-    id="users", title="Users & Groups", category="System", icon="system-users"
+    id="users", title="Users & Groups", category="Users & Security", icon="system-users"
 )
 
 

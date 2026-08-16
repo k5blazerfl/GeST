@@ -20,7 +20,7 @@ from gest.qt.registry import ModuleDescriptor
 from gest.qt.services import control, service_label, set_enabled
 
 DESCRIPTOR = ModuleDescriptor(
-    id="services", title="Services", category="System", icon="applications-utilities"
+    id="services", title="Services", category="Services", icon="applications-utilities"
 )
 
 

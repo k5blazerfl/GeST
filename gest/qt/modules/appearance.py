@@ -24,7 +24,7 @@ from gest.qt.appearance import default_config_path, read_appearance, theme_args
 from gest.qt.registry import ModuleDescriptor
 
 DESCRIPTOR = ModuleDescriptor(
-    id="appearance", title="Appearance", category="Desktop", icon="preferences-desktop-theme"
+    id="appearance", title="Appearance", category="Personalization", icon="preferences-desktop-theme"
 )
 
 
