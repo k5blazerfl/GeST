@@ -1,8 +1,8 @@
-"""GeST root D-Bus interface for the services (OpenRC) module.
+"""GeST root D-Bus interface for the services (systemd) module.
 
 Registered on the same connection/bus name as the software service, at
-``/org/gentoo/gest/Services``. Operations are quick (rc-service / rc-update), so
-methods run synchronously and return (ok, output). polkit-gated with the
+``/org/gentoo/gest/Services``. Operations are quick (``systemctl``), so methods
+run synchronously and return (ok, output). polkit-gated with the
 ``org.gentoo.gest.services.manage`` action.
 """
 
@@ -33,7 +33,12 @@ _INTROSPECTION = f"""
     <method name="SetEnabled">
       <arg type="s" name="name" direction="in"/>
       <arg type="b" name="enabled" direction="in"/>
-      <arg type="s" name="runlevel" direction="in"/>
+      <arg type="b" name="ok" direction="out"/>
+      <arg type="s" name="output" direction="out"/>
+    </method>
+    <method name="SetMasked">
+      <arg type="s" name="name" direction="in"/>
+      <arg type="b" name="masked" direction="in"/>
       <arg type="b" name="ok" direction="out"/>
       <arg type="s" name="output" direction="out"/>
     </method>
@@ -41,11 +46,11 @@ _INTROSPECTION = f"""
 </node>
 """
 
-_RC_SERVICE = shutil.which("rc-service") or "/sbin/rc-service"
-_RC_UPDATE = shutil.which("rc-update") or "/sbin/rc-update"
-_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
-_ACTIONS = ("start", "stop", "restart")
-_RUNLEVELS = ("sysinit", "boot", "default", "nonetwork", "shutdown")
+_SYSTEMCTL = shutil.which("systemctl") or "/usr/bin/systemctl"
+# Unit names allow alnum plus @ : . _ - (template instances, escaped names). We
+# invoke via argv (no shell), so this is a sanity guard, not an injection fence.
+_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9@:._-]*$")
+_ACTIONS = ("start", "stop", "restart", "reload", "try-restart")
 
 
 def _run(argv: list[str]) -> tuple[bool, str]:
@@ -67,20 +72,26 @@ class ServicesService:
     # argv builders (pure — unit-tested without a bus)
     @staticmethod
     def _control_argv(name: str, action: str) -> list[str]:
-        return [_RC_SERVICE, name, action]
+        return [_SYSTEMCTL, action, name]
 
     @staticmethod
-    def _enabled_argv(name: str, enabled: bool, runlevel: str) -> list[str]:
-        rl = runlevel if runlevel in _RUNLEVELS else "default"
-        return [_RC_UPDATE, "add" if enabled else "del", name, rl]
+    def _enabled_argv(name: str, enabled: bool) -> list[str]:
+        return [_SYSTEMCTL, "enable" if enabled else "disable", name]
+
+    @staticmethod
+    def _masked_argv(name: str, masked: bool) -> list[str]:
+        return [_SYSTEMCTL, "mask" if masked else "unmask", name]
 
     def _on_call(self, conn, sender, path, iface, method, params, invocation):
         if method == "Control":
             name, action = params.unpack()
             self._control(name, action, sender, invocation)
         elif method == "SetEnabled":
-            name, enabled, runlevel = params.unpack()
-            self._set_enabled(name, enabled, runlevel, sender, invocation)
+            name, enabled = params.unpack()
+            self._set_enabled(name, enabled, sender, invocation)
+        elif method == "SetMasked":
+            name, masked = params.unpack()
+            self._set_masked(name, masked, sender, invocation)
         else:
             invocation.return_error_literal(
                 Gio.dbus_error_quark(), Gio.DBusError.UNKNOWN_METHOD,
@@ -108,7 +119,7 @@ class ServicesService:
         audit(f"service.{action}", uid=uid, result="ok" if ok else "failed", detail=name)
         invocation.return_value(GLib.Variant("(bs)", (ok, out)))
 
-    def _set_enabled(self, name, enabled, runlevel, sender, invocation):
+    def _set_enabled(self, name, enabled, sender, invocation):
         uid = caller_uid(self._conn, sender)
         action = "service.enable" if enabled else "service.disable"
         if not self._authorized(sender):
@@ -116,6 +127,18 @@ class ServicesService:
             return self._deny(invocation, "Not authorized to manage services")
         if not _NAME_RE.match(name):
             return self._bad(invocation, "invalid service name")
-        ok, out = _run(self._enabled_argv(name, enabled, runlevel))
+        ok, out = _run(self._enabled_argv(name, enabled))
+        audit(action, uid=uid, result="ok" if ok else "failed", detail=name)
+        invocation.return_value(GLib.Variant("(bs)", (ok, out)))
+
+    def _set_masked(self, name, masked, sender, invocation):
+        uid = caller_uid(self._conn, sender)
+        action = "service.mask" if masked else "service.unmask"
+        if not self._authorized(sender):
+            audit(action, uid=uid, result="denied", detail=name)
+            return self._deny(invocation, "Not authorized to manage services")
+        if not _NAME_RE.match(name):
+            return self._bad(invocation, "invalid service name")
+        ok, out = _run(self._masked_argv(name, masked))
         audit(action, uid=uid, result="ok" if ok else "failed", detail=name)
         invocation.return_value(GLib.Variant("(bs)", (ok, out)))

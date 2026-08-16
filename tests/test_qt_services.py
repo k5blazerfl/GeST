@@ -10,7 +10,7 @@ def test_valid_action():
 
 
 def test_service_label():
-    running = Service(name="dbus", status="started", runlevels=["default"])
-    assert service_label(running) == "dbus — started · enabled"
-    stopped = Service(name="foo", status="stopped", runlevels=[])
-    assert service_label(stopped) == "foo — stopped"
+    running = Service(name="dbus.service", status="active", enabled_state="enabled")
+    assert service_label(running) == "dbus.service — active · enabled"
+    stopped = Service(name="foo.service", status="inactive", enabled_state="disabled")
+    assert service_label(stopped) == "foo.service — inactive"

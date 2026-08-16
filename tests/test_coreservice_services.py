@@ -1,6 +1,6 @@
 """CI-safe tests for the gestd Services adapter — the model->property-bag
-converters (pure) and the contract shape. The variant packing + live rc-* reads
-are exercised by the round-trip on an OpenRC host."""
+converters (pure) and the contract shape. The variant packing + live systemctl
+reads are exercised by the round-trip on a systemd host."""
 
 from gest.core.services.model import Service, ServiceDetail
 from gest.coreservice import services_adapter as adapter
@@ -8,29 +8,38 @@ from gest.ipc import core_contract
 
 
 def test_service_to_dict_shape_and_enabled_running():
-    s = Service(name="sshd", status="started", runlevels=["default"])
+    s = Service(name="sshd.service", status="active", enabled_state="enabled",
+                sub_state="running", description="OpenSSH")
     d = adapter.service_to_dict(s)
-    assert d["name"] == "sshd" and d["status"] == "started"
-    assert d["runlevels"] == ["default"]
-    assert d["enabled"] is True and d["running"] is True
-    assert set(d) == {"name", "status", "runlevels", "enabled", "running"}
+    assert d["name"] == "sshd.service" and d["status"] == "active"
+    assert d["enabled_state"] == "enabled" and d["sub_state"] == "running"
+    assert d["enabled"] is True and d["running"] is True and d["masked"] is False
+    assert set(d) == {"name", "status", "sub_state", "enabled_state",
+                      "enabled", "running", "masked", "description"}
 
 
-def test_service_to_dict_stopped_and_not_enabled():
-    d = adapter.service_to_dict(Service(name="foo"))       # stopped, no runlevels
-    assert d["status"] == "stopped"
-    assert d["enabled"] is False and d["running"] is False and d["runlevels"] == []
+def test_service_to_dict_inactive_and_not_enabled():
+    d = adapter.service_to_dict(Service(name="foo.service"))       # defaults
+    assert d["status"] == "inactive"
+    assert d["enabled"] is False and d["running"] is False and d["enabled_state"] == "disabled"
+
+
+def test_service_to_dict_masked():
+    d = adapter.service_to_dict(Service(name="x.service", enabled_state="masked"))
+    assert d["masked"] is True and d["enabled"] is False
 
 
 def test_detail_to_dict_scalars_and_dep_lists():
-    det = ServiceDetail(name="sshd", description="OpenSSH server",
-                        needs=["net"], uses=["logger"], wants=["dns"],
-                        needed_by=["x"], status="started", runlevels=["default"])
+    det = ServiceDetail(name="sshd.service", description="OpenSSH server",
+                        requires=["sysinit.target"], wants=["network.target"],
+                        after=["network.target"], required_by=["multi-user.target"],
+                        status="active", enabled_state="enabled", load_state="loaded")
     d = adapter.detail_to_dict(det)
     assert d["description"] == "OpenSSH server"
-    assert d["needs"] == ["net"] and d["uses"] == ["logger"]
-    assert d["wants"] == ["dns"] and d["needed_by"] == ["x"]
-    assert d["status"] == "started" and d["running"] is True and d["runlevels"] == ["default"]
+    assert d["requires"] == ["sysinit.target"] and d["wants"] == ["network.target"]
+    assert d["after"] == ["network.target"] and d["required_by"] == ["multi-user.target"]
+    assert d["status"] == "active" and d["running"] is True
+    assert d["enabled_state"] == "enabled" and d["enabled"] is True and d["load_state"] == "loaded"
 
 
 def test_services_contract_shape():

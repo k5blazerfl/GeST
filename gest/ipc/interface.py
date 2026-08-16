@@ -21,7 +21,7 @@ SHELL_BUS_NAME = "org.gentoo.gest.Shell"
 SHELL_PATH = "/org/gentoo/gest/Shell"
 SHELL_IFACE = "org.gentoo.gest.Shell"
 
-# Object path + interface for the services (OpenRC/systemd) module.
+# Object path + interface for the services (systemd) module.
 SERVICES_PATH = "/org/gentoo/gest/Services"
 SERVICES_IFACE = "org.gentoo.gest.Services"
 SERVICES_POLKIT = "org.gentoo.gest.services.manage"

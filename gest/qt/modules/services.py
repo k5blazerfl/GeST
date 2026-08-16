@@ -1,4 +1,4 @@
-"""Services module (OpenRC): start/stop/restart + enable, via the polkit backend."""
+"""Services module (systemd): start/stop/restart + enable, via the polkit backend."""
 
 from __future__ import annotations
 

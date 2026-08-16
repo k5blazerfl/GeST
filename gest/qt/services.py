@@ -32,13 +32,26 @@ def control(name: str, action: str) -> tuple[bool, str]:
     return run_backend(run)
 
 
-def set_enabled(name: str, enabled: bool, runlevel: str = "default") -> tuple[bool, str]:
+def set_enabled(name: str, enabled: bool) -> tuple[bool, str]:
     async def run():
         from gest.core.services.backend_client import ServicesBackend
 
         backend = await ServicesBackend().connect()
         try:
-            return await backend.set_enabled(name, enabled, runlevel)
+            return await backend.set_enabled(name, enabled)
+        finally:
+            await backend.close()
+
+    return run_backend(run)
+
+
+def set_masked(name: str, masked: bool) -> tuple[bool, str]:
+    async def run():
+        from gest.core.services.backend_client import ServicesBackend
+
+        backend = await ServicesBackend().connect()
+        try:
+            return await backend.set_masked(name, masked)
         finally:
             await backend.close()
 

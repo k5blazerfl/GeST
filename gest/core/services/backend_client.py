@@ -24,9 +24,13 @@ class ServicesBackend:
         """Start/stop/restart a service. Returns [ok, output]."""
         return await self._iface.call_control(name, action)
 
-    async def set_enabled(self, name: str, enabled: bool, runlevel: str = "default"):
-        """Enable/disable a service in a runlevel. Returns [ok, output]."""
-        return await self._iface.call_set_enabled(name, enabled, runlevel)
+    async def set_enabled(self, name: str, enabled: bool):
+        """Enable/disable a service at boot (systemctl enable/disable). Returns [ok, output]."""
+        return await self._iface.call_set_enabled(name, enabled)
+
+    async def set_masked(self, name: str, masked: bool):
+        """Mask/unmask a service (systemctl mask/unmask). Returns [ok, output]."""
+        return await self._iface.call_set_masked(name, masked)
 
     async def close(self) -> None:
         if self._bus is not None:

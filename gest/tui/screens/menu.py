@@ -79,7 +79,7 @@ CATEGORIES: list[tuple[str, list[tuple[str, str, bool]]]] = [
         ("disk", "Disks & Mounts", True),
     ]),
     ("Services", [
-        ("services", "Services (OpenRC)", True),
+        ("services", "Services", True),
     ]),
     ("Security and Users", [
         ("users", "Users & Groups", True),

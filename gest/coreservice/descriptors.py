@@ -52,7 +52,7 @@ MODULES: tuple[ModuleDescriptor, ...] = (
                      "preferences-desktop-locale", LOCALIZATION_CORE_PATH, LOCALIZATION_CORE_IFACE),
     ModuleDescriptor("sysctl", "Kernel Parameters", "System",
                      "preferences-system", SYSCTL_CORE_PATH, SYSCTL_CORE_IFACE),
-    ModuleDescriptor("services", "Services (OpenRC)", "System",
+    ModuleDescriptor("services", "Services", "System",
                      "applications-system", SERVICES_CORE_PATH, SERVICES_CORE_IFACE),
     ModuleDescriptor("users", "Users & Groups", "System",
                      "system-users", USERS_CORE_PATH, USERS_CORE_IFACE),
