@@ -105,6 +105,7 @@ def build_registry() -> Registry:
         appearance,
         binhost,
         bootloader,
+        cleanup,
         clock,
         consolefont,
         disk,
@@ -122,21 +123,27 @@ def build_registry() -> Registry:
         logs,
         makeconf,
         network,
+        news,
+        preferences,
         privilege,
         repos,
         services,
         software,
         sshd,
+        sync,
         sysctl,
+        update,
         users,
         wifi,
+        world,
     )
 
     registry = Registry()
-    for mod in (hardware, hwflags, disk, software, repos, makeconf, binhost, licenses,
-                services, clock, hostname, locale, keymap, consolefont, bootloader,
-                users, sysctl, eselect, envd, privilege, logs, firewall, network,
-                wifi, sshd, dns, hosts, appearance):
+    for mod in (hardware, hwflags, disk, software, world, repos, update, cleanup,
+                sync, news, makeconf, binhost, licenses, preferences, services,
+                clock, hostname, locale, keymap, consolefont, bootloader, users,
+                sysctl, eselect, envd, privilege, logs, firewall, network, wifi,
+                sshd, dns, hosts, appearance):
         registry.register(mod.DESCRIPTOR, mod.factory)
     return registry
 
