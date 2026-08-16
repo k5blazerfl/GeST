@@ -10,6 +10,7 @@ import urwid
 from gest import __version__
 from gest.core.software.backend_client import SoftwareBackend
 from gest.tui.runtime import App, Modal, NavPile, Screen, boxed, focusable_actions
+from gest.tui.screens.binhost import BinhostScreen
 from gest.tui.screens.bootloader import BootloaderScreen
 from gest.tui.screens.cleanup import CleanupLoadingScreen
 from gest.tui.screens.datetime import DateTimeScreen
@@ -81,6 +82,7 @@ CATEGORIES: list[tuple[str, list[tuple[str, str, bool]]]] = [
         ("software", "Software Management", True),
         ("world", "World & Package Sets", True),
         ("repositories", "Software Repositories", True),
+        ("binhost", "Binary Hosts", True),
         ("update", "System Update", True),
         ("depclean", "Clean Up Packages", True),
         ("sync", "Sync Portage Tree", True),
@@ -254,6 +256,8 @@ class MenuScreen(Screen):
             self.app.push(SyncLoadingScreen(self.app))
         elif key == "repositories":
             self.app.push(ReposScreen(self.app))
+        elif key == "binhost":
+            self.app.push(BinhostScreen(self.app))
         elif key == "licenses":
             self.app.push(LicensesScreen(self.app))
         elif key == "services":
