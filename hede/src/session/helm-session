@@ -10,6 +10,11 @@
 export XDG_CURRENT_DESKTOP=HeDE
 export XDG_SESSION_TYPE=wayland
 export QT_QPA_PLATFORM=wayland
+# Server-side decorations across the session: Qt's client-side titlebar doesn't
+# draw under labwc, so drop CSD and let the compositor decorate. Every session
+# child inherits this (previously it lived only in the live-CD greetd wrapper, so
+# a normal install had it nowhere and shell-launched apps came up frameless).
+export QT_WAYLAND_DISABLE_WINDOWDECORATION=1
 
 : "${HELM_COMPOSITOR:=labwc}"
 
