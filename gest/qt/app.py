@@ -151,6 +151,13 @@ def build_registry() -> Registry:
 def main() -> None:
     app = QApplication(sys.argv)
     app.setApplicationName("gest-settings")
+    # Match HeDE: consume the shared Helm appearance (palette + Fusion) before any
+    # window is built, exactly like the shell's Start menu (menu/main.cpp). A
+    # no-op until the user has themed the desktop, so a bare gest-settings keeps
+    # its native look. Covers both the full Control Center and --embed windows.
+    from gest.qt.theme import apply_appearance
+
+    apply_appearance(app)
     registry = build_registry()
 
     embed = parse_embed_arg(app.arguments()[1:])
