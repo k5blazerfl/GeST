@@ -61,7 +61,7 @@ MODULES: tuple[ModuleDescriptor, ...] = (
                      "network-workgroup", NETWORK_CORE_PATH, NETWORK_CORE_IFACE),
     ModuleDescriptor("software", "Software Management", "Software",
                      "system-software-install", SOFTWARE_CORE_PATH, SOFTWARE_CORE_IFACE),
-    ModuleDescriptor("services", "Services (OpenRC)", "Services",
+    ModuleDescriptor("services", "Services", "Services",
                      "applications-system", SERVICES_CORE_PATH, SERVICES_CORE_IFACE),
     ModuleDescriptor("users", "Users & Groups", "Users & Security",
                      "system-users", USERS_CORE_PATH, USERS_CORE_IFACE),

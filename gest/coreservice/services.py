@@ -1,10 +1,10 @@
-"""The Services (OpenRC) gestd D-Bus object.
+"""The Services (systemd) gestd D-Bus object.
 
-Reads service status + runlevels over the contract. Methods are ``async`` and run
-the blocking ``rc-*`` subprocess reads in a worker thread (``asyncio.to_thread``),
-so they never block gestd's event loop — the same "reads off the loop" rule the
-Software module follows. Starting/stopping/enabling remains a write on the polkit
-root backend.
+Reads service status + install state over the contract. Methods are ``async`` and
+run the blocking ``systemctl`` subprocess reads in a worker thread
+(``asyncio.to_thread``), so they never block gestd's event loop — the same "reads
+off the loop" rule the Software module follows. Starting/stopping/enabling/masking
+remains a write on the polkit root backend.
 """
 
 from __future__ import annotations

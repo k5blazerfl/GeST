@@ -92,7 +92,7 @@ CATEGORIES: list[tuple[str, list[tuple[str, str, bool]]]] = [
         ("prefs", "Preferences", True),
     ]),
     ("Services", [
-        ("services", "Services (OpenRC)", True),
+        ("services", "Services", True),
     ]),
     ("Users & Security", [
         ("users", "Users & Groups", True),

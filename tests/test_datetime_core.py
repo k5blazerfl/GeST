@@ -24,18 +24,20 @@ def test_set_clock_argv_builds_and_rejects():
 
 
 def test_detect_ntp_prefers_known_daemon():
-    svcs = [Service("sshd", "started", ["default"]),
-            Service("chronyd", "started", ["default"])]
-    assert reader.detect_ntp(svcs) == ("chronyd", True, True)
+    svcs = [Service("sshd.service", "active", enabled_state="enabled"),
+            Service("chronyd.service", "active", enabled_state="enabled")]
+    assert reader.detect_ntp(svcs) == ("chronyd.service", True, True)
 
 
 def test_detect_ntp_reports_stopped_disabled():
-    svcs = [Service("openntpd", "stopped", [])]
-    assert reader.detect_ntp(svcs) == ("openntpd", False, False)
+    svcs = [Service("openntpd.service", "inactive", enabled_state="disabled")]
+    assert reader.detect_ntp(svcs) == ("openntpd.service", False, False)
 
 
 def test_detect_ntp_none_installed():
-    assert reader.detect_ntp([Service("sshd", "started", ["default"])]) == ("", False, False)
+    assert reader.detect_ntp(
+        [Service("sshd.service", "active", enabled_state="enabled")]
+    ) == ("", False, False)
 
 
 def test_now_string_format():

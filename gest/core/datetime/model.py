@@ -11,7 +11,7 @@ class ClockInfo:
     timezone: str = ""        # e.g. "America/New_York"
     ntp_daemon: str = ""      # OpenRC service name of a detected NTP daemon, or ""
     ntp_running: bool = False
-    ntp_enabled: bool = False  # enabled in a runlevel
+    ntp_enabled: bool = False  # enabled at boot (systemctl is-enabled)
 
     @property
     def has_ntp(self) -> bool:

@@ -423,11 +423,14 @@ def test_menu_launches_services():
 
 
 def test_services_list_and_detail():
+    import shutil
+    if shutil.which("systemctl") is None:
+        pytest.skip("systemd not present on this host")
     app = App()
     scr = ServicesScreen(app)
     app._stack.append(scr)
     _pump(app, lambda: len(scr._order) > 0)
-    assert scr._order  # the live host has OpenRC services
+    assert scr._order  # the live host has systemd service units
     scr.keypress(_SIZE, "enter")   # open detail for the focused service
     detail = app._stack[-1]
     assert isinstance(detail, ServiceDetailScreen)
@@ -437,24 +440,29 @@ def test_services_list_and_detail():
     assert isinstance(app._stack[-1], ServicesScreen)
 
 
-def test_services_runlevel_manager_toggles(monkeypatch):
+def test_services_enable_and_mask_toggle(monkeypatch):
     from gest.core.services.model import Service
     from gest.tui.screens import services as S
 
     class _FakeServicesBackend:
-        calls: list = []
+        enable_calls: list = []
+        mask_calls: list = []
 
         async def connect(self):
             return self
 
-        async def set_enabled(self, name, enabled, runlevel):
-            _FakeServicesBackend.calls.append((name, enabled, runlevel))
+        async def set_enabled(self, name, enabled):
+            _FakeServicesBackend.enable_calls.append((name, enabled))
+            return (True, "")
+
+        async def set_masked(self, name, masked):
+            _FakeServicesBackend.mask_calls.append((name, masked))
             return (True, "")
 
         async def close(self):
             return None
 
-    fake = [Service(name="sshd", status="started", runlevels=["default"])]
+    fake = [Service(name="sshd.service", status="active", enabled_state="disabled")]
     monkeypatch.setattr(S.reader, "list_services", lambda: fake)
     monkeypatch.setattr(S, "ServicesBackend", _FakeServicesBackend)
     app = App()
@@ -462,17 +470,14 @@ def test_services_runlevel_manager_toggles(monkeypatch):
     app._stack.append(scr)
     _pump(app, lambda: bool(scr._order))
     scr._walker.set_focus(0)
-    scr.keypress(_SIZE, "l")                       # open the runlevel manager
-    rl = app._stack[-1]
-    assert isinstance(rl, S.ServiceRunlevelsScreen)
-    out = _render(rl)
-    assert "[✓] default" in out and "[ ] boot" in out and "shutdown" in out
-    rl._walker.set_focus(1)                        # boot
-    rl.keypress(_SIZE, " ")                        # add sshd to boot
-    _pump(app, lambda: bool(_FakeServicesBackend.calls))
-    assert _FakeServicesBackend.calls == [("sshd", True, "boot")]
-    assert "boot" in fake[0].runlevels             # shared Service updated
-    assert "[✓] boot" in _render(rl)               # re-rendered with the new mark
+
+    scr.keypress(_SIZE, "e")                        # enable at boot (was disabled)
+    _pump(app, lambda: bool(_FakeServicesBackend.enable_calls))
+    assert _FakeServicesBackend.enable_calls == [("sshd.service", True)]
+
+    scr.keypress(_SIZE, "m")                        # mask (was unmasked)
+    _pump(app, lambda: bool(_FakeServicesBackend.mask_calls))
+    assert _FakeServicesBackend.mask_calls == [("sshd.service", True)]
 
 
 def test_hostname_screen_prefills_current():

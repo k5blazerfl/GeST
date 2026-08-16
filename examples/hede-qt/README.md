@@ -73,7 +73,7 @@ interfaces headlessly, each pairing with a gestd read the client already does:
 |---|---|---|---|
 | `--apply <name>` | `System.SetHostname(name, "/")` | `org.gentoo.gest.System` | `(s,s)→(b,s)` |
 | `--apply-timezone <zone>` | `System.SetTimezone(zone, "/")` | same | a second method on one proxy |
-| `--enable-service <name> <0\|1>` | `Services.SetEnabled(name, on, "default")` | `org.gentoo.gest.Services` | a **second write interface**, `bool` arg |
+| `--enable-service <name> <0\|1>` | `Services.SetEnabled(name, on)` | `org.gentoo.gest.Services` | a **second write interface**, `bool` arg |
 | `--control-service <name> <act>` | `Services.Control(name, act)` | same | start/stop/restart |
 | `--apply-sysctl <key> <value>` | `Sysctl.ApplySettings([(key,value)], "/")` | `org.gentoo.gest.Sysctl` | a **container write type**, `a(ss)` |
 

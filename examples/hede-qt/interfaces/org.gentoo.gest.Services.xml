@@ -2,20 +2,29 @@
 <!-- The Services interface on the polkit-gated ROOT backend (system bus, name
      org.gentoo.gest, path /org/gentoo/gest/Services). The WRITE side that pairs
      with gestd's Services *read* (core1.Services.List): the view reads status via
-     gestd, then enables/disables or start/stops through here. polkit-gated
-     (org.gentoo.gest.services.manage). All args are basic types. -->
+     gestd, then start/stops, enables/disables, or masks through here. systemd
+     (systemctl) underneath; polkit-gated (org.gentoo.gest.services.manage). All
+     args are basic types. -->
 <node>
   <interface name="org.gentoo.gest.Services">
+    <!-- action ∈ start|stop|restart|reload|try-restart -->
     <method name="Control">
       <arg name="name" direction="in" type="s"/>
       <arg name="action" direction="in" type="s"/>
       <arg name="ok" direction="out" type="b"/>
       <arg name="output" direction="out" type="s"/>
     </method>
+    <!-- systemctl enable/disable (start-at-boot) -->
     <method name="SetEnabled">
       <arg name="name" direction="in" type="s"/>
       <arg name="enabled" direction="in" type="b"/>
-      <arg name="runlevel" direction="in" type="s"/>
+      <arg name="ok" direction="out" type="b"/>
+      <arg name="output" direction="out" type="s"/>
+    </method>
+    <!-- systemctl mask/unmask -->
+    <method name="SetMasked">
+      <arg name="name" direction="in" type="s"/>
+      <arg name="masked" direction="in" type="b"/>
       <arg name="ok" direction="out" type="b"/>
       <arg name="output" direction="out" type="s"/>
     </method>

@@ -1,8 +1,8 @@
-"""Services module (OpenRC) in urwid: list + start/stop/restart/enable + detail.
+"""Services module (systemd) in urwid: list + start/stop/restart/enable/mask + detail.
 
-Reads are unprivileged (rc-service/rc-update/rc-status); mutations go through the
-async ServicesBackend over D-Bus — this is the first ported module that proves
-the async mutation path on urwid's asyncio loop.
+Reads are unprivileged (``systemctl`` list/show); mutations go through the async
+ServicesBackend over D-Bus — this is the first ported module that proves the async
+mutation path on urwid's asyncio loop.
 """
 
 from __future__ import annotations
@@ -19,15 +19,9 @@ def _row(text: str) -> urwid.Widget:
     return urwid.AttrMap(urwid.SelectableIcon(text, 0), None, focus_map="focus")
 
 
-# What each OpenRC runlevel is for — shown beside the toggle so the choice is
-# self-explanatory (rc-update itself gives no hint).
-_RUNLEVEL_DESC = {
-    "sysinit": "earliest — before boot",
-    "boot": "one-time system boot",
-    "default": "normal multi-user (most services)",
-    "nonetwork": "default, but without networking",
-    "shutdown": "run on shutdown",
-}
+def _enabled_label(svc: Service) -> str:
+    """One-word install state for the list column."""
+    return svc.enabled_state or "—"
 
 
 class ServicesScreen(Screen):
@@ -37,21 +31,21 @@ class ServicesScreen(Screen):
         self._walker = urwid.SimpleFocusListWalker([urwid.Text(" loading …")])
         self._list = urwid.ListBox(self._walker)
         super().__init__(
-            app, boxed(self._list, title="Services (OpenRC)"),
+            app, boxed(self._list, title="Services"),
             title="Services",
             footer_keys=[
                 ("Enter", "Detail"), ("s", "Start"), ("x", "Stop"),
-                ("r", "Restart"), ("e", "Enable"), ("l", "Runlevels"),
+                ("r", "Restart"), ("e", "Enable"), ("m", "Mask"),
                 ("Esc", "Back"),
             ],
             help_text=(
-                "OpenRC services on this system.\n\n"
-                "Each row shows the service, its run status, and the runlevels it\n"
-                "is enabled in (— means none).\n\n"
+                "systemd service units on this system.\n\n"
+                "Each row shows the unit, its active state, and its install state\n"
+                "(enabled / disabled / static / masked …).\n\n"
                 "Enter  service detail (dependencies)\n"
                 "s / x / r   start / stop / restart\n"
-                "e      enable / disable in the default runlevel (quick toggle)\n"
-                "l      manage which runlevels it starts in (boot, default, …)\n"
+                "e      enable / disable at boot (systemctl enable/disable)\n"
+                "m      mask / unmask (systemctl mask/unmask)\n"
                 "Esc    back"
             ),
         )
@@ -62,8 +56,8 @@ class ServicesScreen(Screen):
         self._services = {s.name: s for s in services}
         self._order = [s.name for s in services]
         rows = [
-            _row(f"{s.name:<26} {('● started' if s.running else s.status):<12} "
-                 f"{' '.join(s.runlevels) or '—'}")
+            _row(f"{s.name:<32} {('● active' if s.running else s.status):<12} "
+                 f"{_enabled_label(s)}")
             for s in services
         ] or [urwid.Text(" (no services)")]
         prev = self._walker.focus if self._walker else 0
@@ -104,6 +98,20 @@ class ServicesScreen(Screen):
         self.app.notify(f"{name}: {verb} {'ok' if ok else 'failed'}", error=not ok)
         await self._load()
 
+    async def _set_masked(self, name: str, masked: bool) -> None:
+        backend = ServicesBackend()
+        try:
+            await backend.connect()
+            ok, _out = await backend.set_masked(name, masked)
+        except Exception as exc:
+            self.app.notify(f"{name}: {exc}", error=True)
+            await backend.close()
+            return
+        await backend.close()
+        verb = "masked" if masked else "unmasked"
+        self.app.notify(f"{name}: {verb} {'ok' if ok else 'failed'}", error=not ok)
+        await self._load()
+
     def handle_key(self, key):
         svc = self._current()
         if key == "esc":
@@ -121,17 +129,11 @@ class ServicesScreen(Screen):
             self.app.run_async(self._control(svc.name, "restart"))
         elif key == "e":
             self.app.run_async(self._set_enabled(svc.name, not svc.enabled))
-        elif key in ("l", "L"):
-            self._open_runlevels(svc)
+        elif key in ("m", "M"):
+            self.app.run_async(self._set_masked(svc.name, not svc.masked))
         else:
             return key
         return None
-
-    def _open_runlevels(self, svc: Service) -> None:
-        # Reload the list when a runlevel changes so the row (behind this screen)
-        # reflects the new runlevel set the moment the user pops back.
-        self.app.push(ServiceRunlevelsScreen(
-            self.app, svc, on_change=lambda: self.app.run_async(self._load())))
 
 
 class ServiceDetailScreen(Screen):
@@ -142,20 +144,24 @@ class ServiceDetailScreen(Screen):
         super().__init__(
             app, boxed(body, title=service.name),
             title=f"Service · {service.name}",
-            footer_keys=[("l", "Runlevels"), ("Esc", "Back")],
+            footer_keys=[("m", "Mask"), ("Esc", "Back")],
         )
         app.run_async(self._load())
 
     async def _load(self) -> None:
         detail = await self.app.run_blocking(
             lambda: reader.describe_service(
-                self._svc.name, status=self._svc.status, runlevels=self._svc.runlevels
+                self._svc.name, status=self._svc.status,
+                sub_state=self._svc.sub_state, enabled_state=self._svc.enabled_state,
             )
         )
+        sub = f" ({detail.sub_state})" if detail.sub_state else ""
         lines = [
-            f"Status:    {'● started' if detail.running else detail.status}",
-            f"Runlevels: {' '.join(detail.runlevels) or '—'}",
+            f"Status:  {'● active' if detail.running else detail.status}{sub}",
+            f"Enabled: {detail.enabled_state or '—'}",
         ]
+        if detail.load_state:
+            lines.append(f"Loaded:  {detail.load_state}")
         if detail.description:
             lines += ["", detail.description]
 
@@ -164,10 +170,10 @@ class ServiceDetailScreen(Screen):
             lines.append(f"{label}:")
             lines.extend(f"  • {name}" for name in items) if items else lines.append("  —")
 
-        block("Needs", detail.needs)
-        block("Uses", detail.uses)
+        block("Requires", detail.requires)
         block("Wants", detail.wants)
-        block("Needed by", detail.needed_by)
+        block("After", detail.after)
+        block("Required by", detail.required_by)
         self._walker[:] = [urwid.SelectableIcon(line, 0) for line in lines]
         self._walker.set_focus(0)
         self.app.refresh()
@@ -176,85 +182,24 @@ class ServiceDetailScreen(Screen):
         if key == "esc":
             self.app.pop()
             return None
-        if key in ("l", "L"):
-            # Manage runlevels; refresh this detail when they change.
-            self.app.push(ServiceRunlevelsScreen(
-                self.app, self._svc, on_change=lambda: self.app.run_async(self._load())))
+        if key in ("m", "M"):
+            self.app.run_async(self._toggle_masked())
             return None
         return key
 
-
-class ServiceRunlevelsScreen(Screen):
-    """Manage which OpenRC runlevels a service starts in (rc-update add/del).
-
-    ``rc-update`` can enable a service into any runlevel — boot, default,
-    sysinit, shutdown — but the list screen's quick ``e`` toggle only touches
-    ``default``. This screen exposes all of them: Space adds/removes the service
-    from the focused runlevel. ``on_change`` (if given) is called after each
-    successful toggle so the caller can refresh the runlevels it shows.
-    """
-
-    def __init__(self, app: App, service: Service, *, on_change=None) -> None:
-        self._svc = service
-        self._on_change = on_change
-        self._levels = list(reader.RUNLEVELS)
-        self._enabled = set(service.runlevels)
-        self._walker = urwid.SimpleFocusListWalker([])
-        self._list = urwid.ListBox(self._walker)
-        super().__init__(
-            app, boxed(self._list, title=f"Runlevels · {service.name}"),
-            title=f"Runlevels · {service.name}",
-            footer_keys=[("Space", "Add/Remove"), ("Esc", "Back")],
-            help_text=(
-                "Which runlevels this service starts in.\n\n"
-                "A ✓ means the service is enabled in that runlevel. Space adds or\n"
-                "removes it (rc-update add/del). Most services belong in default;\n"
-                "boot is for one-time early setup, shutdown runs on the way down.\n\n"
-                "Space  add / remove the focused runlevel\n"
-                "Esc    back"
-            ),
-        )
-        self._rebuild()
-
-    def _rebuild(self) -> None:
-        prev = self._walker.focus if self._walker else 0
-        self._walker[:] = [
-            _row(f" [{'✓' if lvl in self._enabled else ' '}] {lvl:<10} "
-                 f"{_RUNLEVEL_DESC.get(lvl, '')}")
-            for lvl in self._levels
-        ]
-        self._walker.set_focus(min(prev or 0, len(self._levels) - 1))
-        self.app.refresh()
-
-    def handle_key(self, key):
-        if key == "esc":
-            self.app.pop()
-            return None
-        if key in (" ", "enter"):
-            self.app.run_async(self._toggle(self._levels[self._walker.focus]))
-            return None
-        return key
-
-    async def _toggle(self, level: str) -> None:
-        enable = level not in self._enabled
+    async def _toggle_masked(self) -> None:
+        masked = not self._svc.masked
         backend = ServicesBackend()
         try:
             await backend.connect()
-            ok, _out = await backend.set_enabled(self._svc.name, enable, level)
+            ok, _out = await backend.set_masked(self._svc.name, masked)
         except Exception as exc:
             self.app.notify(f"{self._svc.name}: {exc}", error=True)
             await backend.close()
             return
         await backend.close()
-        verb = "added to" if enable else "removed from"
-        self.app.notify(f"{self._svc.name}: {verb} {level} "
-                        f"{'ok' if ok else 'failed'}", error=not ok)
-        if not ok:
-            return
-        self._enabled.add(level) if enable else self._enabled.discard(level)
-        # Keep the shared Service in canonical runlevel order so a caller reading
-        # svc.runlevels (and our own re-render) stays consistent.
-        self._svc.runlevels = [lvl for lvl in reader.RUNLEVELS if lvl in self._enabled]
-        self._rebuild()
-        if self._on_change is not None:
-            self._on_change()
+        verb = "masked" if masked else "unmasked"
+        self.app.notify(f"{self._svc.name}: {verb} {'ok' if ok else 'failed'}", error=not ok)
+        if ok:
+            self._svc.enabled_state = "masked" if masked else "disabled"
+            await self._load()

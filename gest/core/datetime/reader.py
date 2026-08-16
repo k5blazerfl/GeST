@@ -11,8 +11,9 @@ from gest.core.system.timezone import current_timezone
 
 Runner = Callable[[list[str]], str]
 
-# OpenRC init-script names that provide NTP time sync, most common first.
-_NTP_DAEMONS = ("chronyd", "ntpd", "openntpd", "ntp", "busybox-ntpd")
+# systemd unit names that provide NTP time sync, most common first.
+_NTP_DAEMONS = ("systemd-timesyncd.service", "chronyd.service", "ntpd.service",
+                "ntpsec.service", "openntpd.service")
 
 
 def now_string(when: _dt.datetime | None = None) -> str:
@@ -28,7 +29,7 @@ def detect_ntp(services) -> tuple[str, bool, bool]:
     for daemon in _NTP_DAEMONS:
         svc = by_name.get(daemon)
         if svc is not None:
-            return svc.name, svc.status == "started", bool(svc.runlevels)
+            return svc.name, svc.running, svc.enabled
     return "", False, False
 
 
