@@ -1,0 +1,199 @@
+schema: helm.theme/0.1
+name: HeDE Default
+id: hede-default
+# The canonical HeDE design language. One accent per world re-tints every
+# surface; the world skins (helm.world/0.1) supply the art + palette that
+# these tokens frame. Consumed by the HeDE shell and by GeST modules so the
+# Control Center and the desktop speak one visual language.
+
+fonts:
+  ui: ['Segoe UI', 'Inter', system-ui, sans-serif]      # familiar-by-default
+  mono: ['Cascadia Mono', 'JetBrains Mono', Consolas, monospace]
+  weights: {regular: 400, medium: 600, bold: 700, heavy: 800}
+
+# Corner radii — tight and square-leaning, per the locked look.
+radii:
+  window_content: 3   # in-window controls, cards
+  decoration: 4       # window frame outer
+  button: 4
+  chip: 5             # bar chips, tags
+  tile: 6             # launcher/app tiles, pins
+  panel: 7            # bar, pullouts, launcher, Hatch
+  window: 8           # top-level rounded windows
+
+# 4-based spacing scale.
+spacing: [4, 8, 12, 16, 24, 32]
+
+# Motion — quick, honors prefers-reduced-motion.
+motion:
+  hover_ms: 120
+  emerge_ms: 200
+  swap_ms: 250
+  reduce_motion: honor
+
+# The three material tiers every surface is built from.
+surfaces:
+  solid:
+    # opaque content areas (window bodies, the Manifest/organizer light panel)
+    light: '#f6fafb'
+    dark: '#0e2c34'
+  glass:
+    # bar + most in-shell chrome: translucent, blurred, world-tinted
+    tint: world.bar_tint          # from the active world skin
+    opacity: 0.42
+    blur_px: 20
+    saturate: 1.4
+    border: 'rgba(255,255,255,.22)'      # the silver border
+    highlight: 'inset 0 1px 0 rgba(255,255,255,.4)'
+    shadow: '0 12px 30px rgba(0,0,0,.5)'
+  acrylic:
+    # pullouts/launcher/tab-strips: wallpaper reads through
+    tint: world.bar_tint
+    opacity: 0.44
+    blur_px: 30
+    saturate: 1.5
+    border: 'rgba(255,255,255,.22)'
+    shadow: '0 6px 24px rgba(0,0,0,.5)'
+
+# Accent is a ROLE, supplied per-world. It drives selection, focus rings,
+# toggles, sliders, links, active tabs, primary buttons, and the shut-down cue.
+accent:
+  role: primary
+  source: world.accent           # e.g. Harbor teal / Emberforge ember / Stormwatch slate
+  hi: world.accent_2             # lighter companion (glyphs, hovers, gradients)
+  focus_ring: '0 0 0 3px color-mix(in srgb, var(--accent) 24%, transparent)'
+  selection_fill: 'color-mix(in srgb, var(--accent) 34%, transparent)'
+  selection_border: 'color-mix(in srgb, var(--accent) 55%, transparent)'
+
+# ---- Component contracts (the locked standards) --------------------------
+
+decoration:
+  # 9-slice painterly SCENE frame — keep the art, slice it resizable.
+  model: nine_slice_scene
+  # geometry mirrors helm.skin/0.4 decoration_art so skins drop straight in
+  slice: 44
+  fill: true
+  frost: 0.72                     # frosted center over the window body
+  border: {top: 30, right: 8, bottom: 8, left: 8}
+  repeat: stretch                 # edges stretch (bevel + seam detailing)
+  edges: {bevel: true, seam: true}
+  tint: accent
+  buttons:
+    style: edgeless               # glyph only until hover — "nothing is there"
+    shape: square
+    radius: 3
+    size: [24, 20]
+    glyph: white
+    order: [minimize, maximize, close]
+    hover: glass                  # min/max reveal a glass chip
+    close_hover: red
+
+pullout:
+  # THE standard for everything that comes off the bar: launcher, Hatch,
+  # group columns, tray applets, quick menus.
+  emerge: from_behind_bar         # the bar sits in front (higher z-index)
+  bar_in_front: true
+  bottom_edge: flat_borderless    # tucks behind the bar — no bottom border/radius
+  border: silver_top_and_sides    # rgba(255,255,255,.22), border-bottom:0
+  top_radius: panel               # 7px top corners only
+  anchor: trigger_left_edge       # line up with the LEFT side of the trigger
+  material: acrylic
+
+bar:
+  material: glass
+  radius: panel
+  height: 46
+  buttons: edgeless               # pins are glyph tiles, hover-glass
+  anchored: [clock]               # only the clock is fixed; pins are one reorderable stream
+  no_grouped_tray: true           # applets live as pins, not a segregated tray
+
+pins:
+  model: single_stream            # apps + applets share one reorderable row
+  app: {left_click: launch_or_focus, right_click: jump_list}
+  applet: {left_click: open_pullout}     # wifi/sound/battery/etc. as pins
+  group:
+    button: movable               # not anchored to the clock
+    left_click: column_list       # emerge-from-bar column, anchored to group's left
+    right_click: quick_menu       # Expand-in-bar / Manage…
+    organize_in: manifest_window
+
+surfaces_catalog:
+  # Where each material is used (implementation map).
+  launcher: {surface: acrylic, pullout: true}    # search + pinned + all-apps + recent + session
+  hatch: {surface: acrylic, pullout: true, span: full_width}   # quake terminal
+  manifest_window: {surface: solid.light, decoration: nine_slice_scene}  # dedicated organizer
+  tray_applets: {surface: acrylic, pullout: true}
+  toasts: {surface: acrylic, anchor: bottom_right}
+  context_menu: {surface: acrylic, properties_anchor: bottom}
+  dialog: {surface: solid, polkit: shield_accent}
+  tabs: {strip: acrylic, active: into_content}   # active tab bleeds into the body
+
+launcher:
+  # ⎈ menu — Open-Shell's Windows-7 two-pane IA in the Helm glass skin.
+  ia: two_pane
+  # Selectable menu style (a conditional variant off these tokens), mirroring
+  # Open-Shell's Menu Style setting. All re-tint per world.
+  style: win7_two_pane             # win7_two_pane (default) | classic | classic_two_column
+  styles:
+    win7_two_pane: "left = apps + in-place All-apps + bottom search; right = places/system rail"
+    classic: "single dense column + vertical caption strip; All-apps & jump lists fly out (cascade); power pinned bottom"
+    classic_two_column: "XP-style — left = pinned + recent programs; right = customizable system links"
+  emerge: from_behind_bar          # obeys the pullout standard; anchored to ⎈ (left)
+  material: acrylic
+  left_pane:                       # apps + search
+    order: [pinned, recent, all_apps, search]
+    recent: mru_mfu                # auto-tracked most-recently/-frequently-used
+    all_apps: expand_in_place      # replaces the list in the left pane (not a fly-out)
+    search:
+      anchor: bottom
+      focus: tab_only              # auto_focus | arrow_reachable | tab_only (a setting)
+      sources: [desktop_entries, path_binaries, file_index]   # .desktop + $PATH + Tracker/plocate
+      match: fuzzy                 # client-side fuzzy ranking over substring
+    jump_list: right_arrow         # .desktop Actions + recently-used.xbel
+  right_pane:                      # places + system rail
+    header: user_avatar
+    places: [home, pictures, music, computer]
+    system: [control_center, settings]   # Control Center where Control Panel sits
+    actions: [run, help]
+    power: split_bottom_right      # Sleep / Restart / Log out / Lock / Shut down (logind)
+  interactions: [drag_to_pin, drag_to_reorder]
+
+# ---- Skin parameter model (derived from Open-Shell, MIT) ------------------
+# General theming primitives every skinnable bitmap/surface may declare. Lets
+# one grayscale source art re-tint per world from a single accent.
+skin_model:
+  nine_slice: "_slices_X / _slices_Y triplets; segments sum to the bitmap dimension"
+  color_states: [normal, hover, disabled, drag_target]   # 4-state color quads
+  opacity: [opaque, solid, glass, fullglass]             # glass/blur-behind hook
+  mask_recolor: accent           # grayscale bitmap blended with the world accent at runtime
+  conditional_variants: [small_icons, caption, two_column, large_font]  # toggles in one token set
+
+# ---- World skins (the art + palette these tokens frame) ------------------
+worlds:   # a "world" == a theme; the set is biome-based
+  default: harbor
+  # Six biome themes, each driving the whole UI off its own accent. Art rendered
+  # locally via the hiedi Voyage (SDXL/ComfyUI on gfx1151). Per-theme CAPTION /
+  # start-art is done (resources/renders/start-*-caption); full per-theme window
+  # frame + wallpaper skins (helm.skin/0.4) are follow-up work.
+  harbor:  {biome: ocean,  accent: '#3aa6c4', accent_2: '#7fe0ef', bar_tint: 'rgba(11,38,46,.44)'}
+  river:   {biome: canyon, accent: '#23b3a6', accent_2: '#74e6da', bar_tint: 'rgba(12,40,38,.44)'}
+  alpine:  {biome: peaks,  accent: '#5b9bd5', accent_2: '#a9d0f0', bar_tint: 'rgba(18,32,48,.46)'}
+  desert:  {biome: dunes,  accent: '#e0a33f', accent_2: '#f6cd82', bar_tint: 'rgba(40,28,12,.44)'}
+  aurora:  {biome: tundra, accent: '#3ad6ad', accent_2: '#9ff0d6', bar_tint: 'rgba(12,30,30,.46)'}
+  blossom: {biome: woods,  accent: '#eb8fb0', accent_2: '#ffc3d6', bar_tint: 'rgba(40,20,28,.42)'}
+
+# The classic launcher's caption ("start art") is the ACTIVE theme's biome scene:
+# one continuous painterly image, with Tux (Larry Ewing, MIT/attribution) + the
+# distro/kernel on a FROSTED-GLASS panel (acrylic, feathered in — no seam) over
+# the lower art. Sectioned so it 9-slices cleanly on resize.
+start_art:
+  source: active_theme_biome
+  caption_text: ['Linux', live_kernel]     # e.g. "Linux 7.1.8-gentoo-dist" (uname -r)
+  mark: tux
+  text_surface: frosted_glass              # blur + tint + feather-mask; art reads through
+  sectioned: true
+
+credit:
+  art: Generated locally — SDXL (ComfyUI) on AMD Radeon 8060S (gfx1151)
+  pipeline: 'hiedi Voyage: helm-titlebar-skins'
+  launcher_ia: 'Open-Shell (MIT) — Windows-7 two-pane IA + skin parameter model'
