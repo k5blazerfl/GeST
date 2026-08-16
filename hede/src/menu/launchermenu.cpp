@@ -1,5 +1,7 @@
 #include "launchermenu.h"
 
+#include "launch.h"
+
 #include <QAction>
 #include <QApplication>
 #include <QEvent>
@@ -70,7 +72,7 @@ void LauncherMenu::launch(QListWidgetItem *item) {
     const QStringList argv = item->data(kArgvRole).toStringList();
     if (argv.isEmpty())
         return;
-    QProcess::startDetached(argv.first(), argv.mid(1));
+    helm::launchDetached(argv.first(), argv.mid(1));
     qApp->quit();
 }
 
@@ -78,7 +80,7 @@ void LauncherMenu::run(const QString &exec) {
     const QStringList argv = commandArgv(exec);
     if (argv.isEmpty())
         return;
-    QProcess::startDetached(argv.first(), argv.mid(1));
+    helm::launchDetached(argv.first(), argv.mid(1));
     qApp->quit();
 }
 

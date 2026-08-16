@@ -1,5 +1,7 @@
 #include "launcherbutton.h"
 
+#include "launch.h"
+
 #include <QProcess>
 
 namespace helm {
@@ -10,7 +12,7 @@ LauncherButton::LauncherButton(const QString &text, const QString &command, QWid
         const QStringList parts = QProcess::splitCommand(m_command);
         if (parts.isEmpty())
             return;
-        QProcess::startDetached(parts.first(), parts.mid(1));
+        helm::launchDetached(parts.first(), parts.mid(1));
     });
 }
 

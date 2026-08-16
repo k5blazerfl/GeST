@@ -4,7 +4,7 @@
 
 #include "config.h"
 
-#include <QProcess>
+#include "launch.h"
 
 namespace helm {
 
@@ -35,7 +35,7 @@ UpdatePill::UpdatePill(CoreClient *client, QWidget *parent)
     connect(this, &QToolButton::clicked, this, [] {
         const QString cmd =
             Config().string(QStringLiteral("settings/command"), QStringLiteral("gest-settings"));
-        QProcess::startDetached(cmd, settingsEmbedArgs(QStringLiteral("software")));
+        helm::launchDetached(cmd, settingsEmbedArgs(QStringLiteral("software")));
     });
 }
 
