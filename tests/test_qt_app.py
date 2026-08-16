@@ -9,12 +9,26 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication, QLabel
 
-from gest.qt.app import ControlCenter, embed_window, parse_embed_arg
+from gest.qt.app import ControlCenter, build_registry, embed_window, parse_embed_arg
 from gest.qt.registry import ModuleDescriptor, Registry
 
 
 def _app():
     return QApplication.instance() or QApplication([])
+
+
+def test_every_module_carries_an_icon_hint():
+    # Leg 3B renders QIcon.fromTheme(descriptor.icon) on the rail; guard that no
+    # module ships without an icon-name hint so the rail can always show one.
+    for entry in build_registry().entries():
+        assert entry.descriptor.icon, f"{entry.descriptor.id} has no icon hint"
+
+
+def test_control_center_builds_with_the_real_registry():
+    _app()
+    cc = ControlCenter(build_registry())
+    # the shared taxonomy's categories all render (no factory is called — lazy)
+    assert cc.tree.topLevelItemCount() >= 6
 
 
 def test_control_center_builds_sidebar_and_activates():

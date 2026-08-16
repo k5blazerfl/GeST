@@ -48,3 +48,35 @@ def set_link(iface: str, up: bool) -> tuple[bool, str]:
             await backend.close()
 
     return run_backend(run)
+
+
+def parse_tokens(text: str) -> list[str]:
+    """Whitespace-separated tokens, order preserved, blanks dropped — used for
+    the space-separated nameserver / search-domain fields."""
+    return text.split()
+
+
+def set_resolvers(nameservers: list[str], search: list[str]) -> tuple[bool, str]:
+    async def run():
+        from gest.core.network.backend_client import NetworkBackend
+
+        backend = await NetworkBackend().connect()
+        try:
+            return await backend.set_resolvers(nameservers, search)
+        finally:
+            await backend.close()
+
+    return run_backend(run)
+
+
+def set_hosts(entries: list[tuple[str, list[str]]]) -> tuple[bool, str]:
+    async def run():
+        from gest.core.network.backend_client import NetworkBackend
+
+        backend = await NetworkBackend().connect()
+        try:
+            return await backend.set_hosts(entries)
+        finally:
+            await backend.close()
+
+    return run_backend(run)

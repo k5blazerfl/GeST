@@ -1645,6 +1645,16 @@ def test_menu_launches_disk():
     assert isinstance(app._stack[-1], DiskScreen)
 
 
+def test_menu_launches_binhost():
+    from gest.tui.screens.binhost import BinhostScreen
+    app = App()
+    menu = MenuScreen(app)
+    app._stack.append(menu)
+    _focus_module(menu, "Software", "binhost")  # now a top-level Software entry
+    menu.keypress(_SIZE, "enter")
+    assert isinstance(app._stack[-1], BinhostScreen)
+
+
 def test_logs_lists_sources_and_view():
     app = App()
     scr = LogsScreen(app)

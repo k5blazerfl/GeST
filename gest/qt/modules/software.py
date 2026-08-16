@@ -26,6 +26,7 @@ from gest.core.software.preview import preview_install
 from gest.core.software.reader import search
 from gest.qt.registry import ModuleDescriptor
 from gest.qt.software import search_result_label
+from gest.qt.theme import fixed_font
 
 DESCRIPTOR = ModuleDescriptor(
     id="software", title="Software", category="Software", icon="applications-system"
@@ -88,6 +89,7 @@ class SoftwareModule(QWidget):
         self._install = QPushButton("Install")
         self._output = QPlainTextEdit()
         self._output.setReadOnly(True)
+        self._output.setFont(fixed_font())
         self._status = QLabel()
 
         actions = QHBoxLayout()
