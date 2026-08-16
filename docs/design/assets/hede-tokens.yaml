@@ -128,6 +128,39 @@ surfaces_catalog:
   dialog: {surface: solid, polkit: shield_accent}
   tabs: {strip: acrylic, active: into_content}   # active tab bleeds into the body
 
+launcher:
+  # ⎈ menu — Open-Shell's Windows-7 two-pane IA in the Helm glass skin.
+  ia: two_pane
+  emerge: from_behind_bar          # obeys the pullout standard; anchored to ⎈ (left)
+  material: acrylic
+  left_pane:                       # apps + search
+    order: [pinned, recent, all_apps, search]
+    recent: mru_mfu                # auto-tracked most-recently/-frequently-used
+    all_apps: expand_in_place      # replaces the list in the left pane (not a fly-out)
+    search:
+      anchor: bottom
+      focus: tab_only              # auto_focus | arrow_reachable | tab_only (a setting)
+      sources: [desktop_entries, path_binaries, file_index]   # .desktop + $PATH + Tracker/plocate
+      match: fuzzy                 # client-side fuzzy ranking over substring
+    jump_list: right_arrow         # .desktop Actions + recently-used.xbel
+  right_pane:                      # places + system rail
+    header: user_avatar
+    places: [home, pictures, music, computer]
+    system: [control_center, settings]   # Control Center where Control Panel sits
+    actions: [run, help]
+    power: split_bottom_right      # Sleep / Restart / Log out / Lock / Shut down (logind)
+  interactions: [drag_to_pin, drag_to_reorder]
+
+# ---- Skin parameter model (derived from Open-Shell, MIT) ------------------
+# General theming primitives every skinnable bitmap/surface may declare. Lets
+# one grayscale source art re-tint per world from a single accent.
+skin_model:
+  nine_slice: "_slices_X / _slices_Y triplets; segments sum to the bitmap dimension"
+  color_states: [normal, hover, disabled, drag_target]   # 4-state color quads
+  opacity: [opaque, solid, glass, fullglass]             # glass/blur-behind hook
+  mask_recolor: accent           # grayscale bitmap blended with the world accent at runtime
+  conditional_variants: [small_icons, caption, two_column, large_font]  # toggles in one token set
+
 # ---- World skins (the art + palette these tokens frame) ------------------
 worlds:
   default: harbor
@@ -141,3 +174,4 @@ worlds:
 credit:
   art: Generated locally — SDXL (ComfyUI) on AMD Radeon 8060S (gfx1151)
   pipeline: 'hiedi Voyage: helm-titlebar-skins'
+  launcher_ia: 'Open-Shell (MIT) — Windows-7 two-pane IA + skin parameter model'

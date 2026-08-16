@@ -81,10 +81,27 @@ column list (anchored to the group's left edge); right-click is a quick menu
 **Manifest window** — the bar itself stays simple.
 
 ### The launcher (⎈)
-Emerges from the ⎈ button, acrylic, tight corners: avatar + search, a **Pinned**
-grid with an **All apps ›** link, **Recent**, and an edgeless session row
-(Lock / Log out / Restart / Shut down — shut-down accent-lit). Session actions
-are logind calls in the `systemd --user` session.
+Adopts **Open-Shell**'s Windows-7 **two-pane** layout (the reference classic
+Start menu — see [Open-Shell provenance](#open-shell-provenance)) in the Helm
+glass skin. Emerges from the ⎈, acrylic, tight corners.
+
+- **Left pane — apps & search:** a **Pinned** list, a separator, then
+  auto-tracked **Recent** (MRU/MFU) programs, then **All apps ›** which expands
+  **in-place** in the left pane (not a fly-out), and a **search box at the
+  bottom**. Search focus is a setting (auto-focus / arrow-reachable /
+  **Tab-only**, so arrow keys navigate the menu as if the box weren't there).
+  Each program shows a right-arrow **jump list** on hover.
+- **Right pane — places & system rail:** the user **avatar** at top, then the
+  places (Home, Pictures, Music, Computer), a separator, **Control Center**
+  (GeST) + **Settings**, then **Run… / Help**, and a split **Power** button
+  bottom-right (Sleep / Restart / Log out / Lock / Shut down fly-out).
+
+Windows-familiar by default per [hede-familiarity](./hede-familiarity.md):
+Control Center sits where Control Panel does, Power sits bottom-right. Session
+and power actions are logind calls in the `systemd --user` session. Search
+sources **`.desktop`** entries (Name/GenericName/Keywords/Exec) + **`$PATH`**
+binaries + a file index (Tracker/`plocate`) with client-side **fuzzy** ranking;
+jump lists come from **`.desktop` Actions** + `recently-used.xbel`.
 
 ### The Hatch
 Full-width quake-style terminal pullout (Porthole inside), emerges from the bar,
@@ -101,6 +118,37 @@ Tabs use an **acrylic strip** with the **active tab bleeding into the content**;
 toggles/sliders/selection/focus rings/primary buttons all take the accent.
 Toasts anchor bottom-right (acrylic); context menus put **Properties** at the
 bottom (Windows-familiar); privileged dialogs carry a polkit accent shield.
+
+## Open-Shell provenance
+
+The launcher's information architecture and several interaction patterns are
+pulled from **[Open-Shell](https://github.com/Open-Shell/Open-Shell-Menu)**
+(formerly Classic Shell), the reference open-source classic Windows Start menu.
+Open-Shell is **MIT-licensed**, so its design *and* source assets are reusable.
+
+What we pull:
+
+- **The Windows-7 two-pane IA** (§ launcher) — the single strongest
+  familiarity win, and the reason to reference Open-Shell at all.
+- **Its skin parameter model**, which informs `hede-tokens.yaml`: per-bitmap
+  **9-slice** metrics (`_slices_X/Y`), **4-state color quads** (normal / hover /
+  disabled / drag-target), a glass **opacity** keyword, **mask-recolor** (one
+  grayscale bitmap re-tinted at runtime from the accent — how a world re-tints
+  cheaply), and **conditional variants via toggles** (icon size, caption,
+  two-column) encoded in one token set.
+- **Interaction behaviors**: live search-as-you-type, the Tab-only search-focus
+  option, right-arrow jump lists, drag-to-pin/reorder, MRU/MFU recents.
+
+What we do **not** pull:
+
+- **No code.** Open-Shell is C++/ATL/WTL on Win32 + COM + GDI/DWM — nothing is
+  portable to Wayland/Qt. We reimplement the patterns.
+- **No Windows-look bitmaps.** Its Aero/Win7/XP skins recreate Windows chrome
+  (trade-dress risk independent of MIT). We author our own nautical Helm art via
+  the [[helm-titlebar-skins-voyage]] and keep the Helm skin.
+- **Not the compiled `.skin` DLL packaging** (a resource-only PE) — Open-Shell's
+  own users ask for loose directories instead; our `.helmtheme` bundles already
+  are manifest + loose PNGs.
 
 ## How it's consumed
 
