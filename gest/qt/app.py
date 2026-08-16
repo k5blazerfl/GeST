@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
@@ -46,6 +47,11 @@ class ControlCenter(QWidget):
             for entry in entries:
                 item = QTreeWidgetItem(cat, [entry.descriptor.title])
                 item.setData(0, Qt.UserRole, entry.descriptor.id)
+                if entry.descriptor.icon:
+                    # Themed freedesktop icon (from the shared icon theme), just
+                    # like the Start menu's launchermenu.cpp. Falls back to no
+                    # icon when the theme lacks the name.
+                    item.setIcon(0, QIcon.fromTheme(entry.descriptor.icon))
 
         self.tree.currentItemChanged.connect(self._on_selected)
 
@@ -93,6 +99,8 @@ def embed_window(registry: Registry, module_id: str) -> QWidget | None:
         return None
     host = QWidget()
     host.setWindowTitle(f"GeST — {entry.descriptor.title}")
+    if entry.descriptor.icon:
+        host.setWindowIcon(QIcon.fromTheme(entry.descriptor.icon))
     host.resize(480, 520)
     layout = QVBoxLayout(host)
     layout.setContentsMargins(0, 0, 0, 0)
