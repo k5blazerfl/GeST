@@ -85,6 +85,14 @@ Adopts **Open-Shell**'s Windows-7 **two-pane** layout (the reference classic
 Start menu — see [Open-Shell provenance](#open-shell-provenance)) in the Helm
 glass skin. Emerges from the ⎈, acrylic, tight corners.
 
+The **menu style is a setting** (mirroring Open-Shell's Menu Style), a
+conditional variant off the same tokens: **`win7_two_pane`** (default, below),
+**`classic`** (a single dense column with the signature vertical caption strip;
+All-apps and jump lists **fly out** as cascading submenus rather than expanding
+in-place; power pinned at the bottom), and **`classic_two_column`** (XP-style —
+pinned + recent programs left, customizable system links right). All three
+re-tint per world.
+
 - **Left pane — apps & search:** a **Pinned** list, a separator, then
   auto-tracked **Recent** (MRU/MFU) programs, then **All apps ›** which expands
   **in-place** in the left pane (not a fly-out), and a **search box at the

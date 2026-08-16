@@ -131,6 +131,13 @@ surfaces_catalog:
 launcher:
   # ⎈ menu — Open-Shell's Windows-7 two-pane IA in the Helm glass skin.
   ia: two_pane
+  # Selectable menu style (a conditional variant off these tokens), mirroring
+  # Open-Shell's Menu Style setting. All re-tint per world.
+  style: win7_two_pane             # win7_two_pane (default) | classic | classic_two_column
+  styles:
+    win7_two_pane: "left = apps + in-place All-apps + bottom search; right = places/system rail"
+    classic: "single dense column + vertical caption strip; All-apps & jump lists fly out (cascade); power pinned bottom"
+    classic_two_column: "XP-style — left = pinned + recent programs; right = customizable system links"
   emerge: from_behind_bar          # obeys the pullout standard; anchored to ⎈ (left)
   material: acrylic
   left_pane:                       # apps + search
