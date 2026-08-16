@@ -44,7 +44,10 @@ class ModuleDescriptor:
     iface: str       # D-Bus interface name
 
 
-# The order here is the Control Center's default listing order.
+# The order here is the Control Center's default listing order. Categories follow
+# the shared taxonomy both frontends render against:
+#   System · Hardware · Network · Software · Services · Users & Security
+# (Personalization is Qt/HeDE-only — a desktop-look category with no gestd module.)
 MODULES: tuple[ModuleDescriptor, ...] = (
     ModuleDescriptor("hostname", "Hostname", "System",
                      "preferences-system", HOSTNAME_CORE_PATH, HOSTNAME_CORE_IFACE),
@@ -52,16 +55,16 @@ MODULES: tuple[ModuleDescriptor, ...] = (
                      "preferences-desktop-locale", LOCALIZATION_CORE_PATH, LOCALIZATION_CORE_IFACE),
     ModuleDescriptor("sysctl", "Kernel Parameters", "System",
                      "preferences-system", SYSCTL_CORE_PATH, SYSCTL_CORE_IFACE),
-    ModuleDescriptor("services", "Services", "System",
-                     "applications-system", SERVICES_CORE_PATH, SERVICES_CORE_IFACE),
-    ModuleDescriptor("users", "Users & Groups", "System",
-                     "system-users", USERS_CORE_PATH, USERS_CORE_IFACE),
-    ModuleDescriptor("software", "Software Management", "Software",
-                     "system-software-install", SOFTWARE_CORE_PATH, SOFTWARE_CORE_IFACE),
-    ModuleDescriptor("network", "Network", "Network",
-                     "network-workgroup", NETWORK_CORE_PATH, NETWORK_CORE_IFACE),
-    ModuleDescriptor("firewall", "Firewall", "Network",
-                     "network-firewall", FIREWALL_CORE_PATH, FIREWALL_CORE_IFACE),
     ModuleDescriptor("disk", "Disks & Mounts", "Hardware",
                      "drive-harddisk", DISK_CORE_PATH, DISK_CORE_IFACE),
+    ModuleDescriptor("network", "Network", "Network",
+                     "network-workgroup", NETWORK_CORE_PATH, NETWORK_CORE_IFACE),
+    ModuleDescriptor("software", "Software Management", "Software",
+                     "system-software-install", SOFTWARE_CORE_PATH, SOFTWARE_CORE_IFACE),
+    ModuleDescriptor("services", "Services", "Services",
+                     "applications-system", SERVICES_CORE_PATH, SERVICES_CORE_IFACE),
+    ModuleDescriptor("users", "Users & Groups", "Users & Security",
+                     "system-users", USERS_CORE_PATH, USERS_CORE_IFACE),
+    ModuleDescriptor("firewall", "Firewall", "Users & Security",
+                     "network-firewall", FIREWALL_CORE_PATH, FIREWALL_CORE_IFACE),
 )

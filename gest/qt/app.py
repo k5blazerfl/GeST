@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
@@ -46,6 +47,11 @@ class ControlCenter(QWidget):
             for entry in entries:
                 item = QTreeWidgetItem(cat, [entry.descriptor.title])
                 item.setData(0, Qt.UserRole, entry.descriptor.id)
+                if entry.descriptor.icon:
+                    # Themed freedesktop icon (from the shared icon theme), just
+                    # like the Start menu's launchermenu.cpp. Falls back to no
+                    # icon when the theme lacks the name.
+                    item.setIcon(0, QIcon.fromTheme(entry.descriptor.icon))
 
         self.tree.currentItemChanged.connect(self._on_selected)
 
@@ -93,6 +99,8 @@ def embed_window(registry: Registry, module_id: str) -> QWidget | None:
         return None
     host = QWidget()
     host.setWindowTitle(f"GeST — {entry.descriptor.title}")
+    if entry.descriptor.icon:
+        host.setWindowIcon(QIcon.fromTheme(entry.descriptor.icon))
     host.resize(480, 520)
     layout = QVBoxLayout(host)
     layout.setContentsMargins(0, 0, 0, 0)
@@ -105,30 +113,45 @@ def build_registry() -> Registry:
         appearance,
         binhost,
         bootloader,
+        cleanup,
         clock,
+        consolefont,
         disk,
+        dns,
         envd,
         eselect,
         firewall,
         hardware,
+        hostname,
+        hosts,
+        hwflags,
+        keymap,
         licenses,
+        locale,
         logs,
         makeconf,
         network,
+        news,
+        preferences,
         privilege,
         repos,
         services,
         software,
         sshd,
+        sync,
         sysctl,
+        update,
         users,
         wifi,
+        world,
     )
 
     registry = Registry()
-    for mod in (hardware, disk, software, repos, makeconf, binhost, licenses, services,
-                clock, bootloader, users, sysctl, eselect, envd, privilege, logs,
-                firewall, network, wifi, sshd, appearance):
+    for mod in (hardware, hwflags, disk, software, world, repos, update, cleanup,
+                sync, news, makeconf, binhost, licenses, preferences, services,
+                clock, hostname, locale, keymap, consolefont, bootloader, users,
+                sysctl, eselect, envd, privilege, logs, firewall, network, wifi,
+                sshd, dns, hosts, appearance):
         registry.register(mod.DESCRIPTOR, mod.factory)
     return registry
 
@@ -136,6 +159,13 @@ def build_registry() -> Registry:
 def main() -> None:
     app = QApplication(sys.argv)
     app.setApplicationName("gest-settings")
+    # Match HeDE: consume the shared Helm appearance (palette + Fusion) before any
+    # window is built, exactly like the shell's Start menu (menu/main.cpp). A
+    # no-op until the user has themed the desktop, so a bare gest-settings keeps
+    # its native look. Covers both the full Control Center and --embed windows.
+    from gest.qt.theme import apply_appearance
+
+    apply_appearance(app)
     registry = build_registry()
 
     embed = parse_embed_arg(app.arguments()[1:])

@@ -9,7 +9,7 @@ from gest.qt.firewall import enable_at_boot, policy_summary
 from gest.qt.registry import ModuleDescriptor
 
 DESCRIPTOR = ModuleDescriptor(
-    id="firewall", title="Firewall", category="Network", icon="security-high"
+    id="firewall", title="Firewall", category="Users & Security", icon="security-high"
 )
 
 

@@ -27,9 +27,11 @@ def test_descriptor_to_dict_shape():
 def test_categories_are_grouped():
     cats = {r["id"]: r["category"] for r in adapter.list_modules()}
     assert cats["software"] == "Software"
-    assert cats["firewall"] == "Network" and cats["network"] == "Network"
+    assert cats["network"] == "Network"
     assert cats["disk"] == "Hardware"
     assert cats["hostname"] == "System"
+    assert cats["services"] == "Services"
+    assert cats["users"] == "Users & Security" and cats["firewall"] == "Users & Security"
 
 
 def test_every_descriptor_matches_a_contract_constant():

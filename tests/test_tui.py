@@ -66,10 +66,11 @@ def test_menu_two_panes_and_category_navigation():
     out = _render(menu)
     assert "GeST Control Center" in out           # centered title box
     assert "[Help]" in out and "[Quit]" in out and "[Run]" not in out
-    assert "Software" in out and "Software Management" in out  # both panes
-    menu.keypress(_SIZE, "down")         # move to the System category
+    # System is the first category; its modules fill the right pane on open.
+    assert "System" in out and "Hostname" in out              # both panes
+    menu.keypress(_SIZE, "down")         # move to the Hardware category
     out2 = _render(menu)
-    assert "Hostname" in out2 and "Timezone" in out2
+    assert "Hardware" in out2 and "Hardware Information" in out2
 
 
 def test_quit_is_top_level_only():
@@ -1644,9 +1645,19 @@ def test_menu_launches_disk():
     app = App()
     menu = MenuScreen(app)
     app._stack.append(menu)
-    _focus_module(menu, "Storage", "disk")
+    _focus_module(menu, "Hardware", "disk")
     menu.keypress(_SIZE, "enter")  # launch Disks & Mounts
     assert isinstance(app._stack[-1], DiskScreen)
+
+
+def test_menu_launches_binhost():
+    from gest.tui.screens.binhost import BinhostScreen
+    app = App()
+    menu = MenuScreen(app)
+    app._stack.append(menu)
+    _focus_module(menu, "Software", "binhost")  # now a top-level Software entry
+    menu.keypress(_SIZE, "enter")
+    assert isinstance(app._stack[-1], BinhostScreen)
 
 
 def test_logs_lists_sources_and_view():
@@ -1663,7 +1674,7 @@ def test_menu_launches_logs():
     app = App()
     menu = MenuScreen(app)
     app._stack.append(menu)
-    _focus_module(menu, "Miscellaneous", "logs")
+    _focus_module(menu, "System", "logs")
     menu.keypress(_SIZE, "enter")  # launch System Logs
     assert isinstance(app._stack[-1], LogsScreen)
 
@@ -1736,7 +1747,7 @@ def test_menu_launches_makeconf():
     app = App()
     menu = MenuScreen(app)
     app._stack.append(menu)
-    _focus_module(menu, "System", "makeconf")
+    _focus_module(menu, "Software", "makeconf")
     menu.keypress(_SIZE, "enter")
     assert isinstance(app._stack[-1], MakeconfScreen)
 
@@ -2878,7 +2889,7 @@ def test_menu_blocks_package_module_when_backend_busy():
     app = App()
     menu = MenuScreen(app)
     app._stack.append(menu)
-    menu.keypress(_SIZE, "enter")          # Software category -> modules
+    _focus_module(menu, "Software", "software")  # Software Management
     menu.keypress(_SIZE, "enter")          # try to launch Software Management
     _pump(app, lambda: isinstance(app._stack[-1], urwid.Overlay), ticks=200)
     out = _render(app._stack[-1])
@@ -2894,10 +2905,7 @@ def test_menu_blocks_package_module_for_external_emerge():
     app = App()
     menu = MenuScreen(app)
     app._stack.append(menu)
-    menu.keypress(_SIZE, "enter")          # Software category -> modules
-    menu.keypress(_SIZE, "down")           # -> World
-    menu.keypress(_SIZE, "down")           # -> Repositories
-    menu.keypress(_SIZE, "down")           # -> System Update
+    _focus_module(menu, "Software", "update")  # System Update
     menu.keypress(_SIZE, "enter")          # try to launch
     _pump(app, lambda: isinstance(app._stack[-1], urwid.Overlay), ticks=200)
     out = _render(app._stack[-1])
@@ -2912,10 +2920,8 @@ def test_menu_allows_readonly_module_when_backend_busy():
     app = App()
     menu = MenuScreen(app)
     app._stack.append(menu)
-    # Portage News is the 7th Software module; read-only, so never locked.
-    menu.keypress(_SIZE, "enter")
-    for _ in range(6):
-        menu.keypress(_SIZE, "down")
+    # Portage News is read-only, so it opens even while package management is locked.
+    _focus_module(menu, "Software", "news")
     menu.keypress(_SIZE, "enter")          # opens straight away (no lock check)
     assert isinstance(app._stack[-1], NewsScreen)
 
@@ -2926,10 +2932,7 @@ def test_menu_opens_package_module_when_not_busy():
     app = App()
     menu = MenuScreen(app)
     app._stack.append(menu)
-    menu.keypress(_SIZE, "enter")          # Software category -> modules
-    menu.keypress(_SIZE, "down")           # -> World & Package Sets
-    menu.keypress(_SIZE, "down")           # -> Software Repositories
-    menu.keypress(_SIZE, "down")           # -> System Update
+    _focus_module(menu, "Software", "update")  # System Update
     menu.keypress(_SIZE, "enter")          # launch (lock is clear)
     _pump(app, lambda: isinstance(app._stack[-1], UpdateLoadingScreen), ticks=200)
     assert isinstance(app._stack[-1], UpdateLoadingScreen)
@@ -2940,12 +2943,10 @@ def test_preferences_lives_under_software():
     from gest.tui.screens.preferences import PreferencesScreen
     by_cat = {cat: [k for k, _label, _impl in mods] for cat, mods in CATEGORIES}
     assert "prefs" in by_cat["Software"]                 # software-scoped setting
-    assert "prefs" not in by_cat["Miscellaneous"]        # not a global bucket
+    assert "Miscellaneous" not in by_cat                 # no global catch-all bucket
     app = App()
     menu = MenuScreen(app)
     app._stack.append(menu)
-    menu.keypress(_SIZE, "enter")                        # into Software modules
-    for _ in range(by_cat["Software"].index("prefs")):
-        menu.keypress(_SIZE, "down")                     # walk down to Preferences
+    _focus_module(menu, "Software", "prefs")             # walk to Preferences
     menu.keypress(_SIZE, "enter")
     assert isinstance(app._stack[-1], PreferencesScreen)

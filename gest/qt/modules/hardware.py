@@ -7,7 +7,7 @@ from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget
 from gest.core.hardware.reader import inventory
 from gest.qt.registry import ModuleDescriptor
 
-DESCRIPTOR = ModuleDescriptor(id="hardware", title="Hardware", category="System", icon="cpu")
+DESCRIPTOR = ModuleDescriptor(id="hardware", title="Hardware", category="Hardware", icon="cpu")
 
 
 class HardwareModule(QWidget):

@@ -10,6 +10,7 @@ import urwid
 from gest import __version__
 from gest.core.software.backend_client import SoftwareBackend
 from gest.tui.runtime import App, Modal, NavPile, Screen, boxed, focusable_actions
+from gest.tui.screens.binhost import BinhostScreen
 from gest.tui.screens.bootloader import BootloaderScreen
 from gest.tui.screens.cleanup import CleanupLoadingScreen
 from gest.tui.screens.datetime import DateTimeScreen
@@ -46,46 +47,30 @@ from gest.tui.screens.wifi import WifiScreen
 from gest.tui.screens.world import WorldScreen
 
 # Category → [(module_key, label, implemented)]. All modules are implemented.
+#
+# Categories and their order follow the shared Control Center taxonomy that every
+# frontend renders against (Qt registry CATEGORY_ORDER, the gestd catalog):
+#   System · Hardware · Network · Software · Services · Users & Security
+# The Qt-only "Personalization" bucket (desktop look — appearance/skins) has no
+# TUI module: look is Qt/HeDE only, system/session config is what the TUI carries.
 CATEGORIES: list[tuple[str, list[tuple[str, str, bool]]]] = [
-    ("Software", [
-        ("software", "Software Management", True),
-        ("world", "World & Package Sets", True),
-        ("repositories", "Software Repositories", True),
-        ("update", "System Update", True),
-        ("depclean", "Clean Up Packages", True),
-        ("sync", "Sync Portage Tree", True),
-        ("news", "Portage News", True),
-        ("licenses", "Package Licenses", True),
-        ("prefs", "Preferences", True),
-    ]),
     ("System", [
         ("hostname", "Hostname", True),
         ("timezone", "Timezone", True),
         ("locale", "Locale", True),
         ("keymap", "Console Keymap", True),
         ("consolefont", "Console Font", True),
+        ("datetime", "Date & Time", True),
         ("eselect", "eselect (selections)", True),
         ("bootloader", "Bootloader & Kernel", True),
-        ("makeconf", "make.conf editor", True),
-        ("datetime", "Date & Time", True),
         ("sysctl", "Kernel Parameters (sysctl)", True),
         ("envd", "Environment (env.d)", True),
+        ("logs", "System Logs", True),
     ]),
     ("Hardware", [
         ("hardware", "Hardware Information", True),
         ("hwflags", "CPU & Video Flags", True),
-    ]),
-    ("Storage", [
         ("disk", "Disks & Mounts", True),
-    ]),
-    ("Services", [
-        ("services", "Services", True),
-    ]),
-    ("Security and Users", [
-        ("users", "Users & Groups", True),
-        ("firewall", "Firewall", True),
-        ("sshd", "SSH Server (sshd)", True),
-        ("privilege", "Privilege (sudo/doas)", True),
     ]),
     ("Network", [
         ("network", "Network", True),
@@ -93,8 +78,27 @@ CATEGORIES: list[tuple[str, list[tuple[str, str, bool]]]] = [
         ("dns", "DNS Resolvers", True),
         ("hosts", "Hosts File", True),
     ]),
-    ("Miscellaneous", [
-        ("logs", "System Logs", True),
+    ("Software", [
+        ("software", "Software Management", True),
+        ("world", "World & Package Sets", True),
+        ("repositories", "Software Repositories", True),
+        ("binhost", "Binary Hosts", True),
+        ("update", "System Update", True),
+        ("depclean", "Clean Up Packages", True),
+        ("sync", "Sync Portage Tree", True),
+        ("news", "Portage News", True),
+        ("makeconf", "make.conf editor", True),
+        ("licenses", "Package Licenses", True),
+        ("prefs", "Preferences", True),
+    ]),
+    ("Services", [
+        ("services", "Services", True),
+    ]),
+    ("Users & Security", [
+        ("users", "Users & Groups", True),
+        ("privilege", "Privilege (sudo/doas)", True),
+        ("firewall", "Firewall", True),
+        ("sshd", "SSH Server (sshd)", True),
     ]),
 ]
 
@@ -252,6 +256,8 @@ class MenuScreen(Screen):
             self.app.push(SyncLoadingScreen(self.app))
         elif key == "repositories":
             self.app.push(ReposScreen(self.app))
+        elif key == "binhost":
+            self.app.push(BinhostScreen(self.app))
         elif key == "licenses":
             self.app.push(LicensesScreen(self.app))
         elif key == "services":

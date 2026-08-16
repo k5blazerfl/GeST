@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 from gest.core.sysctl.reader import current_settings
 from gest.qt.registry import ModuleDescriptor
 from gest.qt.sysctl import apply_settings, merged_settings
+from gest.qt.theme import fixed_font
 
 DESCRIPTOR = ModuleDescriptor(
     id="sysctl", title="Kernel Parameters", category="System", icon="preferences-system"
@@ -27,6 +28,7 @@ class SysctlModule(QWidget):
         super().__init__(parent)
         self._view = QPlainTextEdit()
         self._view.setReadOnly(True)
+        self._view.setFont(fixed_font())
         self._key = QLineEdit()
         self._key.setPlaceholderText("net.ipv4.ip_forward")
         self._value = QLineEdit()
