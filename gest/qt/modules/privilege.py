@@ -17,7 +17,8 @@ from gest.qt.privilege import escalation_summary, set_doas, set_sudo
 from gest.qt.registry import ModuleDescriptor
 
 DESCRIPTOR = ModuleDescriptor(
-    id="privilege", title="Privilege (sudo/doas)", category="Users & Security", icon="dialog-password"
+    id="privilege", title="Privilege (sudo/doas)", category="Users & Security",
+    icon="dialog-password",
 )
 
 
