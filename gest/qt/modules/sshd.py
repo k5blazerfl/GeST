@@ -18,7 +18,7 @@ from gest.qt.registry import ModuleDescriptor
 from gest.qt.sshd import apply_config, sshd_summary
 
 DESCRIPTOR = ModuleDescriptor(
-    id="sshd", title="SSH Server", category="Network", icon="network-server"
+    id="sshd", title="SSH Server", category="Users & Security", icon="network-server"
 )
 
 

@@ -46,7 +46,37 @@ from gest.tui.screens.wifi import WifiScreen
 from gest.tui.screens.world import WorldScreen
 
 # Category → [(module_key, label, implemented)]. All modules are implemented.
+#
+# Categories and their order follow the shared Control Center taxonomy that every
+# frontend renders against (Qt registry CATEGORY_ORDER, the gestd catalog):
+#   System · Hardware · Network · Software · Services · Users & Security
+# The Qt-only "Personalization" bucket (desktop look — appearance/skins) has no
+# TUI module: look is Qt/HeDE only, system/session config is what the TUI carries.
 CATEGORIES: list[tuple[str, list[tuple[str, str, bool]]]] = [
+    ("System", [
+        ("hostname", "Hostname", True),
+        ("timezone", "Timezone", True),
+        ("locale", "Locale", True),
+        ("keymap", "Console Keymap", True),
+        ("consolefont", "Console Font", True),
+        ("datetime", "Date & Time", True),
+        ("eselect", "eselect (selections)", True),
+        ("bootloader", "Bootloader & Kernel", True),
+        ("sysctl", "Kernel Parameters (sysctl)", True),
+        ("envd", "Environment (env.d)", True),
+        ("logs", "System Logs", True),
+    ]),
+    ("Hardware", [
+        ("hardware", "Hardware Information", True),
+        ("hwflags", "CPU & Video Flags", True),
+        ("disk", "Disks & Mounts", True),
+    ]),
+    ("Network", [
+        ("network", "Network", True),
+        ("wifi", "Wi-Fi", True),
+        ("dns", "DNS Resolvers", True),
+        ("hosts", "Hosts File", True),
+    ]),
     ("Software", [
         ("software", "Software Management", True),
         ("world", "World & Package Sets", True),
@@ -55,46 +85,18 @@ CATEGORIES: list[tuple[str, list[tuple[str, str, bool]]]] = [
         ("depclean", "Clean Up Packages", True),
         ("sync", "Sync Portage Tree", True),
         ("news", "Portage News", True),
+        ("makeconf", "make.conf editor", True),
         ("licenses", "Package Licenses", True),
         ("prefs", "Preferences", True),
-    ]),
-    ("System", [
-        ("hostname", "Hostname", True),
-        ("timezone", "Timezone", True),
-        ("locale", "Locale", True),
-        ("keymap", "Console Keymap", True),
-        ("consolefont", "Console Font", True),
-        ("eselect", "eselect (selections)", True),
-        ("bootloader", "Bootloader & Kernel", True),
-        ("makeconf", "make.conf editor", True),
-        ("datetime", "Date & Time", True),
-        ("sysctl", "Kernel Parameters (sysctl)", True),
-        ("envd", "Environment (env.d)", True),
-    ]),
-    ("Hardware", [
-        ("hardware", "Hardware Information", True),
-        ("hwflags", "CPU & Video Flags", True),
-    ]),
-    ("Storage", [
-        ("disk", "Disks & Mounts", True),
     ]),
     ("Services", [
         ("services", "Services (OpenRC)", True),
     ]),
-    ("Security and Users", [
+    ("Users & Security", [
         ("users", "Users & Groups", True),
+        ("privilege", "Privilege (sudo/doas)", True),
         ("firewall", "Firewall", True),
         ("sshd", "SSH Server (sshd)", True),
-        ("privilege", "Privilege (sudo/doas)", True),
-    ]),
-    ("Network", [
-        ("network", "Network", True),
-        ("wifi", "Wi-Fi", True),
-        ("dns", "DNS Resolvers", True),
-        ("hosts", "Hosts File", True),
-    ]),
-    ("Miscellaneous", [
-        ("logs", "System Logs", True),
     ]),
 ]
 
