@@ -4,8 +4,9 @@ from gest.backend.services import ServicesService
 
 
 def test_control_argv():
-    assert ServicesService._control_argv("sshd.service", "start")[-2:] == ["start", "sshd.service"]
-    assert ServicesService._control_argv("sshd.service", "restart")[-2:] == ["restart", "sshd.service"]
+    argv = ServicesService._control_argv
+    assert argv("sshd.service", "start")[-2:] == ["start", "sshd.service"]
+    assert argv("sshd.service", "restart")[-2:] == ["restart", "sshd.service"]
 
 
 def test_enabled_argv():

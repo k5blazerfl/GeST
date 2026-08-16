@@ -11,7 +11,7 @@
 // gestd read the client already does:
 //   --apply <name>              System.SetHostname(name, "/")
 //   --apply-timezone <zone>     System.SetTimezone(zone, "/")        (localization)
-//   --enable-service <name> <0|1>  Services.SetEnabled(name, on, "default")
+//   --enable-service <name> <0|1>  Services.SetEnabled(name, on)
 //   --control-service <name> <act> Services.Control(name, act)       (start/stop/…)
 //   --apply-sysctl <key> <value>   Sysctl.ApplySettings([(key,value)], "/")
 // The last exercises the write-side container type a(ss) (see sysctl_types.h).
@@ -105,7 +105,7 @@ int main(int argc, char **argv)
         const QString name = (i + 1 < args.size()) ? args.at(i + 1) : QStringLiteral("sshd");
         const bool on = (i + 2 < args.size()) ? (args.at(i + 2) != QStringLiteral("0")) : true;
         return report(QStringLiteral("SetEnabled('%1', %2)").arg(name).arg(on),
-                      services.SetEnabled(name, on, QStringLiteral("default")));
+                      services.SetEnabled(name, on));
     }
     if (args.contains(QStringLiteral("--control-service"))) {
         const int i = args.indexOf(QStringLiteral("--control-service"));
