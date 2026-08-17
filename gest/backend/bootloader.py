@@ -9,8 +9,10 @@ argv is re-validated server-side via the shared command builder.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
+import tempfile
 
 import gi
 
@@ -44,6 +46,11 @@ _INTROSPECTION = f"""
       <arg type="b" name="ok" direction="out"/>
       <arg type="s" name="output" direction="out"/>
     </method>
+    <method name="ConfigureSeamlessBoot">
+      <arg type="s" name="root" direction="in"/>
+      <arg type="b" name="ok" direction="out"/>
+      <arg type="s" name="output" direction="out"/>
+    </method>
   </interface>
 </node>
 """
@@ -54,6 +61,7 @@ _GRUB_INSTALL = shutil.which("grub-install") or "/usr/sbin/grub-install"
 _POLKIT = {
     "RegenerateGrub": BOOTLOADER_POLKIT,
     "InstallGrub": BOOTLOADER_INSTALL_POLKIT,
+    "ConfigureSeamlessBoot": BOOTLOADER_POLKIT,  # edits grub config, like RegenerateGrub
 }
 _METHODS = tuple(_POLKIT)
 
@@ -62,6 +70,47 @@ def _run(argv: list[str]) -> tuple[bool, str]:
     proc = subprocess.run(argv, capture_output=True, text=True)
     out = proc.stdout + (f"\n{proc.stderr}" if proc.stderr else "")
     return proc.returncode == 0, out.strip()
+
+
+def _atomic_write(path: str, text: str) -> None:
+    """Write ``text`` to ``path`` atomically (temp file + rename), creating the
+    parent dir. Mirrors the pattern in backend/disk.py and backend/firewall.py."""
+    directory = os.path.dirname(path) or "."
+    os.makedirs(directory, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=directory)
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(text)
+        os.replace(tmp, path)
+    except BaseException:
+        os.unlink(tmp)
+        raise
+
+
+def _configure_seamless(root: str) -> tuple[bool, str]:
+    """Apply the seamless-boot config under ``root`` ("" = the live host, or a
+    target root like /mnt/gentoo): rewrite ``/etc/default/grub`` via the pure
+    transform, then stage the GRUB theme + select the Plymouth splash. The caller
+    regenerates grub.cfg (RegenerateGrub) afterward."""
+    from gest.core.bootloader import seamless
+
+    grub_default = f"{root}/etc/default/grub"
+    try:
+        existing = ""
+        if os.path.exists(grub_default):
+            with open(grub_default, encoding="utf-8") as f:
+                existing = f.read()
+        _atomic_write(grub_default, seamless.grub_default(existing))
+    except OSError as exc:
+        return False, f"/etc/default/grub: {exc}"
+
+    lines = [f"wrote {grub_default}"]
+    for step in seamless.stage_theme_steps(root=root):
+        ok, out = _run(step.argv)
+        lines.append(f"{step.label}: {'ok' if ok else out}")
+        if not ok:
+            return False, "\n".join(lines)
+    return True, "\n".join(lines)
 
 
 class BootloaderService:
@@ -91,6 +140,10 @@ class BootloaderService:
             if method == "RegenerateGrub":
                 ok, out = _run(commands.grub_mkconfig_argv(grub_mkconfig=_GRUB_MKCONFIG))
                 detail = "regenerate grub.cfg"
+            elif method == "ConfigureSeamlessBoot":
+                (root,) = params.unpack()
+                ok, out = _configure_seamless(root)
+                detail = "configure seamless boot"
             else:  # InstallGrub
                 firmware, efi_dir, boot_id, removable, disk, boot_dir = params.unpack()
                 argv = commands.grub_install_argv(
