@@ -40,6 +40,9 @@ add_test(NAME media COMMAND test-media)
 
 qt_add_executable(test-theme test_theme.cpp)
 target_link_libraries(test-theme PRIVATE Qt6::Test helm-theme-lib)
+# The committed Harbor-default themerc must stay byte-identical to themercBody().
+target_compile_definitions(test-theme PRIVATE
+    HELM_THEMERC_DEFAULT="${CMAKE_SOURCE_DIR}/data/themes/Helm/labwc/themerc")
 add_test(NAME theme COMMAND test-theme)
 
 qt_add_executable(test-appearance test_appearance.cpp)

@@ -43,19 +43,57 @@ private slots:
     }
 
     void applyWritesFiles() {
-        QTemporaryDir dir;
-        qputenv("XDG_CONFIG_HOME", dir.path().toUtf8());
+        QTemporaryDir cfg, data;
+        qputenv("XDG_CONFIG_HOME", cfg.path().toUtf8());
+        qputenv("XDG_DATA_HOME", data.path().toUtf8());
         helm::ThemeSpec s;
         s.dark = true;
         s.accent = QStringLiteral("#33d6c8");
         const QStringList written = helm::applyTheme(s);
-        QVERIFY(written.size() >= 3); // gtk-3.0, gtk-4.0, hede.conf
-        QVERIFY(QFile::exists(dir.filePath(QStringLiteral("gtk-3.0/settings.ini"))));
-        QVERIFY(QFile::exists(dir.filePath(QStringLiteral("gtk-4.0/settings.ini"))));
-        QSettings conf(dir.filePath(QStringLiteral("hede/hede.conf")), QSettings::IniFormat);
+        QVERIFY(written.size() >= 4); // gtk-3.0, gtk-4.0, hede.conf, themerc
+        QVERIFY(QFile::exists(cfg.filePath(QStringLiteral("gtk-3.0/settings.ini"))));
+        QVERIFY(QFile::exists(cfg.filePath(QStringLiteral("gtk-4.0/settings.ini"))));
+        QVERIFY(QFile::exists(data.filePath(QStringLiteral("themes/Helm/labwc/themerc"))));
+        QSettings conf(cfg.filePath(QStringLiteral("hede/hede.conf")), QSettings::IniFormat);
         QCOMPARE(conf.value(QStringLiteral("appearance/accent")).toString(),
                  QStringLiteral("#33d6c8"));
         QVERIFY(conf.value(QStringLiteral("appearance/dark")).toBool());
+    }
+
+    void themercColours() {
+        // Focused titlebar is the accent tint; label uses the palette's
+        // luminance rule (teal → black text, navy → white).
+        helm::ThemeSpec teal;
+        teal.accent = QStringLiteral("#33d6c8");
+        const QString t = helm::themercBody(teal);
+        QVERIFY(t.contains(QStringLiteral("window.active.title.bg.color: #33d6c8")));
+        QVERIFY(t.contains(QStringLiteral("window.active.label.text.color: #000000")));
+
+        helm::ThemeSpec navy;
+        navy.accent = QStringLiteral("#0a1633");
+        QVERIFY(helm::themercBody(navy).contains(
+            QStringLiteral("window.active.label.text.color: #ffffff")));
+
+        // Light vs dark pick different neutral surfaces for the unfocused bar.
+        QVERIFY(helm::themercBody(helm::ThemeSpec{})
+                    .contains(QStringLiteral("window.inactive.title.bg.color: #f6fafb")));
+        helm::ThemeSpec dark;
+        dark.dark = true;
+        QVERIFY(helm::themercBody(dark).contains(
+            QStringLiteral("window.inactive.title.bg.color: #0e2c34")));
+
+        // Empty accent falls back to the Harbor default so the bar is always tinted.
+        QVERIFY(helm::themercBody(helm::ThemeSpec{})
+                    .contains(QStringLiteral("window.active.title.bg.color: #3aa6c4")));
+    }
+
+    // Anti-drift: the committed default asset must equal themercBody(default).
+    void themercDefaultMatchesAsset() {
+        QFile f(QStringLiteral(HELM_THEMERC_DEFAULT));
+        QVERIFY2(f.open(QIODevice::ReadOnly | QIODevice::Text),
+                 qPrintable(f.fileName()));
+        const QString onDisk = QString::fromUtf8(f.readAll());
+        QCOMPARE(onDisk, helm::themercBody(helm::ThemeSpec{}));
     }
 };
 

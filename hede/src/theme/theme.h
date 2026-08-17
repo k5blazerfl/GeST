@@ -19,8 +19,15 @@ QString effectiveGtkTheme(const ThemeSpec &s);     // gtkTheme or Adwaita[-dark]
 QString gtkSettingsIni(const ThemeSpec &s);        // a GTK settings.ini body
 ThemeSpec parseThemeArgs(const QStringList &args); // --dark/--light/--accent=…
 
-// Write the theme: GTK 3/4 settings.ini + the [appearance] block in hede.conf,
-// under $XDG_CONFIG_HOME. Returns the files written (empty on failure).
+// A labwc (openbox-3) themerc body for the "Helm" theme: the focused titlebar
+// is tinted with the accent (falling back to the Harbor default so the bar is
+// always coloured), the unfocused one uses a neutral surface. Colours follow
+// the same luminance rule as the shell palette (see helm::contrastText).
+QString themercBody(const ThemeSpec &s);
+
+// Write the theme: GTK 3/4 settings.ini + the [appearance] block in hede.conf
+// (under $XDG_CONFIG_HOME) + the Helm labwc themerc (under $XDG_DATA_HOME).
+// Returns the files written (empty on failure).
 QStringList applyTheme(const ThemeSpec &s);
 
 } // namespace helm

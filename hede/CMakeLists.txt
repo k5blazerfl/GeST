@@ -35,3 +35,8 @@ install(FILES data/wayland-sessions/hede.desktop
         DESTINATION ${CMAKE_INSTALL_PREFIX}/share/wayland-sessions)
 install(DIRECTORY data/labwc data/wayfire
         DESTINATION ${CMAKE_INSTALL_PREFIX}/share/hede)
+# The Helm labwc titlebar theme lands in the XDG theme search path
+# (/usr/share/themes) so labwc resolves <theme><name>Helm</name>. helm-theme
+# regenerates a per-user copy under ~/.local/share/themes that shadows this one.
+install(DIRECTORY data/themes
+        DESTINATION ${CMAKE_INSTALL_PREFIX}/share)
