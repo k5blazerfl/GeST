@@ -7,6 +7,7 @@
 
 #include <QAction>
 #include <QApplication>
+#include <QDateTime>
 #include <QEvent>
 #include <QHBoxLayout>
 #include <QIcon>
@@ -27,6 +28,8 @@ namespace helm {
 static constexpr int kArgvRole = Qt::UserRole;
 static constexpr int kActionNamesRole = Qt::UserRole + 1;
 static constexpr int kActionExecsRole = Qt::UserRole + 2;
+static constexpr int kAppIdRole = Qt::UserRole + 3;
+static constexpr int kKindRole = Qt::UserRole + 4; // 0 = app, 1 = "all apps" expander
 
 namespace {
 
@@ -89,7 +92,12 @@ QWidget *LauncherMenu::buildLeftPane() {
     v->addWidget(m_search);
 
     m_all = scanDesktopEntries(defaultApplicationDirs());
-    refilter(QString());
+    for (const DesktopEntry &e : m_all)
+        m_byId.insert(e.id, e);
+    m_store = loadStore();
+    if (m_store.pinned.isEmpty())
+        m_store.pinned = defaultPins(m_byId.keys());
+    rebuild();
 
     connect(m_search, &QLineEdit::textChanged, this, &LauncherMenu::refilter);
     connect(m_list, &QListWidget::itemActivated, this, &LauncherMenu::launch);
@@ -169,26 +177,80 @@ QWidget *LauncherMenu::buildRightPane() {
     return rail;
 }
 
-void LauncherMenu::refilter(const QString &query) {
-    m_list->clear();
-    const QVector<DesktopEntry> matches = filterEntries(m_all, query);
-    for (const DesktopEntry &e : matches) {
-        auto *item = new QListWidgetItem(e.name, m_list);
-        if (!e.comment.isEmpty())
-            item->setToolTip(e.comment);
-        if (!e.icon.isEmpty())
-            item->setIcon(QIcon::fromTheme(e.icon));
-        item->setData(kArgvRole, commandArgv(e));
-        QStringList names, execs;
-        for (const DesktopAction &a : e.actions) {
-            names << a.name;
-            execs << a.exec;
-        }
-        item->setData(kActionNamesRole, names);
-        item->setData(kActionExecsRole, execs);
+void LauncherMenu::refilter(const QString &) {
+    m_showAllApps = false; // typing leaves the expanded All-apps view
+    rebuild();
+}
+
+void LauncherMenu::addHeader(const QString &text) {
+    auto *h = new QListWidgetItem(text.toUpper(), m_list);
+    h->setFlags(Qt::NoItemFlags); // not selectable/navigable
+    QFont f = h->font();
+    f.setBold(true);
+    f.setPointSizeF(f.pointSizeF() * 0.85);
+    h->setFont(f);
+    h->setForeground(QColor(0x7f, 0x9a, 0xa2)); // dim, on the acrylic
+}
+
+void LauncherMenu::addAppItem(const DesktopEntry &e) {
+    auto *item = new QListWidgetItem(e.name, m_list);
+    if (!e.comment.isEmpty())
+        item->setToolTip(e.comment);
+    if (!e.icon.isEmpty())
+        item->setIcon(QIcon::fromTheme(e.icon));
+    item->setData(kArgvRole, commandArgv(e));
+    item->setData(kAppIdRole, e.id);
+    item->setData(kKindRole, 0);
+    QStringList names, execs;
+    for (const DesktopAction &a : e.actions) {
+        names << a.name;
+        execs << a.exec;
     }
-    if (m_list->count() > 0)
-        m_list->setCurrentRow(0);
+    item->setData(kActionNamesRole, names);
+    item->setData(kActionExecsRole, execs);
+}
+
+void LauncherMenu::rebuild() {
+    m_list->clear();
+    const QString query = m_search->text();
+
+    if (!query.isEmpty()) {
+        // Searching: a flat, filtered list across everything.
+        for (const DesktopEntry &e : filterEntries(m_all, query))
+            addAppItem(e);
+    } else if (m_showAllApps) {
+        for (const DesktopEntry &e : m_all) // scanDesktopEntries is name-sorted
+            addAppItem(e);
+    } else {
+        // The Home view: Pinned → Recent → an "All apps" expander.
+        QStringList shown;
+        if (!m_store.pinned.isEmpty()) {
+            addHeader(tr("Pinned"));
+            for (const QString &id : m_store.pinned)
+                if (m_byId.contains(id)) {
+                    addAppItem(m_byId.value(id));
+                    shown << id;
+                }
+        }
+        const QStringList recent = recentIds(m_store, 6, m_store.pinned);
+        if (!recent.isEmpty()) {
+            addHeader(tr("Recent"));
+            for (const QString &id : recent)
+                if (m_byId.contains(id)) {
+                    addAppItem(m_byId.value(id));
+                    shown << id;
+                }
+        }
+        auto *all = new QListWidgetItem(tr("All apps  ▸"), m_list);
+        all->setData(kKindRole, 1);
+    }
+
+    // Select the first navigable (app / expander) row.
+    for (int i = 0; i < m_list->count(); ++i)
+        if (m_list->item(i)->flags() & Qt::ItemIsSelectable) {
+            m_list->setCurrentRow(i);
+            break;
+        }
 }
 
 void LauncherMenu::launchAndQuit(const QString &program, const QStringList &args) {
@@ -213,10 +275,36 @@ void LauncherMenu::openRun() {
 void LauncherMenu::launch(QListWidgetItem *item) {
     if (!item)
         return;
+    if (item->data(kKindRole).toInt() == 1) { // "All apps" → expand in place
+        m_showAllApps = true;
+        rebuild();
+        return;
+    }
     const QStringList argv = item->data(kArgvRole).toStringList();
     if (argv.isEmpty())
         return;
+    const QString id = item->data(kAppIdRole).toString();
+    if (!id.isEmpty()) {
+        recordLaunch(m_store, id, QDateTime::currentSecsSinceEpoch());
+        saveStore(m_store);
+    }
     launchAndQuit(argv.first(), argv.mid(1));
+}
+
+void LauncherMenu::moveSelection(int dir) {
+    const int n = m_list->count();
+    if (n == 0)
+        return;
+    int row = m_list->currentRow();
+    for (int i = 0; i < n; ++i) {
+        row += dir;
+        if (row < 0 || row >= n)
+            return; // at an edge — keep the current selection
+        if (m_list->item(row)->flags() & Qt::ItemIsSelectable) {
+            m_list->setCurrentRow(row);
+            return;
+        }
+    }
 }
 
 void LauncherMenu::run(const QString &exec) {
@@ -230,16 +318,31 @@ void LauncherMenu::showActions(const QPoint &pos) {
     QListWidgetItem *item = m_list->itemAt(pos);
     if (!item)
         return;
+    QMenu menu(this);
+
+    const QString id = item->data(kAppIdRole).toString();
+    if (!id.isEmpty()) {
+        const bool pinned = m_store.pinned.contains(id);
+        connect(menu.addAction(pinned ? tr("Unpin from Start") : tr("Pin to Start")),
+                &QAction::triggered, this, [this, id] {
+                    togglePin(m_store, id);
+                    saveStore(m_store);
+                    rebuild();
+                });
+    }
+
     const QStringList names = item->data(kActionNamesRole).toStringList();
     const QStringList execs = item->data(kActionExecsRole).toStringList();
-    if (names.isEmpty())
-        return;
-    QMenu menu(this);
-    for (int i = 0; i < names.size(); ++i) {
-        const QString exec = execs.value(i);
-        connect(menu.addAction(names[i]), &QAction::triggered, this, [this, exec] { run(exec); });
+    if (!names.isEmpty()) {
+        menu.addSeparator();
+        for (int i = 0; i < names.size(); ++i) {
+            const QString exec = execs.value(i);
+            connect(menu.addAction(names[i]), &QAction::triggered, this,
+                    [this, exec] { run(exec); });
+        }
     }
-    menu.exec(m_list->mapToGlobal(pos));
+    if (!menu.isEmpty())
+        menu.exec(m_list->mapToGlobal(pos));
 }
 
 bool LauncherMenu::eventFilter(QObject *obj, QEvent *event) {
@@ -254,12 +357,10 @@ bool LauncherMenu::eventFilter(QObject *obj, QEvent *event) {
             launch(m_list->currentItem());
             return true;
         case Qt::Key_Down:
-            if (m_list->count() > 0)
-                m_list->setCurrentRow(qMin(m_list->currentRow() + 1, m_list->count() - 1));
+            moveSelection(+1);
             return true;
         case Qt::Key_Up:
-            if (m_list->count() > 0)
-                m_list->setCurrentRow(qMax(m_list->currentRow() - 1, 0));
+            moveSelection(-1);
             return true;
         default:
             break;
