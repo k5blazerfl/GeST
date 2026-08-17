@@ -2,6 +2,7 @@
 #include "notifyservice.h"
 #include "toast.h"
 
+#include "config.h"
 #include "layershell.h"
 #include "palette.h"
 
@@ -12,7 +13,8 @@
 #include <cstdio>
 
 // helm-notifyd: the org.freedesktop.Notifications daemon. Renders toasts in the
-// top-right corner and speaks the fdo notification spec over the session bus.
+// bottom-right corner (above the bar, Windows-familiar) and speaks the fdo
+// notification spec over the session bus.
 int main(int argc, char **argv) {
     qputenv("QT_WAYLAND_SHELL_INTEGRATION", "layer-shell");
 
@@ -23,11 +25,13 @@ int main(int argc, char **argv) {
     auto *toasts = new helm::ToastStack;
     toasts->winId();
     if (QWindow *win = toasts->windowHandle()) {
+        // Bottom-right, clear of the bar (right + bottom margins).
+        const int bottom = helm::Config().panelHeight() + 8;
         helm::applyLayerShell(win, LayerShellQt::Window::LayerOverlay,
-                              helm::edges(/*top*/ true, /*bottom*/ false, /*left*/ false,
+                              helm::edges(/*top*/ false, /*bottom*/ true, /*left*/ false,
                                           /*right*/ true),
                               /*exclusiveZone*/ 0, LayerShellQt::Window::KeyboardInteractivityNone,
-                              QMargins(0, 8, 8, 0));
+                              QMargins(0, 0, 8, bottom));
     }
     toasts->show();
 
