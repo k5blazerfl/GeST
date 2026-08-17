@@ -39,7 +39,7 @@ sudo packaging/livecd/spin-up.sh            # add --uefi to boot via OVMF
 
 `spin-up.sh` does everything: syncs this checkout's overlay into
 `/var/db/repos/gest` (so the image carries the **latest GeST**), ensures a portage
-snapshot, downloads the latest `stage3-amd64-openrc` seed, writes `config.env`,
+snapshot, downloads the latest `stage3-amd64-systemd` seed, writes `config.env`,
 builds the ISO, and boots it in QEMU. `--no-boot` builds only;
 `--snapshot <id>` overrides the snapshot (catalyst's snapshot naming varies by
 version — pass this if the auto value fails). The manual flow below is what it
@@ -65,7 +65,8 @@ sudo GRUB_PLATFORMS="pc efi-64" emerge -1 sys-boot/grub   # /usr/lib/grub/i386-p
 # configure catalyst: /etc/catalyst/catalyst.conf (storedir, distdir, …)
 # stage a portage snapshot and a stage3 seed under catalyst's builds/:
 sudo catalyst -s stable            # snapshot treeish; sets SNAPSHOT=stable
-# (download a stage3-amd64-openrc tarball into <storedir>/builds/default/)
+# (download a stage3-amd64-systemd tarball into <storedir>/builds/default/ —
+#  MUST be systemd to match PROFILE=.../desktop/systemd in config.env)
 
 # Overlays the build needs, cloned where config.env points (GEST_OVERLAY,
 # HEDE_OVERLAY): app-admin/gest lives in this repo's overlay; gui-apps/hede lives
@@ -95,15 +96,19 @@ placeholders. The rendered `build/` specs are throwaway output (git-ignored).
 
 ### The image on boot
 
-**amd64** boots into **HeDE**. `gest.packages` pulls `gui-apps/hede` (which drags
-in labwc, foot, gest, the polkit agent, wireplumber, …) plus `elogind`, `seatd`
-and `greetd`; `app-admin/gest` is built with `USE=qt` (see
+**amd64** boots into **HeDE**. The image is **systemd** (matching HeDE's init
+commitment): built against the `desktop/systemd` profile from a
+`stage3-amd64-systemd` seed. `gest.packages` pulls `gui-apps/hede` (which drags
+in labwc, foot, gest, the polkit agent, wireplumber, …) plus `greetd` (and
+`seatd` as a libseat fallback — systemd-logind is the primary seat backend, so
+there is no `elogind`); `app-admin/gest` is built with `USE=qt` (see
 `portage-conf/package.use`) so the graphical Control Center is present. The root
 overlay lays down `/etc/greetd/config.toml`, which **autologins the boot into the
 HeDE session** (`dbus-run-session helm-session`) on vt1, and `fsscript.sh`
-enables the `elogind` / `seatd` / `dbus` / `greetd` / `dhcpcd` services and frees
-tty1 from the default getty. Inside HeDE the user runs GeST — TUI or Control
-Center — to install; tty2-6 stay as rescue shells with `gest` on `PATH`.
+`systemctl enable`s `greetd` / `dbus` / `dhcpcd`, sets the default to
+`graphical.target`, and masks `getty@tty1` so greetd owns vt1. Inside HeDE the
+user runs GeST — TUI or Control Center — to install; tty2-6 stay as rescue shells
+with `gest` on `PATH`.
 
 **arm64** has no desktop: `fsscript.sh` there still autologins root on tty1 and
 launches `gest` on the console.
