@@ -96,10 +96,13 @@ fi
 
 # --- 3. latest stage3 seed --------------------------------------------------
 say "Resolving the latest stage3-${arch}-${flavor}"
-latest_url="${mirror}/releases/${arch}/autobuilds/latest-stage3-${flavor}.txt"
-relpath="$(curl -fsSL "${latest_url}" | grep -vE '^\s*(#|$)' | head -1 | awk '{print $1}')" \
+latest_url="${mirror}/releases/${arch}/autobuilds/latest-stage3-${arch}-${flavor}.txt"
+# The .txt is PGP-clearsigned, so pull the stage3 path line out directly rather
+# than assuming it's the first non-comment line (it isn't — the armor is).
+relpath="$(curl -fsSL "${latest_url}" \
+    | grep -oE "[0-9TZ]+/stage3-${arch}-${flavor}-[0-9TZ]+\.tar\.xz" | head -1)" \
     || die "could not fetch ${latest_url}"
-[ -n "${relpath}" ] || die "no data line in ${latest_url}"
+[ -n "${relpath}" ] || die "no stage3 path in ${latest_url}"
 tarname="$(basename "${relpath}")"                    # stage3-amd64-systemd-<stamp>.tar.xz
 seed="${tarname%.tar.*}"                               # the source_subpath name (no ext)
 seed_dir="${storedir}/builds/default"
