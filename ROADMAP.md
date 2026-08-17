@@ -9,8 +9,10 @@ familiar to people coming from Windows.
 **North star:** a feature-rich, first-class Gentoo desktop **and** a CLI that can
 facilitate a full Gentoo install end-to-end.
 
-> Status: **v0.52.1** — the first end-to-end bootable amd64 GeSI ISO. This file is
-> the durable plan; the "In flight" section below is the only part that dates.
+> Status: **v0.52.3** — bootable amd64 GeSI ISO into HeDE, with the Control
+> Center at TUI parity and a palette-driven titlebar skin landing. This file is
+> the durable plan; the "In flight" / "Now" sections below are the only parts
+> that date.
 
 ---
 
@@ -41,30 +43,37 @@ facilitate a full Gentoo install end-to-end.
 - **GeSI live-CD** builds *and boots* end-to-end into an interactive HeDE
   (amd64, QEMU-verified) — **v0.52.1**.
 - **Committed to systemd** as the single init system.
+- **Control Center at TUI parity** — one shared category map across TUI, Qt, and
+  the gestd catalog; Qt grew 21 → 34 modules, rail mirrors the TUI one-for-one —
+  **v0.52.2** *(#80, #81)*.
+- **Design language A–C** — the Control Center consumes the shared Helm palette +
+  icons from `hede.conf`; monospace for terminal-like views — **v0.52.2** *(#82)*.
+- **Foundations + services on systemd** — systemd commitment, familiarity
+  north-star, HeDE theme package, Services module migrated to systemd —
+  **v0.52.2** *(#76–79)*.
+- **Frameless-window fix** — menu-launched apps now get server-side decorations
+  at the source (the Start menu is the Control Center's main launch path) —
+  **v0.52.3** *(#85)*.
 
 ## In flight — written, in review (open PRs, *not yet on `main`*)
 
-- **Control Center taxonomy** — one shared category map across TUI, Qt, and the
-  gestd catalog. *(#80)*
-- **Control Center coverage parity** — Qt grew from 21 → 34 modules; its rail now
-  mirrors the TUI one-for-one. *(#81)*
-- **Design language A–C** — the Control Center consumes the shared Helm palette +
-  icons from `hede.conf`; monospace for terminal-like views. *(#82)*
-- **Foundations docs + services** — systemd commitment, familiarity north-star,
-  HeDE theme package, services module migrated to systemd. *(#76–79)*
+- **Design language D — window chrome.** A palette-driven Helm titlebar skin for
+  labwc: `helm-theme` generates a `themerc` from `dark`+`accent`, regenerates it
+  live on theme change, ships a Harbor default to `/usr/share/themes`, and the two
+  `rc.xml` copies are reconciled. *(#88)*
 
 ## Now — the immediate heading
 
-1. **Land the backlog** — merge the in-flight PRs so this work is actually on
-   `main`. Order: #76–79 (independent), then #80 → #81 → #82.
-2. **Fix the frameless blocker** — apps launched from the Start menu come up
-   fullscreen-frameless. The menu is the Control Center's main launch path, so the
-   titlebar work is invisible until this is fixed. *Do this first of the two below.*
-3. **Design language D — window chrome.** A palette-generated Helm titlebar skin
-   for labwc (the labwc analogue of the palette work): author a Helm `themerc`
-   whose colours derive from the shared palette, teach `helm-theme` to regenerate
-   it on theme change, and reconcile the two `rc.xml` copies. The Win11 button
-   layout (`icon:iconify,max,close`) and SSD plumbing are already in place.
+1. **Land Design D (#88)** onto `main`, then bump Amphitheater's `gui-apps/hede`
+   and rebuild the ISO so the live image ships the titlebar skin — at which point
+   the two livecd overlay stopgaps (`overlay/.../labwc/rc.xml` + the overlay
+   `themes/Helm`) can be dropped.
+2. **Appearance the user drives** — layer the bespoke painterly titlebar art (the
+   `helm-titlebar-skins` pipeline, `.helmtheme` bundles) on top of the
+   palette-driven default, and make wallpaper/background a first-class,
+   Control-Center-driven system. *(the near-term slice of "the gold" below.)*
+3. **Shell-surface polish** — mature notifications, quicksettings, tray, taskbar,
+   and the launcher from "the frame stands" to "lived in."
 
 ---
 
