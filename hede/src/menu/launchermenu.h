@@ -36,6 +36,7 @@ class LauncherMenu : public QWidget {
     void addHeader(const QString &text);
     void addAppItem(const DesktopEntry &e);
     void addCommandItem(const QString &binary); // a $PATH executable result
+    void addFileItem(const QString &path);       // a file-index (plocate) result
     void launch(QListWidgetItem *item);
     void run(const QString &exec);
     void launchAndQuit(const QString &program, const QStringList &args = {});

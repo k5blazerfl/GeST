@@ -10,6 +10,7 @@
 #include <QApplication>
 #include <QDateTime>
 #include <QEvent>
+#include <QFileInfo>
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QInputDialog>
@@ -75,7 +76,14 @@ LauncherMenu::LauncherMenu(QWidget *parent)
     cols->addWidget(buildLeftPane(), 1);
     cols->addWidget(buildRightPane());
 
-    m_search->setFocus();
+    // Search focus is a setting (tokens.launcher.search.focus): "auto" focuses
+    // the search on open (type immediately, the default); "tab" leaves focus on
+    // the list (arrow to navigate) and the search is reached with Tab.
+    if (Config().string(QStringLiteral("launcher/search_focus"), QStringLiteral("auto"))
+        == QLatin1String("tab"))
+        m_list->setFocus();
+    else
+        m_search->setFocus();
 }
 
 QWidget *LauncherMenu::buildLeftPane() {
@@ -221,6 +229,15 @@ void LauncherMenu::addCommandItem(const QString &binary) {
     // No app id → not usage-tracked (it isn't a .desktop app).
 }
 
+void LauncherMenu::addFileItem(const QString &path) {
+    auto *item = new QListWidgetItem(QFileInfo(path).fileName(), m_list);
+    item->setIcon(helm::tintedIcon(QStringLiteral("text-x-generic"), helm::barGlyphColor(),
+                                   QSize(18, 18)));
+    item->setToolTip(path);
+    item->setData(kArgvRole, QStringList{QStringLiteral("xdg-open"), path}); // open in the handler
+    item->setData(kKindRole, 0);
+}
+
 void LauncherMenu::rebuild() {
     m_list->clear();
     const QString query = m_search->text();
@@ -234,6 +251,12 @@ void LauncherMenu::rebuild() {
             addHeader(tr("Commands"));
             for (const QString &c : cmds)
                 addCommandItem(c);
+        }
+        const QStringList files = fileIndexMatches(query);
+        if (!files.isEmpty()) {
+            addHeader(tr("Files"));
+            for (const QString &f : files)
+                addFileItem(f);
         }
     } else if (m_showAllApps) {
         for (const DesktopEntry &e : m_all) // scanDesktopEntries is name-sorted

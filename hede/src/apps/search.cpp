@@ -2,6 +2,8 @@
 
 #include <QDir>
 #include <QFileInfo>
+#include <QProcess>
+#include <QStandardPaths>
 
 #include <algorithm>
 
@@ -108,6 +110,34 @@ QStringList matchingExecutables(const QStringList &all, const QString &query, in
         if (out.size() >= limit)
             break;
         out << s.name;
+    }
+    return out;
+}
+
+QStringList fileIndexMatches(const QString &query, int limit) {
+    if (query.trimmed().size() < 3) // short queries match too much; skip
+        return {};
+    QString tool = QStandardPaths::findExecutable(QStringLiteral("plocate"));
+    if (tool.isEmpty())
+        tool = QStandardPaths::findExecutable(QStringLiteral("locate"));
+    if (tool.isEmpty())
+        return {}; // no file index on this system (e.g. the live CD)
+
+    QProcess p;
+    p.start(tool, {QStringLiteral("-i"), QStringLiteral("-l"), QString::number(limit),
+                   query.trimmed()});
+    if (!p.waitForFinished(1500)) { // keep the menu responsive
+        p.kill();
+        p.waitForFinished(200);
+        return {};
+    }
+    QStringList out;
+    const QList<QByteArray> lines = p.readAllStandardOutput().split('\n');
+    for (const QByteArray &line : lines) {
+        if (out.size() >= limit)
+            break;
+        if (!line.isEmpty())
+            out << QString::fromUtf8(line);
     }
     return out;
 }
