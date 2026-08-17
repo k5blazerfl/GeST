@@ -1,0 +1,48 @@
+# HeDE / GeST Installer — the Harbor GRUB theme. Pairs with the Plymouth splash
+# (same ship's helm on Harbor navy) so the boot reads as one experience. The
+# title + mark are baked into background.png; this lays the boot menu + countdown
+# over it. Consumed by the live CD (via the ISO grub.cfg inject) and by installed
+# systems (GRUB_THEME + grub-mkconfig).
+
+title-text: ""
+desktop-image: "background.png"
+desktop-color: "#0e2c34"
+terminal-font: "HeDE Sans Regular 18"
+
+# The boot menu, lower-centre over the clear part of the background.
++ boot_menu {
+    left       = 25%
+    top        = 47%
+    width      = 50%
+    height     = 34%
+    item_font          = "HeDE Sans Regular 18"
+    item_color         = "#c6d9de"
+    selected_item_color = "#7fe0ef"   # Harbor accent_2 — the highlighted entry
+    item_height        = 36
+    item_padding       = 6
+    item_spacing       = 4
+    item_icon_space    = 0
+}
+
+# Countdown ("Booting in N seconds"), just below the menu.
++ label {
+    id    = "__timeout__"
+    top   = 84%
+    left  = 0
+    width = 100%
+    align = "center"
+    color = "#8fb0b8"
+    font  = "HeDE Sans Regular 18"
+    text  = "Booting in %d seconds"
+}
+
+# A one-line hint under the countdown.
++ label {
+    top   = 89%
+    left  = 0
+    width = 100%
+    align = "center"
+    color = "#5f7a82"
+    font  = "HeDE Sans Regular 18"
+    text  = "Up/Down to choose  ·  Enter to boot  ·  E to edit  ·  C for a console"
+}
