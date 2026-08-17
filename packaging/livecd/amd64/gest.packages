@@ -46,6 +46,7 @@ sys-apps/dbus
 # gui-apps/hede's RDEPENDs pull labwc, foot, gest, lxqt-policykit, wireplumber,
 # brightnessctl and swaylock/swayidle; add seat/login + the autologin DM here.
 gui-apps/hede
-sys-auth/elogind         # logind API: seat, brightness, polkit active-session
-sys-auth/seatd           # seat management for the Wayland compositor
-gui-libs/greetd          # autologin into the HeDE session (see overlay/etc/greetd)
+# Seats/login come from systemd-logind (built into the systemd profile); no
+# elogind. seatd stays only as a libseat fallback — logind is the active backend.
+sys-auth/seatd           # libseat fallback (logind is the primary seat backend)
+gui-libs/greetd          # autologin into the HeDE session (systemd unit; see fsscript.sh)
