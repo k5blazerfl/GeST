@@ -26,3 +26,10 @@ systemctl enable dhcpcd.service  || true   # wired networking for stage3 / emerg
 # ships a systemd unit upstream; enable it and boot into graphical.target.
 systemctl enable greetd.service
 systemctl set-default graphical.target
+
+# Seamless boot: make the HeDE ship's-helm splash the default for the post-pivot
+# systemd phase (genkernel already baked it into the initramfs via gk_mainargs).
+# The greetd drop-in (root overlay, greetd.service.d/plymouth.conf) retains the
+# splash on the framebuffer until labwc draws the HeDE session over it — navy over
+# navy, no flash.
+plymouth-set-default-theme hede || true
