@@ -4,6 +4,7 @@
 #include "launch.h"
 #include "palette.h"
 #include "power.h"
+#include "search.h"
 
 #include <QAction>
 #include <QApplication>
@@ -92,6 +93,7 @@ QWidget *LauncherMenu::buildLeftPane() {
     v->addWidget(m_search);
 
     m_all = scanDesktopEntries(defaultApplicationDirs());
+    m_pathExes = pathExecutables(); // cached once; search filters this per keystroke
     for (const DesktopEntry &e : m_all)
         m_byId.insert(e.id, e);
     m_store = loadStore();
@@ -210,14 +212,29 @@ void LauncherMenu::addAppItem(const DesktopEntry &e) {
     item->setData(kActionExecsRole, execs);
 }
 
+void LauncherMenu::addCommandItem(const QString &binary) {
+    auto *item = new QListWidgetItem(binary, m_list);
+    item->setIcon(helm::tintedIcon(QStringLiteral("system-run"), helm::barGlyphColor(), QSize(18, 18)));
+    item->setToolTip(tr("Run %1").arg(binary));
+    item->setData(kArgvRole, QStringList{binary}); // launch the bare command
+    item->setData(kKindRole, 0);
+    // No app id → not usage-tracked (it isn't a .desktop app).
+}
+
 void LauncherMenu::rebuild() {
     m_list->clear();
     const QString query = m_search->text();
 
     if (!query.isEmpty()) {
-        // Searching: a flat, filtered list across everything.
-        for (const DesktopEntry &e : filterEntries(m_all, query))
+        // Searching: fuzzy-ranked apps, then matching $PATH commands.
+        for (const DesktopEntry &e : rankEntries(m_all, query))
             addAppItem(e);
+        const QStringList cmds = matchingExecutables(m_pathExes, query);
+        if (!cmds.isEmpty()) {
+            addHeader(tr("Commands"));
+            for (const QString &c : cmds)
+                addCommandItem(c);
+        }
     } else if (m_showAllApps) {
         for (const DesktopEntry &e : m_all) // scanDesktopEntries is name-sorted
             addAppItem(e);
