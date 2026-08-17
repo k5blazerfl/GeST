@@ -74,7 +74,15 @@ QString styleSheet(bool dark, const QColor &accent) {
         "#HelmPullout QListWidget::item:selected { background: %2; color: %1; }\n"
         "#HelmPullout QLineEdit { background: rgba(255,255,255,0.10); color: %1;"
         " border: 1px solid rgba(255,255,255,0.18); border-radius: 5px; padding: 6px 10px; }\n"
-        "#HelmPullout QLineEdit:focus { border: 1px solid %3; }\n")
+        "#HelmPullout QLineEdit:focus { border: 1px solid %3; }\n"
+        // Rail buttons (Control Center / Run / power): edgeless light glyphs,
+        // hover-glass chip — same language as the bar.
+        "#HelmPullout QToolButton, #HelmPullout QPushButton { color: %1;"
+        " background: transparent; border: none; border-radius: 5px; padding: 6px 8px; }\n"
+        "#HelmPullout QToolButton:hover, #HelmPullout QPushButton:hover {"
+        " background: rgba(255,255,255,0.12); }\n"
+        // The right rail: a hairline divider from the app list.
+        "#HelmMenuRail { border-left: 1px solid rgba(255,255,255,0.14); }\n")
         .arg(glyph, accentFill, accentEdge);
 
     // Acrylic toast cards (#HelmToast) — bottom-right notifications. Same acrylic
