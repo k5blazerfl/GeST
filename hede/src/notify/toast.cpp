@@ -17,12 +17,17 @@ namespace {
 class ToastCard : public QFrame {
   public:
     ToastCard(const Notification &n, QWidget *parent) : QFrame(parent) {
-        setFrameShape(QFrame::StyledPanel);
+        // Acrylic card — #HelmToast styles it (see helm::styleSheet); drop the
+        // native beveled frame so the QSS background/border render.
+        setObjectName(QStringLiteral("HelmToast"));
+        setFrameShape(QFrame::NoFrame);
+        setAttribute(Qt::WA_StyledBackground, true);
         setMinimumWidth(300);
         auto *v = new QVBoxLayout(this);
-        v->setContentsMargins(10, 8, 10, 8);
+        v->setContentsMargins(12, 10, 12, 10);
         v->setSpacing(2);
         auto *title = new QLabel(n.summary, this);
+        title->setObjectName(QStringLiteral("HelmToastTitle"));
         QFont f = title->font();
         f.setBold(true);
         title->setFont(f);
@@ -55,9 +60,11 @@ bool hasDefaultAction(const QStringList &actions) {
 } // namespace
 
 ToastStack::ToastStack(QWidget *parent) : QWidget(parent) {
+    // Transparent stack so the gaps between acrylic cards show the wallpaper.
+    setAttribute(Qt::WA_TranslucentBackground, true);
     m_layout = new QVBoxLayout(this);
     m_layout->setContentsMargins(0, 0, 0, 0);
-    m_layout->setSpacing(6);
+    m_layout->setSpacing(8);
 }
 
 void ToastStack::showNotification(const Notification &n) {

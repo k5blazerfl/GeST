@@ -77,6 +77,17 @@ QString styleSheet(bool dark, const QColor &accent) {
         "#HelmPullout QLineEdit:focus { border: 1px solid %3; }\n")
         .arg(glyph, accentFill, accentEdge);
 
+    // Acrylic toast cards (#HelmToast) — bottom-right notifications. Same acrylic
+    // material as the pullout but a free-floating card: full silver border + all
+    // corners rounded, with an accent spine down the left edge as the urgency cue.
+    qss += QStringLiteral(
+        "#HelmToast { background: rgba(11,38,46,0.92);"
+        " border: 1px solid rgba(255,255,255,0.22); border-left: 3px solid %2;"
+        " border-radius: 7px; }\n"
+        "#HelmToast QLabel { color: %1; background: transparent; }\n"
+        "#HelmToast #HelmToastTitle { color: %1; font-weight: 700; }\n")
+        .arg(glyph, a.name());
+
     return qss;
 }
 

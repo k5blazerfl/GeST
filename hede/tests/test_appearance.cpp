@@ -62,6 +62,13 @@ private slots:
         QVERIFY(qss.contains(QStringLiteral("border-bottom: none")));        // flat bottom
         QVERIFY(qss.contains(QStringLiteral("border-top-left-radius: 7px"))); // top corners only
     }
+
+    void acrylicToast() {
+        const QString qss = helm::styleSheet(false, helm::harborAccent());
+        QVERIFY(qss.contains(QStringLiteral("#HelmToast")));
+        // the accent spine down the left edge (Harbor teal)
+        QVERIFY(qss.contains(QStringLiteral("border-left: 3px solid #3aa6c4")));
+    }
 };
 
 QTEST_MAIN(TestAppearance)
