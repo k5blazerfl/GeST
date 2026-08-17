@@ -9,8 +9,10 @@ familiar to people coming from Windows.
 **North star:** a feature-rich, first-class Gentoo desktop **and** a CLI that can
 facilitate a full Gentoo install end-to-end.
 
-> Status: **v0.52.5** — bootable amd64 GeSI ISO into HeDE on **systemd**, with the
-> Control Center at TUI parity and the palette-driven titlebar skin shipped. This
+> Status: **gest v0.52.5 · HeDE 0.3.5** — bootable amd64 GeSI ISO into HeDE on
+> **systemd**, with the Control Center at TUI parity, the Helm glass shell + a
+> two-pane launcher, and a seamless graphical boot landing. (The desktop shell
+> advances on HeDE's own 0.3.x line; gest bumps only when the tool changes.) This
 > file is the durable plan; the "In flight" / "Now" sections below are the only
 > parts that date.
 
@@ -63,18 +65,40 @@ facilitate a full Gentoo install end-to-end.
   `getty@tty1` masked; elogind dropped, systemd-logind handles seats). The systemd
   ISO builds and **boots UEFI into HeDE** with the titlebar skin rendering
   (QEMU-verified) — **v0.52.5** *(#89)*.
+- **Overlay stopgaps dropped** — the redundant GeSI overlay front-runs
+  (`rc.xml` + `themes/Helm`) removed once `gui-apps/hede` shipped Design D *(#90)*.
+- **hede package actually upgrades** — fixed three ebuild dep bugs
+  (`layer-shell-qt` category, `brightnessctl`, missing `wayland-scanner` BDEPEND)
+  that silently pinned the ISO to `hede-0.3.0`; the styled desktop now boots from
+  the package (QEMU-verified), plus a symbols font so the ⎈ glyph renders.
+- **The Helm glass shell** (HeDE 0.3.3–0.3.4) — a token-backed stylesheet,
+  Harbor-by-default; the glass bar, ⎈ Start tile + light monochrome icons, the
+  acrylic Start-menu pullout, and acrylic bottom-right toasts. The whole shell
+  speaks one glass/acrylic language *(#91–94)*.
+- **Two-pane launcher** (HeDE 0.3.4) — the Open-Shell Windows-7 IA: Pinned →
+  Recent (a usage store) → All apps; fuzzy search + `$PATH` commands; a right rail
+  with Control Center / Run / power (logind) *(#95–97)*.
+- **Seamless boot — live CD** (HeDE 0.3.5) — a quiet cmdline + a HeDE Plymouth
+  splash (the ship's helm on Harbor navy) baked into the initramfs, with a
+  retain-splash handoff to labwc *(#99)*.
 
 ## In flight — written, in review (open PRs, *not yet on `main`*)
 
-- *(nothing in review — the backlog has landed.)*
+- **Harbor GRUB theme** — the boot menu in the ship's-helm / Harbor look, so
+  GRUB → Plymouth → desktop read as one *(#100)*.
+- **Installer seamless-boot config** — the pure `/etc/default/grub` transform +
+  theme staging so *installed* systems boot seamlessly too *(#101)*.
 
 ## Now — the immediate heading
 
-1. **Drop the livecd overlay stopgaps** — now that Amphitheater's `gui-apps/hede`
-   (0.3.2) ships Design D, the two GeSI overlay front-runs
-   (`overlay/.../labwc/rc.xml` + the overlay `themes/Helm`) are redundant and can
-   be removed on the next livecd touch.
-2. **Appearance the user drives** — layer the bespoke painterly titlebar art (the
+1. **Land + verify the seamless boot** — merge #100/#101, mirror HeDE 0.3.5, then
+   rebuild the ISO and watch the GRUB → Plymouth → desktop boot in QEMU; iterate
+   the flicker-free handoff.
+2. **Seamless boot to the finish** — inject the GRUB theme into the catalyst ISO
+   (its `grub.cfg` is generated, so a post-build step), and wire the installer's
+   bootloader backend (write `/etc/default/grub` + `genkernel --plymouth` on the
+   target).
+3. **Appearance the user drives** — layer the bespoke painterly titlebar art (the
    `helm-titlebar-skins` pipeline, `.helmtheme` bundles) on top of the
    palette-driven default, and make wallpaper/background a first-class,
    Control-Center-driven system. *(the near-term slice of "the gold" below.)*
