@@ -49,6 +49,10 @@ qt_add_executable(test-appearance test_appearance.cpp)
 target_link_libraries(test-appearance PRIVATE Qt6::Test helm-appearance)
 add_test(NAME appearance COMMAND test-appearance)
 
+qt_add_executable(test-menu test_menu.cpp)
+target_link_libraries(test-menu PRIVATE Qt6::Test helm-menu-lib)
+add_test(NAME menu COMMAND test-menu)
+
 # Headless integration: boot labwc (wlroots headless backend) and assert
 # helm-panel binds a layer-shell surface. Skips (77) when labwc is absent.
 add_test(NAME smoke-headless
