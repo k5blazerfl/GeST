@@ -50,6 +50,13 @@ class TestSearch : public QObject {
         QCOMPARE(m.first(), QStringLiteral("ls"));    // exact prefix ranks first
         QVERIFY(helm::matchingExecutables(all, QString(), 8).isEmpty()); // empty query → nothing
     }
+
+    void fileIndexSkipsShortQueries() {
+        // Under 3 chars matches too much, so it's skipped regardless of a
+        // plocate db being present (keeps the test deterministic).
+        QVERIFY(helm::fileIndexMatches(QStringLiteral("ab"), 8).isEmpty());
+        QVERIFY(helm::fileIndexMatches(QString(), 8).isEmpty());
+    }
 };
 
 QTEST_MAIN(TestSearch)

@@ -24,4 +24,10 @@ QStringList pathExecutables();
 // Empty query returns nothing (we don't list every binary unprompted).
 QStringList matchingExecutables(const QStringList &all, const QString &query, int limit = 8);
 
+// File paths matching `query` from a file index (plocate/locate), capped at
+// `limit`. Runs the tool synchronously with a short timeout; returns nothing if
+// no indexer is installed, the query is too short, or it times out — so it is a
+// no-op on images without an index (e.g. the live CD).
+QStringList fileIndexMatches(const QString &query, int limit = 8);
+
 } // namespace helm
