@@ -22,11 +22,14 @@ SLOT="0"
 IUSE="wayfire" # opt-in "effects" compositor profile
 
 # Qt 6 Widgets + Wayland, the QtWayland client (foreign-toplevel protocol
-# bindings + qtwaylandscanner), and the layer-shell binding (the KF6 micro-dep).
+# bindings + qtwaylandscanner), and the layer-shell binding. layer-shell-qt is
+# mid-move between categories in ::gentoo (kde-plasma → kde-frameworks); accept
+# either so the ebuild resolves whatever the tree snapshot ships (an unsatisfiable
+# atom here silently makes emerge fall back to the old binpkg — see the bug note).
 DEPEND="
 	dev-qt/qtbase:6[dbus,widgets,wayland]
 	dev-qt/qtwayland:6
-	kde-frameworks/layer-shell-qt:6
+	|| ( kde-plasma/layer-shell-qt:6 kde-frameworks/layer-shell-qt:6 )
 "
 # Runtime: the compositor HeDE drives, the default terminal helm-panel spawns,
 # GeST (the Control Center + the org.gentoo.gest.Shell read seam), and a polkit
