@@ -1,10 +1,12 @@
 #include "theme.h"
 
 #include <QCoreApplication>
+#include <QProcess>
 
 #include <cstdio>
 
-// helm-theme: apply a HeDE appearance choice to GTK + the shell palette.
+// helm-theme: apply a HeDE appearance choice to GTK + the shell palette + the
+// labwc titlebar skin.
 //   helm-theme --dark --accent=#33d6c8 [--gtk-theme=Adwaita-dark] [--icon-theme=Papirus]
 int main(int argc, char **argv) {
     QCoreApplication app(argc, argv);
@@ -16,5 +18,11 @@ int main(int argc, char **argv) {
     }
     for (const QString &p : written)
         std::printf("wrote %s\n", qPrintable(p));
+
+    // Best-effort live re-tint: labwc --reconfigure signals the running
+    // compositor (via $LABWC_PID) to re-read its themerc. Harmless no-op if
+    // there's no session or labwc isn't running.
+    if (qEnvironmentVariableIsSet("WAYLAND_DISPLAY"))
+        QProcess::startDetached(QStringLiteral("labwc"), {QStringLiteral("--reconfigure")});
     return 0;
 }

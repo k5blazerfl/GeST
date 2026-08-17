@@ -1,10 +1,11 @@
 <?xml version="1.0"?>
-<!-- HeDE labwc config — livecd override of the package's Phase-0 stub.
-     Adds the full <mouse> window-management set (titlebar move, edge resize,
-     click-to-focus/raise, titlebar buttons, root menu) + a <theme> for real
-     decorations + window cycling, on top of HeDE's keyboard binds. Shipped via
-     the GeSI root overlay so the live desktop is fully mouse-manageable; upstream
-     into gui-apps/hede when convenient. -->
+<!-- HeDE labwc config — live-image copy of gui-apps/hede's rc.xml.
+     The body is byte-identical to hede/data/labwc/rc.xml (the canonical source);
+     shipped via the GeSI root overlay so the live desktop gets the full
+     window-management config + the palette-driven "Helm" titlebar skin even when
+     the installed gui-apps/hede (from Amphitheater, bumped manually) predates it.
+     DELETE this file and overlay/usr/share/themes/Helm once Amphitheater's
+     gui-apps/hede is bumped to include Design-D (the titlebar skin). -->
 <labwc_config>
   <core>
     <gap>0</gap>
@@ -12,6 +13,10 @@
   </core>
 
   <theme>
+    <!-- The palette-driven titlebar skin: helm-theme writes ~/.local/share/themes/
+         Helm/labwc/themerc from the accent/dark choice; the package ships a
+         Harbor default at /usr/share/themes/Helm/labwc/themerc for first boot. -->
+    <name>Helm</name>
     <!-- Server-side decorations so every window gets a titlebar + buttons.
          Button token is 'max' (not 'maximize'). maximizedDecoration=titlebar keeps
          the titlebar on MAXIMIZED windows — helm-menu launches apps maximized, and
