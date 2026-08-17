@@ -35,6 +35,7 @@ class LauncherMenu : public QWidget {
     void refilter(const QString &);       // search text changed → rebuild
     void addHeader(const QString &text);
     void addAppItem(const DesktopEntry &e);
+    void addCommandItem(const QString &binary); // a $PATH executable result
     void launch(QListWidgetItem *item);
     void run(const QString &exec);
     void launchAndQuit(const QString &program, const QStringList &args = {});
@@ -44,6 +45,7 @@ class LauncherMenu : public QWidget {
     QLineEdit *m_search;
     QListWidget *m_list;
     QVector<DesktopEntry> m_all;
+    QStringList m_pathExes;               // $PATH executables, cached for search
     QHash<QString, DesktopEntry> m_byId;  // id → entry, for pinned/recent lookup
     LauncherStore m_store;                // pins + usage
     bool m_showAllApps = false;           // "All apps" expanded in the Home view

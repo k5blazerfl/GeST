@@ -14,6 +14,10 @@ qt_add_executable(test-launcherstore test_launcherstore.cpp)
 target_link_libraries(test-launcherstore PRIVATE Qt6::Test helm-apps)
 add_test(NAME launcherstore COMMAND test-launcherstore)
 
+qt_add_executable(test-search test_search.cpp)
+target_link_libraries(test-search PRIVATE Qt6::Test helm-apps)
+add_test(NAME search COMMAND test-search)
+
 qt_add_executable(test-toplevelmodel test_toplevelmodel.cpp)
 target_link_libraries(test-toplevelmodel PRIVATE Qt6::Test helm-taskbar)
 add_test(NAME toplevelmodel COMMAND test-toplevelmodel)
