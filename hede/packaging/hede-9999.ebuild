@@ -45,6 +45,10 @@ RDEPEND="
 	gui-apps/swayidle
 	wayfire? ( gui-wm/wayfire )
 "
+# The Wayland protocol code generator, needed at build time by Qt6WaylandClient
+# (find_package fails without it). ::gentoo split it out of dev-libs/wayland into
+# its own build-tool package, so it must be pulled explicitly.
+BDEPEND="dev-util/wayland-scanner"
 
 src_test() {
 	cmake_src_test
