@@ -1,17 +1,20 @@
 name: Overlay sync
 
-# On every release tag, generate the ebuild + Manifest DIST from the tag tarball
-# and update both overlays — so a bump can never ship without its Manifest.
+# On every release tag: generate the gest ebuild + Manifest DIST from the tag
+# tarball and update the overlays, AND mirror hede/ to the standalone HeDE repo —
+# so one bump ships gest AND hede without a manual step.
 #
-#   * The authoritative overlay (packaging/overlay/, this repo) is committed to
-#     main using the built-in GITHUB_TOKEN — always runs.
-#   * The lean Amphitheater overlay is synced only when the AMPHI_DEPLOY_KEY
-#     secret is present (an SSH deploy key with write access to
-#     k5blazerfl/Amphitheater). Until you add it, this step is skipped and the
-#     workflow still succeeds.
+#   * The authoritative GeST overlay (packaging/overlay/, this repo) is committed
+#     to main with the built-in GITHUB_TOKEN — always runs.
+#   * The lean Amphitheater overlay is synced only when AMPHI_DEPLOY_KEY is set
+#     (an SSH deploy key with write access to k5blazerfl/Amphitheater).
+#   * hede/ is mirrored to k5blazerfl/HeDE (+ the matching vX.Y.Z tag) only when
+#     HEDE_DEPLOY_KEY is set (an SSH deploy key with write access to that repo).
+#   Each external step skips with a notice when its key is absent, and the
+#   workflow still succeeds.
 #
 # NOTE: with this workflow enabled, do NOT hand-create the packaging commit —
-# just bump + tag + push; the workflow adds gest-<ver>.ebuild + Manifest for you.
+# just bump + tag + push; the workflow does the rest.
 
 on:
   push:
@@ -35,20 +38,27 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Detect Amphitheater deploy key
-        id: amphi
+      - name: Detect deploy keys
+        id: keys
         env:
           AMPHI_DEPLOY_KEY: ${{ secrets.AMPHI_DEPLOY_KEY }}
+          HEDE_DEPLOY_KEY: ${{ secrets.HEDE_DEPLOY_KEY }}
         run: |
           if [ -n "$AMPHI_DEPLOY_KEY" ]; then
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "amphi=true" >> "$GITHUB_OUTPUT"
           else
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "amphi=false" >> "$GITHUB_OUTPUT"
             echo "::notice::AMPHI_DEPLOY_KEY not set — updating the GeST overlay only; skipping Amphitheater sync."
+          fi
+          if [ -n "$HEDE_DEPLOY_KEY" ]; then
+            echo "hede=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "hede=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::HEDE_DEPLOY_KEY not set — skipping the HeDE mirror."
           fi
 
       - name: Load Amphitheater deploy key
-        if: steps.amphi.outputs.enabled == 'true'
+        if: steps.keys.outputs.amphi == 'true'
         env:
           AMPHI_DEPLOY_KEY: ${{ secrets.AMPHI_DEPLOY_KEY }}
         run: |
@@ -64,8 +74,36 @@ jobs:
           VER="${GITHUB_REF_NAME#v}"
           git config user.name "k5blazerfl"
           git config user.email "k5blazerfl@fastmail.com"
-          if [ "${{ steps.amphi.outputs.enabled }}" = "true" ]; then
+          if [ "${{ steps.keys.outputs.amphi }}" = "true" ]; then
             python packaging/release-overlay.py "$VER" --push
           else
             python packaging/release-overlay.py "$VER" --push --gest-only
           fi
+
+      # HeDE mirror uses its own repo-scoped key (IdentitiesOnly) so it never
+      # clashes with the Amphitheater agent key above.
+      - name: Write HeDE deploy key
+        if: steps.keys.outputs.hede == 'true'
+        env:
+          HEDE_DEPLOY_KEY: ${{ secrets.HEDE_DEPLOY_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
+          printf '%s\n' "$HEDE_DEPLOY_KEY" | tr -d '\r' > ~/.ssh/hede_deploy
+          chmod 600 ~/.ssh/hede_deploy
+
+      - name: Mirror hede/ to the HeDE repo
+        if: steps.keys.outputs.hede == 'true'
+        env:
+          GIT_SSH_COMMAND: "ssh -i ~/.ssh/hede_deploy -o IdentitiesOnly=yes"
+        run: |
+          # HeDE keeps its own version line (hede/CMakeLists.txt) — not the gest
+          # tag — so the script reads it; no version argument.
+          python packaging/mirror-hede.py --push
+
+      - name: Sync gui-apps/hede to the Amphitheater overlay
+        if: steps.keys.outputs.amphi == 'true' && steps.keys.outputs.hede == 'true'
+        run: |
+          # After the mirror tags the HeDE repo, digest that tarball into the lean
+          # gui-apps/hede ebuild. Uses the Amphitheater agent key loaded above.
+          python packaging/amphi-hede.py --push
