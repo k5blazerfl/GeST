@@ -50,6 +50,7 @@ gui-apps/hede
 # elogind. seatd stays only as a libseat fallback — logind is the active backend.
 sys-auth/seatd           # libseat fallback (logind is the primary seat backend)
 gui-libs/greetd          # autologin into the HeDE session (systemd unit; see fsscript.sh)
+sys-boot/plymouth        # seamless graphical boot; the HeDE splash theme ships with gui-apps/hede
 
 # Full-BMP glyph coverage so the shell's symbols render (e.g. the ⎈ Start mark,
 # U+2388) instead of tofu. unifont is tiny (~12 MB) and guaranteed to cover the

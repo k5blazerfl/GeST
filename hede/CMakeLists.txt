@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(hede VERSION 0.3.4 LANGUAGES C CXX)  # HeDE's own version line; the
+project(hede VERSION 0.3.5 LANGUAGES C CXX)  # HeDE's own version line; the
 # release source of truth — mirror-hede.py / amphi-hede.py stamp the HeDE repo
 # tag and the gui-apps/hede ebuild from this. Bump it when cutting a HeDE change.
 
@@ -42,3 +42,9 @@ install(DIRECTORY data/labwc data/wayfire
 # regenerates a per-user copy under ~/.local/share/themes that shadows this one.
 install(DIRECTORY data/themes
         DESTINATION ${CMAKE_INSTALL_PREFIX}/share)
+# The Plymouth boot splash (the ship's helm on Harbor navy). Installed by the
+# package so it exists in stage1 — catalyst's genkernel bakes it into the livecd
+# initramfs (build_kernel runs before the root overlay), and the installer points
+# an installed system's boot splash at it too.
+install(DIRECTORY data/plymouth/hede
+        DESTINATION ${CMAKE_INSTALL_PREFIX}/share/plymouth/themes)
