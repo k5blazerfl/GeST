@@ -97,5 +97,13 @@ jobs:
         env:
           GIT_SSH_COMMAND: "ssh -i ~/.ssh/hede_deploy -o IdentitiesOnly=yes"
         run: |
-          VER="${GITHUB_REF_NAME#v}"
-          python packaging/mirror-hede.py "$VER" --push
+          # HeDE keeps its own version line (hede/CMakeLists.txt) — not the gest
+          # tag — so the script reads it; no version argument.
+          python packaging/mirror-hede.py --push
+
+      - name: Sync gui-apps/hede to the Amphitheater overlay
+        if: steps.keys.outputs.amphi == 'true' && steps.keys.outputs.hede == 'true'
+        run: |
+          # After the mirror tags the HeDE repo, digest that tarball into the lean
+          # gui-apps/hede ebuild. Uses the Amphitheater agent key loaded above.
+          python packaging/amphi-hede.py --push

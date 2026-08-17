@@ -12,13 +12,15 @@ tagged commit and tags it ``vX.Y.Z``, so:
   * the versioned ebuild's ``SRC_URI`` (``HeDE/archive/.../vX.Y.Z.tar.gz``)
     resolves — which the Amphitheater ``gui-apps/hede`` bump then digests.
 
-Modelled on ``release-overlay.py``: writes nothing to a remote unless ``--push``.
+HeDE keeps its OWN version line (independent of gest's), so the tag version comes
+from ``hede/CMakeLists.txt`` (``project(hede VERSION X.Y.Z)``) — NOT the GeST
+release version. Modelled on ``release-overlay.py``: writes nothing unless ``--push``.
 
   packaging/mirror-hede.py [VERSION] [--push] [--repo URL]
 
-VERSION defaults to pyproject.toml's version (a leading ``v`` is accepted).
-The push URL defaults to ``git@github.com:k5blazerfl/HeDE.git`` (override with
-``--repo`` / ``$HEDE_REPO``); a dry run clones read-only over https.
+VERSION defaults to the HeDE version in ``hede/CMakeLists.txt`` (a leading ``v``
+is accepted). The push URL defaults to ``git@github.com:k5blazerfl/HeDE.git``
+(override with ``--repo`` / ``$HEDE_REPO``); a dry run clones read-only over https.
 """
 
 from __future__ import annotations
@@ -46,11 +48,12 @@ def run(cmd: list[str], cwd: Path | None = None, check: bool = True):
     return subprocess.run(cmd, cwd=cwd, check=check, text=True)
 
 
-def read_pyproject_version() -> str:
-    text = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    m = re.search(r'^version\s*=\s*"([^"]+)"', text, re.MULTILINE)
+def hede_version() -> str:
+    """HeDE's own version, from hede/CMakeLists.txt (independent of gest's)."""
+    text = (HEDE_DIR / "CMakeLists.txt").read_text(encoding="utf-8")
+    m = re.search(r"project\(hede\s+VERSION\s+(\d+\.\d+\.\d+)", text)
     if not m:
-        die("could not read version from pyproject.toml")
+        die("could not read HeDE version from hede/CMakeLists.txt")
     return m.group(1)  # type: ignore[union-attr]
 
 
@@ -114,7 +117,7 @@ def main() -> int:
 
     if not HEDE_DIR.is_dir():
         die(f"{HEDE_DIR} not found — run from the GeST repo")
-    ver = norm_version(args.version or read_pyproject_version())
+    ver = norm_version(args.version or hede_version())
     return mirror(ver, args.push, args.repo)
 
 
