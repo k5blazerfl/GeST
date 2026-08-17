@@ -39,8 +39,14 @@ Panel::Panel(QWidget *parent) : QWidget(parent) {
     const Config cfg;
     setFixedHeight(cfg.panelHeight());
 
+    // The glass bar: objectName drives the #HelmBar QSS (see helm::styleSheet);
+    // styled + translucent so the world-navy tint composites over the wallpaper.
+    setObjectName(QStringLiteral("HelmBar"));
+    setAttribute(Qt::WA_StyledBackground, true);
+    setAttribute(Qt::WA_TranslucentBackground, true);
+
     auto *layout = new QHBoxLayout(this);
-    layout->setContentsMargins(6, 2, 6, 2);
+    layout->setContentsMargins(8, 0, 8, 0); // tokens.spacing[1] sides, flush vertically
     layout->setSpacing(6);
 
     layout->addWidget(new LauncherButton(tr("≡ Apps"), resolveMenuCommand(), this));

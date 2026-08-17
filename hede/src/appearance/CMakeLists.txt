@@ -1,5 +1,6 @@
 qt_add_library(helm-appearance STATIC
     palette.cpp
+    style.cpp
 )
 target_include_directories(helm-appearance PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 # Gui is public (QPalette in the header); Widgets is private (QApplication/style

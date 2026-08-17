@@ -16,7 +16,7 @@ Config::Config(const QString &path) : m_path(path) {}
 
 int Config::panelHeight() const {
     QSettings s(m_path, QSettings::IniFormat);
-    return s.value(QStringLiteral("panel/height"), 32).toInt();
+    return s.value(QStringLiteral("panel/height"), 46).toInt(); // tokens.bar.height
 }
 
 QString Config::terminalCommand() const {

@@ -40,12 +40,14 @@ QPalette buildPalette(bool dark, const QColor &accent) {
 void applyAppearance() {
     const Config cfg;
     const bool dark = cfg.string(QStringLiteral("appearance/dark")) == QLatin1String("true");
-    const QColor accent(cfg.string(QStringLiteral("appearance/accent")));
-    if (!dark && !accent.isValid())
-        return; // nothing themed → keep the native look
+    QColor accent(cfg.string(QStringLiteral("appearance/accent")));
+    if (!accent.isValid())
+        accent = harborAccent(); // Harbor teal by default — HeDE is styled out of the box
 
-    if (auto *app = qobject_cast<QApplication *>(QApplication::instance()))
+    if (auto *app = qobject_cast<QApplication *>(QApplication::instance())) {
         app->setStyle(QStringLiteral("Fusion")); // honours a custom palette
+        app->setStyleSheet(styleSheet(dark, accent));
+    }
     QGuiApplication::setPalette(buildPalette(dark, accent));
 }
 

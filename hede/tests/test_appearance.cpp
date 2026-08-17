@@ -26,6 +26,21 @@ private slots:
         QCOMPARE(p.color(QPalette::Highlight), accent);
         QVERIFY(p.color(QPalette::Window).value() > 128); // still light
     }
+
+    void harborDefault() {
+        QCOMPARE(helm::harborAccent(), QColor(QStringLiteral("#3aa6c4")));
+    }
+
+    void styleSheetGlassBar() {
+        const QString qss = helm::styleSheet(false, helm::harborAccent());
+        QVERIFY(qss.contains(QStringLiteral("#HelmBar")));           // the glass bar
+        QVERIFY(qss.contains(QStringLiteral("Segoe UI")));           // familiar font
+        QVERIFY(qss.contains(QStringLiteral("rgba(11,38,46,0.82)"))); // bar_tint (navy glass)
+        // accent drives selection: Harbor #3aa6c4 → rgb(58,166,196) at 34%
+        QVERIFY(qss.contains(QStringLiteral("rgba(58,166,196,0.34)")));
+        // an invalid accent falls back to Harbor rather than producing an unstyled bar
+        QVERIFY(helm::styleSheet(false, QColor()).contains(QStringLiteral("rgba(58,166,196")));
+    }
 };
 
 QTEST_MAIN(TestAppearance)
