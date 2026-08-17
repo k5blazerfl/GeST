@@ -44,9 +44,15 @@ sys-apps/dbus
 
 # desktop: HeDE (the Helm Desktop Environment) is the face of the installer.
 # gui-apps/hede's RDEPENDs pull labwc, foot, gest, lxqt-policykit, wireplumber,
-# brightnessctl and swaylock/swayidle; add seat/login + the autologin DM here.
+# and swaylock/swayidle; add seat/login + the autologin DM here.
 gui-apps/hede
 # Seats/login come from systemd-logind (built into the systemd profile); no
 # elogind. seatd stays only as a libseat fallback — logind is the active backend.
 sys-auth/seatd           # libseat fallback (logind is the primary seat backend)
 gui-libs/greetd          # autologin into the HeDE session (systemd unit; see fsscript.sh)
+
+# Full-BMP glyph coverage so the shell's symbols render (e.g. the ⎈ Start mark,
+# U+2388) instead of tofu. unifont is tiny (~12 MB) and guaranteed to cover the
+# BMP; the polished Noto Sans Symbols is 445 MB of Noto monolith — too heavy for
+# the ISO's 2 GB budget. The bar keeps a text label so meaning survives regardless.
+media-fonts/unifont      # symbols/fallback coverage for shell glyphs
