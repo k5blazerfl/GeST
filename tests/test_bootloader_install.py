@@ -136,6 +136,10 @@ class _FakeBackend:
         self.calls.append("install")
         return (self._fail != "install", "install output")
 
+    async def configure_seamless_boot(self, root):
+        self.calls.append("seamless")
+        return (self._fail != "seamless", "seamless output")
+
     async def regenerate_grub(self):
         self.calls.append("regenerate")
         return (self._fail != "regenerate", "regen output")
@@ -144,7 +148,22 @@ class _FakeBackend:
 def test_install_via_backend_calls_install_then_regenerate():
     backend = _FakeBackend()
     asyncio.run(install.install_via_backend(install.InstallConfig(firmware="uefi"), backend))
-    assert backend.calls == ["install", "regenerate"]
+    assert backend.calls == ["install", "regenerate"]  # no seamless by default
+
+
+def test_install_via_backend_seamless_between_install_and_regenerate():
+    backend = _FakeBackend()
+    cfg = install.InstallConfig(firmware="uefi", seamless=True)
+    asyncio.run(install.install_via_backend(cfg, backend))
+    assert backend.calls == ["install", "seamless", "regenerate"]
+
+
+def test_install_via_backend_stops_on_failed_seamless():
+    backend = _FakeBackend(fail="seamless")
+    cfg = install.InstallConfig(firmware="uefi", seamless=True)
+    with pytest.raises(StepError):
+        asyncio.run(install.install_via_backend(cfg, backend))
+    assert backend.calls == ["install", "seamless"]  # stops before regenerate
 
 
 def test_install_via_backend_stops_on_failed_install():

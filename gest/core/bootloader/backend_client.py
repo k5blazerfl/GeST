@@ -30,6 +30,12 @@ class BootloaderBackend:
         return await self._iface.call_install_grub(
             firmware, efi_directory, bootloader_id, bool(removable), disk, boot_directory)
 
+    async def configure_seamless_boot(self, root=""):
+        """Write the seamless-boot config under ``root`` ("" = live host, or a
+        target root like /mnt/gentoo): /etc/default/grub + the GRUB theme + the
+        Plymouth splash. Returns (ok, output); regenerate grub.cfg afterward."""
+        return await self._iface.call_configure_seamless_boot(root)
+
     async def close(self) -> None:
         if self._bus is not None:
             self._bus.disconnect()

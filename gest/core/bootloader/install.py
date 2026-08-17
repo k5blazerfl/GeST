@@ -32,6 +32,8 @@ class InstallConfig:
     disk: str = ""                   # BIOS target disk
     boot_directory: str = ""         # install-root seam; empty = live host /boot
     regenerate: bool = True
+    seamless: bool = False           # configure the HeDE seamless graphical boot
+    root: str = ""                   # target root for the seamless write ("" = live host)
 
 
 def install_steps(config: InstallConfig, *, arch: str = "amd64") -> list[Step]:
@@ -78,6 +80,8 @@ class GrubInstaller(Protocol):
         removable: bool, disk: str, boot_directory: str,
     ) -> tuple[bool, str]: ...
 
+    async def configure_seamless_boot(self, root: str) -> tuple[bool, str]: ...
+
     async def regenerate_grub(self) -> tuple[bool, str]: ...
 
 
@@ -110,8 +114,17 @@ async def install_via_backend(
     if not ok:
         raise fail(f"install GRUB ({config.firmware})", out)
 
+    index = 1
+    if config.seamless:
+        _step(index)
+        index += 1
+        ok, out = await backend.configure_seamless_boot(config.root)
+        _emit(out)
+        if not ok:
+            raise fail("configure seamless boot", out)
+
     if config.regenerate:
-        _step(1)
+        _step(index)
         ok, out = await backend.regenerate_grub()
         _emit(out)
         if not ok:
