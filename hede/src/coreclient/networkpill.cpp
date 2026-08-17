@@ -1,6 +1,7 @@
 #include "networkpill.h"
 
 #include "coreclient.h"
+#include "palette.h"
 
 #include <QIcon>
 
@@ -33,7 +34,8 @@ NetworkPill::NetworkPill(CoreClient *client, QWidget *parent)
 
 void NetworkPill::apply() {
     setIcon(
-        QIcon::fromTheme(networkIconName(m_client->networkConnected(), m_client->networkKind())));
+        helm::tintedIcon(networkIconName(m_client->networkConnected(), m_client->networkKind()),
+                         helm::barGlyphColor(), QSize(18, 18)));
     setToolTip(networkTooltip(m_client->networkConnected(), m_client->networkKind(),
                               m_client->networkIface()));
     setVisible(m_client->available());

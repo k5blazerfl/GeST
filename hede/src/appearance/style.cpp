@@ -21,6 +21,7 @@ QString styleSheet(bool dark, const QColor &accent) {
     };
     const QString accentFill = rgba(a, 0.34);   // tokens.accent.selection_fill (34%)
     const QString accentEdge = rgba(a, 0.55);   // tokens.accent.selection_border (55%)
+    const QString glyph = barGlyphColor().name(); // light bar glyph colour (shared with icons)
 
     QString qss;
 
@@ -43,16 +44,18 @@ QString styleSheet(bool dark, const QColor &accent) {
     qss += QStringLiteral(
         "#HelmBar { background: rgba(11,38,46,0.82); border: none;"
         " border-top: 1px solid rgba(255,255,255,0.28); }\n"
-        "#HelmBar QLabel { color: #eaf1f3; background: transparent; }\n"
+        "#HelmBar QLabel { color: %1; background: transparent; }\n"
         "#HelmBar QToolButton, #HelmBar QPushButton {"
-        " color: #eaf1f3; background: transparent; border: none;"
+        " color: %1; background: transparent; border: none;"
         " border-radius: 5px; padding: 2px 8px; }\n"
         "#HelmBar QToolButton:hover, #HelmBar QPushButton:hover {"
         " background: rgba(255,255,255,0.14); }\n"
         "#HelmBar QToolButton:pressed, #HelmBar QPushButton:pressed,\n"
         "#HelmBar QToolButton:checked, #HelmBar QPushButton:checked {"
-        " background: %1; }\n")
-        .arg(accentFill);
+        " background: %2; }\n"
+        // The ⎈ Start tile: a touch larger + roomier, still edgeless.
+        "#HelmBar #HelmStart { font-size: 15px; font-weight: 600; padding: 0 10px; }\n")
+        .arg(glyph, accentFill);
 
     return qss;
 }

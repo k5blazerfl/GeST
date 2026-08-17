@@ -1,5 +1,7 @@
 #include "mpris.h"
 
+#include "palette.h"
+
 #include <QDBusArgument>
 #include <QDBusConnection>
 #include <QDBusConnectionInterface>
@@ -46,8 +48,9 @@ MprisApplet::MprisApplet(QWidget *parent)
     layout->setSpacing(0);
     for (QToolButton *b : {m_prev, m_playPause, m_next})
         b->setAutoRaise(true);
-    m_prev->setIcon(QIcon::fromTheme(QStringLiteral("media-skip-backward")));
-    m_next->setIcon(QIcon::fromTheme(QStringLiteral("media-skip-forward")));
+    const QSize is(18, 18);
+    m_prev->setIcon(helm::tintedIcon(QStringLiteral("media-skip-backward"), helm::barGlyphColor(), is));
+    m_next->setIcon(helm::tintedIcon(QStringLiteral("media-skip-forward"), helm::barGlyphColor(), is));
     m_title->setMaximumWidth(180);
     layout->addWidget(m_title);
     layout->addWidget(m_prev);
@@ -111,7 +114,8 @@ void MprisApplet::refresh() {
                    .value()
                    .variant())
             .toString();
-    m_playPause->setIcon(QIcon::fromTheme(playPauseIconName(status)));
+    m_playPause->setIcon(
+        helm::tintedIcon(playPauseIconName(status), helm::barGlyphColor(), QSize(18, 18)));
 
     QString title, artist;
     const QVariant mdv = QDBusReply<QDBusVariant>(props.call(QStringLiteral("Get"),

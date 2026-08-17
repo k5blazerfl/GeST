@@ -41,6 +41,20 @@ private slots:
         // an invalid accent falls back to Harbor rather than producing an unstyled bar
         QVERIFY(helm::styleSheet(false, QColor()).contains(QStringLiteral("rgba(58,166,196")));
     }
+
+    void barGlyphAndStartTile() {
+        QCOMPARE(helm::barGlyphColor(), QColor(QStringLiteral("#eaf1f3")));
+        const QString qss = helm::styleSheet(false, helm::harborAccent());
+        QVERIFY(qss.contains(QStringLiteral("#HelmStart")));  // the ⎈ Start tile rule
+        QVERIFY(qss.contains(QStringLiteral("#eaf1f3")));     // glyph colour wired into the QSS
+    }
+
+    void tintedIconFallback() {
+        // A bogus theme name yields a null icon (graceful) rather than crashing.
+        QVERIFY(helm::tintedIcon(QStringLiteral("no-such-icon-zzz-000"), helm::barGlyphColor(),
+                                 QSize(18, 18))
+                    .isNull());
+    }
 };
 
 QTEST_MAIN(TestAppearance)

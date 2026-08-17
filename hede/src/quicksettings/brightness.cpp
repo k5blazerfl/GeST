@@ -1,5 +1,6 @@
 #include "brightness.h"
 
+#include "palette.h"
 #include "proc.h"
 
 #include <QIcon>
@@ -52,7 +53,8 @@ void BrightnessApplet::refresh() {
     setVisible(pct >= 0);
     if (pct < 0)
         return;
-    setIcon(QIcon::fromTheme(QStringLiteral("display-brightness")));
+    setIcon(helm::tintedIcon(QStringLiteral("display-brightness"), helm::barGlyphColor(),
+                             QSize(18, 18)));
     setToolTip(QStringLiteral("%1%").arg(pct));
 }
 
