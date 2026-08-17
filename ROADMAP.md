@@ -9,10 +9,10 @@ familiar to people coming from Windows.
 **North star:** a feature-rich, first-class Gentoo desktop **and** a CLI that can
 facilitate a full Gentoo install end-to-end.
 
-> Status: **v0.52.3** — bootable amd64 GeSI ISO into HeDE, with the Control
-> Center at TUI parity and a palette-driven titlebar skin landing. This file is
-> the durable plan; the "In flight" / "Now" sections below are the only parts
-> that date.
+> Status: **v0.52.5** — bootable amd64 GeSI ISO into HeDE on **systemd**, with the
+> Control Center at TUI parity and the palette-driven titlebar skin shipped. This
+> file is the durable plan; the "In flight" / "Now" sections below are the only
+> parts that date.
 
 ---
 
@@ -54,20 +54,26 @@ facilitate a full Gentoo install end-to-end.
 - **Frameless-window fix** — menu-launched apps now get server-side decorations
   at the source (the Start menu is the Control Center's main launch path) —
   **v0.52.3** *(#85)*.
+- **Design language D — window chrome** — palette-driven Helm titlebar skin for
+  labwc: `helm-theme` generates the `themerc` from `dark`+`accent` and regenerates
+  it live; a Harbor default ships to `/usr/share/themes`. Shipped to the live image
+  via `gui-apps/hede` 0.3.2 — **v0.52.4** *(#88)*.
+- **GeSI live CD on systemd** — the amd64 image migrated OpenRC → systemd
+  (`desktop/systemd` profile + seed; greetd/dbus/dhcpcd via `systemctl`;
+  `getty@tty1` masked; elogind dropped, systemd-logind handles seats). The systemd
+  ISO builds and **boots UEFI into HeDE** with the titlebar skin rendering
+  (QEMU-verified) — **v0.52.5** *(#89)*.
 
 ## In flight — written, in review (open PRs, *not yet on `main`*)
 
-- **Design language D — window chrome.** A palette-driven Helm titlebar skin for
-  labwc: `helm-theme` generates a `themerc` from `dark`+`accent`, regenerates it
-  live on theme change, ships a Harbor default to `/usr/share/themes`, and the two
-  `rc.xml` copies are reconciled. *(#88)*
+- *(nothing in review — the backlog has landed.)*
 
 ## Now — the immediate heading
 
-1. **Land Design D (#88)** onto `main`, then bump Amphitheater's `gui-apps/hede`
-   and rebuild the ISO so the live image ships the titlebar skin — at which point
-   the two livecd overlay stopgaps (`overlay/.../labwc/rc.xml` + the overlay
-   `themes/Helm`) can be dropped.
+1. **Drop the livecd overlay stopgaps** — now that Amphitheater's `gui-apps/hede`
+   (0.3.2) ships Design D, the two GeSI overlay front-runs
+   (`overlay/.../labwc/rc.xml` + the overlay `themes/Helm`) are redundant and can
+   be removed on the next livecd touch.
 2. **Appearance the user drives** — layer the bespoke painterly titlebar art (the
    `helm-titlebar-skins` pipeline, `.helmtheme` bundles) on top of the
    palette-driven default, and make wallpaper/background a first-class,
