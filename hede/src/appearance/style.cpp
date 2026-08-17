@@ -57,6 +57,26 @@ QString styleSheet(bool dark, const QColor &accent) {
         "#HelmBar #HelmStart { font-size: 15px; font-weight: 600; padding: 0 10px; }\n")
         .arg(glyph, accentFill);
 
+    // The acrylic pullout (#HelmPullout) — THE standard for surfaces that emerge
+    // from the bar (launcher now, quick-settings/tray later): heavier tint than
+    // the bar, silver border on top + sides only, 7px top corners, flat bottom
+    // that tucks behind the bar. No blur on labwc → opaque enough to read; drop
+    // toward the token .44 once a blur protocol lands.
+    qss += QStringLiteral(
+        "#HelmPullout { background: rgba(11,38,46,0.92);"
+        " border: 1px solid rgba(255,255,255,0.22); border-bottom: none;"
+        " border-top-left-radius: 7px; border-top-right-radius: 7px;"
+        " border-bottom-left-radius: 0; border-bottom-right-radius: 0; }\n"
+        "#HelmPullout QLabel { color: %1; background: transparent; }\n"
+        "#HelmPullout QListWidget, #HelmPullout QListView {"
+        " background: transparent; border: none; color: %1; }\n"
+        "#HelmPullout QListWidget::item { color: %1; padding: 4px 8px; border-radius: 5px; }\n"
+        "#HelmPullout QListWidget::item:selected { background: %2; color: %1; }\n"
+        "#HelmPullout QLineEdit { background: rgba(255,255,255,0.10); color: %1;"
+        " border: 1px solid rgba(255,255,255,0.18); border-radius: 5px; padding: 6px 10px; }\n"
+        "#HelmPullout QLineEdit:focus { border: 1px solid %3; }\n")
+        .arg(glyph, accentFill, accentEdge);
+
     return qss;
 }
 

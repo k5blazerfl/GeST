@@ -23,9 +23,16 @@ LauncherMenu::LauncherMenu(QWidget *parent)
     : QWidget(parent), m_search(new QLineEdit(this)), m_list(new QListWidget(this)) {
     setFixedSize(360, 480);
 
+    // The acrylic pullout: objectName drives the #HelmPullout QSS (see
+    // helm::styleSheet); styled + translucent so it reads as glass, with a flat
+    // bottom edge that tucks against the bar (the pullout standard).
+    setObjectName(QStringLiteral("HelmPullout"));
+    setAttribute(Qt::WA_StyledBackground, true);
+    setAttribute(Qt::WA_TranslucentBackground, true);
+
     auto *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(8, 8, 8, 8);
-    layout->setSpacing(6);
+    layout->setContentsMargins(10, 10, 10, 10);
+    layout->setSpacing(8);
     m_search->setPlaceholderText(tr("Search applications…"));
     m_search->setClearButtonEnabled(true);
     m_search->installEventFilter(this);

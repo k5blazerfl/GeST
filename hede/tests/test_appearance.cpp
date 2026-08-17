@@ -55,6 +55,13 @@ private slots:
                                  QSize(18, 18))
                     .isNull());
     }
+
+    void acrylicPullout() {
+        const QString qss = helm::styleSheet(false, helm::harborAccent());
+        QVERIFY(qss.contains(QStringLiteral("#HelmPullout")));
+        QVERIFY(qss.contains(QStringLiteral("border-bottom: none")));        // flat bottom
+        QVERIFY(qss.contains(QStringLiteral("border-top-left-radius: 7px"))); // top corners only
+    }
 };
 
 QTEST_MAIN(TestAppearance)
