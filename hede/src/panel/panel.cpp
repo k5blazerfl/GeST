@@ -49,7 +49,11 @@ Panel::Panel(QWidget *parent) : QWidget(parent) {
     layout->setContentsMargins(8, 0, 8, 0); // tokens.spacing[1] sides, flush vertically
     layout->setSpacing(6);
 
-    layout->addWidget(new LauncherButton(tr("≡ Apps"), resolveMenuCommand(), this));
+    // The ⎈ Start tile — Helm mark + label (label keeps it discoverable if the
+    // glyph is missing from the installed font); #HelmStart styles it.
+    auto *start = new LauncherButton(QString::fromUtf8("⎈  Apps"), resolveMenuCommand(), this);
+    start->setObjectName(QStringLiteral("HelmStart"));
+    layout->addWidget(start);
     layout->addWidget(new TaskbarWidget(this), 1); // window list fills the middle
 
     layout->addWidget(new MprisApplet(this)); // media controls (MPRIS)

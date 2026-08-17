@@ -1,5 +1,7 @@
 #include "dndtoggle.h"
 
+#include "palette.h"
+
 #include <QDBusConnection>
 #include <QDBusInterface>
 #include <QDBusServiceWatcher>
@@ -41,7 +43,7 @@ DndToggle::DndToggle(QWidget *parent) : QToolButton(parent) {
 
 void DndToggle::onDndChanged(bool on) {
     setChecked(on);
-    setIcon(QIcon::fromTheme(dndIconName(on)));
+    setIcon(helm::tintedIcon(dndIconName(on), helm::barGlyphColor(), QSize(18, 18)));
     setToolTip(on ? tr("Do Not Disturb: on") : tr("Do Not Disturb: off"));
     setVisible(true);
 }

@@ -1,5 +1,6 @@
 #include "volume.h"
 
+#include "palette.h"
 #include "proc.h"
 
 #include <QIcon>
@@ -80,7 +81,8 @@ void VolumeApplet::refresh() {
     setVisible(st.available);
     if (!st.available)
         return;
-    setIcon(QIcon::fromTheme(volumeIconName(st.percent, st.muted)));
+    setIcon(helm::tintedIcon(volumeIconName(st.percent, st.muted), helm::barGlyphColor(),
+                             QSize(18, 18)));
     setToolTip(st.muted ? tr("Muted") : QStringLiteral("%1%").arg(st.percent));
 }
 
