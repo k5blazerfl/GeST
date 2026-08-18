@@ -92,6 +92,40 @@ git-sync would instead track amphitheater's published line. Seeding (A2) keeps
 the installed system matching the ISO, diverging only when the user chooses to
 `emerge --sync`.
 
+## quickpkg's one sharp edge: non-idempotent `pkg_preinst` (bug #10)
+
+`quickpkg @installed` repackages a package's **installed** files — i.e. its state
+*after* `pkg_preinst` already ran once. Most ebuilds don't care, but a few juggle
+their own image across `src_install`/`pkg_preinst`, and those break on re-merge.
+The archetype is `x11-misc/xkeyboard-config` (upstream bug #957712):
+
+```
+src_install():  mv "${ED}"/usr/share/X11/xkb{,.workaround}   # image ends: xkb.workaround
+pkg_preinst():  mv "${ED}"/usr/share/X11/xkb{.workaround,}   # renamed back at merge
+```
+
+The installed files are `xkb`; a **real `--buildpkg` binpkg's image is
+`xkb.workaround`**. quickpkg captures `xkb`, so on re-merge `pkg_preinst` can't find
+`xkb.workaround` → `die`. (Found the hard way at package 5/198 of the first install
+whose `--usepkgonly` step actually ran.)
+
+**Fix — ship the real binpkg for exactly these packages.** catalyst's stage1 build
+already produces correct, source-built binpkgs in its pkgcache (their images are
+pre-`pkg_preinst`). `packaging/livecd/build.sh` **auto-detects** the hostile set —
+any installed ebuild whose `pkg_preinst`/`pkg_postinst`/`pkg_setup` does an `mv` of
+an `${ED}`/`${D}` path — and stages those binpkgs into the image under
+`/var/cache/gest-binpkgs` (`desktop.BINPKG_FIXUP_DIR`) via the root overlay. Today
+that's one package (~2.5 MB); the detection keeps the set correct as the closure
+changes, so it's not a hand-maintained list. At install time `ProvisionDesktop`
+overlays these onto the quickpkg'd PKGDIR (`desktop.binpkg_fixup_pairs` → rm+copy)
+and `InstallDesktop` runs `emaint binhost --fix` to rebuild the index before
+`--usepkgonly`. Deliberately narrow: the guarded `cp ${EROOT}→${ED}` cache-restores
+(gtk+/glib/…) are quickpkg-safe and are **not** shipped, keeping the ISO cost tiny.
+
+This is a scoped instance of **B2**: for the packages that need it, we ship real
+binpkgs instead of quickpkg-repackaged ones. A full B2 binhost remains the eventual
+win for the whole closure.
+
 ## Known costs / follow-ups
 
 - **`quickpkg @installed` repackage time** — repackaging the whole live system

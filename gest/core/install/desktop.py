@@ -119,3 +119,47 @@ def emerge_desktop_argv(*, atoms: tuple[str, ...] = DESKTOP_ATOMS) -> list[str]:
 def cleanup_pkgdir_argv(*, root: str = "") -> list[str]:
     """Remove the transient ``@installed`` binpkgs from the target after the emerge."""
     return ["rm", "-rf", f"{root}{PKGDIR}"]
+
+
+# --- quickpkg fixups: real binpkgs for image-mutating packages ---------------
+#
+# quickpkg @installed captures each package's POST-pkg_preinst state, so any ebuild
+# whose src_install/pkg_preinst juggle their own image break on re-merge — e.g.
+# x11-misc/xkeyboard-config renames xkb→xkb.workaround in src_install then
+# xkb.workaround→xkb in pkg_preinst (collision-check dodge, upstream bug #957712);
+# the installed files are `xkb`, so the quickpkg'd binpkg's preinst can't find
+# `xkb.workaround` → dies. A REAL --buildpkg binpkg's image is pre-preinst
+# (`xkb.workaround`) and merges cleanly. The catalyst build stages such packages'
+# real, source-built binpkgs here (auto-detected from its pkgcache — see
+# packaging/livecd/build.sh); ProvisionDesktop overlays them onto the quickpkg'd
+# PKGDIR, replacing the broken copies. See docs/design/desktop-provisioning.md.
+BINPKG_FIXUP_DIR = "/var/cache/gest-binpkgs"
+
+
+def binpkg_fixup_pairs(*, fixup_dir: str = BINPKG_FIXUP_DIR,
+                       target_pkgdir: str) -> list[tuple[str, str]]:
+    """For each ``<category>/<pn>`` dir shipped under ``fixup_dir`` (the real,
+    source-built binpkgs), the ``(source, target)`` pair whose target copy in
+    ``target_pkgdir`` must be replaced. Pure listing — the caller does the rm+copy,
+    so it stays unit-testable. Empty list if the image ships no fixups (older ISO /
+    base-Gentoo install)."""
+    import os
+    if not os.path.isdir(fixup_dir):
+        return []
+    pairs: list[tuple[str, str]] = []
+    for category in sorted(os.listdir(fixup_dir)):
+        cat_src = os.path.join(fixup_dir, category)
+        if not os.path.isdir(cat_src):
+            continue
+        for pn in sorted(os.listdir(cat_src)):
+            if os.path.isdir(os.path.join(cat_src, pn)):
+                pairs.append((os.path.join(cat_src, pn),
+                              os.path.join(target_pkgdir, category, pn)))
+    return pairs
+
+
+def regen_binhost_argv() -> list[str]:
+    """Rebuild the target PKGDIR's ``Packages`` index (chroot). Run after the fixup
+    binpkgs replaced quickpkg's copies — else ``--usepkgonly`` reads a stale index
+    (wrong filename/hash for the swapped packages) and refuses them."""
+    return ["emaint", "binhost", "--fix"]

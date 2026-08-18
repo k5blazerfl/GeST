@@ -45,12 +45,74 @@ export MOTD="${specdir}/motd"
 export FSSCRIPT="${specdir}/fsscript.sh"
 # Files copied verbatim into the image root (e.g. /etc/greetd/config.toml, which
 # autologins into HeDE). Optional — only wired if the arch ships an overlay/ dir.
-export ROOT_OVERLAY="${specdir}/overlay"
+# For amd64 we point catalyst at a build-time STAGING copy of the overlay so the
+# build can add the quickpkg-fixup binpkgs (real, source-built binpkgs for
+# image-mutating packages — see stage_binpkg_fixups + gest/core/install/desktop.py)
+# after stage1 fills catalyst's pkgcache, without dirtying the tracked overlay/.
+staging_overlay="${outdir}/root-overlay"
+if [ "${arch}" = "amd64" ] && [ -d "${specdir}/overlay" ]; then
+    export ROOT_OVERLAY="${staging_overlay}"
+else
+    export ROOT_OVERLAY="${specdir}/overlay"
+fi
 # Kernel .config genkernel builds from (CD-boot filesystems compiled in). Only
 # referenced by the amd64 stage2 spec.
 export KERNEL_CONFIG="${specdir}/kernel-config"
 
 mkdir -p "${outdir}"
+
+# Build a STAGING root overlay = the tracked overlay/ + the "quickpkg fixup"
+# binpkgs. quickpkg @installed (the installer's desktop provisioning) captures each
+# package's POST-pkg_preinst state, so any ebuild whose src_install/pkg_preinst
+# juggle their own image (e.g. x11-misc/xkeyboard-config's xkb.workaround rename,
+# bug #957712) yields a binpkg that dies on re-merge. The fix: ship those packages'
+# REAL, source-built binpkgs (from catalyst's stage1 pkgcache, whose images are
+# pre-preinst) under /var/cache/gest-binpkgs; ProvisionDesktop overlays them onto
+# the quickpkg'd PKGDIR. We AUTO-DETECT the affected packages (any whose
+# preinst/postinst/setup mv/rm/ln/cp within $ED/$D) so the set stays correct as the
+# closure changes — no hand-maintained list. See docs/design/desktop-provisioning.md.
+stage_binpkg_fixups() {
+    local storedir="${STOREDIR:-/var/tmp/catalyst}"
+    local stage1root="${storedir}/tmp/default/livecd-stage1-${arch}-gest-${TIMESTAMP}"
+    local pkgcache="${storedir}/packages/default/livecd-stage1-${arch}"
+
+    rm -rf "${staging_overlay}"
+    mkdir -p "${staging_overlay}"
+    cp -a "${specdir}/overlay/." "${staging_overlay}/"
+
+    if [ ! -d "${stage1root}/var/db/pkg" ]; then
+        echo "!! stage1 root not found (${stage1root}) — no binpkg fixups staged" >&2
+        return 0
+    fi
+    local dest="${staging_overlay}/var/cache/gest-binpkgs"
+    local n=0 pdir eb cat pf pn src
+    for pdir in "${stage1root}"/var/db/pkg/*/*; do
+        [ -d "${pdir}" ] || continue
+        eb="$(ls "${pdir}"/*.ebuild 2>/dev/null | head -1)"; [ -n "${eb}" ] || continue
+        # quickpkg-hostile signature: a phase that `mv`s an image path ($ED/$D) —
+        # i.e. renames a build-only file (xkeyboard-config's xkb.workaround dodge).
+        # quickpkg captures the post-rename state, so that source is gone → die. The
+        # defensive cp/ln cache-restores from $EROOT are guarded and quickpkg-safe,
+        # so we deliberately do NOT match them (they'd bloat the ISO for no reason).
+        awk '
+            /^(pkg_preinst|pkg_postinst|pkg_setup)[[:space:]]*\(\)/ {inph=1}
+            inph { body=body $0 "\n"
+                   if ($0 ~ /^\}/) {
+                       if (body ~ /mv[^\n]*\$\{?(ED|D)\}?/) found=1
+                       inph=0; body="" } }
+            END { exit !found }
+        ' "${eb}" || continue
+        cat="$(basename "$(dirname "${pdir}")")"; pf="$(basename "${pdir}")"
+        pn="$(echo "${pf}" | sed -E 's/-[0-9][^-]*(-r[0-9]+)?$//')"
+        src="${pkgcache}/${cat}/${pn}"
+        [ -d "${src}" ] || continue
+        mkdir -p "${dest}/${cat}"
+        cp -a "${src}" "${dest}/${cat}/"
+        n=$((n + 1))
+        echo "   fixup binpkg: ${cat}/${pn}"
+    done
+    echo "== staged ${n} real binpkg fixup(s) under ${dest#"${staging_overlay}"} =="
+}
 
 # stage1: render the template, then append the package list (tab-indented atoms,
 # comments/blank lines stripped) under the `livecd/packages:` line.
@@ -88,6 +150,12 @@ esac
 
 echo "== livecd-stage1 =="
 catalyst -f "${outdir}/livecd-stage1.spec"
+# Stage the real binpkg fixups into the root overlay now that stage1 has filled the
+# pkgcache, so stage2 lays them into the image. amd64 desktop image only.
+if [ "${arch}" = "amd64" ] && [ -d "${specdir}/overlay" ]; then
+    echo "== staging quickpkg-fixup binpkgs =="
+    stage_binpkg_fixups
+fi
 echo "== livecd-stage2 =="
 catalyst -f "${outdir}/livecd-stage2.spec"
 

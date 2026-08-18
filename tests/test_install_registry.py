@@ -186,7 +186,8 @@ def test_install_desktop_emerges_usepkgonly_when_enabled():
     desk = _ctx(FakeExecutor(), plan=_desktop_plan())
     steps = InstallDesktop().build(desk)
     assert [s.argv for s in steps] == [
-        ["emerge", "--usepkgonly", "--color", "n", *DESKTOP_ATOMS]]  # binary-only, offline
+        ["emaint", "binhost", "--fix"],                                # refresh index (fixups)
+        ["emerge", "--usepkgonly", "--color", "n", *DESKTOP_ATOMS]]    # binary-only, offline
     assert asyncio.run(InstallDesktop().is_satisfied(desk)) is False
 
 

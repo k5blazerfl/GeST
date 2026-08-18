@@ -58,6 +58,30 @@ def test_accept_keywords_covers_the_curated_desktop_closure():
     assert desktop.accept_keywords("arm64").count(" ~arm64") == kw.count(" ~amd64")
 
 
+def test_regen_binhost_argv_rebuilds_the_index():
+    assert desktop.regen_binhost_argv() == ["emaint", "binhost", "--fix"]
+
+
+def test_binpkg_fixup_pairs_maps_shipped_dirs_to_target(tmp_path):
+    # the ISO ships real binpkgs for image-mutating packages under BINPKG_FIXUP_DIR;
+    # each <cat>/<pn> maps to the copy that must be replaced in the target PKGDIR.
+    fixup = tmp_path / "gest-binpkgs"
+    (fixup / "x11-misc" / "xkeyboard-config").mkdir(parents=True)
+    (fixup / "x11-misc" / "xkeyboard-config" / "xkeyboard-config-2.48-2.gpkg.tar").write_text("x")
+    (fixup / "x11-misc" / "loose.txt").write_text("ignored")  # non-dir → skipped
+    pairs = desktop.binpkg_fixup_pairs(
+        fixup_dir=str(fixup), target_pkgdir="/mnt/gentoo/var/cache/binpkgs")
+    assert pairs == [(f"{fixup}/x11-misc/xkeyboard-config",
+                      "/mnt/gentoo/var/cache/binpkgs/x11-misc/xkeyboard-config")]
+
+
+def test_binpkg_fixup_pairs_empty_without_the_dir(tmp_path):
+    # base-Gentoo install / older ISO with no fixups → no-op, not an error.
+    assert desktop.binpkg_fixup_pairs(
+        fixup_dir=str(tmp_path / "nope"),
+        target_pkgdir="/mnt/gentoo/var/cache/binpkgs") == []
+
+
 def test_repos_conf_is_a_git_backed_amphitheater_entry():
     conf = desktop.repos_conf()
     assert "[amphitheater]" in conf
