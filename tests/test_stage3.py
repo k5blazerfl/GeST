@@ -54,23 +54,41 @@ def test_parse_latest_raises_when_no_data_line():
         index.parse_latest("# only a comment\n\n")
 
 
+def test_parse_latest_skips_pgp_clearsign_armor():
+    # the real mirror pointer is PGP-clearsigned — the data line is wrapped in
+    # armor + Hash headers, so parsing must find it by shape, not by position.
+    signed = (
+        "-----BEGIN PGP SIGNED MESSAGE-----\n"
+        "Hash: SHA512\n\n"
+        "# Latest as of ...\n"
+        f"20240728T170331Z/{STAGE3_FILE} 268435456\n"
+        "-----BEGIN PGP SIGNATURE-----\n"
+        "iQIzBAEBCgAdFiEE 999\n"          # armor body that must NOT parse as data
+        "-----END PGP SIGNATURE-----\n"
+    )
+    relpath, size = index.parse_latest(signed)
+    assert relpath == f"20240728T170331Z/{STAGE3_FILE}"
+    assert size == 268435456
+
+
 # --- URL building -----------------------------------------------------------
 
-def test_latest_url():
+def test_latest_url_includes_the_arch_in_the_filename():
+    # the real mirror file is latest-stage3-<arch>-<flavor>.txt; the arch-less
+    # form 404s (caught by a live install).
     assert index.latest_url(index.MIRROR, "amd64", "openrc") == (
         "https://distfiles.gentoo.org/releases/amd64/autobuilds/"
-        "latest-stage3-openrc.txt")
-    # the systemd default flavor resolves the same way (flavor is just the token)
+        "latest-stage3-amd64-openrc.txt")
     assert index.latest_url(index.MIRROR, "amd64", "systemd") == (
         "https://distfiles.gentoo.org/releases/amd64/autobuilds/"
-        "latest-stage3-systemd.txt")
+        "latest-stage3-amd64-systemd.txt")
 
 
 def test_latest_url_honours_custom_mirror_and_strips_trailing_slash():
     assert index.latest_url("https://mirror.example/gentoo/", "amd64",
                             "hardened-openrc") == (
         "https://mirror.example/gentoo/releases/amd64/autobuilds/"
-        "latest-stage3-hardened-openrc.txt")
+        "latest-stage3-amd64-hardened-openrc.txt")
 
 
 def test_tarball_and_derived_urls():
@@ -110,7 +128,7 @@ def test_arm64_variants_and_variants_for():
 def test_arm64_stage3_url_uses_the_arm64_autobuilds_path():
     url = index.latest_url(index.MIRROR, "arm64", "openrc")
     assert "/releases/arm64/autobuilds/" in url
-    assert url.endswith("latest-stage3-openrc.txt")
+    assert url.endswith("latest-stage3-arm64-openrc.txt")
 
 
 def test_selection_carries_the_resolved_urls():

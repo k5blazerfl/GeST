@@ -242,7 +242,7 @@ def test_resolve_stage3_parses_the_index(monkeypatch):
 
     monkeypatch.setattr(assemble.index, "fetch_text", fake_fetch)
     sel = resolve_stage3(DEFAULT_VARIANT)
-    assert "latest-stage3-systemd.txt" in captured["url"]
+    assert "latest-stage3-amd64-systemd.txt" in captured["url"]
     assert sel.filename == "stage3-amd64-systemd-20240728T170331Z.tar.xz"
     assert sel.size == 268435456
     assert sel.url.endswith(relpath)
@@ -259,4 +259,4 @@ def test_resolve_stage3_uses_the_variant_flavor(monkeypatch):
 
     monkeypatch.setattr(assemble.index, "fetch_text", fake_fetch)
     resolve_stage3(Stage3Variant("amd64", "hardened-openrc", "Hardened"))
-    assert "latest-stage3-hardened-openrc.txt" in seen["url"]
+    assert "latest-stage3-amd64-hardened-openrc.txt" in seen["url"]
