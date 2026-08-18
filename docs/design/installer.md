@@ -281,8 +281,11 @@ Follow the established patterns; none of these wipe a disk.
 - **Desktop profile setup beyond the Handbook** — no automatic X/Wayland, display
   manager, or desktop-environment provisioning. The installer produces a bootable base
   system; desktop configuration is day-2.
-- **systemd** — OpenRC only, per the project. No systemd stage3 variant, no
-  `systemd-*` configuration.
+- ~~**systemd** — OpenRC only.~~ **No longer a non-goal.** HeDE is systemd-only,
+  so GeSI defaults to a `stage3-*-systemd` base — `core/stage3/model.py`'s
+  `DEFAULT_VARIANT` is Standard (systemd); OpenRC variants stay offered for a
+  plain-Gentoo install. GeST is dropping its init-agnostic hedging (see
+  `hede-systemd-stack.md`).
 - **A GUI installer** — the Qt/KDE frontend stays gated until the TUI/CLI side is
   declared complete.
 - **Tier 3 modules** (printers, sound, bluetooth, etc.) — unrelated to bootstrapping.
@@ -299,9 +302,10 @@ Follow the established patterns; none of these wipe a disk.
 
 ## Open questions
 
-1. **Stage3 variant selection.** Offer which of openrc / desktop-openrc / hardened /
-   musl? systemd variants are out (non-goal). Proposed default: `stage3-*-openrc`, with
-   desktop and hardened as offered alternatives.
+1. **Stage3 variant selection.** *Resolved:* **Standard (systemd) is the default**
+   (HeDE is systemd-only), with `desktop-systemd` and the OpenRC variants
+   (openrc / desktop-openrc / hardened / no-multilib) offered as alternatives. See
+   `core/stage3/model.py`.
 2. **Profile selection timing.** Run `eselect profile set` in the chroot *before* the
    base `@world` merge (so USE defaults apply to the build), vs. leave it for first
    boot. Proposed: during install, before `@world`.

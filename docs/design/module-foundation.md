@@ -35,7 +35,8 @@ convention:
 - **System**: hostname, timezone, locale. **Date/time/NTP**.
 - **Users**: add/edit/delete, passwords (incl. root), group membership
   (so `wheel` works via the generic path).
-- **Services**: OpenRC enable/disable/start/stop.
+- **Services**: enable/disable/start/stop — moving to systemd `systemctl` (the
+  OpenRC `rc-service` path is being retired; see `hede-systemd-stack.md`).
 - **Storage**: read `lsblk`, **edit** `/etc/fstab`, mount/unmount.
 - **Bootloader**: regenerate `grub.cfg`. **Logs** viewer.
 
@@ -167,6 +168,8 @@ Follow the established patterns:
 ## Non-goals
 
 - The system installer itself (a later track, built on this foundation).
-- systemd support (out of scope per the roadmap; OpenRC only).
+- ~~systemd support (out of scope; OpenRC only).~~ **Reversed** — HeDE is
+  systemd-only, so systemd is now the direction and OpenRC is being retired (see
+  `hede-systemd-stack.md`).
 - Tier 3 desktop/server modules.
 - The Qt/KDE frontend (gated until the TUI/CLI side is declared complete).

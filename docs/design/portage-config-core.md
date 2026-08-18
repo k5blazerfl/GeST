@@ -51,8 +51,9 @@ same pattern. This proposes folding all of it onto one core layer.
    become small modules on top of the core, not new subsystems.
 
 Non-goals: reimplementing Portage's own config resolution (we read effective
-state from the `portage` Python API as today), and touching the systemd/OpenRC
-split (out of scope per the roadmap).
+state from the `portage` Python API as today), and init-system management — that
+is the services/install layer's job (systemd is the direction — see
+`hede-systemd-stack.md`), not this Portage-config module's.
 
 ## The shape of the problem: three grammars, one directory
 

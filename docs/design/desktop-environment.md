@@ -413,7 +413,10 @@ Each phase is independently demoable, matching GeST's release cadence.
   *daemon* — adopt `greetd`; we build only the `helm-greeter` UI on top of it.
 - A second settings/privilege backend — GeST's `core` + polkit backend is *the*
   backend, full stop.
-- systemd support (OpenRC only, per GeST's standing non-goal).
+- ~~systemd support (OpenRC only).~~ **Reversed:** HeDE is systemd-only — greetd,
+  logind/systemd D-Bus, and the seamless stack all assume it. GeST is dropping its
+  init-agnostic hedging (see `hede-systemd-stack.md`); OpenRC support is what's now
+  out of scope for HeDE.
 - Semantic/file-content indexing on by default.
 - Tiling-WM-first workflows as the default (offer snap/tiling as opt-in; the
   default is stacking + taskbar for the Windows-welcome brief).

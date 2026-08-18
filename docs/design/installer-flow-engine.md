@@ -416,16 +416,19 @@ patterns.
 - **LUKS / LVM / RAID** — still deferred at the storage layer, so the engine targets the
   plain GPT/UEFI layout `uefi_plan` builds; they layer on the same steps later.
 - **Rollback of writes** — only mounts are torn down (§5).
-- **systemd** — OpenRC only; stage3 offers only the OpenRC `VARIANTS`.
+- ~~**systemd** — OpenRC only.~~ **No longer excluded** — HeDE is systemd-only, so
+  `model.VARIANTS` now leads with Standard (systemd) as the default; OpenRC stays
+  offered for a plain-Gentoo install. (Dropping init-agnostic hedging — see
+  `hede-systemd-stack.md`.)
 
 ## 12. Open questions — resolved
 
 Each parent-doc open question, answered concretely:
 
-1. **Stage3 variant.** Default to `stage3-*-openrc` (`model.DEFAULT_VARIANT`), offer the
-   other OpenRC `VARIANTS` (desktop, hardened, no-multilib). *Because* it is the
-   Handbook default and the smallest bootable base; the model already encodes exactly
-   this set and excludes systemd.
+1. **Stage3 variant.** Default to `stage3-*-systemd` (`model.DEFAULT_VARIANT` =
+   Standard (systemd)) — HeDE is systemd-only, so a HeDE install needs a systemd
+   base. `desktop-systemd` and the OpenRC `VARIANTS` (openrc, desktop, hardened,
+   no-multilib) are offered for a plain-Gentoo install.
 2. **Profile timing.** Run `SetProfile` (`eselect.set_argv("profile", n)`) in the chroot
    **before** `EmergeWorld`. *Because* the profile sets the USE defaults the `@world`
    build compiles against; setting it afterward would mean an immediate rebuild.

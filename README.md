@@ -173,7 +173,9 @@ working tree.
       (atomfile codec) plus the global `ACCEPT_LICENSE` in make.conf
 - [x] CPU & Video Flags module — detect CPU_FLAGS_X86 (`cpuid2cpuflags`) and
       VIDEO_CARDS (`lspci`), write GeST-owned `package.use/50gest-*` fragments
-- [ ] systemd support in Services (out of scope — OpenRC only)
+- [ ] systemd Services — migrate enable/disable/start/stop to `systemctl`; HeDE
+      is systemd-only, so this is now the direction (retiring the OpenRC
+      `rc-service` path — see `docs/design/hede-systemd-stack.md`)
 - [x] Backend hardening — every privileged action is audit-logged
       (authpriv, with caller uid); dispatch/auth round-trips are tested
 - [x] Frontend on urwid (packaged in ::gentoo) — the whole TUI; Textual
