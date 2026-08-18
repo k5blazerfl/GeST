@@ -1,4 +1,4 @@
-# Host validation — Keychain, Gangway, Drydock
+# Host validation — Keychain, Gangway, Drydock, Flotilla
 
 The CI-tested cores of the Keychain + Windows-interop subsystems are all pure; the
 **live paths need real hardware** (a session D-Bus + a Secret Service consumer, an
@@ -10,9 +10,18 @@ Run top-to-bottom: Keychain first (Gangway depends on it). Each step lists the
 
 > **Scope honesty.** These subsystems stop at a "locked door" that this checklist
 > does *not* cover (they aren't built yet): PAM/TPM auto-unlock, prompts, the Qt
-> management modules, Drydock prefix-creation/installer automation, and the
-> USE/package *apply*. Where a manual step stands in for un-built automation, it
-> says so.
+> management modules, the USE/package *apply*, and running the Wine *command*
+> steps of a recipe (wineboot/winetricks/wineexec) — those need real Wine, so
+> they're validated live here, not in CI. Where a manual step stands in for
+> un-built automation, it says so.
+
+> **Offline first.** Everything that needs *no* Wine runtime and *no* RDP host —
+> the recipe toolchain plumbing (lint/plan/materialize/export) and the Gangway
+> `.rdp` round-trip / dry-run / discovery — is automated in
+> [`scripts/host-validation/validate-offline.sh`](../scripts/host-validation/validate-offline.sh)
+> (it runs in a throwaway `HOME`, using the sample
+> [`notepad.recipe`](../scripts/host-validation/notepad.recipe)). Run it first;
+> it should print `N passed, 0 failed`. Then work the live steps below.
 
 ---
 
@@ -101,6 +110,33 @@ gangway open work                                    # launches sdl-freerdp
       `sdl-freerdp`).
 - [ ] `--quality wan` vs `lan` visibly changes compression/GFX.
 
+### 2b. The `.rdp` / `rdp://` handler + ad-hoc open
+```sh
+gangway register-handler                             # installs the default .rdp/rdp:// handler
+xdg-mime query default application/x-rdp             # -> gangway-rdp-handler.desktop
+gangway open-file some.rdp                           # launch a .rdp WITHOUT saving a profile
+gangway open-file rdp://<host>                       # same, from a URI
+```
+- [ ] After `register-handler`, **double-clicking a `.rdp` opens that file** (not a
+      fixed profile) and an `rdp://` link launches the right host.
+- [ ] `register-handler` writes the shared identity map
+      (`~/.local/share/hede/customs/identity.json`) mapping `sdl-freerdp` /
+      `freerdp` / `org.freerdp.client` → `gangway-rdp-handler`, so any RDP window
+      gets a "Remote Desktop" taskbar identity. `unregister-handler` clears both.
+
+### 2c. Import / export / discover (no live host needed for these)
+```sh
+gangway export work -o work.rdp        # a saved profile -> a shareable .rdp
+gangway import work.rdp --name copy     # a .rdp -> a saved profile
+gangway open work --dry-run             # print the sdl-freerdp argv instead of launching
+gangway discover 192.168.1.0/24 --add   # scan the LAN for open-RDP hosts; save them
+```
+- [ ] `export` then `import` round-trips host/user/domain/quality.
+- [ ] `--dry-run` prints the full `sdl-freerdp …` command (quality/redirection/NLA
+      flags visible) and launches nothing.
+- [ ] `discover` finds your real RDP box on the LAN and (`--add`) saves it as a
+      profile named for its address; it **refuses** a range wider than `--max`.
+
 ---
 
 ## 3. Drydock — local Windows apps via Wine/Proton
@@ -113,8 +149,11 @@ Prereq (report it, then install): `drydock prereqs <barrel>` prints the atoms.
 - **game mode:** `gui-wm/gamescope`, `games-util/gamemode`,
   `games-util/mangohud[mangoapp]`.
 
-> **Locked door:** Drydock v1 does **not** create prefixes or run installers yet.
-> Create the prefix and install the app manually, then let Drydock manage/launch it.
+> **What's unlocked now:** the recipe toolchain (§3c) **does** create prefixes and
+> run a recipe's filesystem steps (extract/move/copy/chmodx/write). The **Wine
+> command** steps (`create_prefix`→`wineboot`, `winetricks`, `wineexec`) run
+> through the real host — validated live here, not in CI. Still locked: running
+> arbitrary GUI installers unattended, and the USE/package *apply*.
 
 ### 3a. Wine barrel
 ```sh
@@ -150,6 +189,33 @@ drydock run game my-game                             # umu-run inside gamescope
       (`gamemoded -s` reports active).
 - [ ] `ps` confirms the wrap order: `gamemoderun → gamescope … --mangoapp -- → umu-run → exe`.
 
+### 3c. The recipe toolchain (zero-download, real Wine)
+Uses the bundled [`notepad.recipe`](../scripts/host-validation/notepad.recipe) —
+it creates a fresh prefix and exposes Wine's built-in Notepad, so no downloads.
+```sh
+R=scripts/host-validation/notepad.recipe
+drydock lint "$R"                                    # -> ok, no issues
+drydock plan "$R"                                    # dry run: shows `wineboot -i`
+drydock install "$R" --run                           # REAL: creates the WINEPREFIX
+ls ~/.local/share/hede/drydock/notepad-test/prefix/drive_c/windows   # prefix exists
+drydock materialize "$R"                             # recipe -> a managed barrel
+drydock run notepad-test notepad                     # launches Wine Notepad (a window!)
+drydock export-recipe notepad-test -o /tmp/out.recipe   # barrel -> recipe (round-trip)
+```
+- [ ] `install --run` runs `wineboot -i` and a real `WINEPREFIX` appears; the
+      summary reports the create_prefix op `ok` (a `write`/`extract`-bearing recipe
+      also lands those files).
+- [ ] `install --run` **refuses** a recipe with lint errors unless `--no-lint`.
+- [ ] `drydock run notepad-test notepad` opens a **Notepad window** — proving the
+      env+argv launch pipeline end-to-end.
+- [ ] `materialize` then `drydock list`/`show` shows the barrel + program, with the
+      Customs launcher + identity wired (per §4).
+- [ ] **One-shot (seam closed):** `drydock install-recipe "$R" --run` does
+      materialize + install against the **barrel's own prefix** in one command, so
+      `install` and later `drydock run` share one `WINEPREFIX`. (The standalone
+      `install`/`materialize` still compute prefixes separately — prefer
+      `install-recipe`.)
+
 ---
 
 ## 4. Cross-cutting — Customs desktop integration
@@ -157,18 +223,66 @@ drydock run game my-game                             # umu-run inside gamescope
 - [ ] Both `gangway install` and `drydock register` land entries in
       `~/.local/share/applications/` that `helm-menu` shows immediately (or after
       `update-desktop-database`).
-- [ ] Double-clicking a `.rdp` file opens Gangway; a `.exe` offers Drydock (MIME
-      handlers) — after the launchers are registered as defaults.
-- [ ] `rm` cleans up: `gangway rm` / `drydock rm` remove both the profile/barrel
-      **and** their `.desktop` launchers.
+- [ ] Double-clicking a `.rdp` file opens Gangway (via `register-handler`, §2b); a
+      `.exe` offers Drydock (`drydock register` sets the MIME default).
+- [ ] **Shared identity map** — `~/.local/share/hede/customs/identity.json` is
+      written by *both* subsystems (Drydock per program's WM_CLASS, Gangway the
+      FreeRDP classes → the handler). The taskbar resolves foreign windows through
+      it instead of showing a raw `wine`/`freerdp` blob.
+- [ ] Drydock launchers get a **real icon** — `drydock register` runs
+      `wrestool`+`icotool` to drop `~/.local/share/icons/hicolor/48x48/apps/drydock-*.png`.
+- [ ] `rm` cleans up: `gangway rm` / `drydock rm` (and `unregister-handler`) remove
+      the profile/barrel, their `.desktop` launchers, **and** their identity-map
+      entries.
 
 ---
 
-## 5. Not expected yet (don't file these as failures)
+## 5. Flotilla — VMs (vessels) over libvirt/QEMU
+
+Prereq: `flotilla prereqs <vessel>` prints the atoms — `app-emulation/{qemu,libvirt}`,
+`sys-firmware/edk2-ovmf` (UEFI), `app-crypt/swtpm` (TPM/Win11), `app-emulation/
+virt-viewer`. Enable + start **`libvirtd`** and add your user to the **`libvirt`**
++ **`kvm`** groups. Uses `qemu:///session` by default.
+
+### 5a. Turnkey Linux vessel
+```sh
+flotilla images                                      # the media catalog
+flotilla launch debian --os linux --iso debian       # fetch → allocate → define → boot → console
+```
+- [ ] The ISO is fetched to `~/.cache/flotilla/images/`, a `disk.qcow2` is
+      allocated, `virsh define` registers it, `virsh start` boots it, and
+      **virt-viewer opens the installer console**.
+- [ ] `flotilla list`/`show` reflect the vessel; `flotilla stop`/`start` work;
+      `flotilla xml debian` matches what libvirt defined (`virsh dumpxml`).
+
+### 5b. Windows vessel + the Gangway bridge (the flagship)
+```sh
+flotilla fetch win11                                 # via mido (Microsoft ISO)
+flotilla launch win11 --os windows --iso ~/.cache/flotilla/images/Win11*.iso
+#   → UEFI + Secure Boot + TPM 2.0 + virtio-win auto-attached; install Windows,
+#     enable Remote Desktop in the guest (manual until unattend.xml automation)
+flotilla address win11                               # the guest IP (needs the guest agent)
+flotilla connect win11 --rdp                         # provisions a Gangway profile → seamless RDP
+```
+- [ ] The guest boots the Windows installer with virtio storage visible (virtio-win).
+- [ ] `flotilla address` returns the guest IP (qemu-guest-agent installed).
+- [ ] `flotilla connect --rdp` creates a Gangway profile at that IP and opens
+      **FreeRDP** — clipboard/drive/audio redirection, a real taskbar identity —
+      i.e. the **local VM is as seamless as a remote box**.
+- [ ] `flotilla connect --console` still opens the SPICE console (both modes are
+      first-class).
+
+---
+
+## 6. Not expected yet (don't file these as failures)
 
 - Auto-unlock at login (PAM) and TPM2-sealed unlock — **Keychain Phase 4/5**.
 - Secret Service **prompts** and per-object locking — the daemon runs unlocked.
 - Qt management modules for any subsystem — **gated on the Qt frontend**.
-- Drydock **prefix creation / installer automation** and the **USE/package apply**
-  — host-only automation not yet built (manual steps above stand in).
-- Gangway **seamless RemoteApp** (single-window RAIL) — **Gangway v2**, experimental.
+- Drydock **unattended GUI installers** and the **USE/package apply** — not yet
+  built (prefix creation + filesystem install steps now *are*, via §3c).
+- Gangway **seamless RemoteApp** (single-window RAIL) and **per-profile** taskbar
+  identity — **Phase 5** (see the Gangway Phase-5 scope design doc), experimental
+  and upstream-gated.
+- Flotilla **guest-side RDP-enable automation** (`unattend.xml`), **Customs
+  launchers/jump-lists** for vessels, and the **Qt module** — later Flotilla phases.

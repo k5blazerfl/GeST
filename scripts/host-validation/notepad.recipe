@@ -1,0 +1,27 @@
+recipe: 1
+# A zero-download validation recipe: it creates a fresh Wine prefix and exposes
+# Wine's built-in Notepad. No copyrighted files, no network — so `drydock install
+# --run` and `drydock run` can be validated on any box with Wine installed.
+app:
+  name: Notepad Test
+  id: notepad-test
+  categories:
+  - Application
+barrel:
+  runner: wine
+  arch: win64
+  verbs: []
+  dxvk: false
+  vkd3d: false
+  env: {}
+files: []
+steps:
+- action: create_prefix
+  params:
+    arch: win64
+programs:
+- name: Notepad
+  exe: notepad
+  args: []
+  category: Application
+prereqs: auto
