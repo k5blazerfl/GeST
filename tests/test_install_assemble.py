@@ -46,6 +46,25 @@ def test_assemble_carries_tier2_selection():
     assert plan.tier2 == frozenset({"sshd", "sysctl"})
 
 
+def test_assemble_seamless_drives_both_initramfs_splash_and_grub_theme():
+    # Seamless boot (default on) bakes the Plymouth splash into the target initramfs
+    # AND applies the GRUB Harbor theme — one selection, both halves of the look.
+    plan = assemble_plan(_ok_selection(), _S3)
+    assert plan.kernel.plymouth is True
+    assert plan.bootloader.seamless is True
+    # ...and can be opted out of, leaving a plain boot.
+    off = assemble_plan(_ok_selection(seamless=False), _S3)
+    assert off.kernel.plymouth is False
+    assert off.bootloader.seamless is False
+
+
+def test_assemble_seamless_genkernel_bakes_plymouth_into_initramfs():
+    from gest.core.kernel.build import build_steps
+    plan = assemble_plan(_ok_selection(kernel_method="genkernel"), _S3)
+    argv = build_steps(plan.kernel)[0].argv
+    assert "--plymouth" in argv and "--plymouth-theme=hede" in argv
+
+
 # --- target arch (Apple Silicon / Asahi groundwork) -------------------------
 
 def test_assemble_defaults_to_amd64_arch():

@@ -27,13 +27,18 @@ def _require_jobs(jobs: int) -> int:
     return jobs
 
 
-def genkernel_argv(*, kernel_config: str = "", genkernel: str = "genkernel") -> list[str]:
-    """`genkernel [--kernel-config=<file>] all` — the automated build path."""
+def genkernel_argv(*, kernel_config: str = "", plymouth: bool = False,
+                   genkernel: str = "genkernel") -> list[str]:
+    """`genkernel [--kernel-config=<file>] [--plymouth …] all` — the automated
+    build path. ``plymouth`` bakes the HeDE splash (theme "hede", shipped by
+    gui-apps/hede) into the initramfs for a seamless boot."""
     argv = [genkernel]
     if kernel_config:
         if not _valid_path(kernel_config):
             raise ValueError(f"invalid kernel config path: {kernel_config!r}")
         argv.append(f"--kernel-config={kernel_config}")
+    if plymouth:
+        argv += ["--plymouth", "--plymouth-theme=hede"]
     argv.append("all")
     return argv
 
@@ -52,11 +57,16 @@ def make_argv(
     return argv
 
 
-def dracut_argv(kver: str = "", *, force: bool = True, dracut: str = "dracut") -> list[str]:
-    """`dracut [--force] [--kver <version>]` — build an initramfs."""
+def dracut_argv(kver: str = "", *, force: bool = True, plymouth: bool = False,
+                dracut: str = "dracut") -> list[str]:
+    """`dracut [--force] [--add plymouth] [--kver <version>]` — build an initramfs.
+    ``plymouth`` pulls in the Plymouth splash module (the make-path twin of
+    ``genkernel --plymouth``)."""
     argv = [dracut]
     if force:
         argv.append("--force")
+    if plymouth:
+        argv += ["--add", "plymouth"]
     if kver:
         if not _KVER_RE.match(kver):
             raise ValueError(f"invalid kernel version: {kver!r}")

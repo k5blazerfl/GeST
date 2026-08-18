@@ -30,13 +30,15 @@ class BuildConfig:
     kernel_config: str = ""          # genkernel --kernel-config
     initramfs: bool = True           # make path: run dracut afterwards
     kver: str = ""                   # dracut --kver (make path)
+    plymouth: bool = False           # bake the HeDE Plymouth splash into the initramfs
 
 
 def build_steps(config: BuildConfig) -> list[Step]:
     """The ordered pipeline for ``config`` (raises ValueError on bad inputs)."""
     if config.method == "genkernel":
         return [Step("genkernel all",
-                     commands.genkernel_argv(kernel_config=config.kernel_config))]
+                     commands.genkernel_argv(kernel_config=config.kernel_config,
+                                             plymouth=config.plymouth))]
     if config.method != "make":
         raise ValueError(f"unknown build method: {config.method!r}")
     jobs = config.jobs if config.jobs > 0 else 1
@@ -48,7 +50,8 @@ def build_steps(config: BuildConfig) -> list[Step]:
              commands.make_argv("install", jobs=jobs, directory=config.source_dir)),
     ]
     if config.initramfs:
-        steps.append(Step("build initramfs", commands.dracut_argv(config.kver)))
+        steps.append(Step("build initramfs",
+                          commands.dracut_argv(config.kver, plymouth=config.plymouth)))
     return steps
 
 
