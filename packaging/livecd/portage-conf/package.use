@@ -11,6 +11,15 @@ app-admin/gest qt
 # wlroots stack resolves from the desktop profile defaults.
 dev-qt/qtbase:6 dbus gui opengl wayland widgets
 
+# Trim PySide6 to the modules gest-settings actually imports: QtWidgets, QtCore,
+# QtGui (i.e. core/gui/widgets). GeST's Qt Control Center loads no other Qt
+# module — its D-Bus IPC is Python (dbus-next), not QtDBus — so drop the
+# default-on bindings it never touches. Saves ~4 MB of unused .so bindings off
+# the image. NOTE: opengl is deliberately kept — dev-python/pyside pins its
+# opengl USE to dev-qt/qtbase[opengl=], which the Wayland desktop requires, so
+# the (large) QtOpenGL binding can't be dropped here without breaking the shell.
+dev-python/pyside:6 -concurrent -dbus -network -printsupport -sql -testlib -xml
+
 # firewalld drives nftables with the json/python/xtables backends.
 net-firewall/nftables json python xtables
 
