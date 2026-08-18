@@ -14,6 +14,7 @@ synthesized ``.desktop`` entry's ``Exec`` points at.
     gangway open-file some.rdp  # launch a .rdp file ad-hoc (no saved profile)
     gangway import some.rdp     # save a .rdp file as a named profile
     gangway export work -o work.rdp   # share a saved profile as a .rdp
+    gangway discover 192.168.1.0/24 --add   # find RDP hosts on the LAN, save them
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ from pathlib import Path
 
 from gest.core.customs import identity_store, mime
 from gest.core.customs.desktop import remove_entry, write_entry
-from gest.core.rdp import creds, launcher, rdpfile, run, store
+from gest.core.rdp import creds, discover, launcher, rdpfile, run, store
 from gest.core.rdp import target as rdptarget
 from gest.core.rdp.model import QUALITIES, RdpProfile
 
@@ -64,6 +65,7 @@ class GangwayEnv:
     # Host tool runner (xdg-mime / update-desktop-database) — injectable for tests.
     run_argv: Callable[[list[str]], int] = _default_run
     identity_path: str = ""  # shared Customs identity map; empty → default path
+    port_probe: discover.Probe = discover.probe_port  # injectable for tests
 
 
 def _profile_from_args(args) -> RdpProfile:
@@ -203,6 +205,29 @@ def cmd_export(args, env: GangwayEnv) -> int:
     return 0
 
 
+def cmd_discover(args, env: GangwayEnv) -> int:
+    try:
+        total = discover.host_count(args.cidr)  # cheap — no enumeration yet
+    except ValueError as exc:
+        env.io.err(f"invalid CIDR {args.cidr!r}: {exc}")
+        return 2
+    if total > args.max:
+        env.io.err(f"{args.cidr} covers {total} hosts (> --max {args.max}); "
+                   "narrow the range or raise --max")
+        return 2
+
+    found = discover.scan(args.cidr, port=args.port, probe=env.port_probe, timeout=args.timeout)
+    for host in found:
+        env.io.out(f"{host.host}:{host.port}")
+    if args.add:
+        for host in found:
+            store.save_profile(discover.profile_from_discovered(host), env.store_base)
+        env.io.out(f"added {len(found)} profile(s)")
+    env.io.out(f"# {len(found)} host(s) with port {args.port} open "
+               f"(scanned {total})")
+    return 0
+
+
 def cmd_register_handler(args, env: GangwayEnv) -> int:
     path = write_entry(launcher.handler_desktop_entry(),
                        launcher.HANDLER_DESKTOP_ID, env.applications_dir)
@@ -229,7 +254,7 @@ COMMANDS: dict[str, Callable[..., int]] = {
     "set-password": cmd_set_password, "install": cmd_install, "open": cmd_open,
     "open-file": cmd_open_file, "register-handler": cmd_register_handler,
     "unregister-handler": cmd_unregister_handler,
-    "import": cmd_import, "export": cmd_export,
+    "import": cmd_import, "export": cmd_export, "discover": cmd_discover,
 }
 
 
@@ -280,6 +305,13 @@ def build_parser() -> argparse.ArgumentParser:
     exp = sub.add_parser("export", help="export a saved profile to a .rdp file")
     exp.add_argument("name")
     exp.add_argument("-o", "--output", default="-", help="write the .rdp here (default: stdout)")
+
+    disc = sub.add_parser("discover", help="scan a subnet for hosts with the RDP port open")
+    disc.add_argument("cidr", help="a network range, e.g. 192.168.1.0/24 (or a single IP)")
+    disc.add_argument("--port", type=int, default=discover.RDP_PORT)
+    disc.add_argument("--timeout", type=float, default=0.3, help="per-host probe timeout (s)")
+    disc.add_argument("--max", type=int, default=1024, help="refuse ranges larger than this")
+    disc.add_argument("--add", action="store_true", help="save each found host as a profile")
     return parser
 
 
