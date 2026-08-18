@@ -137,6 +137,21 @@ optional Claude), reusing the Qt frontend and Keychain; a nautical
 Our own Secret-Service provider (a vault + session daemon), rather than adopting
 gnome-keyring/kwallet; Gangway is its first consumer.
 
+### Windows interop — Gangway, Drydock, Flotilla
+Make Windows software a first-class HeDE citizen through three sibling subsystems
+over one shared **Customs** integration layer (launchers, taskbar identity, MIME).
+- **Gangway** — remote Windows over RDP (FreeRDP): profiles, `.rdp`/`rdp://`
+  handler, import/export, discovery, Keychain'd credentials; full-desktop today,
+  seamless RemoteApp/RAIL is Phase 5 (upstream-gated).
+- **Drydock** — local Windows apps via Wine/Proton **barrels**: the recipe
+  toolchain (import → lint → plan → install → materialize), maintenance verbs, and
+  the Gentoo-native prereqs edge.
+- **Flotilla** — a VM manager over libvirt/QEMU/KVM for Windows, Linux, and
+  general guests, with a **Gangway bridge** so a local Windows VM is as seamless as
+  a remote box (see [flotilla.md](design/flotilla.md)). *Design/vision.*
+Drydock (Wine, no VM) and Flotilla+Gangway (a full Windows VM over RDP) are the
+light and heavy answers to "I need Windows."
+
 ### Installer to the finish line (the CLI north star)
 GeSI facilitating a full Gentoo install end-to-end — partitioner, kernel,
 bootloader — with an already-root/no-polkit path for the live-CD. Close the
