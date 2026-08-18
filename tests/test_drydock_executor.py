@@ -9,8 +9,8 @@ from __future__ import annotations
 import pytest
 
 from gest.core.drydock import executor
-from gest.core.drydock.executor import execute
-from gest.core.drydock.interpreter import OP_COMMAND, OP_MANUAL, PlannedOp
+from gest.core.drydock.executor import execute, host_run, render_write
+from gest.core.drydock.interpreter import OP_COMMAND, OP_MANUAL, OP_WRITE, PlannedOp
 
 
 def _cmd(summary="cmd"):
@@ -84,6 +84,52 @@ def test_count_helper():
     report = execute([_cmd("a"), _cmd("b")], _fake_runner(), dry_run=True)
     assert report.count(executor.STATUS_PLANNED) == 2
     assert report.count(executor.STATUS_OK) == 0
+
+
+# ---- OP_WRITE rendering (pure) -----------------------------------------
+def _write(fmt, params, path="/x/out"):
+    return PlannedOp(OP_WRITE, "w", detail={"path": path, "format": fmt, "params": params})
+
+
+def test_render_write_file():
+    path, content, mode = render_write(_write("file", {"content": "hello"}))
+    assert (path, content, mode) == ("/x/out", "hello", "w")
+
+
+def test_render_write_file_append_mode():
+    _, _, mode = render_write(_write("file", {"content": "x", "mode": "append"}))
+    assert mode == "a"
+
+
+def test_render_write_config_ini():
+    op = _write("config", {"section": "Net", "key": "port", "value": "3389"})
+    _, content, mode = render_write(op)
+    assert content == "[Net]\nport=3389\n" and mode == "w"
+
+
+def test_render_write_json():
+    _, content, _ = render_write(_write("json", {"data": {"a": 1}}))
+    assert content == '{\n  "a": 1\n}'
+
+
+# ---- host_run write ops (CI-safe: pure filesystem, no wine) -------------
+def test_host_run_writes_file(tmp_path):
+    target = tmp_path / "sub" / "conf.ini"
+    op = _write("config", {"section": "S", "key": "k", "value": "v"}, str(target))
+    assert host_run(op) == 0
+    assert target.read_text() == "[S]\nk=v\n"  # parent dir created too
+
+
+def test_host_run_chmodx(tmp_path):
+    from gest.core.drydock.interpreter import OP_CHMODX
+    f = tmp_path / "run.sh"
+    f.write_text("#!/bin/sh\n")
+    assert host_run(PlannedOp(OP_CHMODX, "x", detail={"path": str(f)})) == 0
+    assert f.stat().st_mode & 0o111  # executable bits set
+
+
+def test_host_run_unknown_op_fails():
+    assert host_run(PlannedOp("bogus", "x")) == 1
 
 
 # ---- CLI install (needs YAML to read the recipe file) ------------------

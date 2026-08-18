@@ -11,6 +11,7 @@ Roadmap phase 6 — the piece that turns a plan into an installed bottle.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -78,9 +79,30 @@ def execute(plan: list[PlannedOp], runner: Runner, *, dry_run: bool = False,
     return report
 
 
+def render_write(op: PlannedOp) -> tuple[str, str, str]:
+    """Render an ``OP_WRITE`` into ``(path, content, mode)`` — **pure**, so the
+    content is unit-testable; the host runner just opens the path and writes.
+
+    ``write_json`` → pretty JSON of ``data``; ``write_config`` → an INI stanza
+    (``[section]`` + ``key=value``); ``write_file`` → raw ``content`` (``mode``
+    is ``"a"`` when the step asked to append, else ``"w"``)."""
+    path = op.detail["path"]
+    fmt = op.detail.get("format", "file")
+    params = op.detail.get("params", {})
+    if fmt == "json":
+        return path, json.dumps(params.get("data", {}), indent=2), "w"
+    if fmt == "config":
+        section, key = params.get("section", ""), params.get("key", "")
+        body = (f"[{section}]\n" if section else "") + f"{key}={params.get('value', '')}\n"
+        return path, body, "w"
+    mode = "a" if str(params.get("mode", "")).lower() == "append" else "w"
+    return path, str(params.get("content", "")), mode
+
+
 def host_run(op: PlannedOp) -> int:
-    """Default runner — performs an op for real. **Host-only** (touches the
-    filesystem / spawns processes); not exercised in CI. Returns an exit code."""
+    """Default runner — performs an op for real. Command ops spawn processes
+    (**host-only**, not exercised in CI); the filesystem ops touch disk. Returns
+    an exit code."""
     try:
         if op.kind == I.OP_COMMAND:
             return subprocess.run(op.argv, env={**os.environ, **op.env}).returncode
@@ -101,8 +123,13 @@ def host_run(op: PlannedOp) -> int:
             os.makedirs(op.detail["dst"], exist_ok=True)
             shutil.unpack_archive(op.detail["src"], op.detail["dst"])
             return 0
+        if op.kind == I.OP_WRITE:
+            path, content, mode = render_write(op)
+            os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+            with open(path, mode, encoding="utf-8") as handle:
+                handle.write(content)
+            return 0
     except (OSError, shutil.Error, ValueError):
         return 1
-    # OP_WRITE (needs the recipe's content model) and anything else are not yet
-    # executable here — surface rather than silently succeed.
+    # An unrecognised op kind — surface rather than silently succeed.
     return 1
