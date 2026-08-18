@@ -340,6 +340,19 @@ class ProvisionDesktop(FuncStep):
         kw = write_under_root(
             root, desktop.ACCEPT_KEYWORDS, desktop.accept_keywords(ctx.plan.arch))
         _emit(on_progress, f"wrote repos.conf + {kw}")
+        # Replace quickpkg's broken binpkgs for image-mutating packages (e.g.
+        # xkeyboard-config — see desktop.BINPKG_FIXUP_DIR) with the real,
+        # source-built binpkgs the ISO ships. No-op if the image ships no fixups.
+        target_pkgdir = f"{root}{desktop.PKGDIR}"
+        fixups = desktop.binpkg_fixup_pairs(target_pkgdir=target_pkgdir)
+        for src, dst in fixups:
+            if os.path.isdir(dst):
+                shutil.rmtree(dst)
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            shutil.copytree(src, dst)
+        if fixups:
+            _emit(on_progress, f"swapped {len(fixups)} quickpkg binpkg(s) for shipped "
+                  "real binpkgs (image-mutating preinst)")
         ctx.state.mark(self)
 
     async def is_satisfied(self, ctx: InstallContext) -> bool:
@@ -364,7 +377,12 @@ class InstallDesktop(ArgvStep):
     def build(self, ctx: InstallContext) -> list[Step]:
         if not ctx.plan.desktop:
             return []
-        return [Step("emerge the HeDE desktop", desktop.emerge_desktop_argv())]
+        return [
+            # Rebuild PKGDIR/Packages so the index matches the fixup binpkgs
+            # ProvisionDesktop swapped in (else --usepkgonly rejects them).
+            Step("refresh the binpkg index", desktop.regen_binhost_argv()),
+            Step("emerge the HeDE desktop", desktop.emerge_desktop_argv()),
+        ]
 
     async def is_satisfied(self, ctx: InstallContext) -> bool:
         return not ctx.plan.desktop or ctx.state.done(self.key)
