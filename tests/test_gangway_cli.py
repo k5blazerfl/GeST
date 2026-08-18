@@ -145,6 +145,24 @@ def test_open_unknown_profile(tmp_path):
     assert g.err
 
 
+def test_open_dry_run_prints_command_without_launching(tmp_path):
+    g = _env(tmp_path)
+    run_cli(["add", "work", "--host", "pc.corp", "--user", "bob"], env=g.env)
+    g.out.clear()
+    assert run_cli(["open", "work", "--dry-run"], env=g.env) == 0
+    printed = "\n".join(g.out)
+    assert "sdl-freerdp" in printed and "/v:pc.corp:3389" in printed
+    assert g.launched == []  # nothing launched
+    assert "/from-stdin" not in printed  # dry run fetches no password
+
+
+def test_open_file_dry_run(tmp_path):
+    g = _env(tmp_path)
+    assert run_cli(["open-file", "rdp://host.example:3391", "--dry-run"], env=g.env) == 0
+    assert any("/v:host.example:3391" in line for line in g.out)
+    assert g.launched == []
+
+
 # ---- .rdp / rdp:// handler ---------------------------------------------
 def test_open_file_launches_rdp_file_adhoc(tmp_path):
     g = _env(tmp_path)

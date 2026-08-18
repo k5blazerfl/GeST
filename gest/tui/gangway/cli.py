@@ -9,6 +9,7 @@ synthesized ``.desktop`` entry's ``Exec`` points at.
     gangway set-password work
     gangway install work        # add a launcher to helm-menu
     gangway open work           # launch (fetches the password from the keychain)
+    gangway open work --dry-run # print the FreeRDP command instead of launching
     gangway register-handler    # make Gangway the default .rdp / rdp:// handler
     gangway open-file some.rdp  # launch a .rdp file ad-hoc (no saved profile)
     gangway import some.rdp     # save a .rdp file as a named profile
@@ -140,13 +141,23 @@ def cmd_install(args, env: GangwayEnv) -> int:
     return 0
 
 
+def _launch(env: GangwayEnv, profile: RdpProfile, *, dry_run: bool) -> int:
+    """Launch a profile, or (dry run) print the FreeRDP command that would run.
+    Dry run fetches no password, so ``/from-stdin`` is omitted."""
+    share = os.path.expanduser("~") if profile.drive_redirect else None
+    if dry_run:
+        from gest.core.rdp import commands
+        env.io.out(" ".join(commands.build_argv(profile, share_path=share, from_stdin=False)))
+        return 0
+    return env.launch_fn(profile, share_path=share)
+
+
 def cmd_open(args, env: GangwayEnv) -> int:
     profile = store.load_profile(args.name, env.store_base)
     if profile is None:
         env.io.err(f"no such profile {args.name!r}")
         return 1
-    share = os.path.expanduser("~") if profile.drive_redirect else None
-    return env.launch_fn(profile, share_path=share)
+    return _launch(env, profile, dry_run=args.dry_run)
 
 
 def cmd_open_file(args, env: GangwayEnv) -> int:
@@ -158,8 +169,7 @@ def cmd_open_file(args, env: GangwayEnv) -> int:
     if not profile.is_valid():
         env.io.err(f"{args.target}: not a usable RDP target (need a host)")
         return 1
-    share = os.path.expanduser("~") if profile.drive_redirect else None
-    return env.launch_fn(profile, share_path=share)
+    return _launch(env, profile, dry_run=args.dry_run)
 
 
 def cmd_import(args, env: GangwayEnv) -> int:
@@ -242,11 +252,18 @@ def build_parser() -> argparse.ArgumentParser:
     add.add_argument("--printers", action="store_true")
     add.add_argument("--no-nla", action="store_true")
 
-    for name in ("rm", "show", "set-password", "install", "open"):
+    for name in ("rm", "show", "set-password", "install"):
         sub.add_parser(name, help=f"{name} a profile").add_argument("name")
+
+    opn = sub.add_parser("open", help="launch a saved profile")
+    opn.add_argument("name")
+    opn.add_argument("--dry-run", action="store_true",
+                     help="print the FreeRDP command instead of launching")
 
     of = sub.add_parser("open-file", help="launch a .rdp file or rdp:// URI ad-hoc")
     of.add_argument("target", help="a .rdp file path, a file:// URL, or an rdp:// URI")
+    of.add_argument("--dry-run", action="store_true",
+                    help="print the FreeRDP command instead of launching")
     sub.add_parser("register-handler", help="make Gangway the default .rdp/rdp:// handler")
     sub.add_parser("unregister-handler", help="remove the .rdp/rdp:// handler")
 
