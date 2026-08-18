@@ -154,7 +154,12 @@ def validate_plan(
 
 
 def plan_steps(plan: DiskPlan) -> list[Step]:
-    """The ordered pipeline for ``plan``: wipe → partition → settle → mkfs/swap."""
+    """The ordered pipeline for ``plan``: wipe → partition → settle → mkfs/mkswap.
+
+    Swap is **formatted** here (``mkswap``) but not activated — the mount step
+    (:func:`mount.mount_steps`) ``swapon``s it. Doing both double-activates and the
+    second ``swapon`` fails "Device or resource busy".
+    """
     steps: list[Step] = []
     if plan.wipe:
         steps.append(Step(f"wipe signatures on {plan.disk}", commands.wipefs_argv(plan.disk)))
@@ -168,7 +173,6 @@ def plan_steps(plan: DiskPlan) -> list[Step]:
         if fs.kind == "swap":
             steps.append(Step(f"make swap on {fs.device}",
                               commands.mkswap_argv(fs.device, fs.label)))
-            steps.append(Step(f"enable swap on {fs.device}", commands.swapon_argv(fs.device)))
         else:
             steps.append(Step(f"make {fs.kind} on {fs.device}",
                               commands.mkfs_argv(fs.device, fs.kind, fs.label)))
@@ -311,14 +315,11 @@ async def apply_via_backend(
     for phase, fs in enumerate(plan.filesystems, start=1):
         _step(phase)
         if fs.kind == "swap":
+            # Format only — the mount step swapons it; doing both fails "busy".
             ok, out = await backend.make_swap(fs.device, fs.label or "")
             _emit(out)
             if not ok:
                 raise _fail(f"make swap on {fs.device}", out)
-            ok, out = await backend.swapon(fs.device)
-            _emit(out)
-            if not ok:
-                raise _fail(f"enable swap on {fs.device}", out)
         else:
             ok, out = await backend.make_filesystem(fs.device, fs.kind, fs.label or "")
             _emit(out)

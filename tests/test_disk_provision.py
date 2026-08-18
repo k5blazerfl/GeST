@@ -202,12 +202,14 @@ def test_apply_via_backend_calls_partition_then_filesystems():
     assert backend.calls == ["partition", "mkfs:/dev/sda1", "mkfs:/dev/sda2"]
 
 
-def test_apply_via_backend_orders_swap_make_then_on():
+def test_apply_via_backend_formats_swap_but_does_not_swapon():
+    # provision only mkswaps (formats); the mount step swapons it. Doing both
+    # double-activates → the second swapon fails "Device or resource busy".
     plan = DiskPlan(disk="/dev/sda", wipe=False, partitions=[Partition(1, "rest", "8200")],
                     filesystems=[Filesystem("/dev/sda1", "swap", "swp")])
     backend = _FakeBackend()
     asyncio.run(provision.apply_via_backend(plan, backend))
-    assert backend.calls == ["partition", "mkswap:/dev/sda1", "swapon:/dev/sda1"]
+    assert backend.calls == ["partition", "mkswap:/dev/sda1"]     # no swapon here
 
 
 def test_apply_via_backend_raises_on_refusal():
