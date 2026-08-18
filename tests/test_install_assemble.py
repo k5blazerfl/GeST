@@ -32,7 +32,8 @@ def test_assemble_builds_a_full_plan():
     assert plan.disk.disk == "/dev/sda"
     assert plan.mount.root == "/mnt/gentoo"
     assert plan.stage3 is _S3
-    assert plan.kernel.method == "make"
+    assert plan.kernel.method == "genkernel"                    # auto-config source build
+    assert plan.profile == "default/linux/amd64/23.0/systemd"   # systemd default
     assert plan.bootloader.firmware == "uefi"
     assert plan.hostname == "gentoo" and plan.timezone == "UTC"
     assert plan.binary_pref is True
@@ -76,6 +77,20 @@ def test_assemble_seamless_genkernel_bakes_plymouth_into_initramfs():
     plan = assemble_plan(_ok_selection(kernel_method="genkernel"), _S3)
     argv = build_steps(plan.kernel)[0].argv
     assert "--plymouth" in argv and "--plymouth-theme=hede" in argv
+
+
+def test_profile_name_is_systemd_for_systemd_flavors():
+    from gest.core.install.assemble import profile_name
+    assert profile_name("amd64", "systemd") == "default/linux/amd64/23.0/systemd"
+    assert profile_name("amd64", "desktop-systemd") == "default/linux/amd64/23.0/systemd"
+    assert profile_name("amd64", "openrc") == "default/linux/amd64/23.0"
+    assert profile_name("arm64", "systemd") == "default/linux/arm64/23.0/systemd"
+
+
+def test_assemble_profile_follows_the_stage3_flavor():
+    from gest.core.stage3.model import VARIANTS
+    openrc = next(v for v in VARIANTS if v.flavor == "openrc")
+    assert assemble_plan(_ok_selection(variant=openrc), _S3).profile == "default/linux/amd64/23.0"
 
 
 # --- target arch (Apple Silicon / Asahi groundwork) -------------------------

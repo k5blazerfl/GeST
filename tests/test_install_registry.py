@@ -49,12 +49,14 @@ _EXPECTED_LABELS = [
     "Set timezone and locale",
     "Set the hostname",
     "Set the console keymap",
+    "Install kernel sources",
     "Build the kernel",
     "Install the bootloader",
     "Install the m1n1 boot stub",
     "Set the root password",
     "Create the user account",
     "Configure the network",
+    "Enable the HeDE session",
 ]
 
 # The six marker-gated steps (§6) and the one step that opens the chroot.
@@ -66,14 +68,17 @@ _MARKER_KEYS = {
     "Provision the HeDE desktop": "provision_desktop",
     "Install the HeDE desktop": "install_desktop",
     "Clean up desktop binpkgs": "cleanup_desktop_binpkgs",
+    "Install kernel sources": "install_kernel_sources",
     "Build the kernel": "build_kernel",
     "Install the bootloader": "install_bootloader",
     "Install the m1n1 boot stub": "install_boot_stub",
+    "Enable the HeDE session": "enable_desktop_session",
 }
 _CHROOT_LABELS = {
     "Sync the Portage tree", "Select the profile", "Emerge @world",
     "Install the HeDE desktop",
-    "Build the kernel", "Install the bootloader", "Install the m1n1 boot stub",
+    "Install kernel sources", "Build the kernel", "Install the bootloader",
+    "Install the m1n1 boot stub",
     "Set the root password", "Create the user account",
 }
 _PHASE_ORDER = list(Phase)
@@ -121,8 +126,9 @@ def test_registry_phases_are_non_decreasing():
     assert [s.phase for s in reg[:3]] == [Phase.PREPARE_DISK] * 3
     assert [s.phase for s in reg[3:13]] == [Phase.BASE_SYSTEM] * 10  # +HeDE desktop (x3)
     assert [s.phase for s in reg[13:16]] == [Phase.CONFIGURE] * 3
-    assert [s.phase for s in reg[16:19]] == [Phase.KERNEL_BOOT] * 3  # +m1n1 boot stub
-    assert [s.phase for s in reg[19:22]] == [Phase.USERS_NETWORK] * 3
+    assert [s.phase for s in reg[16:20]] == [Phase.KERNEL_BOOT] * 4  # +kernel sources, +m1n1
+    assert [s.phase for s in reg[20:23]] == [Phase.USERS_NETWORK] * 3
+    assert [s.phase for s in reg[23:24]] == [Phase.FINISH]           # +HeDE session
 
 
 def test_registry_chroot_and_opens_chroot_flags():
@@ -139,8 +145,9 @@ def test_registry_marker_keys():
 
 
 def test_tier2_default_empty():
-    # rows 1-18 + the 3 HeDE desktop steps + the arm64-gated m1n1 boot stub (inert on x86)
-    assert len(build_registry(_plan())) == 22
+    # base rows + 3 HeDE desktop steps + kernel-sources + enable-session + the
+    # arm64-gated m1n1 boot stub (inert on x86)
+    assert len(build_registry(_plan())) == 24
 
 
 def test_boot_stub_step_is_arm64_gated():
@@ -217,6 +224,33 @@ def test_provision_desktop_is_a_noop_for_base_gentoo():
     asyncio.run(ProvisionDesktop().run(ctx))
     assert fx.calls == []
     assert asyncio.run(ProvisionDesktop().is_satisfied(ctx)) is True
+
+
+def test_enable_desktop_session_autologins_and_enables_greetd(tmp_path):
+    from gest.core.install.registry import EnableDesktopSession
+    plan = _plan(user=UserSpec("alice", wheel=True))
+    object.__setattr__(plan, "desktop", True)
+    root = str(tmp_path / "g")
+    fx = FakeExecutor()
+    ctx = _ctx(fx, root=root, plan=plan)
+    step = EnableDesktopSession()
+    assert asyncio.run(step.is_satisfied(ctx)) is False
+    asyncio.run(step.run(ctx))
+    cfg = (tmp_path / "g/etc/greetd/config.toml").read_text()
+    assert 'user = "alice"' in cfg and "helm-session" in cfg
+    inner = [c[2:] for c in fx.calls if c[:2] == ["chroot", _ROOT]]
+    assert ["systemctl", "enable", "greetd"] in inner
+    assert ["systemctl", "set-default", "graphical.target"] in inner
+    assert asyncio.run(step.is_satisfied(ctx)) is True
+
+
+def test_enable_desktop_session_is_a_noop_for_base_gentoo():
+    from gest.core.install.registry import EnableDesktopSession
+    fx = FakeExecutor()
+    ctx = _ctx(fx)                                              # desktop=False
+    asyncio.run(EnableDesktopSession().run(ctx))
+    assert fx.calls == []
+    assert asyncio.run(EnableDesktopSession().is_satisfied(ctx)) is True
 
 
 def _plan_tier2(*keys):
@@ -296,8 +330,12 @@ def test_chroot_argv_content_matches_the_plan():
     inner = [c[2:] for c in fx.calls if c[:2] == ["chroot", _ROOT]]
 
     assert ["emerge", "--sync", "--color", "n"] in inner
-    assert ["eselect", "profile", "set", "1"] in inner
+    assert ["eselect", "profile", "set", "default/linux/amd64/23.0/systemd"] in inner
     assert ["emerge", "--getbinpkg", "-uDN", "--color", "n", "@world"] in inner
+    # kernel sources emerged + /usr/src/linux selected before the build
+    assert ["emerge", "--getbinpkg", "--color", "n", "--noreplace",
+            "sys-kernel/gentoo-sources"] in inner
+    assert ["eselect", "kernel", "set", "1"] in inner
     assert ["chpasswd"] in inner                        # password on stdin, not argv
     assert ["useradd", "--create-home", "--shell", "/bin/bash", "alice"] in inner
     assert ["gpasswd", "-a", "alice", "wheel"] in inner

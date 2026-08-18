@@ -72,7 +72,9 @@ class InstallPlan:
     arch: str = "amd64"            # target CPU arch: "amd64" | "arm64" (Asahi).
     # Derived from the chosen stage3 variant; the one arch-aware step (bootloader
     # → GRUB --target) branches on it. Disk/mount/kernel are arch-neutral.
-    profile: int = 1               # eselect profile target number
+    profile: str = "default/linux/amd64/23.0/systemd"   # eselect profile target
+    # (a profile NAME, not a number — systemd for HeDE; assemble derives it per
+    # arch + stage3 flavor via assemble.profile_name)
     root_password: bool = True     # whether to set it (secret prompted at run)
     user: UserSpec | None = None
     network: NetworkSpec = field(default_factory=NetworkSpec)

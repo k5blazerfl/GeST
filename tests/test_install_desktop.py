@@ -3,8 +3,16 @@
 from gest.core.install import desktop
 
 
-def test_desktop_atoms_are_hede_and_plymouth():
-    assert desktop.DESKTOP_ATOMS == ("gui-apps/hede", "sys-boot/plymouth")
+def test_desktop_atoms_are_hede_plymouth_and_greetd():
+    assert desktop.DESKTOP_ATOMS == ("gui-apps/hede", "sys-boot/plymouth", "gui-libs/greetd")
+
+
+def test_greetd_autologin_config_targets_the_user_and_helm_session():
+    cfg = desktop.greetd_autologin_config("alice")
+    assert "[initial_session]" in cfg and "[default_session]" in cfg
+    assert 'user = "alice"' in cfg
+    assert "dbus-run-session helm-session" in cfg
+    assert cfg == desktop.greetd_autologin_config("alice")   # deterministic
 
 
 def test_quickpkg_writes_into_the_given_pkgdir():
