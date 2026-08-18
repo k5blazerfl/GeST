@@ -1,4 +1,4 @@
-# Host validation — Keychain, Gangway, Drydock
+# Host validation — Keychain, Gangway, Drydock, Flotilla
 
 The CI-tested cores of the Keychain + Windows-interop subsystems are all pure; the
 **live paths need real hardware** (a session D-Bus + a Secret Service consumer, an
@@ -141,11 +141,11 @@ gangway discover 192.168.1.0/24 --add   # scan the LAN for open-RDP hosts; save 
 
 ## 3. Drydock — local Windows apps via Wine/Proton
 
-Prereq (report it, then install): `drydock prereqs <bottle>` prints the atoms.
-- **wine bottle:** `emerge app-emulation/wine-vanilla` (+ `ABI_X86="32"` / multilib
+Prereq (report it, then install): `drydock prereqs <barrel>` prints the atoms.
+- **wine barrel:** `emerge app-emulation/wine-vanilla` (+ `ABI_X86="32"` / multilib
   for `--arch win32`); `app-emulation/dxvk`, `app-emulation/vkd3d-proton` if
   toggled; `app-arch/icoutils` for icons.
-- **proton bottle:** enable the **GURU** overlay, `emerge games-util/umu-launcher`.
+- **proton barrel:** enable the **GURU** overlay, `emerge games-util/umu-launcher`.
 - **game mode:** `gui-wm/gamescope`, `games-util/gamemode`,
   `games-util/mangohud[mangoapp]`.
 
@@ -155,7 +155,7 @@ Prereq (report it, then install): `drydock prereqs <bottle>` prints the atoms.
 > through the real host — validated live here, not in CI. Still locked: running
 > arbitrary GUI installers unattended, and the USE/package *apply*.
 
-### 3a. Wine bottle
+### 3a. Wine barrel
 ```sh
 drydock create office --runner wine --arch win64
 drydock prereqs office                               # verify the atom list looks right
@@ -177,7 +177,7 @@ drydock scan office                                  # adopt wine's Start-menu l
       launchers (`drydock-office-*`).
 - [ ] The running app has the right **taskbar icon/title** (StartupWMClass).
 
-### 3b. Proton bottle + game mode
+### 3b. Proton barrel + game mode
 ```sh
 drydock create game --runner proton --version GE-Proton9-27
 drydock register game <game.exe> --name "My Game" --game --gamescope --fsr --gamemode --mangohud
@@ -198,9 +198,9 @@ drydock lint "$R"                                    # -> ok, no issues
 drydock plan "$R"                                    # dry run: shows `wineboot -i`
 drydock install "$R" --run                           # REAL: creates the WINEPREFIX
 ls ~/.local/share/hede/drydock/notepad-test/prefix/drive_c/windows   # prefix exists
-drydock materialize "$R"                             # recipe -> a managed bottle
+drydock materialize "$R"                             # recipe -> a managed barrel
 drydock run notepad-test notepad                     # launches Wine Notepad (a window!)
-drydock export-recipe notepad-test -o /tmp/out.recipe   # bottle -> recipe (round-trip)
+drydock export-recipe notepad-test -o /tmp/out.recipe   # barrel -> recipe (round-trip)
 ```
 - [ ] `install --run` runs `wineboot -i` and a real `WINEPREFIX` appears; the
       summary reports the create_prefix op `ok` (a `write`/`extract`-bearing recipe
@@ -208,12 +208,13 @@ drydock export-recipe notepad-test -o /tmp/out.recipe   # bottle -> recipe (roun
 - [ ] `install --run` **refuses** a recipe with lint errors unless `--no-lint`.
 - [ ] `drydock run notepad-test notepad` opens a **Notepad window** — proving the
       env+argv launch pipeline end-to-end.
-- [ ] `materialize` then `drydock list`/`show` shows the bottle + program, with the
+- [ ] `materialize` then `drydock list`/`show` shows the barrel + program, with the
       Customs launcher + identity wired (per §4).
-- [ ] **Known seam (report, don't fail):** `install` (recipe's prefix path) and
-      `materialize` (bottle's prefix path) don't yet share a prefix automatically —
-      point them at the same `--prefix` / bottle prefix if you want one run to feed
-      the other. Fully wiring this is a follow-up.
+- [ ] **One-shot (seam closed):** `drydock install-recipe "$R" --run` does
+      materialize + install against the **barrel's own prefix** in one command, so
+      `install` and later `drydock run` share one `WINEPREFIX`. (The standalone
+      `install`/`materialize` still compute prefixes separately — prefer
+      `install-recipe`.)
 
 ---
 
@@ -231,21 +232,57 @@ drydock export-recipe notepad-test -o /tmp/out.recipe   # bottle -> recipe (roun
 - [ ] Drydock launchers get a **real icon** — `drydock register` runs
       `wrestool`+`icotool` to drop `~/.local/share/icons/hicolor/48x48/apps/drydock-*.png`.
 - [ ] `rm` cleans up: `gangway rm` / `drydock rm` (and `unregister-handler`) remove
-      the profile/bottle, their `.desktop` launchers, **and** their identity-map
+      the profile/barrel, their `.desktop` launchers, **and** their identity-map
       entries.
 
 ---
 
-## 5. Not expected yet (don't file these as failures)
+## 5. Flotilla — VMs (vessels) over libvirt/QEMU
+
+Prereq: `flotilla prereqs <vessel>` prints the atoms — `app-emulation/{qemu,libvirt}`,
+`sys-firmware/edk2-ovmf` (UEFI), `app-crypt/swtpm` (TPM/Win11), `app-emulation/
+virt-viewer`. Enable + start **`libvirtd`** and add your user to the **`libvirt`**
++ **`kvm`** groups. Uses `qemu:///session` by default.
+
+### 5a. Turnkey Linux vessel
+```sh
+flotilla images                                      # the media catalog
+flotilla launch debian --os linux --iso debian       # fetch → allocate → define → boot → console
+```
+- [ ] The ISO is fetched to `~/.cache/flotilla/images/`, a `disk.qcow2` is
+      allocated, `virsh define` registers it, `virsh start` boots it, and
+      **virt-viewer opens the installer console**.
+- [ ] `flotilla list`/`show` reflect the vessel; `flotilla stop`/`start` work;
+      `flotilla xml debian` matches what libvirt defined (`virsh dumpxml`).
+
+### 5b. Windows vessel + the Gangway bridge (the flagship)
+```sh
+flotilla fetch win11                                 # via mido (Microsoft ISO)
+flotilla launch win11 --os windows --iso ~/.cache/flotilla/images/Win11*.iso
+#   → UEFI + Secure Boot + TPM 2.0 + virtio-win auto-attached; install Windows,
+#     enable Remote Desktop in the guest (manual until unattend.xml automation)
+flotilla address win11                               # the guest IP (needs the guest agent)
+flotilla connect win11 --rdp                         # provisions a Gangway profile → seamless RDP
+```
+- [ ] The guest boots the Windows installer with virtio storage visible (virtio-win).
+- [ ] `flotilla address` returns the guest IP (qemu-guest-agent installed).
+- [ ] `flotilla connect --rdp` creates a Gangway profile at that IP and opens
+      **FreeRDP** — clipboard/drive/audio redirection, a real taskbar identity —
+      i.e. the **local VM is as seamless as a remote box**.
+- [ ] `flotilla connect --console` still opens the SPICE console (both modes are
+      first-class).
+
+---
+
+## 6. Not expected yet (don't file these as failures)
 
 - Auto-unlock at login (PAM) and TPM2-sealed unlock — **Keychain Phase 4/5**.
 - Secret Service **prompts** and per-object locking — the daemon runs unlocked.
 - Qt management modules for any subsystem — **gated on the Qt frontend**.
 - Drydock **unattended GUI installers** and the **USE/package apply** — not yet
   built (prefix creation + filesystem install steps now *are*, via §3c).
-- Drydock `install`↔`materialize` **shared-prefix wiring** — a known seam (§3c).
-- The **Lutris import** bridge (`drydock import-lutris`) — a separate branch; not
-  in this checklist yet.
 - Gangway **seamless RemoteApp** (single-window RAIL) and **per-profile** taskbar
   identity — **Phase 5** (see the Gangway Phase-5 scope design doc), experimental
   and upstream-gated.
+- Flotilla **guest-side RDP-enable automation** (`unattend.xml`), **Customs
+  launchers/jump-lists** for vessels, and the **Qt module** — later Flotilla phases.

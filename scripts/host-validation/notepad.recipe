@@ -7,7 +7,7 @@ app:
   id: notepad-test
   categories:
   - Application
-bottle:
+barrel:
   runner: wine
   arch: win64
   verbs: []
