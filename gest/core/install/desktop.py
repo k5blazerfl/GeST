@@ -1,0 +1,75 @@
+"""Desktop provisioning — the pure command/config builders for installing HeDE
+onto the target (see ``docs/design/desktop-provisioning.md``).
+
+The GeSI live image *is* a HeDE system, so "install the desktop" is: repackage
+the running system's packages into binpkgs (``quickpkg @installed``), seed the
+Amphitheater overlay + a git-backed ``repos.conf`` for day-2 updates, then
+``emerge --usepkgonly`` the desktop into the target — offline, no recompile. The
+registry wires these; every path/atom is built here so it is validated in one
+place and unit-tested without a real system.
+"""
+
+from __future__ import annotations
+
+# The desktop meta-package (its RDEPEND pulls labwc/foot/gest/wireplumber/…) and
+# the boot-splash engine. gui-apps/hede also ships the GRUB + Plymouth "hede"
+# themes the seamless steps stage, so together these satisfy every seamless dep.
+DESKTOP_ATOMS = ("gui-apps/hede", "sys-boot/plymouth")
+
+# The published overlay carrying gest + hede (+ hiedi/pyrrha); present in the live
+# image and git-syncable, so the installed system can update on its own terms.
+OVERLAY_NAME = "amphitheater"
+OVERLAY_LOCATION = "/var/db/repos/amphitheater"
+OVERLAY_SYNC_URI = "https://github.com/k5blazerfl/Amphitheater"
+
+# Portage's default binary-package dir. quickpkg writes here (via PKGDIR); the
+# target's copy is transient — populated for the install, removed afterward.
+PKGDIR = "/var/cache/binpkgs"
+
+
+def repos_conf() -> str:
+    """The target's ``repos.conf/amphitheater.conf`` — a git-backed overlay entry.
+
+    ``auto-sync = no``: the install seeds the overlay from the live image, and the
+    installed system re-syncs from GitHub only when the user runs ``emerge --sync``.
+    """
+    return (
+        f"[{OVERLAY_NAME}]\n"
+        f"location = {OVERLAY_LOCATION}\n"
+        "sync-type = git\n"
+        f"sync-uri = {OVERLAY_SYNC_URI}\n"
+        "auto-sync = no\n"
+    )
+
+
+def quickpkg_argv(*, pkgdir: str) -> list[str]:
+    """Repackage every installed package on the *live* env into ``pkgdir``.
+
+    ``@installed`` covers the full ``hede`` dependency closure, so the later
+    ``--usepkgonly`` emerge never falls back to compiling. ``--include-config=y``
+    bundles config files (no CONFIG_PROTECT surprises). ``pkgdir`` is normally the
+    target's ``/var/cache/binpkgs`` (prefixed with the install root), so the
+    binpkgs land where the chroot emerge reads them.
+    """
+    return ["env", f"PKGDIR={pkgdir}", "quickpkg", "--include-config=y", "@installed"]
+
+
+def seed_overlay_argv(*, root: str = "") -> list[str]:
+    """Copy the live image's Amphitheater overlay into the target (``root`` prefix)."""
+    return ["cp", "-a", OVERLAY_LOCATION, f"{root}{OVERLAY_LOCATION}"]
+
+
+def overlay_parent_argv(*, root: str = "") -> list[str]:
+    """Ensure the target's ``/var/db/repos`` exists before seeding the overlay."""
+    return ["mkdir", "-p", f"{root}/var/db/repos"]
+
+
+def emerge_desktop_argv(*, atoms: tuple[str, ...] = DESKTOP_ATOMS) -> list[str]:
+    """``emerge --usepkgonly`` the desktop: binary-only, so the install is offline,
+    needs no ebuild tree, and never recompiles. Recorded in @world (no --oneshot)."""
+    return ["emerge", "--usepkgonly", "--color", "n", *atoms]
+
+
+def cleanup_pkgdir_argv(*, root: str = "") -> list[str]:
+    """Remove the transient ``@installed`` binpkgs from the target after the emerge."""
+    return ["rm", "-rf", f"{root}{PKGDIR}"]

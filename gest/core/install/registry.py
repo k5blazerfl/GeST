@@ -38,9 +38,10 @@ from gest.core.disk import provision
 from gest.core.disk import reader as disk_reader
 from gest.core.eselect.commands import set_argv
 from gest.core.exec.runner import OnProgress
-from gest.core.exec.steps import Step
+from gest.core.exec.steps import Step, run_steps
 from gest.core.firewall import nft as fw_nft
 from gest.core.firewall.model import FirewallPolicy
+from gest.core.install import desktop
 from gest.core.install.context import InstallContext
 from gest.core.install.plan import InstallPlan, Phase
 from gest.core.install.step import ArgvStep, FuncStep, InstallStep
@@ -294,6 +295,88 @@ class EmergeWorld(ArgvStep):
 
     async def is_satisfied(self, ctx: InstallContext) -> bool:
         return ctx.state.done(self.key)
+
+
+class ProvisionDesktop(FuncStep):
+    """Make the HeDE desktop installable in the target, offline (``plan.desktop``).
+
+    The GeSI live image *is* a HeDE system, so this runs host-side (no chroot):
+    ``quickpkg @installed`` repackages every installed package straight into the
+    target's pkgdir (so ``InstallDesktop``'s ``--usepkgonly`` never compiles), then
+    seeds the Amphitheater overlay + a git-backed ``repos.conf`` for day-2 updates.
+    See ``desktop.py`` / ``docs/design/desktop-provisioning.md``. No-op for base
+    Gentoo.
+    """
+
+    label = "Provision the HeDE desktop"
+    phase = Phase.BASE_SYSTEM
+    target_aware = True          # writes into the target root from the live host
+    key = "provision_desktop"
+
+    async def run(self, ctx: InstallContext, on_progress: OnProgress | None = None) -> None:
+        if not ctx.plan.desktop:
+            return
+        root = ctx.root
+        steps = [
+            Step("repackage the live system into binpkgs",
+                 desktop.quickpkg_argv(pkgdir=f"{root}{desktop.PKGDIR}")),
+            Step("prepare the overlay dir", desktop.overlay_parent_argv(root=root)),
+            Step("seed the Amphitheater overlay", desktop.seed_overlay_argv(root=root)),
+        ]
+        await run_steps(steps, ctx.host, on_progress=on_progress)
+        path = write_under_root(
+            root, "/etc/portage/repos.conf/amphitheater.conf", desktop.repos_conf())
+        _emit(on_progress, f"wrote {path}")
+        ctx.state.mark(self)
+
+    async def is_satisfied(self, ctx: InstallContext) -> bool:
+        return not ctx.plan.desktop or ctx.state.done(self.key)
+
+
+class InstallDesktop(ArgvStep):
+    """Emerge the HeDE desktop into the target (``plan.desktop``); recorded in @world.
+
+    A no-op for a base-Gentoo install (``desktop=False``). Runs after
+    ``ProvisionDesktop`` (which planted the binpkgs + overlay) and before the
+    kernel/boot phase, so plymouth + the HeDE theme are present when a seamless
+    build bakes the splash (``genkernel --plymouth``) and stages the GRUB theme.
+    ``--usepkgonly`` installs from the quickpkg'd binpkgs — offline, no recompile.
+    """
+
+    label = "Install the HeDE desktop"
+    phase = Phase.BASE_SYSTEM
+    chroot = True
+    key = "install_desktop"
+
+    def build(self, ctx: InstallContext) -> list[Step]:
+        if not ctx.plan.desktop:
+            return []
+        return [Step("emerge the HeDE desktop", desktop.emerge_desktop_argv())]
+
+    async def is_satisfied(self, ctx: InstallContext) -> bool:
+        return not ctx.plan.desktop or ctx.state.done(self.key)
+
+
+class CleanupDesktopBinpkgs(ArgvStep):
+    """Remove the transient ``@installed`` binpkgs from the target (``plan.desktop``).
+
+    Host-side: ``ProvisionDesktop`` wrote a few GB of binpkgs into the target's
+    pkgdir purely so ``InstallDesktop`` could install offline; drop them so a fresh
+    install isn't bloated.
+    """
+
+    label = "Clean up desktop binpkgs"
+    phase = Phase.BASE_SYSTEM
+    target_aware = True
+    key = "cleanup_desktop_binpkgs"
+
+    def build(self, ctx: InstallContext) -> list[Step]:
+        if not ctx.plan.desktop:
+            return []
+        return [Step("remove transient binpkgs", desktop.cleanup_pkgdir_argv(root=ctx.root))]
+
+    async def is_satisfied(self, ctx: InstallContext) -> bool:
+        return not ctx.plan.desktop or ctx.state.done(self.key)
 
 
 # --- phase 3: configure -----------------------------------------------------
@@ -708,6 +791,10 @@ def build_registry(plan: InstallPlan, *, root_secret: Secret | None = None) -> l
         SyncTree(),
         SetProfile(),
         EmergeWorld(),
+        # HeDE desktop (no-op for base Gentoo): provision binpkgs+overlay, emerge, clean up
+        ProvisionDesktop(),
+        InstallDesktop(),
+        CleanupDesktopBinpkgs(),
         SetTimezoneLocale(),
         SetHostname(),
         SetConsole(),
@@ -735,6 +822,12 @@ def build_minimal_registry(
     optional user, network and tier-2 steps; those layer back in via
     :func:`build_registry`. The installed system boots to a root login; the rest
     is configured on first boot or a fuller run.
+
+    It also drops the HeDE desktop step, so callers must pass a *base* plan
+    (``desktop=False`` → ``seamless`` gated off): a seamless plan here would set
+    ``kernel.plymouth`` without the desktop having installed plymouth, and the
+    ``genkernel --plymouth`` build would fail. ``assemble_plan`` couples the two,
+    so an assembled base-Gentoo plan is safe.
     """
     return [
         Partition(),

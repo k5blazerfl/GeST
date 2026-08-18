@@ -46,16 +46,29 @@ def test_assemble_carries_tier2_selection():
     assert plan.tier2 == frozenset({"sshd", "sysctl"})
 
 
-def test_assemble_seamless_drives_both_initramfs_splash_and_grub_theme():
-    # Seamless boot (default on) bakes the Plymouth splash into the target initramfs
-    # AND applies the GRUB Harbor theme — one selection, both halves of the look.
+def test_assemble_defaults_to_a_seamless_hede_desktop():
+    # GeSI's default: install the HeDE desktop, and (since that plants plymouth +
+    # the theme) seamless boot takes effect — both halves of the look on.
     plan = assemble_plan(_ok_selection(), _S3)
+    assert plan.desktop is True
     assert plan.kernel.plymouth is True
     assert plan.bootloader.seamless is True
-    # ...and can be opted out of, leaving a plain boot.
-    off = assemble_plan(_ok_selection(seamless=False), _S3)
-    assert off.kernel.plymouth is False
-    assert off.bootloader.seamless is False
+
+
+def test_assemble_base_gentoo_gates_seamless_off():
+    # A base-Gentoo install (no desktop) can't seamless-boot — plymouth/theme aren't
+    # there — so seamless is forced off even if requested, rather than a broken install.
+    plan = assemble_plan(_ok_selection(install_desktop=False, seamless=True), _S3)
+    assert plan.desktop is False
+    assert plan.kernel.plymouth is False
+    assert plan.bootloader.seamless is False
+
+
+def test_assemble_desktop_with_seamless_off_is_a_plain_boot():
+    plan = assemble_plan(_ok_selection(seamless=False), _S3)
+    assert plan.desktop is True
+    assert plan.kernel.plymouth is False
+    assert plan.bootloader.seamless is False
 
 
 def test_assemble_seamless_genkernel_bakes_plymouth_into_initramfs():
