@@ -8,6 +8,7 @@ is the stub the synthesized ``.desktop`` Exec points at.
     drydock register office /prefix/excel.exe --name Excel --gamescope --fsr
     drydock scan office            # adopt wine's auto-generated launchers
     drydock materialize game.recipe   # create a bottle from a helm.recipe
+    drydock plan game.recipe          # show the compiled install plan (dry run)
     drydock prereqs office
     drydock run office excel
 """
@@ -262,10 +263,47 @@ def cmd_materialize(args, env: DrydockEnv) -> int:
     return 0
 
 
+def cmd_plan(args, env: DrydockEnv) -> int:
+    from pathlib import Path
+
+    from gest.core.drydock import interpreter, recipe_store
+
+    try:
+        recipe = recipe_store.load(args.recipe)
+    except OSError as exc:
+        env.io.err(f"cannot read {args.recipe}: {exc}")
+        return 1
+    except (RuntimeError, ValueError) as exc:
+        env.io.err(str(exc))
+        return 1
+
+    app = bottles.slug(recipe.app_id or recipe.app_name or "app")
+    base = Path("~/.local/share/hede/drydock").expanduser() / app
+    prefix = args.prefix or str(base / "prefix")
+    gamedir = args.gamedir or str(Path(prefix) / "drive_c" / app)
+    cache = args.cache or str(Path("~/.cache/drydock").expanduser() / app)
+    ctx = interpreter.PlanContext(prefix=prefix, gamedir=gamedir, cache=cache,
+                                  arch=recipe.bottle.arch, runner=recipe.bottle.runner)
+
+    ops = interpreter.plan(recipe, ctx)
+    if not ops:
+        env.io.out("(recipe has no install steps)")
+        return 0
+    for i, op in enumerate(ops, 1):
+        env.io.out(f"{i:>2}. [{op.kind}] {op.summary}")
+        if op.kind == interpreter.OP_COMMAND:
+            env.io.out(f"      $ {' '.join(op.argv)}")
+    cmds = sum(1 for op in ops if op.kind == interpreter.OP_COMMAND)
+    manual = sum(1 for op in ops if op.kind == interpreter.OP_MANUAL)
+    env.io.out(f"# {len(ops)} op(s): {cmds} command(s), {manual} manual "
+               "— not executed (dry run; needs host ops)")
+    return 0
+
+
 COMMANDS: dict[str, Callable[..., int]] = {
     "create": cmd_create, "list": cmd_list, "show": cmd_show, "rm": cmd_rm,
     "register": cmd_register, "scan": cmd_scan, "prereqs": cmd_prereqs, "run": cmd_run,
-    "materialize": cmd_materialize,
+    "materialize": cmd_materialize, "plan": cmd_plan,
 }
 
 
@@ -307,6 +345,12 @@ def build_parser() -> argparse.ArgumentParser:
     mat.add_argument("recipe", help="path to a helm.recipe YAML file")
     mat.add_argument("--name", default="", help="override the bottle id/name")
     mat.add_argument("--force", action="store_true", help="overwrite an existing bottle")
+
+    pl = sub.add_parser("plan", help="show the install plan compiled from a helm.recipe")
+    pl.add_argument("recipe", help="path to a helm.recipe YAML file")
+    pl.add_argument("--prefix", default="", help="WINEPREFIX ($WINEPREFIX)")
+    pl.add_argument("--gamedir", default="", help="install root ($GAMEDIR)")
+    pl.add_argument("--cache", default="", help="download cache ($CACHE)")
     return parser
 
 
