@@ -50,6 +50,29 @@ OVERLAY_SYNC_URI = "https://github.com/k5blazerfl/Amphitheater"
 PKGDIR = "/var/cache/binpkgs"
 
 
+ACCEPT_KEYWORDS = "/etc/portage/package.accept_keywords/gest-hede"
+
+
+# The HeDE desktop closure is ~arch (testing). This mirrors the live CD's build
+# keyword list (packaging/livecd/portage-conf/package.accept_keywords) — a
+# DELIBERATELY targeted set, NOT a blanket `*/* ~arch` (a global unstable keyword
+# drags the toolchain, notably perl, ahead of the stable stage3 and slot-conflicts).
+# Keep in sync with that file.
+_DESKTOP_KEYWORDED = (
+    "app-admin/gest", "gui-apps/hede", "gui-libs/greetd",
+    "dev-libs/wayland", "dev-util/glslang", "dev-util/spirv-tools",
+    "media-libs/vulkan-loader", "gui-wm/labwc",
+    "dev-util/wayland-scanner", "dev-util/vulkan-headers", "dev-util/spirv-headers",
+)
+
+
+def accept_keywords(arch: str) -> str:
+    """The target's ``package.accept_keywords`` for the HeDE desktop: accept
+    ``~<arch>`` for the (curated) desktop closure so ``--usepkgonly`` can install
+    the quickpkg'd binpkgs (else it masks them: "masked by: ~amd64 keyword")."""
+    return "".join(f"{atom} ~{arch}\n" for atom in _DESKTOP_KEYWORDED)
+
+
 def repos_conf() -> str:
     """The target's ``repos.conf/amphitheater.conf`` — a git-backed overlay entry.
 

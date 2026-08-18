@@ -334,9 +334,12 @@ class ProvisionDesktop(FuncStep):
             _emit(on_progress, f"{desktop.OVERLAY_LOCATION} not present — skipping the "
                   "overlay-content seed (repos.conf still written for day-2 sync)")
         await run_steps(steps, ctx.host, on_progress=on_progress)
-        path = write_under_root(
+        write_under_root(
             root, "/etc/portage/repos.conf/amphitheater.conf", desktop.repos_conf())
-        _emit(on_progress, f"wrote {path}")
+        # Accept the ~arch keyword for gest/hede so --usepkgonly can install them.
+        kw = write_under_root(
+            root, desktop.ACCEPT_KEYWORDS, desktop.accept_keywords(ctx.plan.arch))
+        _emit(on_progress, f"wrote repos.conf + {kw}")
         ctx.state.mark(self)
 
     async def is_satisfied(self, ctx: InstallContext) -> bool:

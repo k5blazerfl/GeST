@@ -222,6 +222,8 @@ def test_provision_desktop_quickpkgs_and_seeds_overlay_when_present(tmp_path, mo
     assert not any(c[:1] == ["chroot"] for c in fx.calls)       # host-side, never chrooted
     conf = tmp_path / "gentoo/etc/portage/repos.conf/amphitheater.conf"
     assert "sync-uri = https://github.com/k5blazerfl/Amphitheater" in conf.read_text()
+    kw = tmp_path / "gentoo/etc/portage/package.accept_keywords/gest-hede"
+    assert "gui-apps/hede ~amd64" in kw.read_text()             # ~arch for --usepkgonly
     assert asyncio.run(step.is_satisfied(ctx)) is True          # marked done
 
 
@@ -238,6 +240,8 @@ def test_provision_desktop_skips_overlay_seed_when_absent(tmp_path, monkeypatch)
     assert not any(c[:1] == ["cp"] for c in fx.calls)           # no overlay copy attempted
     conf = tmp_path / "gentoo/etc/portage/repos.conf/amphitheater.conf"
     assert "sync-uri = https://github.com/k5blazerfl/Amphitheater" in conf.read_text()
+    kw = tmp_path / "gentoo/etc/portage/package.accept_keywords/gest-hede"
+    assert "gui-apps/hede ~amd64" in kw.read_text()             # keywords written regardless
 
 
 def test_provision_desktop_is_a_noop_for_base_gentoo():
