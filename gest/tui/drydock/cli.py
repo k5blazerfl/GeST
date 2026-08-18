@@ -9,7 +9,7 @@ is the stub the synthesized ``.desktop`` Exec points at.
     drydock scan office            # adopt wine's auto-generated launchers
     drydock materialize game.recipe   # create a bottle from a helm.recipe
     drydock plan game.recipe          # show the compiled install plan (dry run)
-    drydock install game.recipe --run # execute the install plan on this host
+    drydock install-recipe game.recipe --run   # create the bottle AND run its install
     drydock prereqs office
     drydock run office excel
 """
@@ -272,9 +272,84 @@ def cmd_materialize(args, env: DrydockEnv) -> int:
         _refresh_db(env)
     env.io.out(f"materialized bottle {bottle.id} with {len(bottle.programs)} program(s)")
     if recipe.steps:
-        env.io.out(f"note: {len(recipe.steps)} install step(s) not run "
-                   "(needs host ops — roadmap phase 4/6)")
+        env.io.out(f"note: {len(recipe.steps)} install step(s) not run — use "
+                   "`drydock install-recipe` to create the bottle AND run the install")
     return 0
+
+
+def cmd_install_recipe(args, env: DrydockEnv) -> int:
+    """One shot: materialize the bottle, then run its install plan **against that
+    bottle's own prefix** — so the install and every later launch share one
+    WINEPREFIX (closes the install↔materialize seam)."""
+    from pathlib import Path
+
+    from gest.core.drydock import (
+        executor,
+        interpreter,
+        materialize,
+        recipe_lint,
+        recipe_store,
+    )
+
+    try:
+        recipe = recipe_store.load(args.recipe)
+    except OSError as exc:
+        env.io.err(f"cannot read {args.recipe}: {exc}")
+        return 1
+    except (RuntimeError, ValueError) as exc:
+        env.io.err(str(exc))
+        return 1
+
+    if not args.no_lint:
+        issues = recipe_lint.lint(recipe)
+        for issue in issues:
+            env.io.err(f"{issue.level}: {issue.message}")
+        if recipe_lint.has_errors(issues):
+            errors = sum(1 for i in issues if i.level == recipe_lint.ERROR)
+            env.io.err(f"refusing to install — {errors} lint error(s) (use --no-lint to override)")
+            return 1
+
+    bottle = materialize.bottle_from_recipe(recipe, args.name or "")
+    if not bottle.is_valid():
+        env.io.err("recipe has an invalid bottle (check runner/arch)")
+        return 2
+    if bottles.load_bottle(bottle.id, env.store_base) is not None and not args.force:
+        env.io.err(f"bottle {bottle.id!r} already exists (use --force to overwrite)")
+        return 1
+
+    # Save first so save_bottle pins the bottle's prefix, then plan the install
+    # AGAINST that prefix — install and later launches now share one WINEPREFIX.
+    bottles.save_bottle(bottle, env.store_base)
+    for program in bottle.programs:
+        _write_launcher(env, bottle, program)
+        _wire_customs(env, bottle, program)
+    if bottle.programs:
+        _refresh_db(env)
+    env.io.out(f"materialized bottle {bottle.id} "
+               f"({len(bottle.programs)} program(s)) at {bottle.prefix}")
+
+    ctx = interpreter.PlanContext(
+        prefix=bottle.prefix,
+        gamedir=str(Path(bottle.prefix) / "drive_c" / bottle.id),
+        cache=args.cache or str(Path("~/.cache/drydock").expanduser() / bottle.id),
+        arch=bottle.arch, runner=bottle.runner)
+    ops = interpreter.plan(recipe, ctx)
+    if not ops:
+        env.io.out("(recipe has no install steps — bottle is ready)")
+        return 0
+
+    dry = not args.run
+    runner = env.step_runner or executor.host_run
+    report = executor.execute(ops, runner, dry_run=dry)
+    for i, outcome in enumerate(report.outcomes, 1):
+        env.io.out(f"{i:>2}. [{outcome.status}] {outcome.op.summary}")
+    tail = "" if args.run else " (dry run — pass --run to execute the install on a host)"
+    env.io.out(f"# install: {report.count(executor.STATUS_OK)} ok, "
+               f"{report.count(executor.STATUS_FAILED)} failed, "
+               f"{report.count(executor.STATUS_MANUAL)} manual, "
+               f"{report.count(executor.STATUS_PLANNED)} planned, "
+               f"{report.count(executor.STATUS_SKIPPED)} skipped{tail}")
+    return 0 if report.ok else 1
 
 
 def cmd_export_recipe(args, env: DrydockEnv) -> int:
@@ -405,6 +480,7 @@ COMMANDS: dict[str, Callable[..., int]] = {
     "create": cmd_create, "list": cmd_list, "show": cmd_show, "rm": cmd_rm,
     "register": cmd_register, "scan": cmd_scan, "prereqs": cmd_prereqs, "run": cmd_run,
     "materialize": cmd_materialize, "plan": cmd_plan, "install": cmd_install,
+    "install-recipe": cmd_install_recipe,
     "lint": cmd_lint, "export-recipe": cmd_export_recipe,
 }
 
@@ -461,6 +537,16 @@ def build_parser() -> argparse.ArgumentParser:
                       help="execute the plan for real on this host (needs wine, etc.)")
     inst.add_argument("--no-lint", action="store_true",
                       help="skip the recipe lint check (install even with errors)")
+
+    insr = sub.add_parser("install-recipe",
+                          help="one shot: create the bottle from a recipe AND run its install")
+    insr.add_argument("recipe", help="path to a helm.recipe YAML file")
+    insr.add_argument("--name", default="", help="override the bottle id/name")
+    insr.add_argument("--force", action="store_true", help="overwrite an existing bottle")
+    insr.add_argument("--run", action="store_true",
+                      help="execute the install for real on this host (needs wine, etc.)")
+    insr.add_argument("--no-lint", action="store_true", help="skip the recipe lint check")
+    insr.add_argument("--cache", default="", help="download cache ($CACHE)")
 
     lint = sub.add_parser("lint", help="validate a helm.recipe (structure + references)")
     lint.add_argument("recipe", help="path to a helm.recipe YAML file")
