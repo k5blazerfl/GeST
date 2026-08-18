@@ -22,6 +22,12 @@ HANDLER_DESKTOP_ID = "gangway-rdp-handler"
 # FreeRDP's SDL client presents this window class; identity-matching (Customs)
 # folds in variants like "FreeRDP".
 FREERDP_WM_CLASS = "sdl-freerdp"
+# All the window classes / Wayland app-ids a FreeRDP session may present. These
+# are shared across every full-desktop profile (they can't be told apart until
+# per-app RAIL windows land — see docs/design/gangway-phase5-scope.md), so they
+# map to the *handler's* stable identity, giving any RDP window a "Remote Desktop"
+# icon/title in the taskbar instead of a raw "freerdp" blob.
+FREERDP_WM_CLASSES = [FREERDP_WM_CLASS, "freerdp", "org.freerdp.client"]
 
 
 def open_argv(profile_name: str) -> list[str]:

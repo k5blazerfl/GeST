@@ -26,7 +26,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from gest.core.customs import mime
+from gest.core.customs import identity_store, mime
 from gest.core.customs.desktop import remove_entry, write_entry
 from gest.core.rdp import creds, launcher, rdpfile, run, store
 from gest.core.rdp import target as rdptarget
@@ -63,6 +63,7 @@ class GangwayEnv:
     cred_store: Callable = creds.store
     # Host tool runner (xdg-mime / update-desktop-database) — injectable for tests.
     run_argv: Callable[[list[str]], int] = _default_run
+    identity_path: str = ""  # shared Customs identity map; empty → default path
 
 
 def _profile_from_args(args) -> RdpProfile:
@@ -207,12 +208,17 @@ def cmd_register_handler(args, env: GangwayEnv) -> int:
                        launcher.HANDLER_DESKTOP_ID, env.applications_dir)
     env.run_argv(mime.register_default_argv(launcher.HANDLER_DESKTOP_ID, mime.GANGWAY_TYPES))
     env.run_argv(mime.update_database_argv(env.applications_dir))
-    env.io.out(f"registered .rdp / rdp:// handler ({path})")
+    # Give every FreeRDP window the handler's identity in the taskbar (shared
+    # across profiles — full-desktop RDP can't be told apart until RAIL).
+    identity_store.register_entry(launcher.FREERDP_WM_CLASSES, launcher.HANDLER_DESKTOP_ID,
+                                  env.identity_path or None)
+    env.io.out(f"registered .rdp / rdp:// handler + taskbar identity ({path})")
     return 0
 
 
 def cmd_unregister_handler(args, env: GangwayEnv) -> int:
     removed = remove_entry(launcher.HANDLER_DESKTOP_ID, env.applications_dir)
+    identity_store.unregister_entry(launcher.HANDLER_DESKTOP_ID, env.identity_path or None)
     env.run_argv(mime.update_database_argv(env.applications_dir))
     env.io.out("removed the .rdp / rdp:// handler" if removed else "no handler was installed")
     return 0

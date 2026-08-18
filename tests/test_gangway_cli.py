@@ -58,6 +58,7 @@ class GEnv(NamedTuple):
     launched: list
     stored: list
     calls: list  # recorded env.run_argv invocations (host tools)
+    identity_path: str
 
 
 def _env(tmp_path, password="pw") -> GEnv:
@@ -76,11 +77,13 @@ def _env(tmp_path, password="pw") -> GEnv:
         stored.append((attributes, label, pw))
         return True
 
+    identity_path = str(tmp_path / "identity.json")
     env = GangwayEnv(io=io, store_base=str(tmp_path / "cfg"),
                      applications_dir=str(tmp_path / "apps"),
                      launch_fn=launch_fn, cred_store=cred_store,
-                     run_argv=lambda argv: calls.append(argv) or 0)
-    return GEnv(env, out, err, launched, stored, calls)
+                     run_argv=lambda argv: calls.append(argv) or 0,
+                     identity_path=identity_path)
+    return GEnv(env, out, err, launched, stored, calls, identity_path)
 
 
 def test_add_list_show(tmp_path):
@@ -201,11 +204,25 @@ def test_register_handler_installs_and_sets_default(tmp_path):
     assert "application/x-rdp" in xdg and "x-scheme-handler/rdp" in xdg
 
 
+def test_register_handler_maps_freerdp_identity(tmp_path):
+    from gest.core.customs import identity_store
+    g = _env(tmp_path)
+    run_cli(["register-handler"], env=g.env)
+    identity = identity_store.load(g.identity_path)
+    # any FreeRDP window (sdl-freerdp / freerdp / org.freerdp.client) resolves to
+    # the handler's stable identity — not per-profile (RAIL is Phase 5).
+    assert identity.resolve("sdl-freerdp") == launcher.HANDLER_DESKTOP_ID
+    assert identity.resolve("FreeRDP") == launcher.HANDLER_DESKTOP_ID
+    assert identity.resolve("org.freerdp.client") == launcher.HANDLER_DESKTOP_ID
+
+
 def test_unregister_handler_removes(tmp_path):
+    from gest.core.customs import identity_store
     g = _env(tmp_path)
     run_cli(["register-handler"], env=g.env)
     assert run_cli(["unregister-handler"], env=g.env) == 0
     assert not (tmp_path / "apps" / f"{launcher.HANDLER_DESKTOP_ID}.desktop").exists()
+    assert identity_store.load(g.identity_path).resolve("sdl-freerdp") is None
 
 
 # ---- import / export .rdp ----------------------------------------------
