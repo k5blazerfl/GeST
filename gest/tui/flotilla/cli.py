@@ -5,6 +5,7 @@ Pure, TTY-free command layer: each ``cmd_*`` takes parsed args + an injectable
 (virsh/virt-viewer/qemu-img) run through ``env.run_argv``, so the whole command
 layer is CI-testable without libvirt.
 
+    flotilla launch debian        # turnkey: fetch ISO → allocate → define → boot → console
     flotilla create win11 --os windows --memory 8192 --iso Win11.iso
     flotilla xml win11            # the compiled libvirt domain XML
     flotilla define win11         # register it with libvirtd
@@ -118,6 +119,74 @@ def _default_virtio_iso(env: FlotillaEnv, os_name: str) -> str:
     if os_name != OS_WINDOWS:
         return ""
     return images.cached_path(images.by_id("virtio-win"), env.cache_base)
+
+
+def _ensure_url_image(env: FlotillaEnv, image) -> str:
+    """The cached path for a URL image, fetching it first if absent. "" on failure."""
+    from pathlib import Path
+    dest = images.cached_path(image, env.cache_base)
+    if Path(dest).exists():
+        return dest
+    env.io.out(f"fetching {image.title} …")
+    return dest if env.run_argv(images.curl_argv(image.url, dest)) == 0 else ""
+
+
+def cmd_launch(args, env: FlotillaEnv) -> int:
+    """Turnkey: create (if new) → resolve/fetch the ISO → allocate → define →
+    start → open the console. One command to a booting VM."""
+    vid = vessels.slug(args.name)
+    vessel = vessels.load_vessel(vid, env.store_base)
+    new = vessel is None
+    if new:
+        vessel = model.recommended(args.os, args.name, vid)
+        if args.memory:
+            vessel.memory_mb = args.memory
+        if args.vcpus:
+            vessel.vcpus = args.vcpus
+        if args.display:
+            vessel.display = args.display
+        vessel.virtio_iso = _default_virtio_iso(env, vessel.os)
+        vessel.disks = [Disk(path=str(vessels.default_disk_path(vid, env.store_base)),
+                             size_gb=args.disk_size)]
+
+    if args.iso:
+        image = images.by_id(args.iso)
+        if image is None:
+            vessel.install_iso = args.iso  # a plain path
+        elif image.fetcher == images.FETCH_MIDO:
+            env.io.err(f"{args.iso} needs mido — run `flotilla fetch {args.iso}`, "
+                       "then re-run with --iso <downloaded path>")
+            return 2
+        else:
+            path = _ensure_url_image(env, image)
+            if not path:
+                env.io.err(f"couldn't fetch {args.iso}")
+                return 1
+            vessel.install_iso = path
+
+    if vessel.os == OS_WINDOWS and vessel.virtio_iso:
+        _ensure_url_image(env, images.by_id("virtio-win"))
+    if not vessel.is_valid():
+        env.io.err("invalid vessel (check --os / --display)")
+        return 2
+
+    vessels.save_vessel(vessel, env.store_base)
+    env.io.out(f"{'created' if new else 'using'} vessel {vid}")
+    if new and not args.no_allocate:
+        disk = vessel.disks[0]
+        env.run_argv(backend.alloc_disk_argv(disk.path, disk.size_gb, disk.fmt))
+
+    xml_path = vessels.write_domain_xml(vid, domainxml.compile_domain(vessel), env.store_base)
+    if env.run_argv(backend.define_argv(env.uri, str(xml_path))) != 0:
+        env.io.err("virsh define failed")
+        return 1
+    env.io.out(f"defined {vid}")
+    if not args.no_start:
+        env.run_argv(backend.start_argv(env.uri, vid))
+        env.io.out(f"started {vid}")
+        if not args.no_console:
+            env.run_argv(backend.console_argv(env.uri, vid))
+    return 0
 
 
 def cmd_list(args, env: FlotillaEnv) -> int:
@@ -300,7 +369,7 @@ COMMANDS: dict[str, Callable[..., int]] = {
     "create": cmd_create, "list": cmd_list, "show": cmd_show, "xml": cmd_xml,
     "prereqs": cmd_prereqs, "define": cmd_define, "start": cmd_start, "stop": cmd_stop,
     "console": cmd_console, "connect": cmd_connect, "address": cmd_address, "rm": cmd_rm,
-    "images": cmd_images, "fetch": cmd_fetch,
+    "images": cmd_images, "fetch": cmd_fetch, "launch": cmd_launch,
 }
 
 
@@ -319,6 +388,19 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("--display", choices=DISPLAYS, default="")
     create.add_argument("--no-allocate", action="store_true",
                         help="skip creating the qcow2 disk now")
+
+    launch = sub.add_parser("launch",
+                            help="turnkey: create → fetch → allocate → define → boot → console")
+    launch.add_argument("name")
+    launch.add_argument("--os", choices=OSES, default="linux")
+    launch.add_argument("--memory", type=int, default=0, help="MiB")
+    launch.add_argument("--vcpus", type=int, default=0)
+    launch.add_argument("--disk-size", type=int, default=40, help="GiB")
+    launch.add_argument("--iso", default="", help="a catalog id (e.g. debian) or an ISO path")
+    launch.add_argument("--display", choices=DISPLAYS, default="")
+    launch.add_argument("--no-allocate", action="store_true")
+    launch.add_argument("--no-start", action="store_true", help="define but don't boot")
+    launch.add_argument("--no-console", action="store_true", help="boot but don't open the console")
 
     sub.add_parser("list", help="list vessels")
     sub.add_parser("images", help="list the install-media catalog")
