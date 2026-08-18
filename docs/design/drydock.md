@@ -1,6 +1,6 @@
 # Design: Drydock — Wine/Proton apps as first-class HeDE citizens
 
-*Status: vision · Scope: the GeST/core model + launch pipeline + Customs integration + the Gentoo-native prerequisites path for running Windows apps/games locally · Depends on: [Customs](hede-windows-interop.md#2-the-shared-spine--customs-the-foreign-app-integration-layer), the GeST software/USE core (for the Gentoo edge), the Qt frontend (gated, for the management module) · Defers: sandboxing, a curated install-script library, live execution (host-only) · Milestone: interop phases 3–4*
+*Status: vision · Scope: the GeST/core model + launch pipeline + Customs integration + the Gentoo-native prerequisites path for running Windows apps/games locally · Depends on: [Customs](hede-windows-interop.md#2-the-shared-spine--customs-the-foreign-app-integration-layer), the GeST software/USE core (for the Gentoo edge), the Qt frontend (gated, for the management module) · Defers: sandboxing, a curated recipe library, live execution (host-only) · Recipe format + Lutris import: [interop ADR](drydock-lutris-interop.md) · Milestone: interop phases 3–4*
 
 > **This is the most-attempted problem in desktop Linux.** Steam/Proton, Lutris,
 > and Bottles have all built "run Windows software seamlessly." Drydock only earns
@@ -158,6 +158,10 @@ about games-vs-apps.
 
 ## 10. Phased roadmap
 
+The interop phases (6–7) are specified in the
+[Drydock/Lutris interop ADR](drydock-lutris-interop.md) — own `helm.recipe`
+format + a one-way Lutris importer, *not* a fork.
+
 1. **Bottle model + launch pipeline** — the pure core (env+argv for wine & umu,
    graphics profiles), config store, `drydock`/`drydock-run` CLI. Unit-tested.
 2. **Customs integration** — synthesize launchers + harvest wine `.desktop`s;
@@ -165,11 +169,23 @@ about games-vs-apps.
 3. **Gentoo prerequisites** — the checker + the GeST software/USE apply path
    (incl. offering the GURU overlay for umu).
 4. **Bottle operations** (host-validated) — create prefix, run installer,
-   winetricks verbs, DXVK/VKD3D setup.
+   winetricks verbs, DXVK/VKD3D setup. *(Also the execution backend the recipe
+   interpreter in phase 6 drives.)*
 5. **Game mode polish** — gamescope FSR/HDR presets, gamemode, mangoapp; the Qt
    management module (gated on the Qt frontend).
-6. **Later** — sandboxing (bubblewrap + portals, like Bottles); install-script
-   library; optional Lutris/Bottles prefix adoption.
+6. **Recipe format + interpreter** ([ADR](drydock-lutris-interop.md)) — define
+   the `helm.recipe` schema (the install-time complement to the bottle model) and
+   build Drydock's own interpreter that runs a recipe through the phase-4 bottle
+   operations, the launch pipeline, and Customs export. No Lutris runtime coupling.
+7. **Lutris import bridge** ([ADR](drydock-lutris-interop.md)) — one-way
+   `drydock import-lutris <script|slug>` converting Lutris install scripts to
+   `helm.recipe` via the native/flag/reject action mapping; unsupported directives
+   are flagged, never faked. Prototype against 3–5 real lutris.net scripts before
+   locking the schema. *(Prerequisite: add a root `LICENSE`/`COPYING` file before
+   any third-party GPL borrowing — see ADR.)*
+8. **Later** — sandboxing (bubblewrap + portals, like Bottles); a curated
+   `helm.recipe` library; optional *live* Lutris/Bottles prefix adoption (beyond
+   script import).
 
 ## 11. Decisions
 
@@ -182,7 +198,7 @@ about games-vs-apps.
    the prereq checker offers to enable the GURU overlay (via GeST's repos module)
    and install umu when it's missing — overlay opt-in, explicit, never silent.
 4. **Sandboxing — deferred** (*resolved*). v1 runs apps directly; bubblewrap +
-   portals is a later phase (§10.6).
+   portals is a later phase (§10.8).
 
 ## 12. Non-goals
 
