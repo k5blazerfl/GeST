@@ -43,7 +43,9 @@ _EXPECTED_LABELS = [
     "Sync the Portage tree",
     "Select the profile",
     "Emerge @world",
+    "Provision the HeDE desktop",
     "Install the HeDE desktop",
+    "Clean up desktop binpkgs",
     "Set timezone and locale",
     "Set the hostname",
     "Set the console keymap",
@@ -61,7 +63,9 @@ _MARKER_KEYS = {
     "Unpack the stage3 tarball": "unpack_stage3",
     "Sync the Portage tree": "sync_tree",
     "Emerge @world": "emerge_world",
+    "Provision the HeDE desktop": "provision_desktop",
     "Install the HeDE desktop": "install_desktop",
+    "Clean up desktop binpkgs": "cleanup_desktop_binpkgs",
     "Build the kernel": "build_kernel",
     "Install the bootloader": "install_bootloader",
     "Install the m1n1 boot stub": "install_boot_stub",
@@ -115,10 +119,10 @@ def test_registry_phases_are_non_decreasing():
     assert indices == sorted(indices)
     # the exact phase grouping
     assert [s.phase for s in reg[:3]] == [Phase.PREPARE_DISK] * 3
-    assert [s.phase for s in reg[3:11]] == [Phase.BASE_SYSTEM] * 8   # +HeDE desktop
-    assert [s.phase for s in reg[11:14]] == [Phase.CONFIGURE] * 3
-    assert [s.phase for s in reg[14:17]] == [Phase.KERNEL_BOOT] * 3  # +m1n1 boot stub
-    assert [s.phase for s in reg[17:20]] == [Phase.USERS_NETWORK] * 3
+    assert [s.phase for s in reg[3:13]] == [Phase.BASE_SYSTEM] * 10  # +HeDE desktop (×3)
+    assert [s.phase for s in reg[13:16]] == [Phase.CONFIGURE] * 3
+    assert [s.phase for s in reg[16:19]] == [Phase.KERNEL_BOOT] * 3  # +m1n1 boot stub
+    assert [s.phase for s in reg[19:22]] == [Phase.USERS_NETWORK] * 3
 
 
 def test_registry_chroot_and_opens_chroot_flags():
@@ -135,8 +139,8 @@ def test_registry_marker_keys():
 
 
 def test_tier2_default_empty():
-    # rows 1-18 + the HeDE desktop + the arm64-gated m1n1 boot stub (inert on x86)
-    assert len(build_registry(_plan())) == 20
+    # rows 1-18 + the 3 HeDE desktop steps + the arm64-gated m1n1 boot stub (inert on x86)
+    assert len(build_registry(_plan())) == 22
 
 
 def test_boot_stub_step_is_arm64_gated():
@@ -155,21 +159,64 @@ def test_boot_stub_step_is_arm64_gated():
     assert asyncio.run(step.is_satisfied(arm)) is False        # not yet done → runs
 
 
-def test_install_desktop_step_is_gated_on_plan_desktop():
-    from gest.core.install.registry import DESKTOP_ATOMS, InstallDesktop
-    step = InstallDesktop()
-    # base Gentoo (default plan, desktop=False): inert — no pipeline, satisfied → skipped
-    base = _ctx(FakeExecutor())
-    assert step.build(base) == []
-    assert asyncio.run(step.is_satisfied(base)) is True
-    # desktop plan: emerges the HeDE desktop + plymouth (recorded in @world), binpkg-preferred
+def _desktop_plan():
     plan = _plan()
     object.__setattr__(plan, "desktop", True)
-    desk = _ctx(FakeExecutor(), plan=plan)
-    steps = step.build(desk)
+    return plan
+
+
+def test_desktop_steps_are_gated_on_plan_desktop():
+    from gest.core.install.registry import CleanupDesktopBinpkgs, InstallDesktop
+    for step in (InstallDesktop(), CleanupDesktopBinpkgs()):
+        base = _ctx(FakeExecutor())                     # default plan → desktop=False
+        assert step.build(base) == []                   # inert
+        assert asyncio.run(step.is_satisfied(base)) is True
+
+
+def test_install_desktop_emerges_usepkgonly_when_enabled():
+    from gest.core.install.desktop import DESKTOP_ATOMS
+    from gest.core.install.registry import InstallDesktop
+    desk = _ctx(FakeExecutor(), plan=_desktop_plan())
+    steps = InstallDesktop().build(desk)
     assert [s.argv for s in steps] == [
-        ["emerge", "--getbinpkg", "--color", "n", *DESKTOP_ATOMS]]
-    assert asyncio.run(step.is_satisfied(desk)) is False        # not yet done → runs
+        ["emerge", "--usepkgonly", "--color", "n", *DESKTOP_ATOMS]]  # binary-only, offline
+    assert asyncio.run(InstallDesktop().is_satisfied(desk)) is False
+
+
+def test_cleanup_desktop_binpkgs_removes_target_pkgdir_when_enabled():
+    from gest.core.install.registry import CleanupDesktopBinpkgs
+    desk = _ctx(FakeExecutor(), plan=_desktop_plan())
+    steps = CleanupDesktopBinpkgs().build(desk)
+    assert [s.argv for s in steps] == [["rm", "-rf", f"{_ROOT}/var/cache/binpkgs"]]
+
+
+def test_provision_desktop_quickpkgs_and_seeds_overlay(tmp_path):
+    from gest.core.install.registry import ProvisionDesktop
+    root = str(tmp_path / "gentoo")
+    fx = FakeExecutor()
+    ctx = _ctx(fx, root=root, plan=_desktop_plan())
+    step = ProvisionDesktop()
+    assert asyncio.run(step.is_satisfied(ctx)) is False
+    asyncio.run(step.run(ctx))
+    # host-side (not chroot): quickpkg into the target pkgdir, then seed the overlay
+    assert ["env", f"PKGDIR={root}/var/cache/binpkgs", "quickpkg",
+            "--include-config=y", "@installed"] in fx.calls
+    assert ["cp", "-a", "/var/db/repos/amphitheater",
+            f"{root}/var/db/repos/amphitheater"] in fx.calls
+    assert not any(c[:1] == ["chroot"] for c in fx.calls)       # host-side, never chrooted
+    # the git-backed repos.conf is written under the target root
+    conf = tmp_path / "gentoo/etc/portage/repos.conf/amphitheater.conf"
+    assert "sync-uri = https://github.com/k5blazerfl/Amphitheater" in conf.read_text()
+    assert asyncio.run(step.is_satisfied(ctx)) is True          # marked done
+
+
+def test_provision_desktop_is_a_noop_for_base_gentoo():
+    from gest.core.install.registry import ProvisionDesktop
+    fx = FakeExecutor()
+    ctx = _ctx(fx)                                              # desktop=False
+    asyncio.run(ProvisionDesktop().run(ctx))
+    assert fx.calls == []
+    assert asyncio.run(ProvisionDesktop().is_satisfied(ctx)) is True
 
 
 def _plan_tier2(*keys):

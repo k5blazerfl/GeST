@@ -82,11 +82,10 @@ class InstallSelections:
     efi_directory: str = "/efi"
     boot_disk: str = ""               # BIOS target disk (firmware == "bios")
     # Install the HeDE desktop (gui-apps/hede + sys-boot/plymouth) into the target.
-    # OFF for now: gui-apps/hede lives in the amphitheater overlay, which the
-    # installer does not yet make available inside the target chroot (no repos.conf
-    # / overlay provisioning). Flip to True once a provisioning step lands — then
-    # GeSI installs HeDE by default and seamless boot (below) activates with it.
-    install_desktop: bool = False
+    # On by default — GeSI installs HeDE. The ProvisionDesktop step makes this work
+    # offline (quickpkg the live env + seed the Amphitheater overlay); turn off for
+    # a base-Gentoo install. See docs/design/desktop-provisioning.md.
+    install_desktop: bool = True
     # Seamless graphical boot (GRUB Harbor theme + Plymouth splash in the initramfs).
     # Its plymouth/theme deps come from the desktop, so it only takes EFFECT when
     # install_desktop is also on (see assemble_plan) — the desktop gate is what keeps
