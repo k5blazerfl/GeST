@@ -188,3 +188,64 @@ def test_unregister_handler_removes(tmp_path):
     run_cli(["register-handler"], env=g.env)
     assert run_cli(["unregister-handler"], env=g.env) == 0
     assert not (tmp_path / "apps" / f"{launcher.HANDLER_DESKTOP_ID}.desktop").exists()
+
+
+# ---- import / export .rdp ----------------------------------------------
+def test_import_saves_profile(tmp_path):
+    g = _env(tmp_path)
+    rdp = tmp_path / "work.rdp"
+    rdp.write_text("full address:s:pc.corp:3390\nusername:s:bob\ndomain:s:CORP\n")
+    assert run_cli(["import", str(rdp)], env=g.env) == 0
+    saved = store.load_profile("work", g.env.store_base)  # name from the file stem
+    assert saved is not None
+    assert saved.host == "pc.corp" and saved.port == 3390 and saved.username == "bob"
+
+
+def test_import_name_override(tmp_path):
+    g = _env(tmp_path)
+    rdp = tmp_path / "x.rdp"
+    rdp.write_text("full address:s:h\n")
+    assert run_cli(["import", str(rdp), "--name", "My Box"], env=g.env) == 0
+    assert store.load_profile("My Box", g.env.store_base) is not None
+
+
+def test_import_missing_file(tmp_path):
+    g = _env(tmp_path)
+    assert run_cli(["import", str(tmp_path / "nope.rdp")], env=g.env) == 1
+    assert g.err
+
+
+def test_export_to_file(tmp_path):
+    g = _env(tmp_path)
+    run_cli(["add", "work", "--host", "pc.corp", "--user", "bob"], env=g.env)
+    out = tmp_path / "work.rdp"
+    assert run_cli(["export", "work", "-o", str(out)], env=g.env) == 0
+    text = out.read_text()
+    assert "full address:s:pc.corp" in text and "username:s:bob" in text
+
+
+def test_export_to_stdout(tmp_path):
+    g = _env(tmp_path)
+    run_cli(["add", "work", "--host", "pc.corp"], env=g.env)
+    g.out.clear()
+    assert run_cli(["export", "work"], env=g.env) == 0
+    assert any("full address:s:pc.corp" in line for line in g.out)
+
+
+def test_export_unknown_profile(tmp_path):
+    g = _env(tmp_path)
+    assert run_cli(["export", "nope"], env=g.env) == 1
+    assert g.err
+
+
+def test_import_export_round_trip(tmp_path):
+    g = _env(tmp_path)
+    run_cli(["add", "work", "--host", "pc.corp", "--user", "bob",
+             "--domain", "CORP", "--quality", "lan"], env=g.env)
+    out = tmp_path / "work.rdp"
+    run_cli(["export", "work", "-o", str(out)], env=g.env)
+    run_cli(["import", str(out), "--name", "copy"], env=g.env)
+    original = store.load_profile("work", g.env.store_base)
+    copy = store.load_profile("copy", g.env.store_base)
+    assert (copy.host, copy.username, copy.domain, copy.quality) == \
+           (original.host, original.username, original.domain, original.quality)

@@ -11,6 +11,8 @@ synthesized ``.desktop`` entry's ``Exec`` points at.
     gangway open work           # launch (fetches the password from the keychain)
     gangway register-handler    # make Gangway the default .rdp / rdp:// handler
     gangway open-file some.rdp  # launch a .rdp file ad-hoc (no saved profile)
+    gangway import some.rdp     # save a .rdp file as a named profile
+    gangway export work -o work.rdp   # share a saved profile as a .rdp
 """
 
 from __future__ import annotations
@@ -21,10 +23,11 @@ import subprocess
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from gest.core.customs import mime
 from gest.core.customs.desktop import remove_entry, write_entry
-from gest.core.rdp import creds, launcher, run, store
+from gest.core.rdp import creds, launcher, rdpfile, run, store
 from gest.core.rdp import target as rdptarget
 from gest.core.rdp.model import QUALITIES, RdpProfile
 
@@ -159,6 +162,36 @@ def cmd_open_file(args, env: GangwayEnv) -> int:
     return env.launch_fn(profile, share_path=share)
 
 
+def cmd_import(args, env: GangwayEnv) -> int:
+    try:
+        profile = rdptarget.profile_from_file(args.file)
+    except OSError as exc:
+        env.io.err(f"cannot read {args.file}: {exc}")
+        return 1
+    if args.name:
+        profile.name = args.name
+    if not profile.is_valid():
+        env.io.err(f"{args.file}: not a usable RDP profile (need a host)")
+        return 1
+    path = store.save_profile(profile, env.store_base)
+    env.io.out(f"imported {profile.name} ({path})")
+    return 0
+
+
+def cmd_export(args, env: GangwayEnv) -> int:
+    profile = store.load_profile(args.name, env.store_base)
+    if profile is None:
+        env.io.err(f"no such profile {args.name!r}")
+        return 1
+    text = rdpfile.render(profile)
+    if args.output and args.output != "-":
+        Path(args.output).expanduser().write_text(text, encoding="utf-8")
+        env.io.out(f"exported {args.name} to {args.output}")
+    else:
+        env.io.out(text)
+    return 0
+
+
 def cmd_register_handler(args, env: GangwayEnv) -> int:
     path = write_entry(launcher.handler_desktop_entry(),
                        launcher.HANDLER_DESKTOP_ID, env.applications_dir)
@@ -180,6 +213,7 @@ COMMANDS: dict[str, Callable[..., int]] = {
     "set-password": cmd_set_password, "install": cmd_install, "open": cmd_open,
     "open-file": cmd_open_file, "register-handler": cmd_register_handler,
     "unregister-handler": cmd_unregister_handler,
+    "import": cmd_import, "export": cmd_export,
 }
 
 
@@ -215,6 +249,14 @@ def build_parser() -> argparse.ArgumentParser:
     of.add_argument("target", help="a .rdp file path, a file:// URL, or an rdp:// URI")
     sub.add_parser("register-handler", help="make Gangway the default .rdp/rdp:// handler")
     sub.add_parser("unregister-handler", help="remove the .rdp/rdp:// handler")
+
+    imp = sub.add_parser("import", help="import a .rdp file as a saved profile")
+    imp.add_argument("file", help="path to a .rdp file")
+    imp.add_argument("--name", default="", help="profile name (default: the file stem)")
+
+    exp = sub.add_parser("export", help="export a saved profile to a .rdp file")
+    exp.add_argument("name")
+    exp.add_argument("-o", "--output", default="-", help="write the .rdp here (default: stdout)")
     return parser
 
 
