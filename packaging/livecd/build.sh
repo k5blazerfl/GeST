@@ -90,4 +90,15 @@ echo "== livecd-stage1 =="
 catalyst -f "${outdir}/livecd-stage1.spec"
 echo "== livecd-stage2 =="
 catalyst -f "${outdir}/livecd-stage2.spec"
+
+# Theme the ISO's GRUB menu (the Harbor look — pairs with the Plymouth splash).
+# catalyst writes a plain grub.cfg onto the ISO filesystem, which the build can't
+# reach otherwise, so this is a post-build inject. Best-effort: a plain menu still
+# boots. STOREDIR defaults to catalyst's default; override if catalyst.conf moved it.
+iso="${STOREDIR:-/var/tmp/catalyst}/builds/default/gest-installer-amd64-${TIMESTAMP}.iso"
+if [ -f "${iso}" ]; then
+    "${here}/grub-theme-inject.sh" "${iso}" \
+        || echo "!! GRUB theme inject failed — the ISO still boots with a plain menu."
+fi
+
 echo "done — the ISO is under catalyst's builds/ (livecd/iso: gest-installer-amd64-${TIMESTAMP}.iso)."
