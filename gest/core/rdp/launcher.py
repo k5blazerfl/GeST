@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 
 from gest.core.customs import mime
-from gest.core.customs.desktop import DesktopEntry, build_exec
+from gest.core.customs.desktop import DesktopAction, DesktopEntry, build_exec
 from gest.core.rdp.model import RdpProfile
 
 GANGWAY_OPEN = "gangway-open"
@@ -39,6 +39,17 @@ def desktop_id(profile_name: str) -> str:
     return f"gangway-{slug}"
 
 
+def connect_actions(profile_name: str) -> list[DesktopAction]:
+    """Right-click jump-list: connect fullscreen or windowed, overriding the
+    profile's default screen mode for this launch."""
+    return [
+        DesktopAction(id="fullscreen", name="Connect (fullscreen)",
+                      exec=build_exec([GANGWAY_OPEN, profile_name, "--fullscreen"])),
+        DesktopAction(id="windowed", name="Connect (windowed)",
+                      exec=build_exec([GANGWAY_OPEN, profile_name, "--windowed"])),
+    ]
+
+
 def desktop_entry(profile: RdpProfile) -> DesktopEntry:
     return DesktopEntry(
         name=f"{profile.name} (RDP)",
@@ -47,6 +58,7 @@ def desktop_entry(profile: RdpProfile) -> DesktopEntry:
         comment=f"Remote Desktop to {profile.host}",
         categories=["Network", "RemoteAccess"],
         startup_wm_class=FREERDP_WM_CLASS,
+        actions=connect_actions(profile.name),
         extra={"X-GeST-Origin": "gangway", "X-Gangway-Profile": profile.name},
     )
 

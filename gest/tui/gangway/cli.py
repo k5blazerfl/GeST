@@ -160,6 +160,10 @@ def cmd_open(args, env: GangwayEnv) -> int:
     if profile is None:
         env.io.err(f"no such profile {args.name!r}")
         return 1
+    if args.windowed:
+        profile.fullscreen = False
+    elif args.fullscreen:
+        profile.fullscreen = True
     return _launch(env, profile, dry_run=args.dry_run)
 
 
@@ -290,6 +294,11 @@ def build_parser() -> argparse.ArgumentParser:
     opn.add_argument("name")
     opn.add_argument("--dry-run", action="store_true",
                      help="print the FreeRDP command instead of launching")
+    screen = opn.add_mutually_exclusive_group()
+    screen.add_argument("--windowed", action="store_true",
+                        help="override: connect in a window")
+    screen.add_argument("--fullscreen", action="store_true",
+                        help="override: connect fullscreen")
 
     of = sub.add_parser("open-file", help="launch a .rdp file or rdp:// URI ad-hoc")
     of.add_argument("target", help="a .rdp file path, a file:// URL, or an rdp:// URI")

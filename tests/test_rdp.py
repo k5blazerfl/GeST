@@ -161,3 +161,14 @@ def test_handler_desktop_entry_carries_mime_types():
     assert entry.no_display is True  # a handler, not a menu entry
     back = DesktopEntry.parse(entry.render())
     assert back.mime_types == entry.mime_types and back.no_display is True
+
+
+def test_launcher_has_fullscreen_and_windowed_jumplist():
+    entry = launcher.desktop_entry(_profile())
+    actions = {a.id: a for a in entry.actions}
+    assert set(actions) == {"fullscreen", "windowed"}
+    assert actions["fullscreen"].exec == 'gangway-open "Work PC" --fullscreen'
+    assert actions["windowed"].exec == 'gangway-open "Work PC" --windowed'
+    # survives the Customs render/parse round-trip.
+    back = DesktopEntry.parse(entry.render())
+    assert {a.id for a in back.actions} == {"fullscreen", "windowed"}

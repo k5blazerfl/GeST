@@ -166,6 +166,23 @@ def test_open_file_dry_run(tmp_path):
     assert g.launched == []
 
 
+def test_open_windowed_override(tmp_path):
+    g = _env(tmp_path)
+    run_cli(["add", "work", "--host", "pc.corp"], env=g.env)  # default: fullscreen
+    g.out.clear()
+    assert run_cli(["open", "work", "--windowed", "--dry-run"], env=g.env) == 0
+    printed = "\n".join(g.out)
+    assert "/size:" in printed and "/f " not in printed and not printed.endswith("/f")
+
+
+def test_open_fullscreen_override(tmp_path):
+    g = _env(tmp_path)
+    run_cli(["add", "work", "--host", "pc.corp", "--windowed"], env=g.env)  # default: windowed
+    g.out.clear()
+    assert run_cli(["open", "work", "--fullscreen", "--dry-run"], env=g.env) == 0
+    assert any("/f" in line.split()[-1] or "/f " in line for line in g.out)
+
+
 # ---- .rdp / rdp:// handler ---------------------------------------------
 def test_open_file_launches_rdp_file_adhoc(tmp_path):
     g = _env(tmp_path)
