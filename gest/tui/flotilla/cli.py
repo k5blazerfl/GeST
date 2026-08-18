@@ -10,19 +10,21 @@ layer is CI-testable without libvirt.
     flotilla define win11         # register it with libvirtd
     flotilla start win11
     flotilla console win11        # SPICE/VNC console (the traditional way)
+    flotilla connect win11 --rdp  # seamless Gangway RDP (Windows): auto-profile + launch
     flotilla prereqs win11
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from gest.core.flotilla import backend, domainxml, model, prereq, vessels
-from gest.core.flotilla.model import DISPLAYS, OSES, Disk, Vessel
+from gest.core.flotilla.model import DISPLAYS, OS_WINDOWS, OSES, Disk, Vessel
 
 
 @dataclass
@@ -42,6 +44,20 @@ def _default_run(argv: list[str]) -> int:
         return 127
 
 
+def _default_capture(argv: list[str]) -> str:
+    """Run a query tool (virsh domifaddr) and return its stdout; "" on failure."""
+    try:
+        return subprocess.run(argv, capture_output=True, text=True).stdout
+    except FileNotFoundError:
+        return ""
+
+
+def _default_launch_rdp(profile) -> int:
+    from gest.core.rdp import run as rdp_run
+    share = os.path.expanduser("~") if profile.drive_redirect else None
+    return rdp_run.launch(profile, share_path=share)
+
+
 @dataclass
 class FlotillaEnv:
     io: CliIO = field(default_factory=_default_io)
@@ -49,6 +65,12 @@ class FlotillaEnv:
     uri: str = backend.URI_SESSION
     # Runs a libvirt host tool (virsh/virt-viewer/qemu-img); injectable for tests.
     run_argv: Callable[[list[str]], int] = _default_run
+    # The Gangway bridge (§5): capture domifaddr output, where Gangway profiles
+    # live, and how an RDP session launches — all injectable so `connect` is
+    # CI-testable without a running VM or FreeRDP.
+    capture: Callable[[list[str]], str] = _default_capture
+    gangway_store_base: str = ""  # "" → Gangway's default profile dir
+    launch_rdp: Callable = _default_launch_rdp
 
 
 def _load(env: FlotillaEnv, vessel_id: str) -> Vessel | None:
@@ -171,6 +193,51 @@ def cmd_console(args, env: FlotillaEnv) -> int:
     return env.run_argv(backend.console_argv(env.uri, args.id))
 
 
+def _guest_ip(env: FlotillaEnv, vessel_id: str) -> str:
+    from gest.core.flotilla import gangway_bridge
+    return gangway_bridge.parse_agent_ipv4(env.capture(backend.domifaddr_argv(env.uri, vessel_id)))
+
+
+def cmd_address(args, env: FlotillaEnv) -> int:
+    if _load(env, args.id) is None:
+        return 1
+    ip = _guest_ip(env, args.id)
+    if not ip:
+        env.io.err("no guest IP (is the VM up and the guest agent running?)")
+        return 1
+    env.io.out(ip)
+    return 0
+
+
+def cmd_connect(args, env: FlotillaEnv) -> int:
+    """Open a vessel: the SPICE/VNC console, or — for a Windows vessel — a seamless
+    Gangway RDP session. Mode is --rdp/--console, else the vessel's `entry`."""
+    from gest.core.flotilla import gangway_bridge
+    from gest.core.rdp import store as rdp_store
+
+    vessel = _load(env, args.id)
+    if vessel is None:
+        return 1
+    mode = "rdp" if args.rdp else "console" if args.console else vessel.entry
+    if mode == "rdp" and vessel.os != OS_WINDOWS:
+        env.io.err("RDP is a Windows path — open the console instead")
+        return 2
+    if mode == "console":
+        return env.run_argv(backend.console_argv(env.uri, vessel.id))
+
+    ip = _guest_ip(env, vessel.id)
+    if not ip:
+        env.io.err("couldn't determine the guest IP (VM up? guest agent running?)")
+        return 1
+    profile = gangway_bridge.profile_for(vessel, ip)
+    rdp_store.save_profile(profile, env.gangway_store_base or rdp_store.GANGWAY_DIR)
+    if vessel.gangway_profile != profile.name:
+        vessel.gangway_profile = profile.name
+        vessels.save_vessel(vessel, env.store_base)
+    env.io.out(f"connecting to {vessel.id} at {ip} via Gangway (profile {profile.name!r})")
+    return env.launch_rdp(profile)
+
+
 def cmd_rm(args, env: FlotillaEnv) -> int:
     if vessels.load_vessel(args.id, env.store_base) is None:
         env.io.err(f"no such vessel {args.id!r}")
@@ -185,7 +252,7 @@ def cmd_rm(args, env: FlotillaEnv) -> int:
 COMMANDS: dict[str, Callable[..., int]] = {
     "create": cmd_create, "list": cmd_list, "show": cmd_show, "xml": cmd_xml,
     "prereqs": cmd_prereqs, "define": cmd_define, "start": cmd_start, "stop": cmd_stop,
-    "console": cmd_console, "rm": cmd_rm,
+    "console": cmd_console, "connect": cmd_connect, "address": cmd_address, "rm": cmd_rm,
 }
 
 
@@ -205,12 +272,18 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("--allocate", action="store_true", help="qemu-img create the disk now")
 
     sub.add_parser("list", help="list vessels")
-    for name in ("show", "xml", "prereqs", "define", "start", "console"):
+    for name in ("show", "xml", "prereqs", "define", "start", "console", "address"):
         sub.add_parser(name, help=f"{name} a vessel").add_argument("id")
 
     stop = sub.add_parser("stop", help="shut down a vessel")
     stop.add_argument("id")
     stop.add_argument("--force", action="store_true", help="force off (destroy)")
+
+    conn = sub.add_parser("connect", help="open a vessel (console, or Gangway RDP for Windows)")
+    conn.add_argument("id")
+    entry = conn.add_mutually_exclusive_group()
+    entry.add_argument("--rdp", action="store_true", help="force Gangway RDP (Windows)")
+    entry.add_argument("--console", action="store_true", help="force the SPICE/VNC console")
 
     sub.add_parser("rm", help="undefine + delete a vessel").add_argument("id")
     return parser
