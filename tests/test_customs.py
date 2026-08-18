@@ -17,7 +17,7 @@ from gest.core.customs.desktop import (
 # ---- desktop: Exec quoting + field codes -------------------------------
 def test_build_exec_quotes_only_when_needed():
     assert build_exec(["gangway-open", "work"]) == "gangway-open work"
-    assert build_exec(["drydock-run", "bottle one", "app"]) == 'drydock-run "bottle one" app'
+    assert build_exec(["drydock-run", "barrel one", "app"]) == 'drydock-run "barrel one" app'
     assert build_exec(["x", ""]) == 'x ""'
 
 
@@ -53,7 +53,7 @@ def test_round_trip_preserves_everything_including_actions():
         comment="Spreadsheets", categories=["Office"], mime_types=[mime.EXE],
         startup_wm_class="excel.exe", no_display=False,
         actions=[DesktopAction(id="new", name="New Document", exec="drydock-run office excel /n")],
-        extra={"X-GeST-Bottle": "office"},
+        extra={"X-GeST-Barrel": "office"},
     )
     back = DesktopEntry.parse(entry.render())
     assert back.name == "Excel"
@@ -61,7 +61,7 @@ def test_round_trip_preserves_everything_including_actions():
     assert back.categories == ["Office"]
     assert back.mime_types == [mime.EXE]
     assert back.startup_wm_class == "excel.exe"
-    assert back.extra.get("X-GeST-Bottle") == "office"
+    assert back.extra.get("X-GeST-Barrel") == "office"
     assert len(back.actions) == 1
     assert back.actions[0].id == "new" and back.actions[0].name == "New Document"
 
@@ -109,6 +109,13 @@ def test_icon_extract_argv_and_paths():
     assert icons.scalable_install_path("excel").parts[-3:] == ("scalable", "apps", "excel.svg")
 
 
+def test_icon_convert_argv():
+    argv = icons.convert_argv("/tmp/app.ico", "/out/app.png", width="48")
+    assert argv[0] == "icotool" and "-x" in argv
+    assert "-w" in argv and "48" in argv
+    assert argv[-1] == "/tmp/app.ico" and "/out/app.png" in argv
+
+
 # ---- identity ----------------------------------------------------------
 def test_normalize_wm_class_forms():
     assert identity.normalize("Excel.EXE") == "excel.exe"  # dots kept (reverse-DNS app-ids)
@@ -129,3 +136,13 @@ def test_identity_map_register_resolve_unregister():
     m.unregister("gangway-pc")
     assert m.resolve("freerdp") is None
     assert m.resolve("excel.exe") == "drydock-excel"  # unaffected
+
+
+def test_identity_map_dict_round_trip():
+    m = identity.IdentityMap()
+    m.register(["Excel.exe", "org.freerdp.client"], "drydock-excel")
+    restored = identity.IdentityMap.from_dict(m.to_dict())
+    assert restored.resolve("excel.exe") == "drydock-excel"
+    assert restored.resolve("org.freerdp.client") == "drydock-excel"
+    assert m.to_dict()["version"] == identity.IDENTITY_VERSION
+    assert identity.IdentityMap.from_dict({}).resolve("x") is None

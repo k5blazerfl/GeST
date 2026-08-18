@@ -3,7 +3,7 @@
 Two paths (both resolved design decisions):
 
 1. **Synthesize** — build a Customs ``.desktop`` for a registered program whose
-   ``Exec`` runs ``drydock-run <bottle> <program>`` (so the launch goes through
+   ``Exec`` runs ``drydock-run <barrel> <program>`` (so the launch goes through
    Drydock's pipeline), with the right icon name, category, and
    ``StartupWMClass`` for taskbar identity.
 2. **Harvest** — scan the ``.desktop`` files wine's winemenubuilder auto-writes
@@ -16,26 +16,28 @@ filesystem scan touches disk.
 
 from __future__ import annotations
 
+import re
 import shlex
 from pathlib import Path, PureWindowsPath
 
 from gest.core.customs import mime
-from gest.core.customs.desktop import DesktopEntry, build_exec
+from gest.core.customs.desktop import DesktopAction, DesktopEntry, build_exec
 from gest.core.customs.desktop import entry_path as _customs_entry_path
-from gest.core.drydock.bottles import slug
-from gest.core.drydock.model import Bottle, Program
+from gest.core.drydock.barrels import slug
+from gest.core.drydock.model import RUNNER_WINE, Barrel, Program
 
+DRYDOCK = "drydock"
 DRYDOCK_RUN = "drydock-run"
 # wine's winemenubuilder writes generated launchers here.
 WINE_APPS_DIR = "~/.local/share/applications/wine"
 
 
-def open_argv(bottle_id: str, program_id: str) -> list[str]:
-    return [DRYDOCK_RUN, bottle_id, program_id]
+def open_argv(barrel_id: str, program_id: str) -> list[str]:
+    return [DRYDOCK_RUN, barrel_id, program_id]
 
 
-def desktop_id(bottle_id: str, program_id: str) -> str:
-    return f"drydock-{bottle_id}-{slug(program_id)}"
+def desktop_id(barrel_id: str, program_id: str) -> str:
+    return f"drydock-{barrel_id}-{slug(program_id)}"
 
 
 def _exe_stem(exe: str) -> str:
@@ -45,17 +47,57 @@ def _exe_stem(exe: str) -> str:
     return PureWindowsPath(tail).stem or tail
 
 
-def desktop_entry(bottle: Bottle, program: Program) -> DesktopEntry:
+def default_wm_class(program: Program) -> str:
+    """The WM_CLASS a program presents: its explicit ``wm_class`` else the exe
+    stem. This is both the launcher's ``StartupWMClass`` and the key the Customs
+    identity map registers, so the taskbar can match the window to the launcher."""
+    return program.wm_class or _exe_stem(program.exe)
+
+
+_WIN_DRIVE = re.compile(r"^([A-Za-z]):/(.*)$")
+
+
+def local_exe_path(barrel: Barrel, program: Program) -> str:
+    """Resolve a program's exe to a real host path (for icon extraction). A
+    Windows path like ``C:\\office\\excel.exe`` maps to ``<prefix>/drive_c/…``; a
+    unix path (e.g. a harvested wine Exec) is used as-is. Empty if unresolved."""
+    exe = program.exe
+    if not exe:
+        return ""
+    unixish = exe.replace("\\", "/")
+    match = _WIN_DRIVE.match(unixish)
+    if match and barrel.prefix:
+        drive, rest = match.group(1).lower(), match.group(2)
+        return str(Path(barrel.prefix).expanduser() / f"drive_{drive}" / rest)
+    return exe
+
+
+def maintenance_actions(barrel: Barrel) -> list[DesktopAction]:
+    """Right-click jump-list actions for a barrel's launcher — the day-to-day Wine
+    chores, wired to the ``drydock`` verbs. Wine barrels only (Proton has its own
+    tooling via umu)."""
+    if barrel.runner != RUNNER_WINE:
+        return []
+    return [
+        DesktopAction(id="winecfg", name="Configure (Winecfg)",
+                      exec=build_exec([DRYDOCK, "winecfg", barrel.id])),
+        DesktopAction(id="kill", name="Force quit",
+                      exec=build_exec([DRYDOCK, "kill", barrel.id])),
+    ]
+
+
+def desktop_entry(barrel: Barrel, program: Program) -> DesktopEntry:
     categories = ["Game"] if program.category == "Game" else ["Utility"]
     return DesktopEntry(
         name=program.name,
-        exec=build_exec(open_argv(bottle.id, program.id)),
-        icon=desktop_id(bottle.id, program.id),
-        comment=f"{program.name} — Drydock: {bottle.name}",
+        exec=build_exec(open_argv(barrel.id, program.id)),
+        icon=desktop_id(barrel.id, program.id),
+        comment=f"{program.name} — Drydock: {barrel.name}",
         categories=categories,
         mime_types=list(mime.DRYDOCK_TYPES),
-        startup_wm_class=program.wm_class or _exe_stem(program.exe),
-        extra={"X-GeST-Origin": "drydock", "X-Drydock-Bottle": bottle.id,
+        startup_wm_class=default_wm_class(program),
+        actions=maintenance_actions(barrel),
+        extra={"X-GeST-Origin": "drydock", "X-Drydock-Barrel": barrel.id,
                "X-Drydock-Program": program.id},
     )
 
@@ -104,5 +146,5 @@ def program_from_harvested(entry: DesktopEntry, program_id: str) -> Program:
     )
 
 
-def entry_path(bottle_id: str, program_id: str, applications_dir: str) -> Path:
-    return _customs_entry_path(desktop_id(bottle_id, program_id), applications_dir)
+def entry_path(barrel_id: str, program_id: str, applications_dir: str) -> Path:
+    return _customs_entry_path(desktop_id(barrel_id, program_id), applications_dir)

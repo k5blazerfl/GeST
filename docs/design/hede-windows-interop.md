@@ -45,7 +45,7 @@ needs it) that both Gangway (RDP) and Drydock (Wine) call. Four jobs:
 
 1. **`.desktop` synthesis** — generate/refresh a launcher entry whose `Exec`
    points at the Gangway/Drydock launcher stub (`gangway-open <profile>` /
-   `drydock-run <bottle> <app>`). This is what lands a foreign app in `helm-menu`
+   `drydock-run <barrel> <app>`). This is what lands a foreign app in `helm-menu`
    and lets it be pinned to `helm-panel`, with `.desktop` Actions for jump-lists.
 2. **Icon extraction** — pull an icon from a Windows `.exe`/`.lnk` (icoutils
    `wrestool`/`wrestool`), from an installer's Start-menu shortcut inside the
@@ -125,12 +125,12 @@ guests via xrdp are a documented target, not special-cased.
 [umu-launcher](https://github.com/Open-Wine-Components/umu-launcher)** — the
 generic, Steam-less Proton runner (runtime + Proton-GE), which is the modern
 standard for running Proton outside Steam — plus `proton-ge-custom`, DXVK,
-VKD3D-Proton, `winetricks`, `gamescope`, and MangoHud. Drydock manages **bottles**
+VKD3D-Proton, `winetricks`, `gamescope`, and MangoHud. Drydock manages **barrels**
 and generates native integration; it does **not** reimplement the runtime.
 
-**A *bottle* (a berth in the drydock)** = `{ runner (wine-N / proton-ge / umu),
+**A *barrel* (a berth in the drydock)** = `{ runner (wine-N / proton-ge / umu),
 WINEPREFIX, arch (win64/win32), installed apps, DXVK/VKD3D state, winetricks
-verbs, env overrides }`, stored under `$XDG_DATA_HOME/hede/drydock/<bottle>/`.
+verbs, env overrides }`, stored under `$XDG_DATA_HOME/hede/drydock/<barrel>/`.
 Bottles-like, but HeDE-native and **Gentoo-aware**.
 
 **The Gentoo-native advantage nobody else has.** Because GeST already owns
@@ -146,8 +146,8 @@ USE* goes through the existing polkit'd Software path.
 
 | Want | How |
 |---|---|
-| App in the Start menu with a real icon | On `.exe`/`.msi` install into a bottle, Customs synthesizes a `.desktop`; `wrestool` extracts the icon (or reads the installer's in-prefix Start-menu `.lnk`) |
-| Double-click an `.exe`/`.msi`/`.lnk` in Seahorse | Customs MIME handler → "Run in Drydock" chooser (pick bottle/runner) |
+| App in the Start menu with a real icon | On `.exe`/`.msi` install into a barrel, Customs synthesizes a `.desktop`; `wrestool` extracts the icon (or reads the installer's in-prefix Start-menu `.lnk`) |
+| Double-click an `.exe`/`.msi`/`.lnk` in Seahorse | Customs MIME handler → "Run in Drydock" chooser (pick barrel/runner) |
 | Correct taskbar icon + grouping | Customs maps the app's Xwayland `WM_CLASS` / Wayland `app_id` to its `.desktop` for the foreign-toplevel taskbar |
 | Per-app runner + graphics | Bottle/app record toggles wine-vanilla vs proton-ge vs umu; DXVK/VKD3D/esync/fsync; Drydock builds the `umu-run`/`wine` launch line |
 | Game mode | Launch through `gamescope` (+ `gamemoderun`) with a chosen resolution/upscaler (FSR); one fullscreen toplevel HeDE treats like any window |
@@ -155,13 +155,13 @@ USE* goes through the existing polkit'd Software path.
 **Wayland forward-path (honesty note).** Wine's native Wayland driver
 (`winewayland.drv`, usable in recent Wine) is the path to drop Xwayland for
 plain apps; Proton still runs Xwayland + gamescope for games today. Drydock
-should *prefer* the Wine-Wayland driver where a bottle's runner supports it and
+should *prefer* the Wine-Wayland driver where a barrel's runner supports it and
 fall back to Xwayland — Customs' identity-matching handles both.
 
-**GeST module (`gest/qt/wine.py` + `gest/core/wine/`).** Bottles CRUD; runner
+**GeST module (`gest/qt/wine.py` + `gest/core/wine/`).** Barrels CRUD; runner
 management (list installed Wine via `eselect`, offer to fetch Proton-GE);
 winetricks verbs; per-app config; the prerequisites check above. Optional
-"advanced" escape hatch: hand a bottle off to Lutris/Bottles/Heroic if the user
+"advanced" escape hatch: hand a barrel off to Lutris/Bottles/Heroic if the user
 already lives there — we integrate, we don't forbid.
 
 ---
@@ -177,7 +177,7 @@ hooks). Order is: prove the floor, then add seamless polish.
 2. **Gangway v1 — full-desktop RDP.** `sdl-freerdp` launcher + GeST profile
    module (no polkit), Keychain-backed creds, clipboard/drive/audio toggles,
    quality profiles, `.rdp` MIME handler. The reliable floor.
-3. **Drydock v1 — bottles + native launchers.** Create/manage prefixes over
+3. **Drydock v1 — barrels + native launchers.** Create/manage prefixes over
    wine/umu; install an `.exe` → Customs `.desktop` + icon in `helm-menu`;
    `.exe`/`.msi` MIME handler; the Gentoo prerequisites check via `core`.
 4. **Drydock v2 — runners & game mode.** Proton-GE/umu runner selection,
@@ -186,7 +186,7 @@ hooks). Order is: prove the floor, then add seamless polish.
    as first-class taskbar citizens via Customs, flagged experimental with an
    honest capability note; LAN discovery.
 6. **Polish.** Seahorse "share folder to RDP", per-app jump-list Actions, tray
-   affordances (active RDP sessions, running bottles), pin-to-panel.
+   affordances (active RDP sessions, running barrels), pin-to-panel.
 
 ## 6. Non-goals
 
@@ -223,8 +223,8 @@ hooks). Order is: prove the floor, then add seamless polish.
   matching (`WM_CLASS`/`app_id` → `.desktop`) — all unit-testable without a
   display, like the existing HeDE `test_desktopentry`.
 - **Gangway/Drydock modules:** launch-line construction (flags/env for a given
-  profile/bottle) is pure and unit-tested; the *engines* are integration-tested
+  profile/barrel) is pure and unit-tested; the *engines* are integration-tested
   behind a manual/smoke harness, never in CI (they need a real host / GPU).
-- **Privilege path:** profile/bottle CRUD asserts **no** polkit prompt;
+- **Privilege path:** profile/barrel CRUD asserts **no** polkit prompt;
   prerequisite USE/package changes assert they route through the existing
   polkit'd Software path — same guarantee as every other GeST module.
