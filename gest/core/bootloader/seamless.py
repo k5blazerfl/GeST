@@ -86,3 +86,24 @@ def stage_theme_steps(*, root: str = "") -> list[Step]:
         Step("stage the HeDE GRUB theme", ["cp", "-rT", f"{root}{THEME_SRC}", dst]),
         Step("select the Plymouth splash", ["plymouth-set-default-theme", PLYMOUTH_THEME]),
     ]
+
+
+def seamless_steps(*, root: str = "") -> list[Step]:
+    """The direct (in-process root) install path's seamless pipeline: write the
+    merged ``/etc/default/grub`` (a ``tee`` step, content on stdin) then stage the
+    theme + select Plymouth. Reads the target's existing grub default to merge
+    idempotently — empty if absent (a fresh install root), so it stays
+    deterministic. Insert before the ``grub-mkconfig`` step; the backend path uses
+    ConfigureSeamlessBoot instead."""
+    grub_default_path = f"{root}/etc/default/grub"
+    existing = ""
+    try:
+        with open(grub_default_path, encoding="utf-8") as f:
+            existing = f.read()
+    except OSError:
+        pass  # no file on a fresh target → merge into an empty base
+    return [
+        Step(f"write {grub_default_path}", ["tee", grub_default_path],
+             stdin=grub_default(existing)),
+        *stage_theme_steps(root=root),
+    ]
