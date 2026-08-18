@@ -5,7 +5,7 @@ import asyncio
 
 import pytest
 
-from gest.core.bootloader import commands, install, m1n1
+from gest.core.bootloader import commands, install, m1n1, seamless
 from gest.core.exec.executor import FakeExecutor
 from gest.core.exec.steps import StepError, run_steps
 
@@ -143,6 +143,25 @@ class _FakeBackend:
     async def regenerate_grub(self):
         self.calls.append("regenerate")
         return (self._fail != "regenerate", "regen output")
+
+
+def test_install_steps_seamless_writes_default_and_stages_before_regenerate():
+    cfg = install.InstallConfig(firmware="uefi", seamless=True,
+                                root="/nonexistent-seamless-test")
+    steps = install.install_steps(cfg)
+    labels = [s.label for s in steps]
+    assert labels[0].startswith("install GRUB")
+    assert labels[-1] == "regenerate grub.cfg"
+    write = next(s for s in steps if s.argv and s.argv[0] == "tee")
+    assert write.argv[1] == "/nonexistent-seamless-test/etc/default/grub"
+    assert seamless.SEAMLESS_CMDLINE in (write.stdin or "")   # merged content on stdin
+    assert any(s.argv[0] == "cp" for s in steps)              # theme staged
+    assert any(s.argv[0] == "plymouth-set-default-theme" for s in steps)
+
+
+def test_install_steps_no_seamless_by_default():
+    steps = install.install_steps(install.InstallConfig(firmware="uefi"))
+    assert not any(s.argv and s.argv[0] == "tee" for s in steps)
 
 
 def test_install_via_backend_calls_install_then_regenerate():

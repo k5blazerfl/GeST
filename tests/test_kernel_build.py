@@ -24,9 +24,24 @@ def test_make_argv_targets_and_jobs():
         "make", "-C", "/usr/src/linux", "-j4", "modules_install"]
 
 
+def test_genkernel_argv_plymouth_bakes_hede_splash():
+    assert commands.genkernel_argv(plymouth=True) == [
+        "genkernel", "--plymouth", "--plymouth-theme=hede", "all"]
+    # config + plymouth together, in a sane order (flags before the `all` target).
+    assert commands.genkernel_argv(kernel_config="/etc/kernels/config", plymouth=True) == [
+        "genkernel", "--kernel-config=/etc/kernels/config",
+        "--plymouth", "--plymouth-theme=hede", "all"]
+
+
 def test_dracut_argv():
     assert commands.dracut_argv() == ["dracut", "--force"]
     assert commands.dracut_argv("6.6.30-gentoo") == ["dracut", "--force", "--kver", "6.6.30-gentoo"]
+
+
+def test_dracut_argv_plymouth_adds_module():
+    assert commands.dracut_argv(plymouth=True) == ["dracut", "--force", "--add", "plymouth"]
+    assert commands.dracut_argv("6.6.30-gentoo", plymouth=True) == [
+        "dracut", "--force", "--add", "plymouth", "--kver", "6.6.30-gentoo"]
 
 
 @pytest.mark.parametrize("call", [
@@ -60,6 +75,25 @@ def test_build_steps_make_full_pipeline():
     cfg = build.BuildConfig(method="make", jobs=4, initramfs=True)
     labels = [s.label for s in build.build_steps(cfg)]
     assert labels == ["build kernel", "install modules", "install kernel", "build initramfs"]
+
+
+def test_build_steps_genkernel_plymouth_flows_to_argv():
+    steps = build.build_steps(build.BuildConfig(method="genkernel", plymouth=True))
+    assert steps[0].argv == ["genkernel", "--plymouth", "--plymouth-theme=hede", "all"]
+
+
+def test_build_steps_make_plymouth_adds_dracut_module():
+    cfg = build.BuildConfig(method="make", jobs=4, initramfs=True, plymouth=True)
+    initramfs = build.build_steps(cfg)[-1]
+    assert initramfs.label == "build initramfs"
+    assert initramfs.argv == ["dracut", "--force", "--add", "plymouth"]
+
+
+def test_build_steps_no_plymouth_by_default():
+    genk = build.build_steps(build.BuildConfig(method="genkernel"))[0]
+    assert "--plymouth" not in genk.argv
+    dracut = build.build_steps(build.BuildConfig(method="make", jobs=1))[-1]
+    assert "--add" not in dracut.argv
 
 
 def test_build_steps_make_without_initramfs():

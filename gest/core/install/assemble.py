@@ -81,6 +81,9 @@ class InstallSelections:
     firmware: str = "uefi"            # "uefi" | "bios"
     efi_directory: str = "/efi"
     boot_disk: str = ""               # BIOS target disk (firmware == "bios")
+    # Seamless graphical boot (GRUB Harbor theme + Plymouth splash in the initramfs);
+    # the HeDE desktop experience. On by default for GeSI; the UI can opt out.
+    seamless: bool = True
     # secret + toggles
     root_password: str = ""           # in-memory only; never in the plan
     binary_pref: bool = True          # --getbinpkg for @world
@@ -191,9 +194,14 @@ def assemble_plan(sel: InstallSelections, stage3: Stage3Selection) -> InstallPla
         mount=mount,
         stage3=stage3,
         kernel=BuildConfig(
-            method=sel.kernel_method, jobs=sel.kernel_jobs, initramfs=sel.kernel_initramfs),
+            method=sel.kernel_method, jobs=sel.kernel_jobs,
+            initramfs=sel.kernel_initramfs, plymouth=sel.seamless),
         bootloader=InstallConfig(
-            firmware=sel.firmware, efi_directory=sel.efi_directory, disk=sel.boot_disk),
+            firmware=sel.firmware, efi_directory=sel.efi_directory, disk=sel.boot_disk,
+            # The bootloader step runs chrooted into the target (native paths),
+            # so seamless writes/stages inside the target with root="" — the chroot
+            # is the seam. (plymouth is baked into the initramfs by BuildKernel above.)
+            seamless=sel.seamless),
         arch=arch,
         hostname=sel.hostname,
         timezone=sel.timezone,

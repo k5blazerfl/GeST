@@ -15,7 +15,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
-from gest.core.bootloader import commands
+from gest.core.bootloader import commands, seamless
 from gest.core.exec.executor import Executor
 from gest.core.exec.runner import OnProgress
 from gest.core.exec.steps import Step, fail, run_steps
@@ -54,6 +54,10 @@ def install_steps(config: InstallConfig, *, arch: str = "amd64") -> list[Step]:
             boot_directory=config.boot_directory,
         ),
     )]
+    if config.seamless:
+        # Configure the seamless boot before regenerating, so grub-mkconfig picks
+        # up the new /etc/default/grub. (The backend path uses ConfigureSeamlessBoot.)
+        steps.extend(seamless.seamless_steps(root=config.root))
     if config.regenerate:
         steps.append(Step("regenerate grub.cfg", commands.grub_mkconfig_argv()))
     return steps
