@@ -11,11 +11,18 @@
 ## 0. Thesis
 
 **A virtual machine on your own box should be a first-class HeDE citizen — a
-named vessel you start from `helm-menu`, and (for Windows) a window that behaves
-like a native app via Gangway, not a raw framebuffer in a console.** Flotilla is
-a *manager + a launch pipeline + the Customs/Gangway integration + the
-Gentoo-native prerequisite automation* over the virtualization stack that already
-exists (libvirt/QEMU/KVM) — the same wager Drydock and Gangway make.
+named vessel you start from `helm-menu`, run the traditional way in a console
+window, and (for Windows) *optionally* light up as a seamless native-feeling app
+via Gangway.** Flotilla is a *manager + a launch pipeline + the Customs/Gangway
+integration + the Gentoo-native prerequisite automation* over the virtualization
+stack that already exists (libvirt/QEMU/KVM) — the same wager Drydock and Gangway
+make.
+
+**Two first-class modes, the user's choice.** Every vessel runs the traditional
+way — a SPICE/VNC console window, like virt-manager or Boxes. For **Windows**
+vessels that's fully supported *and* joined by an opt-in **seamless RDP** mode via
+Gangway (§5). Seamless is a target enhancement layered on top; it never replaces
+the console. The user picks the default entry per vessel and always has both.
 
 ## 1. The wager
 
@@ -37,9 +44,10 @@ exists (libvirt/QEMU/KVM) — the same wager Drydock and Gangway make.
 | **Proxmox / oVirt** | Serious cluster virtualization | *Nothing* — Flotilla is a single-box desktop manager, not a datacenter |
 
 **The two things none of the desktop managers do — Flotilla's reason to exist:**
-1. **HeDE-native + Gangway-seamless** — a Windows vessel isn't a SPICE window you
-   alt-tab into; it's Gangway RDP: clipboard/drive/audio redirection, a real
-   taskbar identity, per-app windows once RAIL lands. Local VM ≡ remote box.
+1. **HeDE-native + Gangway-seamless** — a Windows vessel runs traditionally in a
+   console *and* can opt into Gangway RDP: clipboard/drive/audio redirection, a
+   real taskbar identity, per-app windows once RAIL lands. Local VM ≡ remote box,
+   when you want it.
 2. **Gentoo-native prerequisites** — Flotilla can *enable KVM, install
    qemu/libvirt/OVMF/swtpm/virtiofsd, start `libvirtd`, and add you to the
    `libvirt` group* through GeST's polkit'd software core. "Turn on
@@ -57,8 +65,8 @@ exists (libvirt/QEMU/KVM) — the same wager Drydock and Gangway make.
   install for performant disk/net/gpu.
 - **Display/console** — **SPICE** (with `spice-vdagent` in the guest: clipboard,
   auto-resize, USB redir) or VNC, via a SPICE client; **headless** for servers.
-  For Windows guests SPICE is the *install/rescue* console; **Gangway RDP is the
-  daily driver** (§5).
+  For Windows guests the SPICE console is a full first-class way to run the vessel;
+  **Gangway RDP** is the opt-in seamless alternative (§5).
 - **Shared folders** — **virtiofs** (`virtiofsd`) for Linux guests; Windows uses
   the Gangway `/drive` redirection instead.
 - **Guest integration** — `qemu-guest-agent` for IP reporting, graceful
@@ -79,19 +87,29 @@ A **vessel** = a managed libvirt domain + Flotilla config, under
 - **disks**: `[{path, size, bus: virtio, format: qcow2, boot: bool}]`.
 - **media**: install ISO + (Windows) the virtio-win ISO, detached post-install.
 - **networks**: `[{mode: nat|bridge|isolated, model: virtio}]`.
-- **display**: `spice | vnc | none`; **spice_agent: bool**; USB redirection.
+- **display**: `spice | vnc | none`; **spice_agent: bool**; USB redirection —
+  always present, this is the traditional console (and the only mode for non-Windows).
+- **entry**: the default way `flotilla connect`/the launcher opens a Windows
+  vessel — **`console` or `rdp`** (default `console`; `rdp` once the Gangway link
+  is set up). The other mode is always one click away.
 - **guest_agent: bool**, **shared_folders** (virtiofs, Linux).
-- **gangway**: for a Windows vessel, the **linked Gangway profile id** + whether
-  RDP is the preferred entry (§5).
+- **gangway**: for a Windows vessel, the optional **linked Gangway profile id**
+  that powers the seamless RDP entry (§5).
 
 A vessel compiles to **domain XML** — a *pure* transform, unit-testable without a
 hypervisor (the same discipline as Gangway's `commands.py` and Drydock's launch
 pipeline). Applying it (define/start/snapshot) is the host-only edge.
 
-## 5. The Gangway bridge — the killer feature
+## 5. The Gangway bridge — the seamless option
 
-A Windows vessel should feel like Drydock's local apps, not a console window.
-Flotilla wires it to Gangway:
+A Windows vessel supports **two first-class modes**: the **traditional console**
+(SPICE/VNC — run it like any VM, always available) and — the differentiator — an
+opt-in **seamless RDP** mode via Gangway. Neither is mandatory; the user's `entry`
+choice (§4) decides which opens by default, and the launcher's jump-list (§7)
+offers the other. Traditional operation is a fully-supported first-class path —
+right for pre-RDP setup, GPU/gaming where RDP underperforms, watching the boot/
+firmware, an offline guest, or simple preference. RDP is the enhancement, not a
+requirement. When the user opts into it, Flotilla wires it to Gangway:
 
 1. **At install** — attach virtio-win; optionally seed an **`unattend.xml`** (or a
    firstboot script via the guest agent) that **enables Remote Desktop**, opens
@@ -100,18 +118,22 @@ Flotilla wires it to Gangway:
 2. **Address discovery** — once the guest is up, learn its IP via
    `qemu-guest-agent` (or the libvirt DHCP lease) and **provision/update a Gangway
    profile** (`host = <guest-ip>`, sensible redirections on).
-3. **Connect** — `flotilla connect <vessel>` (and the vessel's launcher's default
-   action) opens **Gangway**, not SPICE: clipboard/drive/audio redirection, a
-   proper taskbar identity via [Customs], and — once Gangway Phase 5 (RAIL) lands
-   — per-app seamless windows. The SPICE console stays available as
-   "Console (install/rescue)".
+3. **Connect** — when the vessel's `entry` is `rdp`, `flotilla connect <vessel>`
+   (and the launcher's default action) opens **Gangway**: clipboard/drive/audio
+   redirection, a proper taskbar identity via [Customs], and — once Gangway Phase 5
+   (RAIL) lands — per-app seamless windows. When `entry` is `console`, the same
+   command opens the SPICE/VNC console instead. **Both are always one action away**
+   (`flotilla console <vessel>` / `flotilla connect --rdp`, and both in the
+   launcher jump-list) — the console is a full daily-use mode, not a rescue-only
+   fallback.
 4. **Credentials** — the guest password lives in the Keychain via Gangway's
    existing `set-password`; Flotilla never stores it.
 
-Net: a **local** Windows VM gets the exact first-class RDP experience Gangway
-gives a **remote** Windows box — this is why Gangway's redirection/quality/Customs
-work pays off twice. (Conceptually the same as Hyper-V's "enhanced session," but
-built on FreeRDP + our stack.)
+Net: *when you want it*, a **local** Windows VM gets the exact first-class RDP
+experience Gangway gives a **remote** Windows box — this is why Gangway's
+redirection/quality/Customs work pays off twice. (Conceptually the same as
+Hyper-V's "enhanced session," but built on FreeRDP + our stack.) And when you
+don't, it's an ordinary, fully-supported VM in a console window.
 
 ## 6. Linux & general vessels (first-class, not an afterthought)
 
@@ -128,8 +150,8 @@ built on FreeRDP + our stack.)
 ## 7. Customs integration (shared spine)
 
 - A vessel gets a synthesized **`.desktop`** ("Start Windows 11", "Start Debian")
-  in `helm-menu`, Exec → `flotilla-open <vessel>` (which picks Gangway-RDP for a
-  running Windows guest, else boots + opens the console).
+  in `helm-menu`, Exec → `flotilla-open <vessel>` (boots if needed, then opens the
+  vessel's chosen `entry` — console by default, or Gangway-RDP if the user set it).
 - The window carries a **taskbar identity** via the same Customs `identity.json`
   Drydock and Gangway write.
 - Jump-list actions (like #137/#138): "Console", "Connect (RDP)", "Force off",
