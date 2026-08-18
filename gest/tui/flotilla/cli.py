@@ -23,7 +23,7 @@ import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from gest.core.flotilla import backend, domainxml, model, prereq, vessels
+from gest.core.flotilla import backend, domainxml, images, model, prereq, vessels
 from gest.core.flotilla.model import DISPLAYS, OS_WINDOWS, OSES, Disk, Vessel
 
 
@@ -71,6 +71,7 @@ class FlotillaEnv:
     capture: Callable[[list[str]], str] = _default_capture
     gangway_store_base: str = ""  # "" → Gangway's default profile dir
     launch_rdp: Callable = _default_launch_rdp
+    cache_base: str = "~/.cache/flotilla"  # where fetched install images land
 
 
 def _load(env: FlotillaEnv, vessel_id: str) -> Vessel | None:
@@ -90,7 +91,9 @@ def cmd_create(args, env: FlotillaEnv) -> int:
     if args.display:
         vessel.display = args.display
     vessel.install_iso = args.iso or ""
-    vessel.virtio_iso = args.virtio_iso or ""
+    # Windows guests auto-get the virtio-win driver ISO (cached path) for
+    # performant virtio disk/net, unless the user pinned one.
+    vessel.virtio_iso = args.virtio_iso or _default_virtio_iso(env, vessel.os)
     disk = Disk(path=str(vessels.default_disk_path(vid, env.store_base)), size_gb=args.disk_size)
     vessel.disks = [disk]
 
@@ -104,19 +107,63 @@ def cmd_create(args, env: FlotillaEnv) -> int:
     vessels.save_vessel(vessel, env.store_base)
     env.io.out(f"created vessel {vid} ({vessel.os}, {vessel.vcpus} vCPU, "
                f"{vessel.memory_mb} MiB, {vessel.firmware})")
-    if args.allocate:
+    if not args.no_allocate:
         rc = env.run_argv(backend.alloc_disk_argv(disk.path, disk.size_gb, disk.fmt))
         env.io.out(f"allocated a {disk.size_gb}G disk at {disk.path}" if rc == 0
                    else f"disk allocation failed (rc={rc})")
-    else:
-        env.io.out(f"note: allocate the disk with --allocate (or "
-                   f"`qemu-img create -f qcow2 {disk.path} {disk.size_gb}G`)")
     return 0
+
+
+def _default_virtio_iso(env: FlotillaEnv, os_name: str) -> str:
+    if os_name != OS_WINDOWS:
+        return ""
+    return images.cached_path(images.by_id("virtio-win"), env.cache_base)
 
 
 def cmd_list(args, env: FlotillaEnv) -> int:
     for vid in vessels.list_vessels(env.store_base):
         env.io.out(vid)
+    return 0
+
+
+def cmd_images(args, env: FlotillaEnv) -> int:
+    for image in images.CATALOG:
+        how = "mido" if image.fetcher == images.FETCH_MIDO else "url"
+        env.io.out(f"{image.id:12} {image.os:8} [{how}]  {image.title}")
+    return 0
+
+
+def cmd_fetch(args, env: FlotillaEnv) -> int:
+    image = images.by_id(args.image)
+    if image is None:
+        env.io.err(f"no such image {args.image!r} (see `flotilla images`)")
+        return 1
+
+    from pathlib import Path
+    cache_dir = str(Path(env.cache_base).expanduser() / "images")
+    if image.fetcher == images.FETCH_MIDO:
+        env.io.out(f"fetching {image.title} via mido into {cache_dir} …")
+        rc = env.run_argv(images.mido_argv(image.edition, cache_dir))
+        env.io.out("mido finished — pass the downloaded ISO to `flotilla launch --iso`"
+                   if rc == 0 else f"mido failed (rc={rc})")
+        return rc
+
+    dest = images.cached_path(image, env.cache_base)
+    if not args.force and Path(dest).exists():
+        env.io.out(f"already cached: {dest}")
+        return 0
+    rc = env.run_argv(images.curl_argv(image.url, dest))
+    if rc != 0:
+        env.io.err(f"download failed (rc={rc})")
+        return rc
+    if image.sha256:
+        ok = images.verify_sha256(env.capture(images.sha256_argv(dest)), image.sha256)
+        env.io.out("checksum OK" if ok else "CHECKSUM MISMATCH")
+        if not ok:
+            return 1
+    else:
+        env.io.out("note: no pinned checksum for this image — skipped verification")
+    env.io.out(f"fetched {dest}")
     return 0
 
 
@@ -253,6 +300,7 @@ COMMANDS: dict[str, Callable[..., int]] = {
     "create": cmd_create, "list": cmd_list, "show": cmd_show, "xml": cmd_xml,
     "prereqs": cmd_prereqs, "define": cmd_define, "start": cmd_start, "stop": cmd_stop,
     "console": cmd_console, "connect": cmd_connect, "address": cmd_address, "rm": cmd_rm,
+    "images": cmd_images, "fetch": cmd_fetch,
 }
 
 
@@ -269,9 +317,14 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("--iso", default="", help="install ISO")
     create.add_argument("--virtio-iso", default="", help="virtio-win ISO (Windows)")
     create.add_argument("--display", choices=DISPLAYS, default="")
-    create.add_argument("--allocate", action="store_true", help="qemu-img create the disk now")
+    create.add_argument("--no-allocate", action="store_true",
+                        help="skip creating the qcow2 disk now")
 
     sub.add_parser("list", help="list vessels")
+    sub.add_parser("images", help="list the install-media catalog")
+    fetch = sub.add_parser("fetch", help="download a catalog image to the cache")
+    fetch.add_argument("image")
+    fetch.add_argument("--force", action="store_true", help="re-download if cached")
     for name in ("show", "xml", "prereqs", "define", "start", "console", "address"):
         sub.add_parser(name, help=f"{name} a vessel").add_argument("id")
 

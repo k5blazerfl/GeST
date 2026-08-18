@@ -58,17 +58,18 @@ class _H:
 def test_create_saves_a_windows_vessel(tmp_path):
     h = _H(tmp_path)
     assert run_cli(["create", "Windows 11", "--os", "windows", "--memory", "8192",
-                    "--iso", "/iso/win11.iso"], env=h.env) == 0
+                    "--iso", "/iso/win11.iso", "--no-allocate"], env=h.env) == 0
     v = vessels.load_vessel("windows-11", h.store)
     assert v is not None and v.os == "windows" and v.memory_mb == 8192
     assert v.secureboot and v.tpm  # recommended Windows defaults
     assert v.disks and v.disks[0].path.endswith("/windows-11/disk.qcow2")
-    assert h.calls == []  # no --allocate, so nothing ran
+    assert v.virtio_iso.endswith("/virtio-win.iso")  # auto-attached for Windows
+    assert h.calls == []  # --no-allocate, so nothing ran
 
 
-def test_create_allocate_runs_qemu_img(tmp_path):
+def test_create_allocates_the_disk_by_default(tmp_path):
     h = _H(tmp_path)
-    run_cli(["create", "deb", "--os", "linux", "--disk-size", "20", "--allocate"], env=h.env)
+    run_cli(["create", "deb", "--os", "linux", "--disk-size", "20"], env=h.env)
     assert h.calls[0][:3] == ["qemu-img", "create", "-f"] and h.calls[0][-1] == "20G"
 
 
@@ -82,6 +83,7 @@ def test_xml_and_prereqs_are_pure(tmp_path):
     h = _H(tmp_path)
     run_cli(["create", "Win", "--os", "windows"], env=h.env)
     h.out.clear()
+    h.calls.clear()  # drop the create-time qemu-img allocate call
     assert run_cli(["xml", "win"], env=h.env) == 0
     assert any("<domain type=\"kvm\">" in line for line in h.out)
     h.out.clear()
