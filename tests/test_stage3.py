@@ -60,6 +60,10 @@ def test_latest_url():
     assert index.latest_url(index.MIRROR, "amd64", "openrc") == (
         "https://distfiles.gentoo.org/releases/amd64/autobuilds/"
         "latest-stage3-openrc.txt")
+    # the systemd default flavor resolves the same way (flavor is just the token)
+    assert index.latest_url(index.MIRROR, "amd64", "systemd") == (
+        "https://distfiles.gentoo.org/releases/amd64/autobuilds/"
+        "latest-stage3-systemd.txt")
 
 
 def test_latest_url_honours_custom_mirror_and_strips_trailing_slash():
@@ -81,23 +85,25 @@ def test_tarball_and_derived_urls():
 
 # --- variant model ----------------------------------------------------------
 
-def test_variants_are_all_openrc_amd64():
+def test_variants_offer_systemd_default_and_openrc_amd64():
     assert model.VARIANTS  # non-empty
     flavors = [v.flavor for v in model.VARIANTS]
-    assert "openrc" in flavors
-    assert {"desktop-openrc", "hardened-openrc", "nomultilib-openrc"} <= set(flavors)
+    # systemd is the default (HeDE needs it) and comes first
+    assert model.DEFAULT_VARIANT.flavor == "systemd"
+    assert flavors[0] == "systemd"
+    assert {"systemd", "desktop-systemd"} <= set(flavors)
+    # OpenRC variants remain for a plain-Gentoo install
+    assert {"openrc", "desktop-openrc", "hardened-openrc", "nomultilib-openrc"} <= set(flavors)
     assert all(v.arch == "amd64" for v in model.VARIANTS)
-    assert all("openrc" in v.flavor for v in model.VARIANTS)  # no systemd
-    assert model.DEFAULT_VARIANT.flavor == "openrc"
 
 
 def test_arm64_variants_and_variants_for():
-    # Apple Silicon (Asahi) groundwork: arm64 OpenRC variants, kept out of the
-    # default offered list; variants_for() dispatches per arch.
+    # Apple Silicon (Asahi) groundwork: arm64 variants (systemd first, like amd64),
+    # kept out of the default offered list; variants_for() dispatches per arch.
     assert model.variants_for("amd64") is model.VARIANTS
     assert model.variants_for("arm64") is model.ARM64_VARIANTS
     assert model.ARM64_VARIANTS and all(v.arch == "arm64" for v in model.ARM64_VARIANTS)
-    assert all("openrc" in v.flavor for v in model.ARM64_VARIANTS)  # no systemd
+    assert model.ARM64_VARIANTS[0].flavor == "systemd"    # systemd default on arm64 too
     assert "arm64" in model.SUPPORTED_ARCHES
 
 

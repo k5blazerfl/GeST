@@ -2,8 +2,11 @@
 
 ``Stage3Variant`` is one entry in the pick-list the installer offers; a variant
 plus a resolved mirror index becomes a ``Stage3Selection`` (concrete URLs, the
-tarball filename, its byte size, and the derived ``.DIGESTS``/``.asc`` URLs). All
-OpenRC — systemd is a project non-goal (see the design doc).
+tarball filename, its byte size, and the derived ``.DIGESTS``/``.asc`` URLs).
+
+**systemd** is the default: HeDE is systemd-only (greetd, logind/systemd D-Bus,
+the seamless stack all assume it), so a GeSI install needs a systemd base. OpenRC
+variants remain offered for a plain-Gentoo (non-HeDE) install.
 """
 
 from __future__ import annotations
@@ -29,20 +32,27 @@ class Stage3Variant:
     label: str
 
 
-# The offered OpenRC variants. Order is the pick-list order; the plain openrc
-# variant is the proposed default (design doc, open question 1).
+# The offered variants; order is the pick-list order. Standard (systemd) is first
+# and thus the default (DEFAULT_VARIANT) — the base a HeDE install needs. HeDE
+# pulls its own Wayland desktop (gui-apps/hede), so the *Standard* systemd base is
+# the right one, not desktop-systemd (which drags in an Xorg desktop profile). The
+# OpenRC variants stay for a plain-Gentoo install.
 VARIANTS: tuple[Stage3Variant, ...] = (
+    Stage3Variant(DEFAULT_ARCH, "systemd", "Standard (systemd)"),
+    Stage3Variant(DEFAULT_ARCH, "desktop-systemd", "Desktop (systemd)"),
     Stage3Variant(DEFAULT_ARCH, "openrc", "Standard (OpenRC)"),
     Stage3Variant(DEFAULT_ARCH, "desktop-openrc", "Desktop (OpenRC)"),
     Stage3Variant(DEFAULT_ARCH, "hardened-openrc", "Hardened (OpenRC)"),
     Stage3Variant(DEFAULT_ARCH, "nomultilib-openrc", "No-multilib (OpenRC)"),
 )
 
-# Apple Silicon (Asahi) groundwork: a stock arm64 OpenRC stage3 is the base
-# userland. The Asahi kernel (asahi-sources / overlay) and the m1n1 boot stub are a
-# separate install increment; arch flows through the plan so the bootloader step
-# emits arm64-efi GRUB. Not merged into the default offered VARIANTS yet.
+# Apple Silicon (Asahi) groundwork: a stock arm64 stage3 is the base userland
+# (systemd first, matching the amd64 default). The Asahi kernel (asahi-sources /
+# overlay) and the m1n1 boot stub are a separate install increment; arch flows
+# through the plan so the bootloader step emits arm64-efi GRUB. Not merged into the
+# default offered VARIANTS yet.
 ARM64_VARIANTS: tuple[Stage3Variant, ...] = (
+    Stage3Variant(ARM64_ARCH, "systemd", "Standard (systemd, arm64)"),
     Stage3Variant(ARM64_ARCH, "openrc", "Standard (OpenRC, arm64)"),
     Stage3Variant(ARM64_ARCH, "desktop-openrc", "Desktop (OpenRC, arm64)"),
 )

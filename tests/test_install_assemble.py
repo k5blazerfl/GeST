@@ -217,7 +217,8 @@ def test_assemble_rejects_bad_system_fields():
 # --- resolve_stage3 (I/O, faked) --------------------------------------------
 
 def test_resolve_stage3_parses_the_index(monkeypatch):
-    relpath = "20240728T170331Z/stage3-amd64-openrc-20240728T170331Z.tar.xz"
+    # DEFAULT_VARIANT is now Standard (systemd) — the base a HeDE install needs.
+    relpath = "20240728T170331Z/stage3-amd64-systemd-20240728T170331Z.tar.xz"
     captured = {}
 
     def fake_fetch(url):
@@ -226,8 +227,8 @@ def test_resolve_stage3_parses_the_index(monkeypatch):
 
     monkeypatch.setattr(assemble.index, "fetch_text", fake_fetch)
     sel = resolve_stage3(DEFAULT_VARIANT)
-    assert "latest-stage3-openrc.txt" in captured["url"]
-    assert sel.filename == "stage3-amd64-openrc-20240728T170331Z.tar.xz"
+    assert "latest-stage3-systemd.txt" in captured["url"]
+    assert sel.filename == "stage3-amd64-systemd-20240728T170331Z.tar.xz"
     assert sel.size == 268435456
     assert sel.url.endswith(relpath)
     assert sel.digests_url == sel.url + ".DIGESTS"
