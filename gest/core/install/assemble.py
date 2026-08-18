@@ -81,9 +81,13 @@ class InstallSelections:
     firmware: str = "uefi"            # "uefi" | "bios"
     efi_directory: str = "/efi"
     boot_disk: str = ""               # BIOS target disk (firmware == "bios")
-    # Seamless graphical boot (GRUB Harbor theme + Plymouth splash in the initramfs);
-    # the HeDE desktop experience. On by default for GeSI; the UI can opt out.
-    seamless: bool = True
+    # Seamless graphical boot (GRUB Harbor theme + Plymouth splash in the initramfs).
+    # OFF by default: it requires the target to already carry sys-boot/plymouth and
+    # the HeDE theme (gui-apps/hede) — which the installer does not emerge yet (it
+    # installs base Gentoo). Enabling it on a target without those makes genkernel
+    # --plymouth / the theme-stage steps fail the install. Turn it on only once a
+    # desktop-install step plants those atoms (then it can default on for GeSI).
+    seamless: bool = False
     # secret + toggles
     root_password: str = ""           # in-memory only; never in the plan
     binary_pref: bool = True          # --getbinpkg for @world
