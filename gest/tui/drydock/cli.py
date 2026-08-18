@@ -559,11 +559,53 @@ def cmd_install(args, env: DrydockEnv) -> int:
     return 0 if report.ok else 1
 
 
+def cmd_import_lutris(args, env: DrydockEnv) -> int:
+    from gest.core.drydock import lutris_import
+
+    try:
+        with open(os.path.expanduser(args.script), encoding="utf-8") as fh:
+            text = fh.read()
+    except OSError as exc:
+        env.io.err(f"cannot read {args.script}: {exc}")
+        return 1
+    try:
+        script = lutris_import.load_script(text)
+    except (RuntimeError, ValueError) as exc:
+        env.io.err(str(exc))
+        return 1
+
+    result = lutris_import.convert(script)
+    if result.recipe is None:
+        for reason in result.rejected:
+            env.io.err(f"rejected: {reason}")
+        env.io.err("import failed — nothing to write")
+        return 1
+    for warning in result.warnings:
+        env.io.err(f"warning: {warning}")
+    for reason in result.rejected:
+        env.io.err(f"dropped: {reason}")
+
+    try:
+        out = lutris_import.dump_recipe(result.recipe)
+    except RuntimeError as exc:
+        env.io.err(str(exc))
+        return 1
+    if args.output and args.output != "-":
+        with open(os.path.expanduser(args.output), "w", encoding="utf-8") as fh:
+            fh.write(out)
+        env.io.out(f"wrote recipe to {args.output}")
+    else:
+        env.io.out(out)
+    env.io.out(f"# {len(result.recipe.steps)} step(s), {result.manual_steps} manual "
+               f"TODO(s), {len(result.warnings)} warning(s), {len(result.rejected)} dropped")
+    return 0
+
+
 COMMANDS: dict[str, Callable[..., int]] = {
     "create": cmd_create, "list": cmd_list, "show": cmd_show, "rm": cmd_rm,
     "register": cmd_register, "scan": cmd_scan, "prereqs": cmd_prereqs, "run": cmd_run,
     "materialize": cmd_materialize, "plan": cmd_plan, "install": cmd_install,
-    "install-recipe": cmd_install_recipe,
+    "install-recipe": cmd_install_recipe, "import-lutris": cmd_import_lutris,
     "lint": cmd_lint, "export-recipe": cmd_export_recipe,
     "winetricks": cmd_winetricks, "winecfg": cmd_winecfg, "kill": cmd_kill,
     "shell": cmd_shell, "doctor": cmd_doctor,
@@ -639,6 +681,12 @@ def build_parser() -> argparse.ArgumentParser:
     exp = sub.add_parser("export-recipe", help="export a barrel's config as a helm.recipe")
     exp.add_argument("barrel")
     exp.add_argument("-o", "--output", default="-", help="write the recipe here (default: stdout)")
+
+    imp = sub.add_parser("import-lutris",
+                         help="convert a Lutris install script to a helm.recipe")
+    imp.add_argument("script", help="path to a Lutris .yml install script")
+    imp.add_argument("-o", "--output", default="-",
+                     help="write the recipe here (default: stdout)")
 
     wt = sub.add_parser("winetricks", help="run winetricks verbs in a barrel")
     wt.add_argument("barrel")
