@@ -262,10 +262,33 @@ def cmd_materialize(args, env: DrydockEnv) -> int:
     return 0
 
 
+def cmd_lint(args, env: DrydockEnv) -> int:
+    from gest.core.drydock import recipe_lint, recipe_store
+
+    try:
+        recipe = recipe_store.load(args.recipe)
+    except OSError as exc:
+        env.io.err(f"cannot read {args.recipe}: {exc}")
+        return 1
+    except (RuntimeError, ValueError) as exc:
+        env.io.err(str(exc))
+        return 1
+
+    issues = recipe_lint.lint(recipe)
+    for issue in issues:
+        env.io.out(f"{issue.level}: {issue.message}")
+    errors = sum(1 for i in issues if i.level == recipe_lint.ERROR)
+    warnings = sum(1 for i in issues if i.level == recipe_lint.WARNING)
+    if not issues:
+        env.io.out("ok — no issues")
+    env.io.out(f"# {errors} error(s), {warnings} warning(s)")
+    return 1 if errors else 0
+
+
 COMMANDS: dict[str, Callable[..., int]] = {
     "create": cmd_create, "list": cmd_list, "show": cmd_show, "rm": cmd_rm,
     "register": cmd_register, "scan": cmd_scan, "prereqs": cmd_prereqs, "run": cmd_run,
-    "materialize": cmd_materialize,
+    "materialize": cmd_materialize, "lint": cmd_lint,
 }
 
 
@@ -307,6 +330,9 @@ def build_parser() -> argparse.ArgumentParser:
     mat.add_argument("recipe", help="path to a helm.recipe YAML file")
     mat.add_argument("--name", default="", help="override the bottle id/name")
     mat.add_argument("--force", action="store_true", help="overwrite an existing bottle")
+
+    lint = sub.add_parser("lint", help="validate a helm.recipe (structure + references)")
+    lint.add_argument("recipe", help="path to a helm.recipe YAML file")
     return parser
 
 
