@@ -21,6 +21,12 @@ def extract_argv(exe_path: str, out_path: str, *, index: int = 1) -> list[str]:
     return ["wrestool", "-x", "-t", "14", "-n", str(index), "-o", out_path, exe_path]
 
 
+def convert_argv(ico_path: str, out_path: str, *, width: str = "48") -> list[str]:
+    """``icotool -x -w <width> -o <out> <ico>`` — extract the ``width``-px image
+    from an ``.ico`` (as produced by :func:`extract_argv`) to a PNG (icoutils)."""
+    return ["icotool", "-x", "-w", width, "-o", out_path, ico_path]
+
+
 def icon_install_path(icon_id: str, *, size: str = "48x48",
                       theme_dir: str = ICON_THEME_DIR, ext: str = "png") -> Path:
     """Where an extracted icon named ``icon_id`` belongs in the hicolor theme."""

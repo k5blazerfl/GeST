@@ -16,6 +16,7 @@ filesystem scan touches disk.
 
 from __future__ import annotations
 
+import re
 import shlex
 from pathlib import Path, PureWindowsPath
 
@@ -45,6 +46,31 @@ def _exe_stem(exe: str) -> str:
     return PureWindowsPath(tail).stem or tail
 
 
+def default_wm_class(program: Program) -> str:
+    """The WM_CLASS a program presents: its explicit ``wm_class`` else the exe
+    stem. This is both the launcher's ``StartupWMClass`` and the key the Customs
+    identity map registers, so the taskbar can match the window to the launcher."""
+    return program.wm_class or _exe_stem(program.exe)
+
+
+_WIN_DRIVE = re.compile(r"^([A-Za-z]):/(.*)$")
+
+
+def local_exe_path(bottle: Bottle, program: Program) -> str:
+    """Resolve a program's exe to a real host path (for icon extraction). A
+    Windows path like ``C:\\office\\excel.exe`` maps to ``<prefix>/drive_c/…``; a
+    unix path (e.g. a harvested wine Exec) is used as-is. Empty if unresolved."""
+    exe = program.exe
+    if not exe:
+        return ""
+    unixish = exe.replace("\\", "/")
+    match = _WIN_DRIVE.match(unixish)
+    if match and bottle.prefix:
+        drive, rest = match.group(1).lower(), match.group(2)
+        return str(Path(bottle.prefix).expanduser() / f"drive_{drive}" / rest)
+    return exe
+
+
 def desktop_entry(bottle: Bottle, program: Program) -> DesktopEntry:
     categories = ["Game"] if program.category == "Game" else ["Utility"]
     return DesktopEntry(
@@ -54,7 +80,7 @@ def desktop_entry(bottle: Bottle, program: Program) -> DesktopEntry:
         comment=f"{program.name} — Drydock: {bottle.name}",
         categories=categories,
         mime_types=list(mime.DRYDOCK_TYPES),
-        startup_wm_class=program.wm_class or _exe_stem(program.exe),
+        startup_wm_class=default_wm_class(program),
         extra={"X-GeST-Origin": "drydock", "X-Drydock-Bottle": bottle.id,
                "X-Drydock-Program": program.id},
     )

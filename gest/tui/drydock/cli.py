@@ -7,6 +7,9 @@ is the stub the synthesized ``.desktop`` Exec points at.
     drydock create office --runner wine --arch win32
     drydock register office /prefix/excel.exe --name Excel --gamescope --fsr
     drydock scan office            # adopt wine's auto-generated launchers
+    drydock materialize game.recipe   # create a bottle from a helm.recipe
+    drydock plan game.recipe          # show the compiled install plan (dry run)
+    drydock install game.recipe --run # execute the install plan on this host
     drydock prereqs office
     drydock run office excel
 """
@@ -14,10 +17,13 @@ is the stub the synthesized ``.desktop`` Exec points at.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import subprocess
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+from gest.core.customs import icons, identity_store, mime
 from gest.core.customs.desktop import remove_entry, write_entry
 from gest.core.drydock import bottles, desktop, launch, prereq
 from gest.core.drydock.model import ARCHES, RUNNERS, Bottle, GraphicsProfile, Program
@@ -33,6 +39,15 @@ def _default_io() -> CliIO:
     return CliIO(out=print, err=lambda s: print(s, file=sys.stderr))
 
 
+def _default_run(argv: list[str]) -> int:
+    """Run a host tool (wrestool/icotool/xdg-mime/…) and return its exit code.
+    Best-effort — the caller decides whether a nonzero code matters."""
+    try:
+        return subprocess.run(argv).returncode
+    except FileNotFoundError:
+        return 127
+
+
 @dataclass
 class DrydockEnv:
     io: CliIO = field(default_factory=_default_io)
@@ -40,6 +55,14 @@ class DrydockEnv:
     applications_dir: str = "~/.local/share/applications"
     wine_apps_dir: str = desktop.WINE_APPS_DIR
     launch_fn: Callable = launch.launch
+    # Customs spine (host tools + the shared identity map) — injectable so the
+    # command layer stays CI-safe. identity_path/icon_theme_dir empty → defaults.
+    run_argv: Callable[[list[str]], int] = _default_run
+    identity_path: str = ""
+    icon_theme_dir: str = icons.ICON_THEME_DIR
+    # Runs one install-plan op (0 == ok); None → the host runner. Injectable so
+    # `install` is testable without spawning wine / touching the filesystem.
+    step_runner: Callable | None = None
 
 
 def _load(env: DrydockEnv, bottle_id: str) -> Bottle | None:
@@ -58,6 +81,43 @@ def _write_launcher(env: DrydockEnv, bottle: Bottle, program: Program) -> str:
 def _upsert_program(bottle: Bottle, program: Program) -> None:
     bottle.programs = [p for p in bottle.programs if p.id != program.id]
     bottle.programs.append(program)
+
+
+def _identity_path(env: DrydockEnv) -> str | None:
+    return env.identity_path or None
+
+
+def _wire_customs(env: DrydockEnv, bottle: Bottle, program: Program) -> None:
+    """Make a synthesized launcher a first-class HeDE citizen: extract its icon,
+    register its taskbar identity, and set it as the default handler for its MIME
+    types. The DB refresh is left to :func:`_refresh_db` so a batch (scan) does it
+    once. Host tools run through ``env.run_argv``; failures are non-fatal."""
+    did = desktop.desktop_id(bottle.id, program.id)
+
+    # 1. Icon: wrestool extracts the .exe's group-icon → icotool renders a PNG
+    #    into the hicolor theme under the launcher's Icon name (<desktop_id>).
+    exe = desktop.local_exe_path(bottle, program)
+    if exe:
+        png = icons.icon_install_path(did, theme_dir=env.icon_theme_dir)
+        png.parent.mkdir(parents=True, exist_ok=True)
+        ico = png.with_suffix(".ico")
+        if env.run_argv(icons.extract_argv(exe, str(ico))) == 0:
+            env.run_argv(icons.convert_argv(str(ico), str(png)))
+        with contextlib.suppress(OSError):
+            ico.unlink()
+
+    # 2. Identity: the WM_CLASS the window will present → this launcher, so the
+    #    taskbar resolves it (the source of truth HeDE reads).
+    wm_class = desktop.default_wm_class(program)
+    if wm_class:
+        identity_store.register_entry([wm_class], did, _identity_path(env))
+
+    # 3. MIME: make this launcher the default handler for .exe/.msi/.lnk/.bat.
+    env.run_argv(mime.register_default_argv(did, mime.DRYDOCK_TYPES))
+
+
+def _refresh_db(env: DrydockEnv) -> None:
+    env.run_argv(mime.update_database_argv(env.applications_dir))
 
 
 def cmd_create(args, env: DrydockEnv) -> int:
@@ -94,7 +154,13 @@ def cmd_rm(args, env: DrydockEnv) -> int:
     bottle = bottles.load_bottle(args.bottle, env.store_base)
     if bottle is not None:
         for program in bottle.programs:
-            remove_entry(desktop.desktop_id(bottle.id, program.id), env.applications_dir)
+            did = desktop.desktop_id(bottle.id, program.id)
+            remove_entry(did, env.applications_dir)
+            identity_store.unregister_entry(did, _identity_path(env))
+            with contextlib.suppress(OSError):
+                icons.icon_install_path(did, theme_dir=env.icon_theme_dir).unlink()
+        if bottle.programs:
+            _refresh_db(env)
     if bottles.delete_bottle(args.bottle, env.store_base):
         env.io.out(f"removed bottle {args.bottle}")
         return 0
@@ -116,7 +182,10 @@ def cmd_register(args, env: DrydockEnv) -> int:
                       graphics=_graphics_from_args(args))
     _upsert_program(bottle, program)
     bottles.save_bottle(bottle, env.store_base)
-    env.io.out(f"registered {program.id}; launcher {_write_launcher(env, bottle, program)}")
+    launcher = _write_launcher(env, bottle, program)
+    _wire_customs(env, bottle, program)
+    _refresh_db(env)
+    env.io.out(f"registered {program.id}; launcher {launcher} (icon + identity + MIME wired)")
     return 0
 
 
@@ -130,9 +199,12 @@ def cmd_scan(args, env: DrydockEnv) -> int:
         program = desktop.program_from_harvested(entry, bottles.slug(entry.name or "app"))
         _upsert_program(bottle, program)
         _write_launcher(env, bottle, program)
+        _wire_customs(env, bottle, program)
         env.io.out(f"adopted {program.name} ({program.exe})")
         count += 1
     bottles.save_bottle(bottle, env.store_base)
+    if count:
+        _refresh_db(env)
     env.io.out(f"{count} app(s) adopted")
     return 0
 
@@ -162,9 +234,178 @@ def cmd_run(args, env: DrydockEnv) -> int:
     return env.launch_fn(bottle, program)
 
 
+def cmd_materialize(args, env: DrydockEnv) -> int:
+    from gest.core.drydock import materialize, recipe_lint, recipe_store
+
+    try:
+        recipe = recipe_store.load(args.recipe)
+    except OSError as exc:
+        env.io.err(f"cannot read {args.recipe}: {exc}")
+        return 1
+    except (RuntimeError, ValueError) as exc:
+        env.io.err(str(exc))
+        return 1
+
+    if not args.no_lint:
+        issues = recipe_lint.lint(recipe)
+        for issue in issues:
+            env.io.err(f"{issue.level}: {issue.message}")
+        if recipe_lint.has_errors(issues):
+            errors = sum(1 for i in issues if i.level == recipe_lint.ERROR)
+            env.io.err(f"refusing to materialize — {errors} lint error(s) "
+                       "(use --no-lint to override)")
+            return 1
+
+    bottle = materialize.bottle_from_recipe(recipe, args.name or "")
+    if not bottle.is_valid():
+        env.io.err("recipe has an invalid bottle (check runner/arch)")
+        return 2
+    if bottles.load_bottle(bottle.id, env.store_base) is not None and not args.force:
+        env.io.err(f"bottle {bottle.id!r} already exists (use --force to overwrite)")
+        return 1
+
+    bottles.save_bottle(bottle, env.store_base)
+    for program in bottle.programs:
+        _write_launcher(env, bottle, program)
+        _wire_customs(env, bottle, program)
+    if bottle.programs:
+        _refresh_db(env)
+    env.io.out(f"materialized bottle {bottle.id} with {len(bottle.programs)} program(s)")
+    if recipe.steps:
+        env.io.out(f"note: {len(recipe.steps)} install step(s) not run "
+                   "(needs host ops — roadmap phase 4/6)")
+    return 0
+
+
+def cmd_export_recipe(args, env: DrydockEnv) -> int:
+    from gest.core.drydock import materialize, recipe_store
+
+    bottle = _load(env, args.bottle)
+    if bottle is None:
+        return 1
+    recipe = materialize.recipe_from_bottle(bottle)
+    try:
+        text = recipe_store.dumps(recipe)
+    except RuntimeError as exc:  # PyYAML missing
+        env.io.err(str(exc))
+        return 1
+    if args.output and args.output != "-":
+        from pathlib import Path
+        Path(args.output).expanduser().write_text(text, encoding="utf-8")
+        env.io.out(f"exported bottle {bottle.id} to {args.output}")
+    else:
+        env.io.out(text)
+    return 0
+
+
+def cmd_lint(args, env: DrydockEnv) -> int:
+    from gest.core.drydock import recipe_lint, recipe_store
+
+    try:
+        recipe = recipe_store.load(args.recipe)
+    except OSError as exc:
+        env.io.err(f"cannot read {args.recipe}: {exc}")
+        return 1
+    except (RuntimeError, ValueError) as exc:
+        env.io.err(str(exc))
+        return 1
+
+    issues = recipe_lint.lint(recipe)
+    for issue in issues:
+        env.io.out(f"{issue.level}: {issue.message}")
+    errors = sum(1 for i in issues if i.level == recipe_lint.ERROR)
+    warnings = sum(1 for i in issues if i.level == recipe_lint.WARNING)
+    if not issues:
+        env.io.out("ok — no issues")
+    env.io.out(f"# {errors} error(s), {warnings} warning(s)")
+    return 1 if errors else 0
+
+
+def _plan_from_args(args):
+    """Load a helm.recipe and compile it against a context derived from args.
+    Returns (recipe, ops, error_message); error_message is set on failure."""
+    from pathlib import Path
+
+    from gest.core.drydock import interpreter, recipe_store
+
+    try:
+        recipe = recipe_store.load(args.recipe)
+    except OSError as exc:
+        return None, None, f"cannot read {args.recipe}: {exc}"
+    except (RuntimeError, ValueError) as exc:
+        return None, None, str(exc)
+
+    app = bottles.slug(recipe.app_id or recipe.app_name or "app")
+    base = Path("~/.local/share/hede/drydock").expanduser() / app
+    prefix = args.prefix or str(base / "prefix")
+    gamedir = args.gamedir or str(Path(prefix) / "drive_c" / app)
+    cache = args.cache or str(Path("~/.cache/drydock").expanduser() / app)
+    ctx = interpreter.PlanContext(prefix=prefix, gamedir=gamedir, cache=cache,
+                                  arch=recipe.bottle.arch, runner=recipe.bottle.runner)
+    return recipe, interpreter.plan(recipe, ctx), None
+
+
+def cmd_plan(args, env: DrydockEnv) -> int:
+    from gest.core.drydock import interpreter
+
+    _recipe, ops, error = _plan_from_args(args)
+    if error is not None:
+        env.io.err(error)
+        return 1
+    if not ops:
+        env.io.out("(recipe has no install steps)")
+        return 0
+    for i, op in enumerate(ops, 1):
+        env.io.out(f"{i:>2}. [{op.kind}] {op.summary}")
+        if op.kind == interpreter.OP_COMMAND:
+            env.io.out(f"      $ {' '.join(op.argv)}")
+    cmds = sum(1 for op in ops if op.kind == interpreter.OP_COMMAND)
+    manual = sum(1 for op in ops if op.kind == interpreter.OP_MANUAL)
+    env.io.out(f"# {len(ops)} op(s): {cmds} command(s), {manual} manual "
+               "— not executed (dry run; needs host ops)")
+    return 0
+
+
+def cmd_install(args, env: DrydockEnv) -> int:
+    from gest.core.drydock import executor, recipe_lint
+
+    recipe, ops, error = _plan_from_args(args)
+    if error is not None:
+        env.io.err(error)
+        return 1
+
+    if not args.no_lint:
+        issues = recipe_lint.lint(recipe)
+        for issue in issues:
+            env.io.err(f"{issue.level}: {issue.message}")
+        if recipe_lint.has_errors(issues):
+            errors = sum(1 for i in issues if i.level == recipe_lint.ERROR)
+            env.io.err(f"refusing to install — {errors} lint error(s) (use --no-lint to override)")
+            return 1
+
+    if not ops:
+        env.io.out("(recipe has no install steps)")
+        return 0
+
+    dry = not args.run
+    runner = env.step_runner or executor.host_run
+    report = executor.execute(ops, runner, dry_run=dry)
+    for i, outcome in enumerate(report.outcomes, 1):
+        env.io.out(f"{i:>2}. [{outcome.status}] {outcome.op.summary}")
+    tail = "" if args.run else " (dry run — pass --run to execute on a host)"
+    env.io.out(f"# {report.count(executor.STATUS_OK)} ok, "
+               f"{report.count(executor.STATUS_FAILED)} failed, "
+               f"{report.count(executor.STATUS_MANUAL)} manual, "
+               f"{report.count(executor.STATUS_PLANNED)} planned, "
+               f"{report.count(executor.STATUS_SKIPPED)} skipped{tail}")
+    return 0 if report.ok else 1
+
+
 COMMANDS: dict[str, Callable[..., int]] = {
     "create": cmd_create, "list": cmd_list, "show": cmd_show, "rm": cmd_rm,
     "register": cmd_register, "scan": cmd_scan, "prereqs": cmd_prereqs, "run": cmd_run,
+    "materialize": cmd_materialize, "plan": cmd_plan, "install": cmd_install,
+    "lint": cmd_lint, "export-recipe": cmd_export_recipe,
 }
 
 
@@ -201,6 +442,32 @@ def build_parser() -> argparse.ArgumentParser:
     run = sub.add_parser("run", help="launch a program")
     run.add_argument("bottle")
     run.add_argument("program")
+
+    mat = sub.add_parser("materialize", help="create a bottle from a helm.recipe")
+    mat.add_argument("recipe", help="path to a helm.recipe YAML file")
+    mat.add_argument("--name", default="", help="override the bottle id/name")
+    mat.add_argument("--force", action="store_true", help="overwrite an existing bottle")
+    mat.add_argument("--no-lint", action="store_true",
+                     help="skip the recipe lint check (materialize even with errors)")
+
+    pl = sub.add_parser("plan", help="show the install plan compiled from a helm.recipe")
+    inst = sub.add_parser("install", help="run a helm.recipe's install plan (dry run unless --run)")
+    for parser_ in (pl, inst):
+        parser_.add_argument("recipe", help="path to a helm.recipe YAML file")
+        parser_.add_argument("--prefix", default="", help="WINEPREFIX ($WINEPREFIX)")
+        parser_.add_argument("--gamedir", default="", help="install root ($GAMEDIR)")
+        parser_.add_argument("--cache", default="", help="download cache ($CACHE)")
+    inst.add_argument("--run", action="store_true",
+                      help="execute the plan for real on this host (needs wine, etc.)")
+    inst.add_argument("--no-lint", action="store_true",
+                      help="skip the recipe lint check (install even with errors)")
+
+    lint = sub.add_parser("lint", help="validate a helm.recipe (structure + references)")
+    lint.add_argument("recipe", help="path to a helm.recipe YAML file")
+
+    exp = sub.add_parser("export-recipe", help="export a bottle's config as a helm.recipe")
+    exp.add_argument("bottle")
+    exp.add_argument("-o", "--output", default="-", help="write the recipe here (default: stdout)")
     return parser
 
 

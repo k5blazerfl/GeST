@@ -109,6 +109,13 @@ def test_icon_extract_argv_and_paths():
     assert icons.scalable_install_path("excel").parts[-3:] == ("scalable", "apps", "excel.svg")
 
 
+def test_icon_convert_argv():
+    argv = icons.convert_argv("/tmp/app.ico", "/out/app.png", width="48")
+    assert argv[0] == "icotool" and "-x" in argv
+    assert "-w" in argv and "48" in argv
+    assert argv[-1] == "/tmp/app.ico" and "/out/app.png" in argv
+
+
 # ---- identity ----------------------------------------------------------
 def test_normalize_wm_class_forms():
     assert identity.normalize("Excel.EXE") == "excel.exe"  # dots kept (reverse-DNS app-ids)
@@ -129,3 +136,13 @@ def test_identity_map_register_resolve_unregister():
     m.unregister("gangway-pc")
     assert m.resolve("freerdp") is None
     assert m.resolve("excel.exe") == "drydock-excel"  # unaffected
+
+
+def test_identity_map_dict_round_trip():
+    m = identity.IdentityMap()
+    m.register(["Excel.exe", "org.freerdp.client"], "drydock-excel")
+    restored = identity.IdentityMap.from_dict(m.to_dict())
+    assert restored.resolve("excel.exe") == "drydock-excel"
+    assert restored.resolve("org.freerdp.client") == "drydock-excel"
+    assert m.to_dict()["version"] == identity.IDENTITY_VERSION
+    assert identity.IdentityMap.from_dict({}).resolve("x") is None
