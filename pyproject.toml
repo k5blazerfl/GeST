@@ -42,6 +42,8 @@ helm-keyringd = "gest.keyringd.service:main"
 # gangway — manage/launch RDP profiles; gangway-open is the .desktop Exec stub.
 gangway = "gest.tui.gangway.cli:main"
 gangway-open = "gest.tui.gangway.cli:open_main"
+# gangway-rdp-open — the .rdp/rdp:// MIME handler stub (opens a target ad-hoc).
+gangway-rdp-open = "gest.tui.gangway.cli:open_file_main"
 # drydock — manage Wine/Proton bottles; drydock-run is the .desktop Exec stub.
 drydock = "gest.tui.drydock.cli:main"
 drydock-run = "gest.tui.drydock.cli:open_main"

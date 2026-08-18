@@ -12,7 +12,10 @@ truth GeST writes when it creates the entry.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
+
+IDENTITY_VERSION = 1
 
 
 def normalize(key: str) -> str:
@@ -46,3 +49,11 @@ class IdentityMap:
 
     def keys_for(self, desktop_id: str) -> list[str]:
         return sorted(k for k, v in self._by_key.items() if v == desktop_id)
+
+    def to_dict(self) -> dict:
+        return {"version": IDENTITY_VERSION, "map": dict(self._by_key)}
+
+    @classmethod
+    def from_dict(cls, d: Mapping) -> IdentityMap:
+        raw = d.get("map", {}) if isinstance(d, Mapping) else {}
+        return cls(_by_key={str(k): str(v) for k, v in dict(raw).items()})

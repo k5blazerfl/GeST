@@ -11,13 +11,23 @@ from __future__ import annotations
 import re
 
 from gest.core.customs import mime
-from gest.core.customs.desktop import DesktopEntry, build_exec
+from gest.core.customs.desktop import DesktopAction, DesktopEntry, build_exec
 from gest.core.rdp.model import RdpProfile
 
 GANGWAY_OPEN = "gangway-open"
+# The stub that opens an arbitrary .rdp file / rdp:// URI ad-hoc (the MIME/URI
+# handler's Exec points here, with a %u field code).
+GANGWAY_RDP_OPEN = "gangway-rdp-open"
+HANDLER_DESKTOP_ID = "gangway-rdp-handler"
 # FreeRDP's SDL client presents this window class; identity-matching (Customs)
 # folds in variants like "FreeRDP".
 FREERDP_WM_CLASS = "sdl-freerdp"
+# All the window classes / Wayland app-ids a FreeRDP session may present. These
+# are shared across every full-desktop profile (they can't be told apart until
+# per-app RAIL windows land — see docs/design/gangway-phase5-scope.md), so they
+# map to the *handler's* stable identity, giving any RDP window a "Remote Desktop"
+# icon/title in the taskbar instead of a raw "freerdp" blob.
+FREERDP_WM_CLASSES = [FREERDP_WM_CLASS, "freerdp", "org.freerdp.client"]
 
 
 def open_argv(profile_name: str) -> list[str]:
@@ -29,6 +39,17 @@ def desktop_id(profile_name: str) -> str:
     return f"gangway-{slug}"
 
 
+def connect_actions(profile_name: str) -> list[DesktopAction]:
+    """Right-click jump-list: connect fullscreen or windowed, overriding the
+    profile's default screen mode for this launch."""
+    return [
+        DesktopAction(id="fullscreen", name="Connect (fullscreen)",
+                      exec=build_exec([GANGWAY_OPEN, profile_name, "--fullscreen"])),
+        DesktopAction(id="windowed", name="Connect (windowed)",
+                      exec=build_exec([GANGWAY_OPEN, profile_name, "--windowed"])),
+    ]
+
+
 def desktop_entry(profile: RdpProfile) -> DesktopEntry:
     return DesktopEntry(
         name=f"{profile.name} (RDP)",
@@ -36,7 +57,27 @@ def desktop_entry(profile: RdpProfile) -> DesktopEntry:
         icon="gangway",
         comment=f"Remote Desktop to {profile.host}",
         categories=["Network", "RemoteAccess"],
-        mime_types=list(mime.GANGWAY_TYPES),
         startup_wm_class=FREERDP_WM_CLASS,
+        actions=connect_actions(profile.name),
         extra={"X-GeST-Origin": "gangway", "X-Gangway-Profile": profile.name},
+    )
+
+
+def handler_open_argv(target: str) -> list[str]:
+    return [GANGWAY_RDP_OPEN, target]
+
+
+def handler_desktop_entry() -> DesktopEntry:
+    """A single, profile-independent launcher that *handles* a ``.rdp`` file or
+    ``rdp://`` URI (``%u``). ``NoDisplay`` — it is a handler, not a menu entry —
+    and it carries the ``.rdp``/``rdp://`` MIME types so it can be the default."""
+    return DesktopEntry(
+        name="Remote Desktop (.rdp)",
+        exec=f"{build_exec([GANGWAY_RDP_OPEN])} %u",
+        icon="gangway",
+        comment="Open a .rdp file or rdp:// link",
+        categories=["Network", "RemoteAccess"],
+        mime_types=list(mime.GANGWAY_TYPES),
+        no_display=True,
+        extra={"X-GeST-Origin": "gangway"},
     )
