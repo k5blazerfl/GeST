@@ -13,7 +13,7 @@ Lutris ([github.com/lutris/lutris](https://github.com/lutris/lutris), GPL-3.0) h
 solved, at scale, the thing Drydock has only reserved a slot for: a **declarative
 per-app install recipe** (its `ScriptInterpreter` reads YAML/JSON of files + a
 sequence of actions) *and* a large community library of those recipes on lutris.net.
-Drydock today defines no recipe format at all — the bottle model and prereq table are
+Drydock today defines no recipe format at all — the barrel model and prereq table are
 persistent config, not an install script ([drydock.md:76-90,123-137](drydock.md)).
 
 The question raised: **"can we pull from Lutris, but keep Drydock a unique Helm
@@ -77,14 +77,14 @@ Concretely:
 
 ## The recipe schema (sketch — to be finalized in a follow-up)
 
-A Drydock recipe is the install-time complement to the persistent bottle model. Rough
+A Drydock recipe is the install-time complement to the persistent barrel model. Rough
 shape, deliberately thinner than Lutris (no runner zoo, no emulator matrix — umu/wine
 only):
 
 ```yaml
 recipe: 1                     # schema version
 app: { name, id, categories }
-bottle: { runner, arch, verbs, dxvk, vkd3d }   # seeds the Bottle model
+barrel: { runner, arch, verbs, dxvk, vkd3d }   # seeds the Barrel model
 files:                        # url + filename, or user-provided:"reason"
   - { id, url, filename }
 steps:                        # ordered Drydock actions (native verb set below)
@@ -110,13 +110,13 @@ The importer's coverage table. "Native" = a Drydock recipe verb exists/planned;
 | `installer: chmodx` | **Native** → `chmodx` | |
 | `installer: execute` | **Native** → `execute` | host command w/ env |
 | `installer: write_file`/`write_config`/`write_json` | **Native** → same verbs | INI/JSON writers |
-| `task: create_prefix` | **Native** → bottle create (host op, [bottles.py](../../gest/core/drydock/bottles.py) — currently unbuilt) | |
+| `task: create_prefix` | **Native** → barrel create (host op, [barrels.py](../../gest/core/drydock/barrels.py) — currently unbuilt) | |
 | `task: wineexec` | **Native** → `wineexec` | |
-| `task: winetricks` | **Native** → `winetricks` | maps to bottle `verbs` |
+| `task: winetricks` | **Native** → `winetricks` | maps to barrel `verbs` |
 | `task: set_regedit` / `set_regedit_file` / `delete_registry_key` | **Native** → `regedit` verbs | |
 | `task: winekill` / `eject_disc` | **Native** → same | |
-| `system:` (env, cpu/audio/keyboard) | **Partial** → env into bottle `env`; the rest **Flag** | HeDE session owns audio/input, not the recipe |
-| `wine:` runner config (DLL overrides, version, DXVK) | **Partial** → DXVK/version into bottle; DLL overrides **Native** | |
+| `system:` (env, cpu/audio/keyboard) | **Partial** → env into barrel `env`; the rest **Flag** | HeDE session owns audio/input, not the recipe |
+| `wine:` runner config (DLL overrides, version, DXVK) | **Partial** → DXVK/version into barrel; DLL overrides **Native** | |
 | `input_menu` / `insert-disc` | **Flag** | interactive; needs a Drydock UI story (deferred to Qt module) |
 | `$STEAM:appid` file refs, `gogdl_setup` | **Flag** | store-integration out of scope for v1 import |
 | `dosexec` / DOSBox, RetroArch, ScummVM, browser runners | **Reject** | non-Wine runners — explicitly outside Drydock's umu/wine scope |
@@ -133,7 +133,7 @@ Lutris's multi-runner world, which Drydock is not.
   untouched and remains the differentiator. No GPL-3.0 ratchet is triggered (import is
   a data transform, not vendored code).
 - **Negative / cost:** a real interpreter + importer is net-new work (Drydock's host
-  operations in `bottles.py` are still design-only, so `create_prefix`/`wineexec` land
+  operations in `barrels.py` are still design-only, so `create_prefix`/`wineexec` land
   *with* this, not before it); the mapping table needs maintenance as Lutris evolves;
   Flag'd directives mean some imports need manual finishing.
 - **Non-goals reaffirmed:** no Lutris runtime/runner/GTK code, no non-Wine runners, no
@@ -144,7 +144,7 @@ Lutris's multi-runner world, which Drydock is not.
 1. Add a root `LICENSE`/`COPYING` (GPL-2.0-or-later text) — prerequisite for any
    third-party GPL borrowing.
 2. Finalize the `helm.recipe` schema (field-level) and add it to `drydock.md` §-body.
-3. Build Drydock's host operations in `bottles.py` (prefix create, winetricks, DXVK) —
+3. Build Drydock's host operations in `barrels.py` (prefix create, winetricks, DXVK) —
    the interpreter's execution backend; scoped with interop phase 4.
 4. Prototype `import-lutris` against 3–5 real lutris.net scripts to validate the
    mapping table before locking the schema.
