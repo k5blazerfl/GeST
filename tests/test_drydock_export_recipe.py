@@ -59,6 +59,19 @@ def test_cli_export_recipe_to_file(tmp_path):
     assert "recipe:" in text and "office" in text and "dotnet48" in text
 
 
+def test_cli_export_recipe_unwritable_path_errors(tmp_path):
+    # a bad -o (missing parent dir) reports "cannot write" instead of raising OSError
+    pytest.importorskip("yaml")
+    store = str(tmp_path / "barrels")
+    barrels.save_barrel(_barrel(), store)
+    out: list[str] = []
+    err: list[str] = []
+    env = DrydockEnv(io=CliIO(out=out.append, err=err.append), store_base=store)
+    bad = str(tmp_path / "no-such-dir" / "office.recipe")
+    assert run_cli(["export-recipe", "office", "-o", bad], env=env) == 1
+    assert any("cannot write" in e for e in err)
+
+
 def test_cli_export_recipe_stdout(tmp_path):
     pytest.importorskip("yaml")
     store = str(tmp_path / "barrels")

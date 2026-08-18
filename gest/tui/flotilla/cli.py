@@ -165,7 +165,15 @@ def cmd_launch(args, env: FlotillaEnv) -> int:
             vessel.install_iso = path
 
     if vessel.os == OS_WINDOWS and vessel.virtio_iso:
-        _ensure_url_image(env, images.by_id("virtio-win"))
+        virtio = _ensure_url_image(env, images.by_id("virtio-win"))
+        if not virtio:
+            # virtio_iso is already pinned to the (now-missing) cached path; without
+            # this guard the domain is defined with a <cdrom> at a nonexistent ISO,
+            # surfacing as a cryptic qemu error at boot instead of here.
+            env.io.err("couldn't fetch virtio-win (needed for the Windows guest's "
+                       "virtio drivers)")
+            return 1
+        vessel.virtio_iso = virtio
     if not vessel.is_valid():
         env.io.err("invalid vessel (check --os / --display)")
         return 2
@@ -280,8 +288,10 @@ def cmd_define(args, env: FlotillaEnv) -> int:
         return 1
     path = vessels.write_domain_xml(vessel.id, domainxml.compile_domain(vessel), env.store_base)
     rc = env.run_argv(backend.define_argv(env.uri, str(path)))
-    env.io.out(f"defined {vessel.id} from {path}" if rc == 0
-               else f"virsh define failed (rc={rc})")
+    if rc == 0:
+        env.io.out(f"defined {vessel.id} from {path}")
+    else:
+        env.io.err(f"virsh define failed (rc={rc})")
     return rc
 
 
@@ -289,7 +299,10 @@ def cmd_start(args, env: FlotillaEnv) -> int:
     if _load(env, args.id) is None:
         return 1
     rc = env.run_argv(backend.start_argv(env.uri, args.id))
-    env.io.out(f"started {args.id}" if rc == 0 else f"start failed (rc={rc})")
+    if rc == 0:
+        env.io.out(f"started {args.id}")
+    else:
+        env.io.err(f"start failed (rc={rc})")
     return rc
 
 
@@ -299,7 +312,10 @@ def cmd_stop(args, env: FlotillaEnv) -> int:
     argv = (backend.destroy_argv if args.force else backend.shutdown_argv)(env.uri, args.id)
     rc = env.run_argv(argv)
     verb = "forced off" if args.force else "shutting down"
-    env.io.out(f"{verb} {args.id}" if rc == 0 else f"stop failed (rc={rc})")
+    if rc == 0:
+        env.io.out(f"{verb} {args.id}")
+    else:
+        env.io.err(f"stop failed (rc={rc})")
     return rc
 
 

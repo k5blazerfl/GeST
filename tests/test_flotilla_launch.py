@@ -3,6 +3,8 @@ All host ops run through an injected run_argv; nothing is fetched or booted."""
 
 from __future__ import annotations
 
+import dataclasses
+
 from gest.core.flotilla import vessels
 from gest.tui.flotilla.cli import CliIO, FlotillaEnv, run_cli
 
@@ -37,6 +39,17 @@ def test_launch_catalog_iso_is_fetched(tmp_path):
     v = vessels.load_vessel("arch-box", h.store)
     assert v.install_iso.endswith("/images/archlinux-x86_64.iso")  # resolved to the cache
     assert h.calls[0][0] == "curl"  # fetched first
+
+
+def test_launch_windows_aborts_when_virtio_win_fetch_fails(tmp_path):
+    # curl fails → _ensure_url_image returns "" → the vessel's virtio_iso would point
+    # at a missing ISO. Launch must abort here with a clear message, not go on to
+    # define a domain whose <cdrom> references a nonexistent file.
+    h = _H(tmp_path)
+    failing = dataclasses.replace(h.env, run_argv=lambda a: 1)  # the virtio-win curl fails
+    rc = run_cli(["launch", "Win11", "--os", "windows", "--iso", "/iso/win.iso"], env=failing)
+    assert rc == 1
+    assert any("virtio-win" in e for e in h.err)
 
 
 def test_launch_no_start(tmp_path):
