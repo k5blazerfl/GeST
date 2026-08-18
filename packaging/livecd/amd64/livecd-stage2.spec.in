@@ -35,12 +35,14 @@ boot/kernel/gentoo/sources: sys-kernel/gentoo-sources
 # GPU drivers as normal modules that load AFTER root-pivot, when firmware exists.
 boot/kernel/gentoo/config: ${KERNEL_CONFIG}
 
-# Seamless boot: bake a Plymouth splash into the genkernel initramfs (gk_mainargs
-# → genkernel --plymouth). The HeDE theme is shipped by gui-apps/hede (installed
-# in stage1), so it exists before this build_kernel step. On UEFI the EFI GOP
-# framebuffer (efifb/simpledrm) lets Plymouth draw before the GPU driver loads,
-# so the splash covers the initramfs → systemd → greeter phase.
-gk_mainargs: --plymouth --plymouth-theme=hede
+# Seamless boot: bake a Plymouth splash into the genkernel initramfs
+# (livecd/gk_mainargs → genkernel --plymouth). The HeDE theme is shipped by
+# gui-apps/hede (installed in stage1), so it exists before this build_kernel step.
+# On UEFI the EFI GOP framebuffer (efifb/simpledrm) lets Plymouth draw before the
+# GPU driver loads, so the splash covers the initramfs → systemd → greeter phase.
+# NB: the key needs the `livecd/` prefix (like livecd/bootargs below) — catalyst
+# rejects a bare `gk_mainargs` as an unrecognized argument.
+livecd/gk_mainargs: --plymouth --plymouth-theme=hede
 # Quiet kernel + systemd console so nothing scrolls behind the splash.
 livecd/bootargs: quiet splash loglevel=3 rd.udev.log_level=3 vt.global_cursor_default=0 systemd.show_status=false
 
