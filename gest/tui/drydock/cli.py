@@ -9,6 +9,7 @@ is the stub the synthesized ``.desktop`` Exec points at.
     drydock scan office            # adopt wine's auto-generated launchers
     drydock materialize game.recipe   # create a bottle from a helm.recipe
     drydock plan game.recipe          # show the compiled install plan (dry run)
+    drydock install game.recipe --run # execute the install plan on this host
     drydock prereqs office
     drydock run office excel
 """
@@ -59,6 +60,9 @@ class DrydockEnv:
     run_argv: Callable[[list[str]], int] = _default_run
     identity_path: str = ""
     icon_theme_dir: str = icons.ICON_THEME_DIR
+    # Runs one install-plan op (0 == ok); None → the host runner. Injectable so
+    # `install` is testable without spawning wine / touching the filesystem.
+    step_runner: Callable | None = None
 
 
 def _load(env: DrydockEnv, bottle_id: str) -> Bottle | None:
@@ -263,7 +267,9 @@ def cmd_materialize(args, env: DrydockEnv) -> int:
     return 0
 
 
-def cmd_plan(args, env: DrydockEnv) -> int:
+def _plan_from_args(args):
+    """Load a helm.recipe and compile it against a context derived from args.
+    Returns (ops, error_message); error_message is set on failure."""
     from pathlib import Path
 
     from gest.core.drydock import interpreter, recipe_store
@@ -271,11 +277,9 @@ def cmd_plan(args, env: DrydockEnv) -> int:
     try:
         recipe = recipe_store.load(args.recipe)
     except OSError as exc:
-        env.io.err(f"cannot read {args.recipe}: {exc}")
-        return 1
+        return None, f"cannot read {args.recipe}: {exc}"
     except (RuntimeError, ValueError) as exc:
-        env.io.err(str(exc))
-        return 1
+        return None, str(exc)
 
     app = bottles.slug(recipe.app_id or recipe.app_name or "app")
     base = Path("~/.local/share/hede/drydock").expanduser() / app
@@ -284,8 +288,16 @@ def cmd_plan(args, env: DrydockEnv) -> int:
     cache = args.cache or str(Path("~/.cache/drydock").expanduser() / app)
     ctx = interpreter.PlanContext(prefix=prefix, gamedir=gamedir, cache=cache,
                                   arch=recipe.bottle.arch, runner=recipe.bottle.runner)
+    return interpreter.plan(recipe, ctx), None
 
-    ops = interpreter.plan(recipe, ctx)
+
+def cmd_plan(args, env: DrydockEnv) -> int:
+    from gest.core.drydock import interpreter
+
+    ops, error = _plan_from_args(args)
+    if error is not None:
+        env.io.err(error)
+        return 1
     if not ops:
         env.io.out("(recipe has no install steps)")
         return 0
@@ -300,10 +312,35 @@ def cmd_plan(args, env: DrydockEnv) -> int:
     return 0
 
 
+def cmd_install(args, env: DrydockEnv) -> int:
+    from gest.core.drydock import executor
+
+    ops, error = _plan_from_args(args)
+    if error is not None:
+        env.io.err(error)
+        return 1
+    if not ops:
+        env.io.out("(recipe has no install steps)")
+        return 0
+
+    dry = not args.run
+    runner = env.step_runner or executor.host_run
+    report = executor.execute(ops, runner, dry_run=dry)
+    for i, outcome in enumerate(report.outcomes, 1):
+        env.io.out(f"{i:>2}. [{outcome.status}] {outcome.op.summary}")
+    tail = "" if args.run else " (dry run — pass --run to execute on a host)"
+    env.io.out(f"# {report.count(executor.STATUS_OK)} ok, "
+               f"{report.count(executor.STATUS_FAILED)} failed, "
+               f"{report.count(executor.STATUS_MANUAL)} manual, "
+               f"{report.count(executor.STATUS_PLANNED)} planned, "
+               f"{report.count(executor.STATUS_SKIPPED)} skipped{tail}")
+    return 0 if report.ok else 1
+
+
 COMMANDS: dict[str, Callable[..., int]] = {
     "create": cmd_create, "list": cmd_list, "show": cmd_show, "rm": cmd_rm,
     "register": cmd_register, "scan": cmd_scan, "prereqs": cmd_prereqs, "run": cmd_run,
-    "materialize": cmd_materialize, "plan": cmd_plan,
+    "materialize": cmd_materialize, "plan": cmd_plan, "install": cmd_install,
 }
 
 
@@ -347,10 +384,14 @@ def build_parser() -> argparse.ArgumentParser:
     mat.add_argument("--force", action="store_true", help="overwrite an existing bottle")
 
     pl = sub.add_parser("plan", help="show the install plan compiled from a helm.recipe")
-    pl.add_argument("recipe", help="path to a helm.recipe YAML file")
-    pl.add_argument("--prefix", default="", help="WINEPREFIX ($WINEPREFIX)")
-    pl.add_argument("--gamedir", default="", help="install root ($GAMEDIR)")
-    pl.add_argument("--cache", default="", help="download cache ($CACHE)")
+    inst = sub.add_parser("install", help="run a helm.recipe's install plan (dry run unless --run)")
+    for parser_ in (pl, inst):
+        parser_.add_argument("recipe", help="path to a helm.recipe YAML file")
+        parser_.add_argument("--prefix", default="", help="WINEPREFIX ($WINEPREFIX)")
+        parser_.add_argument("--gamedir", default="", help="install root ($GAMEDIR)")
+        parser_.add_argument("--cache", default="", help="download cache ($CACHE)")
+    inst.add_argument("--run", action="store_true",
+                      help="execute the plan for real on this host (needs wine, etc.)")
     return parser
 
 
