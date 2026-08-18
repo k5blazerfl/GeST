@@ -11,10 +11,33 @@ place and unit-tested without a real system.
 
 from __future__ import annotations
 
-# The desktop meta-package (its RDEPEND pulls labwc/foot/gest/wireplumber/…) and
-# the boot-splash engine. gui-apps/hede also ships the GRUB + Plymouth "hede"
-# themes the seamless steps stage, so together these satisfy every seamless dep.
-DESKTOP_ATOMS = ("gui-apps/hede", "sys-boot/plymouth")
+# The desktop meta-package (its RDEPEND pulls labwc/foot/gest/wireplumber/…), the
+# boot-splash engine, and the login manager. gui-apps/hede also ships the GRUB +
+# Plymouth "hede" themes the seamless steps stage. On systemd, logind handles seat
+# management, so no seatd. Together these satisfy the desktop + seamless deps.
+DESKTOP_ATOMS = ("gui-apps/hede", "sys-boot/plymouth", "gui-libs/greetd")
+
+# greetd's config on the installed system. HeDE's session is `helm-session`
+# (labwc + the Helm shell); `default.target` is switched to graphical so systemd
+# boots into it.
+GREETD_CONFIG = "/etc/greetd/config.toml"
+
+
+def greetd_autologin_config(user: str) -> str:
+    """A greetd config that autologins ``user`` into the HeDE session. Mirrors the
+    live CD's overlay config, but for the installed user (root if none was created)."""
+    session = 'env QT_WAYLAND_DISABLE_WINDOWDECORATION=1 dbus-run-session helm-session'
+    return (
+        "# Managed by GeST — autologin into HeDE (the Helm Desktop Environment).\n"
+        "[terminal]\n"
+        "vt = 1\n\n"
+        "[initial_session]\n"
+        f'command = "{session}"\n'
+        f'user = "{user}"\n\n'
+        "[default_session]\n"
+        f'command = "{session}"\n'
+        f'user = "{user}"\n'
+    )
 
 # The published overlay carrying gest + hede (+ hiedi/pyrrha); present in the live
 # image and git-syncable, so the installed system can update on its own terms.

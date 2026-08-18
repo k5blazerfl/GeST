@@ -49,7 +49,20 @@ def test_set_argv():
     assert commands.set_argv("python", "3", eselect="/usr/bin/eselect")[0] == "/usr/bin/eselect"
 
 
-@pytest.mark.parametrize("mod,tgt", [("Bad", "1"), ("kernel", "0"), ("kernel", "x"), ("k;rm", "1")])
+def test_set_argv_accepts_a_profile_name():
+    # `eselect profile set` also takes a path, not just a list number.
+    assert commands.set_argv("profile", "default/linux/amd64/23.0/systemd") == [
+        "eselect", "profile", "set", "default/linux/amd64/23.0/systemd"]
+
+
+@pytest.mark.parametrize("mod,tgt", [
+    ("Bad", "1"),        # bad module (uppercase)
+    ("k;rm", "1"),       # bad module (metachar)
+    ("kernel", "x y"),   # space in the target name
+    ("kernel", "a;b"),   # metachar in the target
+    ("kernel", "a/../b"),  # traversal in the name
+    ("kernel", ""),      # empty target
+])
 def test_set_argv_rejects(mod, tgt):
     with pytest.raises(ValueError):
         commands.set_argv(mod, tgt)

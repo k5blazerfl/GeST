@@ -74,7 +74,7 @@ class InstallSelections:
     net_gateway: str = ""             # default gateway IP (static only)
     net_nameservers: tuple[str, ...] = ()
     # kernel
-    kernel_method: str = "make"       # "make" | "genkernel"
+    kernel_method: str = "genkernel"  # "genkernel" (auto-config source build) | "make"
     kernel_jobs: int = 0              # 0 → the module resolves to CPU count
     kernel_initramfs: bool = True
     # bootloader
@@ -163,6 +163,20 @@ def _build_network(sel: InstallSelections) -> NetworkSpec:
     )
 
 
+# The current Gentoo profile line. `default/linux/<arch>/23.0` is the OpenRC/base
+# profile; its `/systemd` child is the systemd one. Selecting by name (not eselect
+# number, which is unstable) so the target keeps the init its stage3 shipped.
+PROFILE_VERSION = "23.0"
+
+
+def profile_name(arch: str, flavor: str) -> str:
+    """The ``eselect profile`` target for ``arch`` + stage3 ``flavor``. A systemd
+    stage3 (flavor ends in ``systemd``) → the ``/systemd`` profile so USE=systemd
+    etc. stay set; OpenRC flavors → the base ``23.0`` profile."""
+    base = f"default/linux/{arch}/{PROFILE_VERSION}"
+    return f"{base}/systemd" if flavor.endswith("systemd") else base
+
+
 def assemble_plan(sel: InstallSelections, stage3: Stage3Selection) -> InstallPlan:
     """Build the frozen :class:`InstallPlan` from ``sel`` and a resolved ``stage3``.
 
@@ -197,6 +211,7 @@ def assemble_plan(sel: InstallSelections, stage3: Stage3Selection) -> InstallPla
     # Seamless boot needs plymouth + the HeDE theme, both installed by the desktop
     # step; requesting it without the desktop is a no-op, not a broken install.
     use_seamless = sel.seamless and sel.install_desktop
+    profile = profile_name(arch, sel.variant.flavor)
     disk = provision.uefi_plan(sel.disk, sel.esp_size, sel.swap_size, sel.root_fs)
     mount = disk_mount.derive_mount_plan(disk, sel.target_root)
     return InstallPlan(
@@ -215,6 +230,7 @@ def assemble_plan(sel: InstallSelections, stage3: Stage3Selection) -> InstallPla
             # is the seam. (plymouth is baked into the initramfs by BuildKernel above.)
             seamless=use_seamless),
         desktop=sel.install_desktop,
+        profile=profile,
         arch=arch,
         hostname=sel.hostname,
         timezone=sel.timezone,

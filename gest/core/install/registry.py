@@ -379,6 +379,38 @@ class CleanupDesktopBinpkgs(ArgvStep):
         return not ctx.plan.desktop or ctx.state.done(self.key)
 
 
+class EnableDesktopSession(FuncStep):
+    """Boot the installed system into HeDE (``plan.desktop``): write greetd's
+    autologin config for the created user (root if none), enable greetd, and switch
+    systemd's default target to graphical. No-op for a base-Gentoo install.
+
+    Runs late (FINISH) — after the desktop is installed and the user exists.
+    ``systemctl enable`` / ``set-default`` in the chroot are offline filesystem ops
+    (symlinks), so they need no running systemd.
+    """
+
+    label = "Enable the HeDE session"
+    phase = Phase.FINISH
+    target_aware = True
+    key = "enable_desktop_session"
+
+    async def run(self, ctx: InstallContext, on_progress: OnProgress | None = None) -> None:
+        if not ctx.plan.desktop:
+            return
+        user = ctx.plan.user.name if ctx.plan.user else "root"
+        path = write_under_root(
+            ctx.root, desktop.GREETD_CONFIG, desktop.greetd_autologin_config(user))
+        _emit(on_progress, f"wrote {path}")
+        await run_steps([
+            Step("enable greetd", ["systemctl", "enable", "greetd"]),
+            Step("boot to graphical", ["systemctl", "set-default", "graphical.target"]),
+        ], ctx.target, on_progress=on_progress)
+        ctx.state.mark(self)
+
+    async def is_satisfied(self, ctx: InstallContext) -> bool:
+        return not ctx.plan.desktop or ctx.state.done(self.key)
+
+
 # --- phase 3: configure -----------------------------------------------------
 
 class SetTimezoneLocale(FuncStep):
@@ -476,6 +508,30 @@ class SetConsole(FuncStep):
 
 
 # --- phase 4: kernel & boot -------------------------------------------------
+
+class InstallKernelSources(ArgvStep):
+    """Emerge kernel sources + point ``/usr/src/linux`` at them, before the build.
+
+    A fresh stage3 ships no kernel sources, so ``make``/``genkernel`` (which build
+    against ``/usr/src/linux``) would fail. Emerge ``sys-kernel/gentoo-sources`` and
+    ``eselect kernel set 1`` to create the symlink. (A binary dist-kernel would skip
+    this, but GeSI builds from source.)
+    """
+
+    label = "Install kernel sources"
+    phase = Phase.KERNEL_BOOT
+    chroot = True
+    key = "install_kernel_sources"
+
+    def build(self, ctx: InstallContext) -> list[Step]:
+        return [
+            Step("emerge gentoo-sources", _emerge_argv(ctx.plan, "sys-kernel/gentoo-sources")),
+            Step("select /usr/src/linux", set_argv("kernel", 1)),
+        ]
+
+    async def is_satisfied(self, ctx: InstallContext) -> bool:
+        return ctx.state.done(self.key)
+
 
 class BuildKernel(ArgvStep):
     """Build the kernel inside the target (``kernel.build_steps``)."""
@@ -798,12 +854,14 @@ def build_registry(plan: InstallPlan, *, root_secret: Secret | None = None) -> l
         SetTimezoneLocale(),
         SetHostname(),
         SetConsole(),
+        InstallKernelSources(),
         BuildKernel(),
         InstallBootloader(),
         InstallBootStub(),          # arm64/Asahi only; no-op on x86
         _root_password_step(root_secret),
         CreateUser(),
         ConfigureNetwork(),
+        EnableDesktopSession(),     # boot into HeDE (no-op for base Gentoo)
     ]
     steps.extend(_tier2_steps(plan))
     return steps
@@ -840,6 +898,7 @@ def build_minimal_registry(
         SyncTree(),
         SetProfile(),
         EmergeWorld(),
+        InstallKernelSources(),
         BuildKernel(),
         InstallBootloader(),
         InstallBootStub(),          # arm64/Asahi only; no-op on x86 — boot-critical there
