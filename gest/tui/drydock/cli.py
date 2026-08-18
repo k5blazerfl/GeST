@@ -230,7 +230,7 @@ def cmd_run(args, env: DrydockEnv) -> int:
 
 
 def cmd_materialize(args, env: DrydockEnv) -> int:
-    from gest.core.drydock import materialize, recipe_store
+    from gest.core.drydock import materialize, recipe_lint, recipe_store
 
     try:
         recipe = recipe_store.load(args.recipe)
@@ -240,6 +240,16 @@ def cmd_materialize(args, env: DrydockEnv) -> int:
     except (RuntimeError, ValueError) as exc:
         env.io.err(str(exc))
         return 1
+
+    if not args.no_lint:
+        issues = recipe_lint.lint(recipe)
+        for issue in issues:
+            env.io.err(f"{issue.level}: {issue.message}")
+        if recipe_lint.has_errors(issues):
+            errors = sum(1 for i in issues if i.level == recipe_lint.ERROR)
+            env.io.err(f"refusing to materialize — {errors} lint error(s) "
+                       "(use --no-lint to override)")
+            return 1
 
     bottle = materialize.bottle_from_recipe(recipe, args.name or "")
     if not bottle.is_valid():
@@ -330,6 +340,8 @@ def build_parser() -> argparse.ArgumentParser:
     mat.add_argument("recipe", help="path to a helm.recipe YAML file")
     mat.add_argument("--name", default="", help="override the bottle id/name")
     mat.add_argument("--force", action="store_true", help="overwrite an existing bottle")
+    mat.add_argument("--no-lint", action="store_true",
+                     help="skip the recipe lint check (materialize even with errors)")
 
     lint = sub.add_parser("lint", help="validate a helm.recipe (structure + references)")
     lint.add_argument("recipe", help="path to a helm.recipe YAML file")

@@ -127,3 +127,26 @@ def test_recipe_store_round_trip(tmp_path):
     text = recipe_store.dumps(recipe)
     restored = recipe_store.loads(text)
     assert restored.to_dict() == recipe.to_dict()
+
+
+def test_cli_materialize_refuses_recipe_with_lint_errors(tmp_path):
+    pytest.importorskip("yaml")
+    from gest.core.drydock.recipe import RecipeStep
+    h = _Harness(tmp_path)
+    # an unknown step action is a lint error; materialize itself ignores steps,
+    # so without lint it would silently build a bottle from a broken recipe.
+    recipe = _recipe(steps=[RecipeStep(action="frobnicate", params={})])
+    path = _write_recipe(tmp_path, recipe)
+    assert run_cli(["materialize", path], env=h.env) == 1
+    assert bottles.load_bottle("some-game", h.store) is None  # nothing created
+    assert any("unknown action" in e for e in h.err)
+
+
+def test_cli_materialize_no_lint_overrides(tmp_path):
+    pytest.importorskip("yaml")
+    from gest.core.drydock.recipe import RecipeStep
+    h = _Harness(tmp_path)
+    recipe = _recipe(steps=[RecipeStep(action="frobnicate", params={})])
+    path = _write_recipe(tmp_path, recipe)
+    assert run_cli(["materialize", path, "--no-lint"], env=h.env) == 0
+    assert bottles.load_bottle("some-game", h.store) is not None
