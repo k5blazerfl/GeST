@@ -4,7 +4,7 @@ Pure and unit-testable (the runtime — Wine/Proton/GPU — is the host-only par
 The argv is composed **outside-in**: ``gamemoderun`` → ``gamescope … --mangoapp
 --`` → the runner (``umu-run`` | ``wine``) → ``<exe> <args>``. MangoHud is the
 ``--mangoapp`` flag under gamescope, else the ``MANGOHUD=1`` env — never both.
-Proton bottles run through ``umu-run`` (which bundles DXVK/VKD3D and protonfixes).
+Proton barrels run through ``umu-run`` (which bundles DXVK/VKD3D and protonfixes).
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import os
 import subprocess
 from collections.abc import Callable
 
-from gest.core.drydock.model import RUNNER_PROTON, Bottle, Program
+from gest.core.drydock.model import RUNNER_PROTON, Barrel, Program
 
 UMU_RUN = "umu-run"
 WINE = "wine"
@@ -24,21 +24,21 @@ GAMEMODERUN = "gamemoderun"
 Spawn = Callable[[list[str], dict], int]
 
 
-def build_env(bottle: Bottle, program: Program) -> dict[str, str]:
+def build_env(barrel: Barrel, program: Program) -> dict[str, str]:
     """The environment overrides for launching ``program`` (merged over the
     caller's environment at spawn time)."""
-    env: dict[str, str] = dict(bottle.env)  # bottle-level overrides first
+    env: dict[str, str] = dict(barrel.env)  # barrel-level overrides first
     graphics = program.graphics
-    if bottle.prefix:
-        env["WINEPREFIX"] = bottle.prefix
+    if barrel.prefix:
+        env["WINEPREFIX"] = barrel.prefix
 
-    if bottle.runner == RUNNER_PROTON:
+    if barrel.runner == RUNNER_PROTON:
         env["GAMEID"] = program.id or "umu-default"  # keys protonfixes
         env["STORE"] = "none"
-        if bottle.runner_version:
-            env["PROTONPATH"] = bottle.runner_version
+        if barrel.runner_version:
+            env["PROTONPATH"] = barrel.runner_version
     else:  # wine
-        env["WINEARCH"] = bottle.arch
+        env["WINEARCH"] = barrel.arch
         env["WINEESYNC"] = "1" if graphics.esync else "0"
         env["WINEFSYNC"] = "1" if graphics.fsync else "0"
 
@@ -53,8 +53,8 @@ def build_env(bottle: Bottle, program: Program) -> dict[str, str]:
     return env
 
 
-def _runner_argv(bottle: Bottle, program: Program) -> list[str]:
-    runner = UMU_RUN if bottle.runner == RUNNER_PROTON else WINE
+def _runner_argv(barrel: Barrel, program: Program) -> list[str]:
+    runner = UMU_RUN if barrel.runner == RUNNER_PROTON else WINE
     return [runner, program.exe, *program.args]
 
 
@@ -74,9 +74,9 @@ def _gamescope_argv(program: Program) -> list[str]:
     return argv
 
 
-def build_argv(bottle: Bottle, program: Program) -> list[str]:
+def build_argv(barrel: Barrel, program: Program) -> list[str]:
     """The full wrapped command line for ``program``."""
-    argv = _runner_argv(bottle, program)
+    argv = _runner_argv(barrel, program)
     if program.graphics.gamescope:
         argv = _gamescope_argv(program) + argv
     if program.graphics.gamemode:
@@ -88,6 +88,6 @@ def _default_spawn(argv: list[str], env: dict) -> int:
     return subprocess.run(argv, env={**os.environ, **env}).returncode
 
 
-def launch(bottle: Bottle, program: Program, *, spawn: Spawn = _default_spawn) -> int:
-    """Launch ``program`` from ``bottle``; returns the process exit code."""
-    return spawn(build_argv(bottle, program), build_env(bottle, program))
+def launch(barrel: Barrel, program: Program, *, spawn: Spawn = _default_spawn) -> int:
+    """Launch ``program`` from ``barrel``; returns the process exit code."""
+    return spawn(build_argv(barrel, program), build_env(barrel, program))

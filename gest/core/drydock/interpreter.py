@@ -11,8 +11,8 @@ spawn), a filesystem op (``extract``/``move``/``copy``/``chmodx``/``write``), or
 variables (``$GAMEDIR``, ``$WINEPREFIX``, ``$CACHE``) and file-id references are
 resolved against a :class:`PlanContext`.
 
-Scope: the command steps are planned for **wine** bottles. Proton bottles (umu)
-run their install differently, so command steps on a Proton bottle become
+Scope: the command steps are planned for **wine** barrels. Proton barrels (umu)
+run their install differently, so command steps on a Proton barrel become
 ``manual`` ops with a note — filesystem steps still plan normally.
 """
 

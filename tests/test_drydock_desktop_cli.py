@@ -6,8 +6,8 @@ from typing import NamedTuple
 
 from gest.core.customs import identity_store
 from gest.core.customs.desktop import DesktopEntry
-from gest.core.drydock import bottles, desktop
-from gest.core.drydock.model import RUNNER_WINE, Bottle, Program
+from gest.core.drydock import barrels, desktop
+from gest.core.drydock.model import RUNNER_WINE, Barrel, Program
 from gest.tui.drydock.cli import CliIO, DrydockEnv, run_cli
 
 
@@ -18,24 +18,24 @@ def test_desktop_id_and_open_argv():
 
 
 def test_desktop_entry_synthesis_and_round_trip():
-    bottle = Bottle(id="office", name="Office", runner=RUNNER_WINE)
+    barrel = Barrel(id="office", name="Office", runner=RUNNER_WINE)
     program = Program(id="excel", name="Excel", exe="C:/office/excel.exe",
                       category="Application", wm_class="excel.exe")
-    entry = desktop.desktop_entry(bottle, program)
+    entry = desktop.desktop_entry(barrel, program)
     assert entry.exec == "drydock-run office excel"
     assert entry.icon == "drydock-office-excel"
     assert entry.startup_wm_class == "excel.exe"
     assert "application/x-ms-dos-executable" in entry.mime_types
-    assert entry.extra["X-Drydock-Bottle"] == "office"
+    assert entry.extra["X-Drydock-Barrel"] == "office"
     # renders + parses back through Customs
     back = DesktopEntry.parse(entry.render())
     assert back.exec == entry.exec and back.startup_wm_class == "excel.exe"
 
 
 def test_game_category_and_wm_class_default():
-    bottle = Bottle(id="g", name="G", runner=RUNNER_WINE)
+    barrel = Barrel(id="g", name="G", runner=RUNNER_WINE)
     program = Program(id="doom", name="Doom", exe="/pfx/drive_c/doom/DOOM.exe", category="Game")
-    entry = desktop.desktop_entry(bottle, program)
+    entry = desktop.desktop_entry(barrel, program)
     assert entry.categories == ["Game"]
     assert entry.startup_wm_class == "DOOM"  # derived from the exe basename
 
@@ -60,7 +60,7 @@ def test_harvest_dir(tmp_path):
         "[Desktop Entry]\nType=Application\nName=Notepad\nExec=wine notepad.exe\n")
     entries = desktop.harvest_dir(str(tmp_path / "wine"))
     assert {e.name for e in entries} == {"Excel", "Notepad"}
-    prog = desktop.program_from_harvested(entries[0], bottles.slug(entries[0].name))
+    prog = desktop.program_from_harvested(entries[0], barrels.slug(entries[0].name))
     assert prog.name in {"Excel", "Notepad"}
 
 
@@ -69,14 +69,14 @@ def test_harvest_missing_dir_is_empty():
 
 
 def test_local_exe_path_windows_and_unix():
-    bottle = Bottle(id="b", name="B", runner=RUNNER_WINE, prefix="/pfx")
+    barrel = Barrel(id="b", name="B", runner=RUNNER_WINE, prefix="/pfx")
     win = Program(id="e", name="E", exe="C:\\office\\excel.exe")
-    assert desktop.local_exe_path(bottle, win) == "/pfx/drive_c/office/excel.exe"
+    assert desktop.local_exe_path(barrel, win) == "/pfx/drive_c/office/excel.exe"
     # a unix path (harvested Exec) is used as-is; no prefix → windows path untouched.
-    assert desktop.local_exe_path(bottle, Program(id="u", name="U", exe="/p/a.exe")) == "/p/a.exe"
-    noprefix = Bottle(id="b", name="B", runner=RUNNER_WINE)
+    assert desktop.local_exe_path(barrel, Program(id="u", name="U", exe="/p/a.exe")) == "/p/a.exe"
+    noprefix = Barrel(id="b", name="B", runner=RUNNER_WINE)
     assert desktop.local_exe_path(noprefix, win) == "C:\\office\\excel.exe"
-    assert desktop.local_exe_path(bottle, Program(id="x", name="X", exe="")) == ""
+    assert desktop.local_exe_path(barrel, Program(id="x", name="X", exe="")) == ""
 
 
 def test_default_wm_class_prefers_explicit_then_stem():
@@ -103,8 +103,8 @@ def _env(tmp_path) -> DEnv:
     calls: list = []
     io = CliIO(out=out.append, err=err.append)
 
-    def launch_fn(bottle, program):
-        launched.append((bottle, program))
+    def launch_fn(barrel, program):
+        launched.append((barrel, program))
         return 0
 
     def run_argv(argv):
@@ -112,7 +112,7 @@ def _env(tmp_path) -> DEnv:
         return 0
 
     identity_path = str(tmp_path / "identity.json")
-    env = DrydockEnv(io=io, store_base=str(tmp_path / "bottles"),
+    env = DrydockEnv(io=io, store_base=str(tmp_path / "barrels"),
                      applications_dir=str(tmp_path / "apps"),
                      wine_apps_dir=str(tmp_path / "wine"), launch_fn=launch_fn,
                      run_argv=run_argv, identity_path=identity_path,
@@ -143,8 +143,8 @@ def test_cli_register_writes_launcher(tmp_path):
     launcher = tmp_path / "apps" / "drydock-office-excel.desktop"
     assert launcher.exists()
     assert "drydock-run office excel" in launcher.read_text()
-    bottle = bottles.load_bottle("office", str(tmp_path / "bottles"))
-    assert bottle.program("excel").graphics.gamescope is True
+    barrel = barrels.load_barrel("office", str(tmp_path / "barrels"))
+    assert barrel.program("excel").graphics.gamescope is True
 
 
 def test_cli_scan_adopts_wine_apps(tmp_path):
@@ -155,8 +155,8 @@ def test_cli_scan_adopts_wine_apps(tmp_path):
     (winedir / "Word.desktop").write_text(
         "[Desktop Entry]\nName=Word\nExec=wine /p/word.exe\n")
     assert run_cli(["scan", "office"], env=g.env) == 0
-    bottle = bottles.load_bottle("office", str(tmp_path / "bottles"))
-    assert bottle.program("word") is not None
+    barrel = barrels.load_barrel("office", str(tmp_path / "barrels"))
+    assert barrel.program("word") is not None
     assert (tmp_path / "apps" / "drydock-office-word.desktop").exists()
 
 
@@ -183,12 +183,12 @@ def test_cli_run_unknown(tmp_path):
     assert g.err
 
 
-def test_cli_rm_removes_bottle_and_launchers(tmp_path):
+def test_cli_rm_removes_barrel_and_launchers(tmp_path):
     g = _env(tmp_path)
     run_cli(["create", "Office", "--runner", "wine"], env=g.env)
     run_cli(["register", "office", "/p/x.exe", "--name", "X"], env=g.env)
     assert run_cli(["rm", "office"], env=g.env) == 0
-    assert bottles.list_bottles(str(tmp_path / "bottles")) == []
+    assert barrels.list_barrels(str(tmp_path / "barrels")) == []
     assert not (tmp_path / "apps" / "drydock-office-x.desktop").exists()
 
 

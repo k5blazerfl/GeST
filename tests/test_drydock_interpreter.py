@@ -10,7 +10,7 @@ import pytest
 
 from gest.core.drydock import interpreter
 from gest.core.drydock.interpreter import PlanContext, plan
-from gest.core.drydock.recipe import Recipe, RecipeBottle, RecipeFile, RecipeStep
+from gest.core.drydock.recipe import Recipe, RecipeBarrel, RecipeFile, RecipeStep
 
 
 def _ctx(**over) -> PlanContext:
@@ -21,7 +21,7 @@ def _ctx(**over) -> PlanContext:
 
 def _recipe(steps, files=None) -> Recipe:
     return Recipe(app_name="Game", app_id="game",
-                  bottle=RecipeBottle(runner="wine", arch="win64"),
+                  barrel=RecipeBarrel(runner="wine", arch="win64"),
                   files=files or [], steps=steps)
 
 
@@ -100,7 +100,7 @@ def test_regedit_file_and_winekill():
 
 def test_proton_command_steps_become_manual():
     recipe = Recipe(app_name="G", app_id="g",
-                    bottle=RecipeBottle(runner="proton", arch="win64"),
+                    barrel=RecipeBarrel(runner="proton", arch="win64"),
                     steps=[RecipeStep("winetricks", {"app": "dxvk"}),
                            RecipeStep("extract", {"file": "/a.zip", "dst": "$GAMEDIR"})])
     ops = plan(recipe, _ctx(runner="proton"))

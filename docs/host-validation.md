@@ -105,18 +105,18 @@ gangway open work                                    # launches sdl-freerdp
 
 ## 3. Drydock — local Windows apps via Wine/Proton
 
-Prereq (report it, then install): `drydock prereqs <bottle>` prints the atoms.
-- **wine bottle:** `emerge app-emulation/wine-vanilla` (+ `ABI_X86="32"` / multilib
+Prereq (report it, then install): `drydock prereqs <barrel>` prints the atoms.
+- **wine barrel:** `emerge app-emulation/wine-vanilla` (+ `ABI_X86="32"` / multilib
   for `--arch win32`); `app-emulation/dxvk`, `app-emulation/vkd3d-proton` if
   toggled; `app-arch/icoutils` for icons.
-- **proton bottle:** enable the **GURU** overlay, `emerge games-util/umu-launcher`.
+- **proton barrel:** enable the **GURU** overlay, `emerge games-util/umu-launcher`.
 - **game mode:** `gui-wm/gamescope`, `games-util/gamemode`,
   `games-util/mangohud[mangoapp]`.
 
 > **Locked door:** Drydock v1 does **not** create prefixes or run installers yet.
 > Create the prefix and install the app manually, then let Drydock manage/launch it.
 
-### 3a. Wine bottle
+### 3a. Wine barrel
 ```sh
 drydock create office --runner wine --arch win64
 drydock prereqs office                               # verify the atom list looks right
@@ -138,7 +138,7 @@ drydock scan office                                  # adopt wine's Start-menu l
       launchers (`drydock-office-*`).
 - [ ] The running app has the right **taskbar icon/title** (StartupWMClass).
 
-### 3b. Proton bottle + game mode
+### 3b. Proton barrel + game mode
 ```sh
 drydock create game --runner proton --version GE-Proton9-27
 drydock register game <game.exe> --name "My Game" --game --gamescope --fsr --gamemode --mangohud
@@ -159,7 +159,7 @@ drydock run game my-game                             # umu-run inside gamescope
       `update-desktop-database`).
 - [ ] Double-clicking a `.rdp` file opens Gangway; a `.exe` offers Drydock (MIME
       handlers) — after the launchers are registered as defaults.
-- [ ] `rm` cleans up: `gangway rm` / `drydock rm` remove both the profile/bottle
+- [ ] `rm` cleans up: `gangway rm` / `drydock rm` remove both the profile/barrel
       **and** their `.desktop` launchers.
 
 ---

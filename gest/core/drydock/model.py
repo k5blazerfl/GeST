@@ -1,8 +1,8 @@
-"""The Drydock bottle model — pure data + JSON (de)serialization.
+"""The Drydock barrel model — pure data + JSON (de)serialization.
 
-A **bottle** is a managed Wine/Proton prefix + config; it holds **programs**
+A **barrel** is a managed Wine/Proton prefix + config; it holds **programs**
 (installed Windows apps), each with a **graphics profile** (gamescope/gamemode/
-MangoHud/DXVK tuning). The runner is chosen per bottle — ``proton`` (via umu) or
+MangoHud/DXVK tuning). The runner is chosen per barrel — ``proton`` (via umu) or
 ``wine`` — with no default (resolved design decision).
 """
 
@@ -78,13 +78,13 @@ class Program:
 
 
 @dataclass(slots=True)
-class Bottle:
+class Barrel:
     id: str
     name: str
     runner: str  # RUNNER_PROTON | RUNNER_WINE
     runner_version: str = ""  # Proton codename/path (umu) or eselect wine target
     arch: str = ARCH_WIN64
-    prefix: str = ""  # WINEPREFIX; defaults under the bottle dir if empty
+    prefix: str = ""  # WINEPREFIX; defaults under the barrel dir if empty
     verbs: list[str] = field(default_factory=list)  # winetricks verbs (wine)
     dxvk: bool = False  # wine-only — Proton bundles DXVK/VKD3D
     vkd3d: bool = False
@@ -107,7 +107,7 @@ class Bottle:
         }
 
     @classmethod
-    def from_dict(cls, d: Mapping) -> Bottle:
+    def from_dict(cls, d: Mapping) -> Barrel:
         return cls(
             id=str(d["id"]), name=str(d.get("name", "")), runner=str(d["runner"]),
             runner_version=str(d.get("runner_version", "")),

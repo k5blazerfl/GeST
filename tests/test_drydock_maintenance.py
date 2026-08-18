@@ -1,4 +1,4 @@
-"""CI-safe tests for bottle-maintenance verbs (winetricks/winecfg/kill/shell/doctor).
+"""CI-safe tests for barrel-maintenance verbs (winetricks/winecfg/kill/shell/doctor).
 
 The env+argv builders are pure; the CLI spawns through an injected runner, so no
 Wine is touched.
@@ -6,16 +6,16 @@ Wine is touched.
 
 from __future__ import annotations
 
-from gest.core.drydock import bottles, maintenance
-from gest.core.drydock.model import Bottle
+from gest.core.drydock import barrels, maintenance
+from gest.core.drydock.model import Barrel
 from gest.tui.drydock.cli import CliIO, DrydockEnv, run_cli
 
 
 # ---- pure builders -----------------------------------------------------
-def test_bottle_env():
-    b = Bottle(id="o", name="O", runner="wine", arch="win32",
+def test_barrel_env():
+    b = Barrel(id="o", name="O", runner="wine", arch="win32",
                prefix="/pfx", env={"WINEDEBUG": "-all"})
-    assert maintenance.bottle_env(b) == {
+    assert maintenance.barrel_env(b) == {
         "WINEDEBUG": "-all", "WINEPREFIX": "/pfx", "WINEARCH": "win32"}
 
 
@@ -43,11 +43,11 @@ class _H:
         self.out: list[str] = []
         self.err: list[str] = []
         self.spawned: list = []
-        self.store = str(tmp_path / "bottles")
+        self.store = str(tmp_path / "barrels")
         self.env = DrydockEnv(
             io=CliIO(out=self.out.append, err=self.err.append), store_base=self.store,
             tool_spawn=lambda argv, e: self.spawned.append((argv, e)) or 0, which=which)
-        bottles.save_bottle(Bottle(id="office", name="Office", runner="wine", arch="win64"),
+        barrels.save_barrel(Barrel(id="office", name="Office", runner="wine", arch="win64"),
                             self.store)
 
 
@@ -57,9 +57,9 @@ def test_winetricks_runs_and_records_verbs(tmp_path):
     argv, envd = h.spawned[0]
     assert argv == ["winetricks", "dotnet48", "corefonts"]
     assert envd["WINEPREFIX"].endswith("/office/prefix")
-    # the verbs were recorded back onto the bottle
-    bottle = bottles.load_bottle("office", h.store)
-    assert "dotnet48" in bottle.verbs and "corefonts" in bottle.verbs
+    # the verbs were recorded back onto the barrel
+    barrel = barrels.load_barrel("office", h.store)
+    assert "dotnet48" in barrel.verbs and "corefonts" in barrel.verbs
 
 
 def test_winetricks_needs_a_verb(tmp_path):
@@ -80,10 +80,10 @@ def test_winecfg_and_kill_spawn_with_prefix(tmp_path):
 def test_shell_spawns(tmp_path):
     h = _H(tmp_path)
     assert run_cli(["shell", "office"], env=h.env) == 0
-    assert len(h.spawned) == 1  # a shell was launched with the bottle env
+    assert len(h.spawned) == 1  # a shell was launched with the barrel env
 
 
-def test_verbs_on_unknown_bottle(tmp_path):
+def test_verbs_on_unknown_barrel(tmp_path):
     h = _H(tmp_path)
     assert run_cli(["winecfg", "nope"], env=h.env) == 1
     assert h.spawned == []

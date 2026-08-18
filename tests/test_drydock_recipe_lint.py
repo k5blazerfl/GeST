@@ -7,7 +7,7 @@ import pytest
 from gest.core.drydock import recipe_lint
 from gest.core.drydock.recipe import (
     Recipe,
-    RecipeBottle,
+    RecipeBarrel,
     RecipeFile,
     RecipeProgram,
     RecipeStep,
@@ -17,7 +17,7 @@ from gest.core.drydock.recipe import (
 def _ok_recipe(**over) -> Recipe:
     base = dict(
         app_name="Game", app_id="game",
-        bottle=RecipeBottle(runner="wine", arch="win64"),
+        barrel=RecipeBarrel(runner="wine", arch="win64"),
         files=[RecipeFile(id="setup", url="https://x/setup.exe")],
         programs=[RecipeProgram(name="Game", exe="drive_c/game.exe")],
         steps=[RecipeStep("extract", {"file": "setup", "dst": "$GAMEDIR"})],
@@ -36,7 +36,7 @@ def test_clean_recipe_has_no_issues():
 
 
 def test_bad_runner_and_arch_are_errors():
-    issues = recipe_lint.lint(_ok_recipe(bottle=RecipeBottle(runner="dosbox", arch="win128")))
+    issues = recipe_lint.lint(_ok_recipe(barrel=RecipeBarrel(runner="dosbox", arch="win128")))
     assert recipe_lint.has_errors(issues)
     text = " ".join(i.message for i in issues)
     assert "runner" in text and "arch" in text

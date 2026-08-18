@@ -36,11 +36,11 @@ def lint(recipe: R.Recipe) -> list[Issue]:
 
     if not recipe.app_name:
         issues.append(Issue(ERROR, "app.name is empty"))
-    if recipe.bottle.runner not in RUNNERS:
-        issues.append(Issue(ERROR, f"bottle.runner {recipe.bottle.runner!r} is not one of "
+    if recipe.barrel.runner not in RUNNERS:
+        issues.append(Issue(ERROR, f"barrel.runner {recipe.barrel.runner!r} is not one of "
                                    f"{sorted(RUNNERS)}"))
-    if recipe.bottle.arch not in ARCHES:
-        issues.append(Issue(ERROR, f"bottle.arch {recipe.bottle.arch!r} is not one of "
+    if recipe.barrel.arch not in ARCHES:
+        issues.append(Issue(ERROR, f"barrel.arch {recipe.barrel.arch!r} is not one of "
                                    f"{sorted(ARCHES)}"))
 
     file_ids: set[str] = set()

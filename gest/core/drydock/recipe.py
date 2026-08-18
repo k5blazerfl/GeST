@@ -1,7 +1,7 @@
 """The Drydock ``helm.recipe`` model — pure data for an install recipe.
 
-A **recipe** is the install-time complement to the bottle model (:mod:`.model`):
-a declarative description of how to set a Windows app up in a bottle — the files
+A **recipe** is the install-time complement to the barrel model (:mod:`.model`):
+a declarative description of how to set a Windows app up in a barrel — the files
 it needs, an ordered list of install ``steps``, and the ``programs`` it ends up
 exposing. Drydock's own interpreter (roadmap phase 6) executes a recipe; the
 Lutris importer (:mod:`.lutris_import`, phase 7) produces one. See
@@ -107,8 +107,8 @@ class RecipeProgram:
 
 
 @dataclass(slots=True)
-class RecipeBottle:
-    """The bottle this recipe seeds — a subset of :class:`.model.Bottle`."""
+class RecipeBarrel:
+    """The barrel this recipe seeds — a subset of :class:`.model.Barrel`."""
 
     runner: str = RUNNER_WINE
     arch: str = ARCH_WIN64
@@ -122,7 +122,7 @@ class RecipeBottle:
                 "dxvk": self.dxvk, "vkd3d": self.vkd3d, "env": dict(self.env)}
 
     @classmethod
-    def from_dict(cls, d: Mapping) -> RecipeBottle:
+    def from_dict(cls, d: Mapping) -> RecipeBarrel:
         return cls(runner=str(d.get("runner", RUNNER_WINE)),
                    arch=str(d.get("arch", ARCH_WIN64)),
                    verbs=[str(v) for v in d.get("verbs", [])],
@@ -135,7 +135,7 @@ class Recipe:
     app_name: str
     app_id: str = ""
     categories: list[str] = field(default_factory=lambda: ["Application"])
-    bottle: RecipeBottle = field(default_factory=RecipeBottle)
+    barrel: RecipeBarrel = field(default_factory=RecipeBarrel)
     files: list[RecipeFile] = field(default_factory=list)
     steps: list[RecipeStep] = field(default_factory=list)
     programs: list[RecipeProgram] = field(default_factory=list)
@@ -146,7 +146,7 @@ class Recipe:
             "recipe": RECIPE_VERSION,
             "app": {"name": self.app_name, "id": self.app_id,
                     "categories": list(self.categories)},
-            "bottle": self.bottle.to_dict(),
+            "barrel": self.barrel.to_dict(),
             "files": [f.to_dict() for f in self.files],
             "steps": [s.to_dict() for s in self.steps],
             "programs": [p.to_dict() for p in self.programs],
@@ -159,7 +159,7 @@ class Recipe:
         return cls(
             app_name=str(app.get("name", "")), app_id=str(app.get("id", "")),
             categories=[str(c) for c in app.get("categories", ["Application"])],
-            bottle=RecipeBottle.from_dict(d.get("bottle", {})),
+            barrel=RecipeBarrel.from_dict(d.get("barrel", {})),
             files=[RecipeFile.from_dict(f) for f in d.get("files", [])],
             steps=[RecipeStep.from_dict(s) for s in d.get("steps", [])],
             programs=[RecipeProgram.from_dict(p) for p in d.get("programs", [])],

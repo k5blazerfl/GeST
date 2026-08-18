@@ -17,7 +17,7 @@ from gest.core.customs.desktop import (
 # ---- desktop: Exec quoting + field codes -------------------------------
 def test_build_exec_quotes_only_when_needed():
     assert build_exec(["gangway-open", "work"]) == "gangway-open work"
-    assert build_exec(["drydock-run", "bottle one", "app"]) == 'drydock-run "bottle one" app'
+    assert build_exec(["drydock-run", "barrel one", "app"]) == 'drydock-run "barrel one" app'
     assert build_exec(["x", ""]) == 'x ""'
 
 
@@ -53,7 +53,7 @@ def test_round_trip_preserves_everything_including_actions():
         comment="Spreadsheets", categories=["Office"], mime_types=[mime.EXE],
         startup_wm_class="excel.exe", no_display=False,
         actions=[DesktopAction(id="new", name="New Document", exec="drydock-run office excel /n")],
-        extra={"X-GeST-Bottle": "office"},
+        extra={"X-GeST-Barrel": "office"},
     )
     back = DesktopEntry.parse(entry.render())
     assert back.name == "Excel"
@@ -61,7 +61,7 @@ def test_round_trip_preserves_everything_including_actions():
     assert back.categories == ["Office"]
     assert back.mime_types == [mime.EXE]
     assert back.startup_wm_class == "excel.exe"
-    assert back.extra.get("X-GeST-Bottle") == "office"
+    assert back.extra.get("X-GeST-Barrel") == "office"
     assert len(back.actions) == 1
     assert back.actions[0].id == "new" and back.actions[0].name == "New Document"
 

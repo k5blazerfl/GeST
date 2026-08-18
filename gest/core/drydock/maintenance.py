@@ -1,4 +1,4 @@
-"""Bottle maintenance: build the env+argv for the day-to-day Wine chores
+"""Barrel maintenance: build the env+argv for the day-to-day Wine chores
 (winetricks / winecfg / a prefix shell / kill), and probe which host tools are
 installed. **Pure** builders — the CLI spawns them with an injectable runner, so
 these are unit-testable without Wine.
@@ -9,16 +9,16 @@ from __future__ import annotations
 import shutil
 from collections.abc import Callable
 
-from gest.core.drydock.model import Bottle
+from gest.core.drydock.model import Barrel
 
 
-def bottle_env(bottle: Bottle) -> dict[str, str]:
-    """``WINEPREFIX``/``WINEARCH`` (+ the bottle's env overrides) for a Wine
-    maintenance command run against this bottle's prefix."""
-    env = dict(bottle.env)
-    if bottle.prefix:
-        env["WINEPREFIX"] = bottle.prefix
-    env["WINEARCH"] = bottle.arch
+def barrel_env(barrel: Barrel) -> dict[str, str]:
+    """``WINEPREFIX``/``WINEARCH`` (+ the barrel's env overrides) for a Wine
+    maintenance command run against this barrel's prefix."""
+    env = dict(barrel.env)
+    if barrel.prefix:
+        env["WINEPREFIX"] = barrel.prefix
+    env["WINEARCH"] = barrel.arch
     return env
 
 
@@ -31,12 +31,12 @@ def winecfg_argv() -> list[str]:
 
 
 def kill_argv() -> list[str]:
-    """``wineserver -k`` — terminate every process in the bottle's prefix."""
+    """``wineserver -k`` — terminate every process in the barrel's prefix."""
     return ["wineserver", "-k"]
 
 
 def shell_argv(shell: str) -> list[str]:
-    """An interactive shell (``$SHELL``) with the bottle's Wine env exported, so
+    """An interactive shell (``$SHELL``) with the barrel's Wine env exported, so
     the user can poke the prefix by hand."""
     return [shell or "bash"]
 
@@ -44,9 +44,9 @@ def shell_argv(shell: str) -> list[str]:
 # The host tools each Drydock capability needs — `drydock doctor` reports them.
 TOOLS: dict[str, str] = {
     "wine": "Wine — run apps, winecfg, wineserver",
-    "winetricks": "winetricks — install DLLs/runtimes into a bottle",
-    "wineserver": "wineserver — kill a bottle's processes",
-    "umu-run": "umu-launcher — Proton bottles",
+    "winetricks": "winetricks — install DLLs/runtimes into a barrel",
+    "wineserver": "wineserver — kill a barrel's processes",
+    "umu-run": "umu-launcher — Proton barrels",
     "wrestool": "icoutils wrestool — extract .exe icons",
     "icotool": "icoutils icotool — convert extracted icons",
     "gamescope": "gamescope — game mode (FSR/HDR/scaling)",

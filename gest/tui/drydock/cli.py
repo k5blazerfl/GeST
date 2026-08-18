@@ -1,7 +1,7 @@
-"""``drydock`` — manage Wine/Proton bottles and launch Windows apps.
+"""``drydock`` — manage Wine/Proton barrels and launch Windows apps.
 
 Pure, TTY-free command layer: each ``cmd_*`` takes parsed args + an injectable
-:class:`DrydockEnv` and returns an exit code. ``drydock-run <bottle> <program>``
+:class:`DrydockEnv` and returns an exit code. ``drydock-run <barrel> <program>``
 is the stub the synthesized ``.desktop`` Exec points at.
 
     drydock create office --runner wine --arch win32
@@ -9,9 +9,9 @@ is the stub the synthesized ``.desktop`` Exec points at.
     drydock scan office            # adopt wine's auto-generated launchers
     drydock winetricks office dotnet48 corefonts   # install DLLs/runtimes
     drydock winecfg office         # configure the prefix; kill/shell/doctor too
-    drydock materialize game.recipe   # create a bottle from a helm.recipe
+    drydock materialize game.recipe   # create a barrel from a helm.recipe
     drydock plan game.recipe          # show the compiled install plan (dry run)
-    drydock install-recipe game.recipe --run   # create the bottle AND run its install
+    drydock install-recipe game.recipe --run   # create the barrel AND run its install
     drydock prereqs office
     drydock run office excel
 """
@@ -29,8 +29,8 @@ from dataclasses import dataclass, field
 
 from gest.core.customs import icons, identity_store, mime
 from gest.core.customs.desktop import remove_entry, write_entry
-from gest.core.drydock import bottles, desktop, launch, prereq
-from gest.core.drydock.model import ARCHES, RUNNERS, Bottle, GraphicsProfile, Program
+from gest.core.drydock import barrels, desktop, launch, prereq
+from gest.core.drydock.model import ARCHES, RUNNERS, Barrel, GraphicsProfile, Program
 
 
 @dataclass
@@ -64,7 +64,7 @@ def _default_tool_spawn(argv: list[str], env: dict[str, str]) -> int:
 @dataclass
 class DrydockEnv:
     io: CliIO = field(default_factory=_default_io)
-    store_base: str = bottles.DRYDOCK_DIR
+    store_base: str = barrels.DRYDOCK_DIR
     applications_dir: str = "~/.local/share/applications"
     wine_apps_dir: str = desktop.WINE_APPS_DIR
     launch_fn: Callable = launch.launch
@@ -82,38 +82,38 @@ class DrydockEnv:
     which: Callable[[str], str | None] = shutil.which
 
 
-def _load(env: DrydockEnv, bottle_id: str) -> Bottle | None:
-    bottle = bottles.load_bottle(bottle_id, env.store_base)
-    if bottle is None:
-        env.io.err(f"no such bottle {bottle_id!r}")
-    return bottle
+def _load(env: DrydockEnv, barrel_id: str) -> Barrel | None:
+    barrel = barrels.load_barrel(barrel_id, env.store_base)
+    if barrel is None:
+        env.io.err(f"no such barrel {barrel_id!r}")
+    return barrel
 
 
-def _write_launcher(env: DrydockEnv, bottle: Bottle, program: Program) -> str:
-    path = write_entry(desktop.desktop_entry(bottle, program),
-                       desktop.desktop_id(bottle.id, program.id), env.applications_dir)
+def _write_launcher(env: DrydockEnv, barrel: Barrel, program: Program) -> str:
+    path = write_entry(desktop.desktop_entry(barrel, program),
+                       desktop.desktop_id(barrel.id, program.id), env.applications_dir)
     return str(path)
 
 
-def _upsert_program(bottle: Bottle, program: Program) -> None:
-    bottle.programs = [p for p in bottle.programs if p.id != program.id]
-    bottle.programs.append(program)
+def _upsert_program(barrel: Barrel, program: Program) -> None:
+    barrel.programs = [p for p in barrel.programs if p.id != program.id]
+    barrel.programs.append(program)
 
 
 def _identity_path(env: DrydockEnv) -> str | None:
     return env.identity_path or None
 
 
-def _wire_customs(env: DrydockEnv, bottle: Bottle, program: Program) -> None:
+def _wire_customs(env: DrydockEnv, barrel: Barrel, program: Program) -> None:
     """Make a synthesized launcher a first-class HeDE citizen: extract its icon,
     register its taskbar identity, and set it as the default handler for its MIME
     types. The DB refresh is left to :func:`_refresh_db` so a batch (scan) does it
     once. Host tools run through ``env.run_argv``; failures are non-fatal."""
-    did = desktop.desktop_id(bottle.id, program.id)
+    did = desktop.desktop_id(barrel.id, program.id)
 
     # 1. Icon: wrestool extracts the .exe's group-icon → icotool renders a PNG
     #    into the hicolor theme under the launcher's Icon name (<desktop_id>).
-    exe = desktop.local_exe_path(bottle, program)
+    exe = desktop.local_exe_path(barrel, program)
     if exe:
         png = icons.icon_install_path(did, theme_dir=env.icon_theme_dir)
         png.parent.mkdir(parents=True, exist_ok=True)
@@ -138,50 +138,50 @@ def _refresh_db(env: DrydockEnv) -> None:
 
 
 def cmd_create(args, env: DrydockEnv) -> int:
-    bottle = Bottle(id=bottles.slug(args.name), name=args.name, runner=args.runner,
+    barrel = Barrel(id=barrels.slug(args.name), name=args.name, runner=args.runner,
                     runner_version=args.version, arch=args.arch,
                     dxvk=args.dxvk, vkd3d=args.vkd3d)
-    if not bottle.is_valid():
-        env.io.err("invalid bottle (check --runner and --arch)")
+    if not barrel.is_valid():
+        env.io.err("invalid barrel (check --runner and --arch)")
         return 2
-    path = bottles.save_bottle(bottle, env.store_base)
-    env.io.out(f"created bottle {bottle.id} ({path})")
+    path = barrels.save_barrel(barrel, env.store_base)
+    env.io.out(f"created barrel {barrel.id} ({path})")
     return 0
 
 
 def cmd_list(args, env: DrydockEnv) -> int:
-    for bid in bottles.list_bottles(env.store_base):
+    for bid in barrels.list_barrels(env.store_base):
         env.io.out(bid)
     return 0
 
 
 def cmd_show(args, env: DrydockEnv) -> int:
-    bottle = _load(env, args.bottle)
-    if bottle is None:
+    barrel = _load(env, args.barrel)
+    if barrel is None:
         return 1
-    runner = f"{bottle.runner}" + (f" {bottle.runner_version}" if bottle.runner_version else "")
-    env.io.out(f"{bottle.name} [{bottle.id}]  runner={runner}  arch={bottle.arch}")
-    env.io.out(f"prefix: {bottle.prefix}")
-    for program in bottle.programs:
+    runner = f"{barrel.runner}" + (f" {barrel.runner_version}" if barrel.runner_version else "")
+    env.io.out(f"{barrel.name} [{barrel.id}]  runner={runner}  arch={barrel.arch}")
+    env.io.out(f"prefix: {barrel.prefix}")
+    for program in barrel.programs:
         env.io.out(f"  - {program.id}: {program.name}  ({program.exe})")
     return 0
 
 
 def cmd_rm(args, env: DrydockEnv) -> int:
-    bottle = bottles.load_bottle(args.bottle, env.store_base)
-    if bottle is not None:
-        for program in bottle.programs:
-            did = desktop.desktop_id(bottle.id, program.id)
+    barrel = barrels.load_barrel(args.barrel, env.store_base)
+    if barrel is not None:
+        for program in barrel.programs:
+            did = desktop.desktop_id(barrel.id, program.id)
             remove_entry(did, env.applications_dir)
             identity_store.unregister_entry(did, _identity_path(env))
             with contextlib.suppress(OSError):
                 icons.icon_install_path(did, theme_dir=env.icon_theme_dir).unlink()
-        if bottle.programs:
+        if barrel.programs:
             _refresh_db(env)
-    if bottles.delete_bottle(args.bottle, env.store_base):
-        env.io.out(f"removed bottle {args.bottle}")
+    if barrels.delete_barrel(args.barrel, env.store_base):
+        env.io.out(f"removed barrel {args.barrel}")
         return 0
-    env.io.err(f"no such bottle {args.bottle!r}")
+    env.io.err(f"no such barrel {args.barrel!r}")
     return 1
 
 
@@ -191,35 +191,35 @@ def _graphics_from_args(args) -> GraphicsProfile:
 
 
 def cmd_register(args, env: DrydockEnv) -> int:
-    bottle = _load(env, args.bottle)
-    if bottle is None:
+    barrel = _load(env, args.barrel)
+    if barrel is None:
         return 1
-    program = Program(id=bottles.slug(args.name), name=args.name, exe=args.exe,
+    program = Program(id=barrels.slug(args.name), name=args.name, exe=args.exe,
                       category="Game" if args.game else "Application",
                       graphics=_graphics_from_args(args))
-    _upsert_program(bottle, program)
-    bottles.save_bottle(bottle, env.store_base)
-    launcher = _write_launcher(env, bottle, program)
-    _wire_customs(env, bottle, program)
+    _upsert_program(barrel, program)
+    barrels.save_barrel(barrel, env.store_base)
+    launcher = _write_launcher(env, barrel, program)
+    _wire_customs(env, barrel, program)
     _refresh_db(env)
     env.io.out(f"registered {program.id}; launcher {launcher} (icon + identity + MIME wired)")
     return 0
 
 
 def cmd_scan(args, env: DrydockEnv) -> int:
-    bottle = _load(env, args.bottle)
-    if bottle is None:
+    barrel = _load(env, args.barrel)
+    if barrel is None:
         return 1
     wine_dir = args.wine_apps_dir or env.wine_apps_dir
     count = 0
     for entry in desktop.harvest_dir(wine_dir):
-        program = desktop.program_from_harvested(entry, bottles.slug(entry.name or "app"))
-        _upsert_program(bottle, program)
-        _write_launcher(env, bottle, program)
-        _wire_customs(env, bottle, program)
+        program = desktop.program_from_harvested(entry, barrels.slug(entry.name or "app"))
+        _upsert_program(barrel, program)
+        _write_launcher(env, barrel, program)
+        _wire_customs(env, barrel, program)
         env.io.out(f"adopted {program.name} ({program.exe})")
         count += 1
-    bottles.save_bottle(bottle, env.store_base)
+    barrels.save_barrel(barrel, env.store_base)
     if count:
         _refresh_db(env)
     env.io.out(f"{count} app(s) adopted")
@@ -227,47 +227,47 @@ def cmd_scan(args, env: DrydockEnv) -> int:
 
 
 def cmd_prereqs(args, env: DrydockEnv) -> int:
-    bottle = _load(env, args.bottle)
-    if bottle is None:
+    barrel = _load(env, args.barrel)
+    if barrel is None:
         return 1
-    for req in prereq.requirements(bottle):
+    for req in prereq.requirements(barrel):
         use = f" [{' '.join(req.use)}]" if req.use else ""
         overlay = " (GURU overlay)" if req.from_guru else ""
         note = f" — {req.note}" if req.note else ""
         env.io.out(f"{req.atom}{use}{overlay}{note}")
-    if prereq.needs_guru(bottle):
+    if prereq.needs_guru(barrel):
         env.io.out("note: enable the GURU overlay for umu-launcher (Drydock can do this)")
     return 0
 
 
 def cmd_run(args, env: DrydockEnv) -> int:
-    bottle = _load(env, args.bottle)
-    if bottle is None:
+    barrel = _load(env, args.barrel)
+    if barrel is None:
         return 1
-    program = bottle.program(args.program)
+    program = barrel.program(args.program)
     if program is None:
-        env.io.err(f"no such program {args.program!r} in {args.bottle}")
+        env.io.err(f"no such program {args.program!r} in {args.barrel}")
         return 1
-    return env.launch_fn(bottle, program)
+    return env.launch_fn(barrel, program)
 
 
-# ---- bottle maintenance verbs ------------------------------------------
+# ---- barrel maintenance verbs ------------------------------------------
 def cmd_winetricks(args, env: DrydockEnv) -> int:
     from gest.core.drydock import maintenance
 
-    bottle = _load(env, args.bottle)
-    if bottle is None:
+    barrel = _load(env, args.barrel)
+    if barrel is None:
         return 1
     if not args.verbs:
         env.io.err("need at least one winetricks verb (e.g. dotnet48 corefonts)")
         return 2
-    rc = env.tool_spawn(maintenance.winetricks_argv(args.verbs), maintenance.bottle_env(bottle))
+    rc = env.tool_spawn(maintenance.winetricks_argv(args.verbs), maintenance.barrel_env(barrel))
     if rc == 0:
         for verb in args.verbs:
-            if verb not in bottle.verbs:
-                bottle.verbs.append(verb)
-        bottles.save_bottle(bottle, env.store_base)
-        env.io.out(f"installed {' '.join(args.verbs)} into {bottle.id}")
+            if verb not in barrel.verbs:
+                barrel.verbs.append(verb)
+        barrels.save_barrel(barrel, env.store_base)
+        env.io.out(f"installed {' '.join(args.verbs)} into {barrel.id}")
     else:
         env.io.err(f"winetricks failed (rc={rc})")
     return rc
@@ -276,20 +276,20 @@ def cmd_winetricks(args, env: DrydockEnv) -> int:
 def cmd_winecfg(args, env: DrydockEnv) -> int:
     from gest.core.drydock import maintenance
 
-    bottle = _load(env, args.bottle)
-    if bottle is None:
+    barrel = _load(env, args.barrel)
+    if barrel is None:
         return 1
-    return env.tool_spawn(maintenance.winecfg_argv(), maintenance.bottle_env(bottle))
+    return env.tool_spawn(maintenance.winecfg_argv(), maintenance.barrel_env(barrel))
 
 
 def cmd_kill(args, env: DrydockEnv) -> int:
     from gest.core.drydock import maintenance
 
-    bottle = _load(env, args.bottle)
-    if bottle is None:
+    barrel = _load(env, args.barrel)
+    if barrel is None:
         return 1
-    rc = env.tool_spawn(maintenance.kill_argv(), maintenance.bottle_env(bottle))
-    env.io.out(f"killed wine processes in {bottle.id}" if rc == 0
+    rc = env.tool_spawn(maintenance.kill_argv(), maintenance.barrel_env(barrel))
+    env.io.out(f"killed wine processes in {barrel.id}" if rc == 0
                else f"kill failed (rc={rc})")
     return rc
 
@@ -297,12 +297,12 @@ def cmd_kill(args, env: DrydockEnv) -> int:
 def cmd_shell(args, env: DrydockEnv) -> int:
     from gest.core.drydock import maintenance
 
-    bottle = _load(env, args.bottle)
-    if bottle is None:
+    barrel = _load(env, args.barrel)
+    if barrel is None:
         return 1
-    env.io.out(f"shell in {bottle.id} — WINEPREFIX={bottle.prefix or '(default)'}; exit to leave")
+    env.io.out(f"shell in {barrel.id} — WINEPREFIX={barrel.prefix or '(default)'}; exit to leave")
     return env.tool_spawn(maintenance.shell_argv(os.environ.get("SHELL", "bash")),
-                          maintenance.bottle_env(bottle))
+                          maintenance.barrel_env(barrel))
 
 
 def cmd_doctor(args, env: DrydockEnv) -> int:
@@ -339,30 +339,30 @@ def cmd_materialize(args, env: DrydockEnv) -> int:
                        "(use --no-lint to override)")
             return 1
 
-    bottle = materialize.bottle_from_recipe(recipe, args.name or "")
-    if not bottle.is_valid():
-        env.io.err("recipe has an invalid bottle (check runner/arch)")
+    barrel = materialize.barrel_from_recipe(recipe, args.name or "")
+    if not barrel.is_valid():
+        env.io.err("recipe has an invalid barrel (check runner/arch)")
         return 2
-    if bottles.load_bottle(bottle.id, env.store_base) is not None and not args.force:
-        env.io.err(f"bottle {bottle.id!r} already exists (use --force to overwrite)")
+    if barrels.load_barrel(barrel.id, env.store_base) is not None and not args.force:
+        env.io.err(f"barrel {barrel.id!r} already exists (use --force to overwrite)")
         return 1
 
-    bottles.save_bottle(bottle, env.store_base)
-    for program in bottle.programs:
-        _write_launcher(env, bottle, program)
-        _wire_customs(env, bottle, program)
-    if bottle.programs:
+    barrels.save_barrel(barrel, env.store_base)
+    for program in barrel.programs:
+        _write_launcher(env, barrel, program)
+        _wire_customs(env, barrel, program)
+    if barrel.programs:
         _refresh_db(env)
-    env.io.out(f"materialized bottle {bottle.id} with {len(bottle.programs)} program(s)")
+    env.io.out(f"materialized barrel {barrel.id} with {len(barrel.programs)} program(s)")
     if recipe.steps:
         env.io.out(f"note: {len(recipe.steps)} install step(s) not run — use "
-                   "`drydock install-recipe` to create the bottle AND run the install")
+                   "`drydock install-recipe` to create the barrel AND run the install")
     return 0
 
 
 def cmd_install_recipe(args, env: DrydockEnv) -> int:
-    """One shot: materialize the bottle, then run its install plan **against that
-    bottle's own prefix** — so the install and every later launch share one
+    """One shot: materialize the barrel, then run its install plan **against that
+    barrel's own prefix** — so the install and every later launch share one
     WINEPREFIX (closes the install↔materialize seam)."""
     from pathlib import Path
 
@@ -392,33 +392,33 @@ def cmd_install_recipe(args, env: DrydockEnv) -> int:
             env.io.err(f"refusing to install — {errors} lint error(s) (use --no-lint to override)")
             return 1
 
-    bottle = materialize.bottle_from_recipe(recipe, args.name or "")
-    if not bottle.is_valid():
-        env.io.err("recipe has an invalid bottle (check runner/arch)")
+    barrel = materialize.barrel_from_recipe(recipe, args.name or "")
+    if not barrel.is_valid():
+        env.io.err("recipe has an invalid barrel (check runner/arch)")
         return 2
-    if bottles.load_bottle(bottle.id, env.store_base) is not None and not args.force:
-        env.io.err(f"bottle {bottle.id!r} already exists (use --force to overwrite)")
+    if barrels.load_barrel(barrel.id, env.store_base) is not None and not args.force:
+        env.io.err(f"barrel {barrel.id!r} already exists (use --force to overwrite)")
         return 1
 
-    # Save first so save_bottle pins the bottle's prefix, then plan the install
+    # Save first so save_barrel pins the barrel's prefix, then plan the install
     # AGAINST that prefix — install and later launches now share one WINEPREFIX.
-    bottles.save_bottle(bottle, env.store_base)
-    for program in bottle.programs:
-        _write_launcher(env, bottle, program)
-        _wire_customs(env, bottle, program)
-    if bottle.programs:
+    barrels.save_barrel(barrel, env.store_base)
+    for program in barrel.programs:
+        _write_launcher(env, barrel, program)
+        _wire_customs(env, barrel, program)
+    if barrel.programs:
         _refresh_db(env)
-    env.io.out(f"materialized bottle {bottle.id} "
-               f"({len(bottle.programs)} program(s)) at {bottle.prefix}")
+    env.io.out(f"materialized barrel {barrel.id} "
+               f"({len(barrel.programs)} program(s)) at {barrel.prefix}")
 
     ctx = interpreter.PlanContext(
-        prefix=bottle.prefix,
-        gamedir=str(Path(bottle.prefix) / "drive_c" / bottle.id),
-        cache=args.cache or str(Path("~/.cache/drydock").expanduser() / bottle.id),
-        arch=bottle.arch, runner=bottle.runner)
+        prefix=barrel.prefix,
+        gamedir=str(Path(barrel.prefix) / "drive_c" / barrel.id),
+        cache=args.cache or str(Path("~/.cache/drydock").expanduser() / barrel.id),
+        arch=barrel.arch, runner=barrel.runner)
     ops = interpreter.plan(recipe, ctx)
     if not ops:
-        env.io.out("(recipe has no install steps — bottle is ready)")
+        env.io.out("(recipe has no install steps — barrel is ready)")
         return 0
 
     dry = not args.run
@@ -438,10 +438,10 @@ def cmd_install_recipe(args, env: DrydockEnv) -> int:
 def cmd_export_recipe(args, env: DrydockEnv) -> int:
     from gest.core.drydock import materialize, recipe_store
 
-    bottle = _load(env, args.bottle)
-    if bottle is None:
+    barrel = _load(env, args.barrel)
+    if barrel is None:
         return 1
-    recipe = materialize.recipe_from_bottle(bottle)
+    recipe = materialize.recipe_from_barrel(barrel)
     try:
         text = recipe_store.dumps(recipe)
     except RuntimeError as exc:  # PyYAML missing
@@ -450,7 +450,7 @@ def cmd_export_recipe(args, env: DrydockEnv) -> int:
     if args.output and args.output != "-":
         from pathlib import Path
         Path(args.output).expanduser().write_text(text, encoding="utf-8")
-        env.io.out(f"exported bottle {bottle.id} to {args.output}")
+        env.io.out(f"exported barrel {barrel.id} to {args.output}")
     else:
         env.io.out(text)
     return 0
@@ -493,13 +493,13 @@ def _plan_from_args(args):
     except (RuntimeError, ValueError) as exc:
         return None, None, str(exc)
 
-    app = bottles.slug(recipe.app_id or recipe.app_name or "app")
+    app = barrels.slug(recipe.app_id or recipe.app_name or "app")
     base = Path("~/.local/share/hede/drydock").expanduser() / app
     prefix = args.prefix or str(base / "prefix")
     gamedir = args.gamedir or str(Path(prefix) / "drive_c" / app)
     cache = args.cache or str(Path("~/.cache/drydock").expanduser() / app)
     ctx = interpreter.PlanContext(prefix=prefix, gamedir=gamedir, cache=cache,
-                                  arch=recipe.bottle.arch, runner=recipe.bottle.runner)
+                                  arch=recipe.barrel.arch, runner=recipe.barrel.runner)
     return recipe, interpreter.plan(recipe, ctx), None
 
 
@@ -572,10 +572,10 @@ COMMANDS: dict[str, Callable[..., int]] = {
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="drydock",
-                                     description="Manage Wine/Proton bottles and Windows apps.")
+                                     description="Manage Wine/Proton barrels and Windows apps.")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    create = sub.add_parser("create", help="create a bottle")
+    create = sub.add_parser("create", help="create a barrel")
     create.add_argument("name")
     create.add_argument("--runner", required=True, choices=RUNNERS)
     create.add_argument("--version", default="", help="Proton codename/path or wine target")
@@ -583,10 +583,10 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("--dxvk", action="store_true")
     create.add_argument("--vkd3d", action="store_true")
 
-    sub.add_parser("list", help="list bottles")
+    sub.add_parser("list", help="list barrels")
 
     reg = sub.add_parser("register", help="add a program + a launcher")
-    reg.add_argument("bottle")
+    reg.add_argument("barrel")
     reg.add_argument("exe")
     reg.add_argument("--name", required=True)
     reg.add_argument("--game", action="store_true")
@@ -594,20 +594,20 @@ def build_parser() -> argparse.ArgumentParser:
         reg.add_argument(f"--{flag}", action="store_true")
 
     scan = sub.add_parser("scan", help="adopt wine's auto-generated launchers")
-    scan.add_argument("bottle")
+    scan.add_argument("barrel")
     scan.add_argument("--wine-apps-dir", default="")
 
     for name in ("show", "rm", "prereqs"):
-        sub.add_parser(name, help=f"{name} a bottle").add_argument("bottle")
+        sub.add_parser(name, help=f"{name} a barrel").add_argument("barrel")
 
     run = sub.add_parser("run", help="launch a program")
-    run.add_argument("bottle")
+    run.add_argument("barrel")
     run.add_argument("program")
 
-    mat = sub.add_parser("materialize", help="create a bottle from a helm.recipe")
+    mat = sub.add_parser("materialize", help="create a barrel from a helm.recipe")
     mat.add_argument("recipe", help="path to a helm.recipe YAML file")
-    mat.add_argument("--name", default="", help="override the bottle id/name")
-    mat.add_argument("--force", action="store_true", help="overwrite an existing bottle")
+    mat.add_argument("--name", default="", help="override the barrel id/name")
+    mat.add_argument("--force", action="store_true", help="overwrite an existing barrel")
     mat.add_argument("--no-lint", action="store_true",
                      help="skip the recipe lint check (materialize even with errors)")
 
@@ -624,10 +624,10 @@ def build_parser() -> argparse.ArgumentParser:
                       help="skip the recipe lint check (install even with errors)")
 
     insr = sub.add_parser("install-recipe",
-                          help="one shot: create the bottle from a recipe AND run its install")
+                          help="one shot: create the barrel from a recipe AND run its install")
     insr.add_argument("recipe", help="path to a helm.recipe YAML file")
-    insr.add_argument("--name", default="", help="override the bottle id/name")
-    insr.add_argument("--force", action="store_true", help="overwrite an existing bottle")
+    insr.add_argument("--name", default="", help="override the barrel id/name")
+    insr.add_argument("--force", action="store_true", help="overwrite an existing barrel")
     insr.add_argument("--run", action="store_true",
                       help="execute the install for real on this host (needs wine, etc.)")
     insr.add_argument("--no-lint", action="store_true", help="skip the recipe lint check")
@@ -636,15 +636,15 @@ def build_parser() -> argparse.ArgumentParser:
     lint = sub.add_parser("lint", help="validate a helm.recipe (structure + references)")
     lint.add_argument("recipe", help="path to a helm.recipe YAML file")
 
-    exp = sub.add_parser("export-recipe", help="export a bottle's config as a helm.recipe")
-    exp.add_argument("bottle")
+    exp = sub.add_parser("export-recipe", help="export a barrel's config as a helm.recipe")
+    exp.add_argument("barrel")
     exp.add_argument("-o", "--output", default="-", help="write the recipe here (default: stdout)")
 
-    wt = sub.add_parser("winetricks", help="run winetricks verbs in a bottle")
-    wt.add_argument("bottle")
+    wt = sub.add_parser("winetricks", help="run winetricks verbs in a barrel")
+    wt.add_argument("barrel")
     wt.add_argument("verbs", nargs="*", help="e.g. dotnet48 corefonts vcrun2019")
     for name in ("winecfg", "kill", "shell"):
-        sub.add_parser(name, help=f"{name} in a bottle's prefix").add_argument("bottle")
+        sub.add_parser(name, help=f"{name} in a barrel's prefix").add_argument("barrel")
     sub.add_parser("doctor", help="report which host tools are installed")
     return parser
 
@@ -660,7 +660,7 @@ def main() -> None:
 
 
 def open_main() -> None:
-    """Entry point for ``drydock-run <bottle> <program>``."""
+    """Entry point for ``drydock-run <barrel> <program>``."""
     sys.exit(run_cli(["run", *sys.argv[1:]]))
 
 

@@ -3,7 +3,7 @@
 Two paths (both resolved design decisions):
 
 1. **Synthesize** — build a Customs ``.desktop`` for a registered program whose
-   ``Exec`` runs ``drydock-run <bottle> <program>`` (so the launch goes through
+   ``Exec`` runs ``drydock-run <barrel> <program>`` (so the launch goes through
    Drydock's pipeline), with the right icon name, category, and
    ``StartupWMClass`` for taskbar identity.
 2. **Harvest** — scan the ``.desktop`` files wine's winemenubuilder auto-writes
@@ -23,20 +23,20 @@ from pathlib import Path, PureWindowsPath
 from gest.core.customs import mime
 from gest.core.customs.desktop import DesktopEntry, build_exec
 from gest.core.customs.desktop import entry_path as _customs_entry_path
-from gest.core.drydock.bottles import slug
-from gest.core.drydock.model import Bottle, Program
+from gest.core.drydock.barrels import slug
+from gest.core.drydock.model import Barrel, Program
 
 DRYDOCK_RUN = "drydock-run"
 # wine's winemenubuilder writes generated launchers here.
 WINE_APPS_DIR = "~/.local/share/applications/wine"
 
 
-def open_argv(bottle_id: str, program_id: str) -> list[str]:
-    return [DRYDOCK_RUN, bottle_id, program_id]
+def open_argv(barrel_id: str, program_id: str) -> list[str]:
+    return [DRYDOCK_RUN, barrel_id, program_id]
 
 
-def desktop_id(bottle_id: str, program_id: str) -> str:
-    return f"drydock-{bottle_id}-{slug(program_id)}"
+def desktop_id(barrel_id: str, program_id: str) -> str:
+    return f"drydock-{barrel_id}-{slug(program_id)}"
 
 
 def _exe_stem(exe: str) -> str:
@@ -56,7 +56,7 @@ def default_wm_class(program: Program) -> str:
 _WIN_DRIVE = re.compile(r"^([A-Za-z]):/(.*)$")
 
 
-def local_exe_path(bottle: Bottle, program: Program) -> str:
+def local_exe_path(barrel: Barrel, program: Program) -> str:
     """Resolve a program's exe to a real host path (for icon extraction). A
     Windows path like ``C:\\office\\excel.exe`` maps to ``<prefix>/drive_c/…``; a
     unix path (e.g. a harvested wine Exec) is used as-is. Empty if unresolved."""
@@ -65,23 +65,23 @@ def local_exe_path(bottle: Bottle, program: Program) -> str:
         return ""
     unixish = exe.replace("\\", "/")
     match = _WIN_DRIVE.match(unixish)
-    if match and bottle.prefix:
+    if match and barrel.prefix:
         drive, rest = match.group(1).lower(), match.group(2)
-        return str(Path(bottle.prefix).expanduser() / f"drive_{drive}" / rest)
+        return str(Path(barrel.prefix).expanduser() / f"drive_{drive}" / rest)
     return exe
 
 
-def desktop_entry(bottle: Bottle, program: Program) -> DesktopEntry:
+def desktop_entry(barrel: Barrel, program: Program) -> DesktopEntry:
     categories = ["Game"] if program.category == "Game" else ["Utility"]
     return DesktopEntry(
         name=program.name,
-        exec=build_exec(open_argv(bottle.id, program.id)),
-        icon=desktop_id(bottle.id, program.id),
-        comment=f"{program.name} — Drydock: {bottle.name}",
+        exec=build_exec(open_argv(barrel.id, program.id)),
+        icon=desktop_id(barrel.id, program.id),
+        comment=f"{program.name} — Drydock: {barrel.name}",
         categories=categories,
         mime_types=list(mime.DRYDOCK_TYPES),
         startup_wm_class=default_wm_class(program),
-        extra={"X-GeST-Origin": "drydock", "X-Drydock-Bottle": bottle.id,
+        extra={"X-GeST-Origin": "drydock", "X-Drydock-Barrel": barrel.id,
                "X-Drydock-Program": program.id},
     )
 
@@ -130,5 +130,5 @@ def program_from_harvested(entry: DesktopEntry, program_id: str) -> Program:
     )
 
 
-def entry_path(bottle_id: str, program_id: str, applications_dir: str) -> Path:
-    return _customs_entry_path(desktop_id(bottle_id, program_id), applications_dir)
+def entry_path(barrel_id: str, program_id: str, applications_dir: str) -> Path:
+    return _customs_entry_path(desktop_id(barrel_id, program_id), applications_dir)

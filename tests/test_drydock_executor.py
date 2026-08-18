@@ -136,11 +136,11 @@ def test_host_run_unknown_op_fails():
 def test_cli_install_dry_run_and_real(tmp_path):
     pytest.importorskip("yaml")
     from gest.core.drydock import recipe_store
-    from gest.core.drydock.recipe import Recipe, RecipeBottle, RecipeStep
+    from gest.core.drydock.recipe import Recipe, RecipeBarrel, RecipeStep
     from gest.tui.drydock.cli import CliIO, DrydockEnv, run_cli
 
     recipe = Recipe(app_name="Game", app_id="game",
-                    bottle=RecipeBottle(runner="wine", arch="win64"),
+                    barrel=RecipeBarrel(runner="wine", arch="win64"),
                     steps=[RecipeStep("create_prefix", {"arch": "win64"}),
                            RecipeStep("winetricks", {"app": "dotnet48"})])
     path = tmp_path / "game.recipe"
@@ -165,11 +165,11 @@ def test_cli_install_dry_run_and_real(tmp_path):
 def test_cli_install_refuses_recipe_with_lint_errors(tmp_path):
     pytest.importorskip("yaml")
     from gest.core.drydock import recipe_store
-    from gest.core.drydock.recipe import Recipe, RecipeBottle, RecipeStep
+    from gest.core.drydock.recipe import Recipe, RecipeBarrel, RecipeStep
     from gest.tui.drydock.cli import CliIO, DrydockEnv, run_cli
 
     recipe = Recipe(app_name="Game", app_id="game",
-                    bottle=RecipeBottle(runner="wine", arch="win64"),
+                    barrel=RecipeBarrel(runner="wine", arch="win64"),
                     steps=[RecipeStep("frobnicate", {})])  # unknown action → lint error
     path = tmp_path / "bad.recipe"
     path.write_text(recipe_store.dumps(recipe), encoding="utf-8")

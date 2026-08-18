@@ -6,7 +6,7 @@ on a manual step or a failure, and collect a per-op report. The **work** itself
 ``runner`` callable — its default, :func:`host_run`, is host-only and validated
 on a real machine, not in CI (like live launch).
 
-Roadmap phase 6 — the piece that turns a plan into an installed bottle.
+Roadmap phase 6 — the piece that turns a plan into an installed barrel.
 """
 
 from __future__ import annotations
