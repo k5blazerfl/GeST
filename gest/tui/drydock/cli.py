@@ -7,6 +7,8 @@ is the stub the synthesized ``.desktop`` Exec points at.
     drydock create office --runner wine --arch win32
     drydock register office /prefix/excel.exe --name Excel --gamescope --fsr
     drydock scan office            # adopt wine's auto-generated launchers
+    drydock winetricks office dotnet48 corefonts   # install DLLs/runtimes
+    drydock winecfg office         # configure the prefix; kill/shell/doctor too
     drydock materialize game.recipe   # create a bottle from a helm.recipe
     drydock plan game.recipe          # show the compiled install plan (dry run)
     drydock install-recipe game.recipe --run   # create the bottle AND run its install
@@ -18,6 +20,8 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import os
+import shutil
 import subprocess
 import sys
 from collections.abc import Callable
@@ -48,6 +52,15 @@ def _default_run(argv: list[str]) -> int:
         return 127
 
 
+def _default_tool_spawn(argv: list[str], env: dict[str, str]) -> int:
+    """Spawn a maintenance tool (winetricks/winecfg/shell/…) with extra env,
+    inheriting the terminal. Host-only."""
+    try:
+        return subprocess.run(argv, env={**os.environ, **env}).returncode
+    except FileNotFoundError:
+        return 127
+
+
 @dataclass
 class DrydockEnv:
     io: CliIO = field(default_factory=_default_io)
@@ -63,6 +76,10 @@ class DrydockEnv:
     # Runs one install-plan op (0 == ok); None → the host runner. Injectable so
     # `install` is testable without spawning wine / touching the filesystem.
     step_runner: Callable | None = None
+    # Maintenance-verb spawn (argv, env) and the tool-presence probe for `doctor`
+    # — injectable so winetricks/winecfg/shell/kill/doctor stay CI-safe.
+    tool_spawn: Callable[[list[str], dict[str, str]], int] = _default_tool_spawn
+    which: Callable[[str], str | None] = shutil.which
 
 
 def _load(env: DrydockEnv, bottle_id: str) -> Bottle | None:
@@ -232,6 +249,72 @@ def cmd_run(args, env: DrydockEnv) -> int:
         env.io.err(f"no such program {args.program!r} in {args.bottle}")
         return 1
     return env.launch_fn(bottle, program)
+
+
+# ---- bottle maintenance verbs ------------------------------------------
+def cmd_winetricks(args, env: DrydockEnv) -> int:
+    from gest.core.drydock import maintenance
+
+    bottle = _load(env, args.bottle)
+    if bottle is None:
+        return 1
+    if not args.verbs:
+        env.io.err("need at least one winetricks verb (e.g. dotnet48 corefonts)")
+        return 2
+    rc = env.tool_spawn(maintenance.winetricks_argv(args.verbs), maintenance.bottle_env(bottle))
+    if rc == 0:
+        for verb in args.verbs:
+            if verb not in bottle.verbs:
+                bottle.verbs.append(verb)
+        bottles.save_bottle(bottle, env.store_base)
+        env.io.out(f"installed {' '.join(args.verbs)} into {bottle.id}")
+    else:
+        env.io.err(f"winetricks failed (rc={rc})")
+    return rc
+
+
+def cmd_winecfg(args, env: DrydockEnv) -> int:
+    from gest.core.drydock import maintenance
+
+    bottle = _load(env, args.bottle)
+    if bottle is None:
+        return 1
+    return env.tool_spawn(maintenance.winecfg_argv(), maintenance.bottle_env(bottle))
+
+
+def cmd_kill(args, env: DrydockEnv) -> int:
+    from gest.core.drydock import maintenance
+
+    bottle = _load(env, args.bottle)
+    if bottle is None:
+        return 1
+    rc = env.tool_spawn(maintenance.kill_argv(), maintenance.bottle_env(bottle))
+    env.io.out(f"killed wine processes in {bottle.id}" if rc == 0
+               else f"kill failed (rc={rc})")
+    return rc
+
+
+def cmd_shell(args, env: DrydockEnv) -> int:
+    from gest.core.drydock import maintenance
+
+    bottle = _load(env, args.bottle)
+    if bottle is None:
+        return 1
+    env.io.out(f"shell in {bottle.id} — WINEPREFIX={bottle.prefix or '(default)'}; exit to leave")
+    return env.tool_spawn(maintenance.shell_argv(os.environ.get("SHELL", "bash")),
+                          maintenance.bottle_env(bottle))
+
+
+def cmd_doctor(args, env: DrydockEnv) -> int:
+    from gest.core.drydock import maintenance
+
+    missing = 0
+    for tool, path, desc in maintenance.probe_tools(env.which):
+        env.io.out(f"{'ok  ' if path else 'MISS'}  {tool:12}  {desc}")
+        if not path:
+            missing += 1
+    env.io.out(f"# {missing} tool(s) missing")
+    return 0
 
 
 def cmd_materialize(args, env: DrydockEnv) -> int:
@@ -482,6 +565,8 @@ COMMANDS: dict[str, Callable[..., int]] = {
     "materialize": cmd_materialize, "plan": cmd_plan, "install": cmd_install,
     "install-recipe": cmd_install_recipe,
     "lint": cmd_lint, "export-recipe": cmd_export_recipe,
+    "winetricks": cmd_winetricks, "winecfg": cmd_winecfg, "kill": cmd_kill,
+    "shell": cmd_shell, "doctor": cmd_doctor,
 }
 
 
@@ -554,6 +639,13 @@ def build_parser() -> argparse.ArgumentParser:
     exp = sub.add_parser("export-recipe", help="export a bottle's config as a helm.recipe")
     exp.add_argument("bottle")
     exp.add_argument("-o", "--output", default="-", help="write the recipe here (default: stdout)")
+
+    wt = sub.add_parser("winetricks", help="run winetricks verbs in a bottle")
+    wt.add_argument("bottle")
+    wt.add_argument("verbs", nargs="*", help="e.g. dotnet48 corefonts vcrun2019")
+    for name in ("winecfg", "kill", "shell"):
+        sub.add_parser(name, help=f"{name} in a bottle's prefix").add_argument("bottle")
+    sub.add_parser("doctor", help="report which host tools are installed")
     return parser
 
 
