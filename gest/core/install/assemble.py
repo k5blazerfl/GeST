@@ -81,13 +81,17 @@ class InstallSelections:
     firmware: str = "uefi"            # "uefi" | "bios"
     efi_directory: str = "/efi"
     boot_disk: str = ""               # BIOS target disk (firmware == "bios")
+    # Install the HeDE desktop (gui-apps/hede + sys-boot/plymouth) into the target.
+    # OFF for now: gui-apps/hede lives in the amphitheater overlay, which the
+    # installer does not yet make available inside the target chroot (no repos.conf
+    # / overlay provisioning). Flip to True once a provisioning step lands — then
+    # GeSI installs HeDE by default and seamless boot (below) activates with it.
+    install_desktop: bool = False
     # Seamless graphical boot (GRUB Harbor theme + Plymouth splash in the initramfs).
-    # OFF by default: it requires the target to already carry sys-boot/plymouth and
-    # the HeDE theme (gui-apps/hede) — which the installer does not emerge yet (it
-    # installs base Gentoo). Enabling it on a target without those makes genkernel
-    # --plymouth / the theme-stage steps fail the install. Turn it on only once a
-    # desktop-install step plants those atoms (then it can default on for GeSI).
-    seamless: bool = False
+    # Its plymouth/theme deps come from the desktop, so it only takes EFFECT when
+    # install_desktop is also on (see assemble_plan) — the desktop gate is what keeps
+    # it safe, so this stays True (the intent) rather than tracking the gate.
+    seamless: bool = True
     # secret + toggles
     root_password: str = ""           # in-memory only; never in the plan
     binary_pref: bool = True          # --getbinpkg for @world
@@ -191,21 +195,27 @@ def assemble_plan(sel: InstallSelections, stage3: Stage3Selection) -> InstallPla
         raise ValueError(f"invalid keymap: {sel.keymap!r}")
     user = _build_user(sel)
     network = _build_network(sel)
+    # Seamless boot needs plymouth + the HeDE theme, both installed by the desktop
+    # step; requesting it without the desktop is a no-op, not a broken install.
+    use_seamless = sel.seamless and sel.install_desktop
     disk = provision.uefi_plan(sel.disk, sel.esp_size, sel.swap_size, sel.root_fs)
     mount = disk_mount.derive_mount_plan(disk, sel.target_root)
     return InstallPlan(
         disk=disk,
         mount=mount,
         stage3=stage3,
+        # Seamless boot only takes effect when the desktop is installed — that's what
+        # provides plymouth + the HeDE theme the genkernel/GRUB steps need.
         kernel=BuildConfig(
             method=sel.kernel_method, jobs=sel.kernel_jobs,
-            initramfs=sel.kernel_initramfs, plymouth=sel.seamless),
+            initramfs=sel.kernel_initramfs, plymouth=use_seamless),
         bootloader=InstallConfig(
             firmware=sel.firmware, efi_directory=sel.efi_directory, disk=sel.boot_disk,
             # The bootloader step runs chrooted into the target (native paths),
             # so seamless writes/stages inside the target with root="" — the chroot
             # is the seam. (plymouth is baked into the initramfs by BuildKernel above.)
-            seamless=sel.seamless),
+            seamless=use_seamless),
+        desktop=sel.install_desktop,
         arch=arch,
         hostname=sel.hostname,
         timezone=sel.timezone,

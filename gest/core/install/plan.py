@@ -78,3 +78,6 @@ class InstallPlan:
     network: NetworkSpec = field(default_factory=NetworkSpec)
     binary_pref: bool = True       # --getbinpkg for @world, else source
     tier2: frozenset[str] = frozenset()   # opt-in day-2 modules, off by default
+    desktop: bool = False          # install the HeDE desktop (gui-apps/hede + plymouth);
+    # False = base Gentoo. GeSI sets it True. Gates the InstallDesktop step and, with
+    # it, whether seamless boot can take effect (its plymouth/theme deps come from here).

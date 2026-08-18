@@ -296,6 +296,43 @@ class EmergeWorld(ArgvStep):
         return ctx.state.done(self.key)
 
 
+# The desktop meta-package (pulls labwc/foot/gest/wireplumber/…) and the boot
+# splash engine. gui-apps/hede also ships the GRUB + Plymouth "hede" themes the
+# seamless steps stage, so together these satisfy every seamless-boot dependency.
+DESKTOP_ATOMS = ("gui-apps/hede", "sys-boot/plymouth")
+
+
+class InstallDesktop(ArgvStep):
+    """Emerge the HeDE desktop into the target (``plan.desktop``); recorded in @world.
+
+    A no-op for a base-Gentoo install (``desktop=False``). Runs after @world and
+    before the kernel/boot phase so plymouth + the HeDE theme are present when a
+    seamless build bakes the splash (``genkernel --plymouth``) and stages the GRUB
+    theme.
+
+    Prerequisite (not yet wired): ``gui-apps/hede`` lives in the amphitheater
+    overlay, so this emerge only resolves once the target chroot has that overlay
+    (repos.conf + the overlay content, or a binhost). Until a provisioning step
+    lands, ``plan.desktop`` stays False — hence this step is inert by default.
+    """
+
+    label = "Install the HeDE desktop"
+    phase = Phase.BASE_SYSTEM
+    chroot = True
+    key = "install_desktop"
+
+    def build(self, ctx: InstallContext) -> list[Step]:
+        if not ctx.plan.desktop:
+            return []
+        argv = ["emerge", "--color", "n"]
+        if ctx.plan.binary_pref:                 # BINPREF: prefer binpkg, else source
+            argv.insert(1, "--getbinpkg")
+        return [Step("emerge the HeDE desktop", [*argv, *DESKTOP_ATOMS])]
+
+    async def is_satisfied(self, ctx: InstallContext) -> bool:
+        return not ctx.plan.desktop or ctx.state.done(self.key)
+
+
 # --- phase 3: configure -----------------------------------------------------
 
 class SetTimezoneLocale(FuncStep):
@@ -708,6 +745,7 @@ def build_registry(plan: InstallPlan, *, root_secret: Secret | None = None) -> l
         SyncTree(),
         SetProfile(),
         EmergeWorld(),
+        InstallDesktop(),           # HeDE desktop + plymouth (no-op for base Gentoo)
         SetTimezoneLocale(),
         SetHostname(),
         SetConsole(),
@@ -735,6 +773,12 @@ def build_minimal_registry(
     optional user, network and tier-2 steps; those layer back in via
     :func:`build_registry`. The installed system boots to a root login; the rest
     is configured on first boot or a fuller run.
+
+    It also drops the HeDE desktop step, so callers must pass a *base* plan
+    (``desktop=False`` → ``seamless`` gated off): a seamless plan here would set
+    ``kernel.plymouth`` without the desktop having installed plymouth, and the
+    ``genkernel --plymouth`` build would fail. ``assemble_plan`` couples the two,
+    so an assembled base-Gentoo plan is safe.
     """
     return [
         Partition(),

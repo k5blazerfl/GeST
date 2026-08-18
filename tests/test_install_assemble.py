@@ -46,26 +46,36 @@ def test_assemble_carries_tier2_selection():
     assert plan.tier2 == frozenset({"sshd", "sysctl"})
 
 
-def test_assemble_seamless_off_by_default_leaves_a_plain_boot():
-    # Seamless requires plymouth + the HeDE theme in the target, which the installer
-    # doesn't plant yet — so it must be OFF by default (an on default would fail the
-    # genkernel/theme steps on a base-Gentoo install).
+def test_assemble_default_is_base_gentoo_with_seamless_gated_off():
+    # Default (for now): no desktop yet — so even though seamless is *wanted* (True),
+    # the desktop gate forces it off, keeping the install safe (no plymouth/theme to
+    # fail on). Flip install_desktop's default once overlay provisioning lands.
     plan = assemble_plan(_ok_selection(), _S3)
+    assert plan.desktop is False
     assert plan.kernel.plymouth is False
     assert plan.bootloader.seamless is False
 
 
-def test_assemble_seamless_when_enabled_drives_both_splash_and_grub_theme():
-    # One selection drives both halves of the look: the initramfs Plymouth splash
-    # AND the GRUB Harbor theme.
-    plan = assemble_plan(_ok_selection(seamless=True), _S3)
+def test_assemble_desktop_enables_seamless_both_halves_of_the_look():
+    # With the desktop installed (plymouth + theme present), seamless takes effect:
+    # the initramfs Plymouth splash AND the GRUB Harbor theme.
+    plan = assemble_plan(_ok_selection(install_desktop=True), _S3)
+    assert plan.desktop is True
     assert plan.kernel.plymouth is True
     assert plan.bootloader.seamless is True
 
 
+def test_assemble_desktop_with_seamless_off_is_a_plain_boot():
+    plan = assemble_plan(_ok_selection(install_desktop=True, seamless=False), _S3)
+    assert plan.desktop is True
+    assert plan.kernel.plymouth is False
+    assert plan.bootloader.seamless is False
+
+
 def test_assemble_seamless_genkernel_bakes_plymouth_into_initramfs():
     from gest.core.kernel.build import build_steps
-    plan = assemble_plan(_ok_selection(seamless=True, kernel_method="genkernel"), _S3)
+    plan = assemble_plan(
+        _ok_selection(install_desktop=True, kernel_method="genkernel"), _S3)
     argv = build_steps(plan.kernel)[0].argv
     assert "--plymouth" in argv and "--plymouth-theme=hede" in argv
 

@@ -43,6 +43,7 @@ _EXPECTED_LABELS = [
     "Sync the Portage tree",
     "Select the profile",
     "Emerge @world",
+    "Install the HeDE desktop",
     "Set timezone and locale",
     "Set the hostname",
     "Set the console keymap",
@@ -60,12 +61,14 @@ _MARKER_KEYS = {
     "Unpack the stage3 tarball": "unpack_stage3",
     "Sync the Portage tree": "sync_tree",
     "Emerge @world": "emerge_world",
+    "Install the HeDE desktop": "install_desktop",
     "Build the kernel": "build_kernel",
     "Install the bootloader": "install_bootloader",
     "Install the m1n1 boot stub": "install_boot_stub",
 }
 _CHROOT_LABELS = {
     "Sync the Portage tree", "Select the profile", "Emerge @world",
+    "Install the HeDE desktop",
     "Build the kernel", "Install the bootloader", "Install the m1n1 boot stub",
     "Set the root password", "Create the user account",
 }
@@ -112,10 +115,10 @@ def test_registry_phases_are_non_decreasing():
     assert indices == sorted(indices)
     # the exact phase grouping
     assert [s.phase for s in reg[:3]] == [Phase.PREPARE_DISK] * 3
-    assert [s.phase for s in reg[3:10]] == [Phase.BASE_SYSTEM] * 7
-    assert [s.phase for s in reg[10:13]] == [Phase.CONFIGURE] * 3
-    assert [s.phase for s in reg[13:16]] == [Phase.KERNEL_BOOT] * 3  # +m1n1 boot stub
-    assert [s.phase for s in reg[16:19]] == [Phase.USERS_NETWORK] * 3
+    assert [s.phase for s in reg[3:11]] == [Phase.BASE_SYSTEM] * 8   # +HeDE desktop
+    assert [s.phase for s in reg[11:14]] == [Phase.CONFIGURE] * 3
+    assert [s.phase for s in reg[14:17]] == [Phase.KERNEL_BOOT] * 3  # +m1n1 boot stub
+    assert [s.phase for s in reg[17:20]] == [Phase.USERS_NETWORK] * 3
 
 
 def test_registry_chroot_and_opens_chroot_flags():
@@ -132,8 +135,8 @@ def test_registry_marker_keys():
 
 
 def test_tier2_default_empty():
-    # rows 1-18 + the arm64-gated m1n1 boot stub (inert on x86); 2 folded, 20 in finally
-    assert len(build_registry(_plan())) == 19
+    # rows 1-18 + the HeDE desktop + the arm64-gated m1n1 boot stub (inert on x86)
+    assert len(build_registry(_plan())) == 20
 
 
 def test_boot_stub_step_is_arm64_gated():
@@ -150,6 +153,23 @@ def test_boot_stub_step_is_arm64_gated():
     steps = step.build(arm)
     assert [s.argv for s in steps] == [["update-m1n1", "/efi/m1n1/boot.bin"]]
     assert asyncio.run(step.is_satisfied(arm)) is False        # not yet done → runs
+
+
+def test_install_desktop_step_is_gated_on_plan_desktop():
+    from gest.core.install.registry import DESKTOP_ATOMS, InstallDesktop
+    step = InstallDesktop()
+    # base Gentoo (default plan, desktop=False): inert — no pipeline, satisfied → skipped
+    base = _ctx(FakeExecutor())
+    assert step.build(base) == []
+    assert asyncio.run(step.is_satisfied(base)) is True
+    # desktop plan: emerges the HeDE desktop + plymouth (recorded in @world), binpkg-preferred
+    plan = _plan()
+    object.__setattr__(plan, "desktop", True)
+    desk = _ctx(FakeExecutor(), plan=plan)
+    steps = step.build(desk)
+    assert [s.argv for s in steps] == [
+        ["emerge", "--getbinpkg", "--color", "n", *DESKTOP_ATOMS]]
+    assert asyncio.run(step.is_satisfied(desk)) is False        # not yet done → runs
 
 
 def _plan_tier2(*keys):
