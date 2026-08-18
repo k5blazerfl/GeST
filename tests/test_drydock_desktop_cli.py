@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import NamedTuple
 
+from gest.core.customs import identity_store
 from gest.core.customs.desktop import DesktopEntry
 from gest.core.drydock import bottles, desktop
 from gest.core.drydock.model import RUNNER_WINE, Bottle, Program
@@ -67,28 +68,60 @@ def test_harvest_missing_dir_is_empty():
     assert desktop.harvest_dir("/nonexistent/wine/apps") == []
 
 
+def test_local_exe_path_windows_and_unix():
+    bottle = Bottle(id="b", name="B", runner=RUNNER_WINE, prefix="/pfx")
+    win = Program(id="e", name="E", exe="C:\\office\\excel.exe")
+    assert desktop.local_exe_path(bottle, win) == "/pfx/drive_c/office/excel.exe"
+    # a unix path (harvested Exec) is used as-is; no prefix → windows path untouched.
+    assert desktop.local_exe_path(bottle, Program(id="u", name="U", exe="/p/a.exe")) == "/p/a.exe"
+    noprefix = Bottle(id="b", name="B", runner=RUNNER_WINE)
+    assert desktop.local_exe_path(noprefix, win) == "C:\\office\\excel.exe"
+    assert desktop.local_exe_path(bottle, Program(id="x", name="X", exe="")) == ""
+
+
+def test_default_wm_class_prefers_explicit_then_stem():
+    assert desktop.default_wm_class(Program(id="e", name="E", exe="a.exe",
+                                            wm_class="Excel.exe")) == "Excel.exe"
+    assert desktop.default_wm_class(Program(id="d", name="D",
+                                            exe="C:/g/DOOM.exe")) == "DOOM"
+
+
 # ---- CLI ---------------------------------------------------------------
 class DEnv(NamedTuple):
     env: DrydockEnv
     out: list
     err: list
     launched: list
+    calls: list  # recorded env.run_argv invocations (host tools)
+    identity_path: str
 
 
 def _env(tmp_path) -> DEnv:
     out: list[str] = []
     err: list[str] = []
     launched: list = []
+    calls: list = []
     io = CliIO(out=out.append, err=err.append)
 
     def launch_fn(bottle, program):
         launched.append((bottle, program))
         return 0
 
+    def run_argv(argv):
+        calls.append(argv)
+        return 0
+
+    identity_path = str(tmp_path / "identity.json")
     env = DrydockEnv(io=io, store_base=str(tmp_path / "bottles"),
                      applications_dir=str(tmp_path / "apps"),
-                     wine_apps_dir=str(tmp_path / "wine"), launch_fn=launch_fn)
-    return DEnv(env, out, err, launched)
+                     wine_apps_dir=str(tmp_path / "wine"), launch_fn=launch_fn,
+                     run_argv=run_argv, identity_path=identity_path,
+                     icon_theme_dir=str(tmp_path / "icons"))
+    return DEnv(env, out, err, launched, calls, identity_path)
+
+
+def _tools(calls) -> list[str]:
+    return [argv[0] for argv in calls if argv]
 
 
 def test_cli_create_list_show(tmp_path):
@@ -157,3 +190,49 @@ def test_cli_rm_removes_bottle_and_launchers(tmp_path):
     assert run_cli(["rm", "office"], env=g.env) == 0
     assert bottles.list_bottles(str(tmp_path / "bottles")) == []
     assert not (tmp_path / "apps" / "drydock-office-x.desktop").exists()
+
+
+# ---- Customs spine wiring (icon + identity + MIME) ---------------------
+def test_cli_register_wires_identity_map(tmp_path):
+    g = _env(tmp_path)
+    run_cli(["create", "Office", "--runner", "wine"], env=g.env)
+    run_cli(["register", "office", "/p/excel.exe", "--name", "Excel"], env=g.env)
+    # the window's WM_CLASS resolves back to the synthesized launcher.
+    identity = identity_store.load(g.identity_path)
+    assert identity.resolve("excel") == "drydock-office-excel"
+
+
+def test_cli_register_invokes_icon_and_mime_tools(tmp_path):
+    g = _env(tmp_path)
+    run_cli(["create", "Office", "--runner", "wine"], env=g.env)
+    run_cli(["register", "office", "/p/excel.exe", "--name", "Excel"], env=g.env)
+    tools = _tools(g.calls)
+    # icon extraction (wrestool→icotool), MIME default, and a DB refresh all ran.
+    assert "wrestool" in tools and "icotool" in tools
+    assert "xdg-mime" in tools and "update-desktop-database" in tools
+    xdg = next(c for c in g.calls if c[0] == "xdg-mime")
+    assert xdg[:3] == ["xdg-mime", "default", "drydock-office-excel.desktop"]
+
+
+def test_cli_scan_wires_each_and_refreshes_db_once(tmp_path):
+    g = _env(tmp_path)
+    run_cli(["create", "Office", "--runner", "wine"], env=g.env)
+    winedir = tmp_path / "wine"
+    winedir.mkdir()
+    (winedir / "Word.desktop").write_text("[Desktop Entry]\nName=Word\nExec=wine /p/word.exe\n")
+    (winedir / "Excel.desktop").write_text("[Desktop Entry]\nName=Excel\nExec=wine /p/excel.exe\n")
+    assert run_cli(["scan", "office"], env=g.env) == 0
+    identity = identity_store.load(g.identity_path)
+    assert identity.resolve("word") == "drydock-office-word"
+    assert identity.resolve("excel") == "drydock-office-excel"
+    # the expensive DB refresh happens once for the whole batch, not per app.
+    assert _tools(g.calls).count("update-desktop-database") == 1
+
+
+def test_cli_rm_unregisters_identity(tmp_path):
+    g = _env(tmp_path)
+    run_cli(["create", "Office", "--runner", "wine"], env=g.env)
+    run_cli(["register", "office", "/p/excel.exe", "--name", "Excel"], env=g.env)
+    assert identity_store.load(g.identity_path).resolve("excel") is not None
+    run_cli(["rm", "office"], env=g.env)
+    assert identity_store.load(g.identity_path).resolve("excel") is None

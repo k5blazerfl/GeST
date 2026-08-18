@@ -14,10 +14,13 @@ is the stub the synthesized ``.desktop`` Exec points at.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import subprocess
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+from gest.core.customs import icons, identity_store, mime
 from gest.core.customs.desktop import remove_entry, write_entry
 from gest.core.drydock import bottles, desktop, launch, prereq
 from gest.core.drydock.model import ARCHES, RUNNERS, Bottle, GraphicsProfile, Program
@@ -33,6 +36,15 @@ def _default_io() -> CliIO:
     return CliIO(out=print, err=lambda s: print(s, file=sys.stderr))
 
 
+def _default_run(argv: list[str]) -> int:
+    """Run a host tool (wrestool/icotool/xdg-mime/…) and return its exit code.
+    Best-effort — the caller decides whether a nonzero code matters."""
+    try:
+        return subprocess.run(argv).returncode
+    except FileNotFoundError:
+        return 127
+
+
 @dataclass
 class DrydockEnv:
     io: CliIO = field(default_factory=_default_io)
@@ -40,6 +52,11 @@ class DrydockEnv:
     applications_dir: str = "~/.local/share/applications"
     wine_apps_dir: str = desktop.WINE_APPS_DIR
     launch_fn: Callable = launch.launch
+    # Customs spine (host tools + the shared identity map) — injectable so the
+    # command layer stays CI-safe. identity_path/icon_theme_dir empty → defaults.
+    run_argv: Callable[[list[str]], int] = _default_run
+    identity_path: str = ""
+    icon_theme_dir: str = icons.ICON_THEME_DIR
 
 
 def _load(env: DrydockEnv, bottle_id: str) -> Bottle | None:
@@ -58,6 +75,43 @@ def _write_launcher(env: DrydockEnv, bottle: Bottle, program: Program) -> str:
 def _upsert_program(bottle: Bottle, program: Program) -> None:
     bottle.programs = [p for p in bottle.programs if p.id != program.id]
     bottle.programs.append(program)
+
+
+def _identity_path(env: DrydockEnv) -> str | None:
+    return env.identity_path or None
+
+
+def _wire_customs(env: DrydockEnv, bottle: Bottle, program: Program) -> None:
+    """Make a synthesized launcher a first-class HeDE citizen: extract its icon,
+    register its taskbar identity, and set it as the default handler for its MIME
+    types. The DB refresh is left to :func:`_refresh_db` so a batch (scan) does it
+    once. Host tools run through ``env.run_argv``; failures are non-fatal."""
+    did = desktop.desktop_id(bottle.id, program.id)
+
+    # 1. Icon: wrestool extracts the .exe's group-icon → icotool renders a PNG
+    #    into the hicolor theme under the launcher's Icon name (<desktop_id>).
+    exe = desktop.local_exe_path(bottle, program)
+    if exe:
+        png = icons.icon_install_path(did, theme_dir=env.icon_theme_dir)
+        png.parent.mkdir(parents=True, exist_ok=True)
+        ico = png.with_suffix(".ico")
+        if env.run_argv(icons.extract_argv(exe, str(ico))) == 0:
+            env.run_argv(icons.convert_argv(str(ico), str(png)))
+        with contextlib.suppress(OSError):
+            ico.unlink()
+
+    # 2. Identity: the WM_CLASS the window will present → this launcher, so the
+    #    taskbar resolves it (the source of truth HeDE reads).
+    wm_class = desktop.default_wm_class(program)
+    if wm_class:
+        identity_store.register_entry([wm_class], did, _identity_path(env))
+
+    # 3. MIME: make this launcher the default handler for .exe/.msi/.lnk/.bat.
+    env.run_argv(mime.register_default_argv(did, mime.DRYDOCK_TYPES))
+
+
+def _refresh_db(env: DrydockEnv) -> None:
+    env.run_argv(mime.update_database_argv(env.applications_dir))
 
 
 def cmd_create(args, env: DrydockEnv) -> int:
@@ -94,7 +148,13 @@ def cmd_rm(args, env: DrydockEnv) -> int:
     bottle = bottles.load_bottle(args.bottle, env.store_base)
     if bottle is not None:
         for program in bottle.programs:
-            remove_entry(desktop.desktop_id(bottle.id, program.id), env.applications_dir)
+            did = desktop.desktop_id(bottle.id, program.id)
+            remove_entry(did, env.applications_dir)
+            identity_store.unregister_entry(did, _identity_path(env))
+            with contextlib.suppress(OSError):
+                icons.icon_install_path(did, theme_dir=env.icon_theme_dir).unlink()
+        if bottle.programs:
+            _refresh_db(env)
     if bottles.delete_bottle(args.bottle, env.store_base):
         env.io.out(f"removed bottle {args.bottle}")
         return 0
@@ -116,7 +176,10 @@ def cmd_register(args, env: DrydockEnv) -> int:
                       graphics=_graphics_from_args(args))
     _upsert_program(bottle, program)
     bottles.save_bottle(bottle, env.store_base)
-    env.io.out(f"registered {program.id}; launcher {_write_launcher(env, bottle, program)}")
+    launcher = _write_launcher(env, bottle, program)
+    _wire_customs(env, bottle, program)
+    _refresh_db(env)
+    env.io.out(f"registered {program.id}; launcher {launcher} (icon + identity + MIME wired)")
     return 0
 
 
@@ -130,9 +193,12 @@ def cmd_scan(args, env: DrydockEnv) -> int:
         program = desktop.program_from_harvested(entry, bottles.slug(entry.name or "app"))
         _upsert_program(bottle, program)
         _write_launcher(env, bottle, program)
+        _wire_customs(env, bottle, program)
         env.io.out(f"adopted {program.name} ({program.exe})")
         count += 1
     bottles.save_bottle(bottle, env.store_base)
+    if count:
+        _refresh_db(env)
     env.io.out(f"{count} app(s) adopted")
     return 0
 
