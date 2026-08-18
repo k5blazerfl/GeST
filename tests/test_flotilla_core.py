@@ -5,6 +5,8 @@ from __future__ import annotations
 
 from xml.etree import ElementTree as ET
 
+import pytest
+
 from gest.core.flotilla import prereq
 from gest.core.flotilla.domainxml import compile_domain
 from gest.core.flotilla.model import (
@@ -94,6 +96,20 @@ def test_disks_and_install_media():
     sources = {c.find("source").get("file") for c in cdroms}
     assert sources == {"/iso/win11.iso", "/iso/virtio-win.iso"}  # install + virtio-win
     assert root.find("os/boot").get("dev") == "cdrom"  # boots the installer first
+
+
+def test_too_many_disks_is_a_clear_error_not_an_indexerror():
+    # disks take letters a..j; k, l are the CD-ROM slots. 11+ disks used to run off
+    # _DISK_LETTERS (IndexError) or collide device names with the CD-ROMs.
+    v = _win(disks=[Disk(path=f"/vm/d{i}.qcow2") for i in range(11)],
+             install_iso="", virtio_iso="")
+    with pytest.raises(ValueError, match="at most 10"):
+        compile_domain(v)
+    # exactly 10 disks still compiles, with distinct target letters a..j
+    ok = _win(disks=[Disk(path=f"/vm/d{i}.qcow2") for i in range(10)],
+              install_iso="", virtio_iso="")
+    devs = [d.find("target").get("dev") for d in _dom(ok).findall("devices/disk[@device='disk']")]
+    assert len(devs) == len(set(devs)) == 10
 
 
 def test_networks_nat_and_bridge():

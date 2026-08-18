@@ -89,6 +89,16 @@ def test_manual_step_passes_through():
     assert ops[0].detail["original"] == "input_menu"
 
 
+def test_recognised_but_unwired_actions_plan_as_manual():
+    # execute/regedit/regdelete/eject_disc are in the recipe vocabulary but the
+    # interpreter does not auto-run them yet — they must fall through to a visible
+    # `manual` TODO (never be silently dropped). Pins the vocab-comment's promise.
+    for action in ("execute", "regedit", "regdelete", "eject_disc"):
+        ops = plan(_recipe([RecipeStep(action, {})]), _ctx())
+        assert ops[0].kind == interpreter.OP_MANUAL, action
+        assert ops[0].detail["original"] == action
+
+
 def test_regedit_file_and_winekill():
     ops = plan(_recipe([
         RecipeStep("regedit_file", {"file": "$GAMEDIR/tweak.reg"}),

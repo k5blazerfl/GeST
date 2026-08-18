@@ -72,6 +72,26 @@ def test_parse_windows_style_rdp():
     assert p.quality == "wan"
 
 
+def test_parse_ipv6_host_is_not_mangled():
+    # a bare IPv6 literal has no port suffix — `rpartition(":")` used to split it
+    # into host `fe80::1` → `fe80:` / port `1`.
+    p = rdpfile.parse("full address:s:fe80::1\n", "v6")
+    assert p.host == "fe80::1" and p.port == 3389
+    # bracketed, with an explicit port
+    p = rdpfile.parse("full address:s:[2001:db8::5]:3391\n", "v6p")
+    assert p.host == "2001:db8::5" and p.port == 3391
+    # bracketed, default port
+    p = rdpfile.parse("full address:s:[2001:db8::5]\n", "v6b")
+    assert p.host == "2001:db8::5" and p.port == 3389
+
+
+def test_ipv6_round_trips_with_a_nondefault_port():
+    p = _profile(host="2001:db8::5", port=3391)
+    text = rdpfile.render(p)
+    assert "full address:s:[2001:db8::5]:3391\n" in text  # bracketed so the port is unambiguous
+    assert rdpfile.parse(text, p.name) == p
+
+
 # ---- commands (FreeRDP argv) -------------------------------------------
 def test_build_argv_core_flags():
     argv = commands.build_argv(_profile(), share_path="/home/bob")
