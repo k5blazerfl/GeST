@@ -47,6 +47,17 @@ def test_cleanup_removes_target_pkgdir():
         "rm", "-rf", "/mnt/gentoo/var/cache/binpkgs"]
 
 
+def test_accept_keywords_covers_the_curated_desktop_closure():
+    kw = desktop.accept_keywords("amd64")
+    # the HeDE desktop stack is ~arch; --usepkgonly masks it otherwise
+    for atom in ("app-admin/gest", "gui-apps/hede", "gui-libs/greetd",
+                 "dev-libs/wayland", "gui-wm/labwc", "media-libs/vulkan-loader"):
+        assert f"{atom} ~amd64" in kw
+    # arch-parameterized, and NOT a blanket */* (that slot-conflicts perl)
+    assert "*/*" not in kw
+    assert desktop.accept_keywords("arm64").count(" ~arm64") == kw.count(" ~amd64")
+
+
 def test_repos_conf_is_a_git_backed_amphitheater_entry():
     conf = desktop.repos_conf()
     assert "[amphitheater]" in conf
