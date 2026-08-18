@@ -45,6 +45,8 @@ gangway-open = "gest.tui.gangway.cli:open_main"
 # drydock — manage Wine/Proton bottles; drydock-run is the .desktop Exec stub.
 drydock = "gest.tui.drydock.cli:main"
 drydock-run = "gest.tui.drydock.cli:open_main"
+# flotilla — manage VMs (vessels) over libvirt/QEMU.
+flotilla = "gest.tui.flotilla.cli:main"
 # gestd — the unprivileged core service (HeDE path-B read side); Phase-0 scaffold.
 gest-core = "gest.coreservice.service:main"
 
