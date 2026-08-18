@@ -423,7 +423,9 @@ class SetTimezoneLocale(FuncStep):
 
 
 class SetHostname(FuncStep):
-    """Write the OpenRC ``/etc/conf.d/hostname``."""
+    """Set the hostname for both inits: systemd ``/etc/hostname`` + OpenRC
+    ``/etc/conf.d/hostname``. The target is systemd by default (reads
+    ``/etc/hostname``); the OpenRC file keeps a plain-Gentoo install correct too."""
 
     label = "Set the hostname"
     phase = Phase.CONFIGURE
@@ -433,20 +435,25 @@ class SetHostname(FuncStep):
         name = ctx.plan.hostname
         if not sys_hostname.valid_hostname(name):
             raise ValueError(f"invalid hostname: {name!r}")
-        path = write_under_root(ctx.root, "/etc/conf.d/hostname", f'hostname="{name}"\n')
-        _emit(on_progress, f"wrote {path}")
+        write_under_root(ctx.root, "/etc/hostname", f"{name}\n")            # systemd
+        path = write_under_root(ctx.root, "/etc/conf.d/hostname", f'hostname="{name}"\n')  # OpenRC
+        _emit(on_progress, f"wrote /etc/hostname + {path}")
 
     async def is_satisfied(self, ctx: InstallContext) -> bool:
-        path = rootpath.resolve(ctx.root, "/etc/conf.d/hostname")
         try:
-            with open(path, encoding="utf-8") as fh:
+            with open(rootpath.resolve(ctx.root, "/etc/hostname"), encoding="utf-8") as fh:
+                if fh.read().strip() != ctx.plan.hostname:
+                    return False
+            with open(rootpath.resolve(ctx.root, "/etc/conf.d/hostname"), encoding="utf-8") as fh:
                 return sys_hostname.parse_conf_hostname(fh.read()) == ctx.plan.hostname
         except OSError:
             return False
 
 
 class SetConsole(FuncStep):
-    """Upsert the console keymap into ``/etc/conf.d/keymaps`` (preserving the file)."""
+    """Set the console keymap for both inits: systemd ``/etc/vconsole.conf``
+    (``KEYMAP=``) + OpenRC ``/etc/conf.d/keymaps`` (upserted, preserving the file).
+    systemd (the default target) reads vconsole.conf."""
 
     label = "Set the console keymap"
     phase = Phase.CONFIGURE
@@ -456,6 +463,9 @@ class SetConsole(FuncStep):
         keymap = ctx.plan.keymap
         if not sys_console.valid_keymap(keymap):
             raise ValueError(f"invalid keymap: {keymap!r}")
+        # systemd: vconsole.conf KEYMAP= (a fresh stage3 has none, so write it fresh)
+        write_under_root(ctx.root, "/etc/vconsole.conf", f"KEYMAP={keymap}\n")
+        # OpenRC: upsert into keymaps, preserving any other keys
         path = rootpath.resolve(ctx.root, sys_console.KEYMAPS_CONF)
         try:
             with open(path, encoding="utf-8") as fh:
@@ -464,7 +474,7 @@ class SetConsole(FuncStep):
             text = ""
         rendered = sys_console.set_conf_value(text, "keymap", keymap)
         written = write_under_root(ctx.root, sys_console.KEYMAPS_CONF, rendered)
-        _emit(on_progress, f"wrote {written}")
+        _emit(on_progress, f"wrote /etc/vconsole.conf + {written}")
 
     async def is_satisfied(self, ctx: InstallContext) -> bool:
         path = rootpath.resolve(ctx.root, sys_console.KEYMAPS_CONF)
