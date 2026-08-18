@@ -57,6 +57,7 @@ class GEnv(NamedTuple):
     err: list
     launched: list
     stored: list
+    calls: list  # recorded env.run_argv invocations (host tools)
 
 
 def _env(tmp_path, password="pw") -> GEnv:
@@ -64,6 +65,7 @@ def _env(tmp_path, password="pw") -> GEnv:
     err: list[str] = []
     launched: list = []
     stored: list = []
+    calls: list = []
     io = CliIO(out=out.append, err=err.append, ask_password=lambda prompt: password)
 
     def launch_fn(profile, share_path=None):
@@ -76,8 +78,9 @@ def _env(tmp_path, password="pw") -> GEnv:
 
     env = GangwayEnv(io=io, store_base=str(tmp_path / "cfg"),
                      applications_dir=str(tmp_path / "apps"),
-                     launch_fn=launch_fn, cred_store=cred_store)
-    return GEnv(env, out, err, launched, stored)
+                     launch_fn=launch_fn, cred_store=cred_store,
+                     run_argv=lambda argv: calls.append(argv) or 0)
+    return GEnv(env, out, err, launched, stored, calls)
 
 
 def test_add_list_show(tmp_path):
@@ -140,3 +143,48 @@ def test_open_unknown_profile(tmp_path):
     g = _env(tmp_path)
     assert run_cli(["open", "nope"], env=g.env) == 1
     assert g.err
+
+
+# ---- .rdp / rdp:// handler ---------------------------------------------
+def test_open_file_launches_rdp_file_adhoc(tmp_path):
+    g = _env(tmp_path)
+    rdp = tmp_path / "server.rdp"
+    rdp.write_text("full address:s:box.corp:3390\nusername:s:alice\n")
+    assert run_cli(["open-file", str(rdp)], env=g.env) == 0
+    assert len(g.launched) == 1
+    profile, _ = g.launched[0]
+    assert profile.host == "box.corp" and profile.port == 3390 and profile.username == "alice"
+    assert profile.name == "server"  # the file stem — no saved profile needed
+
+
+def test_open_file_launches_rdp_uri(tmp_path):
+    g = _env(tmp_path)
+    assert run_cli(["open-file", "rdp://bob@host.example:3391"], env=g.env) == 0
+    profile, _ = g.launched[0]
+    assert profile.host == "host.example" and profile.port == 3391 and profile.username == "bob"
+
+
+def test_open_file_missing_file_errors(tmp_path):
+    g = _env(tmp_path)
+    assert run_cli(["open-file", str(tmp_path / "nope.rdp")], env=g.env) == 1
+    assert g.err and not g.launched
+
+
+def test_register_handler_installs_and_sets_default(tmp_path):
+    g = _env(tmp_path)
+    assert run_cli(["register-handler"], env=g.env) == 0
+    handler = tmp_path / "apps" / f"{launcher.HANDLER_DESKTOP_ID}.desktop"
+    assert handler.exists()
+    assert "gangway-rdp-open %u" in handler.read_text()
+    tools = [c[0] for c in g.calls if c]
+    assert "xdg-mime" in tools and "update-desktop-database" in tools
+    xdg = next(c for c in g.calls if c[0] == "xdg-mime")
+    assert xdg[:3] == ["xdg-mime", "default", f"{launcher.HANDLER_DESKTOP_ID}.desktop"]
+    assert "application/x-rdp" in xdg and "x-scheme-handler/rdp" in xdg
+
+
+def test_unregister_handler_removes(tmp_path):
+    g = _env(tmp_path)
+    run_cli(["register-handler"], env=g.env)
+    assert run_cli(["unregister-handler"], env=g.env) == 0
+    assert not (tmp_path / "apps" / f"{launcher.HANDLER_DESKTOP_ID}.desktop").exists()

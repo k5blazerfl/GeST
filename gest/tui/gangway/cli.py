@@ -9,18 +9,23 @@ synthesized ``.desktop`` entry's ``Exec`` points at.
     gangway set-password work
     gangway install work        # add a launcher to helm-menu
     gangway open work           # launch (fetches the password from the keychain)
+    gangway register-handler    # make Gangway the default .rdp / rdp:// handler
+    gangway open-file some.rdp  # launch a .rdp file ad-hoc (no saved profile)
 """
 
 from __future__ import annotations
 
 import argparse
 import os
+import subprocess
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+from gest.core.customs import mime
 from gest.core.customs.desktop import remove_entry, write_entry
 from gest.core.rdp import creds, launcher, run, store
+from gest.core.rdp import target as rdptarget
 from gest.core.rdp.model import QUALITIES, RdpProfile
 
 
@@ -38,6 +43,13 @@ def _default_io() -> CliIO:
                  ask_password=getpass.getpass)
 
 
+def _default_run(argv: list[str]) -> int:
+    try:
+        return subprocess.run(argv).returncode
+    except FileNotFoundError:
+        return 127
+
+
 @dataclass
 class GangwayEnv:
     io: CliIO = field(default_factory=_default_io)
@@ -45,6 +57,8 @@ class GangwayEnv:
     applications_dir: str = "~/.local/share/applications"
     launch_fn: Callable = run.launch
     cred_store: Callable = creds.store
+    # Host tool runner (xdg-mime / update-desktop-database) — injectable for tests.
+    run_argv: Callable[[list[str]], int] = _default_run
 
 
 def _profile_from_args(args) -> RdpProfile:
@@ -132,9 +146,40 @@ def cmd_open(args, env: GangwayEnv) -> int:
     return env.launch_fn(profile, share_path=share)
 
 
+def cmd_open_file(args, env: GangwayEnv) -> int:
+    try:
+        profile = rdptarget.profile_from_target(args.target)
+    except OSError as exc:
+        env.io.err(f"cannot open {args.target}: {exc}")
+        return 1
+    if not profile.is_valid():
+        env.io.err(f"{args.target}: not a usable RDP target (need a host)")
+        return 1
+    share = os.path.expanduser("~") if profile.drive_redirect else None
+    return env.launch_fn(profile, share_path=share)
+
+
+def cmd_register_handler(args, env: GangwayEnv) -> int:
+    path = write_entry(launcher.handler_desktop_entry(),
+                       launcher.HANDLER_DESKTOP_ID, env.applications_dir)
+    env.run_argv(mime.register_default_argv(launcher.HANDLER_DESKTOP_ID, mime.GANGWAY_TYPES))
+    env.run_argv(mime.update_database_argv(env.applications_dir))
+    env.io.out(f"registered .rdp / rdp:// handler ({path})")
+    return 0
+
+
+def cmd_unregister_handler(args, env: GangwayEnv) -> int:
+    removed = remove_entry(launcher.HANDLER_DESKTOP_ID, env.applications_dir)
+    env.run_argv(mime.update_database_argv(env.applications_dir))
+    env.io.out("removed the .rdp / rdp:// handler" if removed else "no handler was installed")
+    return 0
+
+
 COMMANDS: dict[str, Callable[..., int]] = {
     "list": cmd_list, "add": cmd_add, "rm": cmd_rm, "show": cmd_show,
     "set-password": cmd_set_password, "install": cmd_install, "open": cmd_open,
+    "open-file": cmd_open_file, "register-handler": cmd_register_handler,
+    "unregister-handler": cmd_unregister_handler,
 }
 
 
@@ -165,6 +210,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     for name in ("rm", "show", "set-password", "install", "open"):
         sub.add_parser(name, help=f"{name} a profile").add_argument("name")
+
+    of = sub.add_parser("open-file", help="launch a .rdp file or rdp:// URI ad-hoc")
+    of.add_argument("target", help="a .rdp file path, a file:// URL, or an rdp:// URI")
+    sub.add_parser("register-handler", help="make Gangway the default .rdp/rdp:// handler")
+    sub.add_parser("unregister-handler", help="remove the .rdp/rdp:// handler")
     return parser
 
 
@@ -181,6 +231,12 @@ def main() -> None:
 def open_main() -> None:
     """Entry point for ``gangway-open <name>`` (the .desktop Exec stub)."""
     sys.exit(run_cli(["open", *sys.argv[1:]]))
+
+
+def open_file_main() -> None:
+    """Entry point for ``gangway-rdp-open <target>`` — the MIME/URI handler stub
+    (its ``.desktop`` Exec passes a ``.rdp`` file or ``rdp://`` URI as ``%u``)."""
+    sys.exit(run_cli(["open-file", *sys.argv[1:]]))
 
 
 if __name__ == "__main__":

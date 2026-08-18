@@ -143,10 +143,21 @@ def test_desktop_entry_and_customs_round_trip():
     entry = launcher.desktop_entry(_profile())
     assert entry.name == "Work PC (RDP)"
     assert entry.exec == 'gangway-open "Work PC"'  # quoted (has a space)
-    assert "application/x-rdp" in entry.mime_types
-    assert "x-scheme-handler/rdp" in entry.mime_types
+    # a per-profile launcher opens ITS profile — it must NOT claim to handle every
+    # .rdp file; that belongs to the dedicated handler (below).
+    assert entry.mime_types == []
     assert entry.startup_wm_class == "sdl-freerdp"
     assert entry.extra["X-Gangway-Profile"] == "Work PC"
     # it renders and parses back through Customs
     back = DesktopEntry.parse(entry.render())
-    assert back.exec == entry.exec and back.mime_types == entry.mime_types
+    assert back.exec == entry.exec and back.startup_wm_class == entry.startup_wm_class
+
+
+def test_handler_desktop_entry_carries_mime_types():
+    entry = launcher.handler_desktop_entry()
+    assert entry.exec == "gangway-rdp-open %u"  # %u passes the file/URI to the stub
+    assert "application/x-rdp" in entry.mime_types
+    assert "x-scheme-handler/rdp" in entry.mime_types
+    assert entry.no_display is True  # a handler, not a menu entry
+    back = DesktopEntry.parse(entry.render())
+    assert back.mime_types == entry.mime_types and back.no_display is True
