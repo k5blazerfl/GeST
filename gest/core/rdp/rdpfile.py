@@ -24,6 +24,17 @@ def _int(value: str, default: int) -> int:
 
 
 def _split_addr(addr: str) -> tuple[str, int]:
+    # Bracketed IPv6 literal: ``[host]`` or ``[host]:port`` (as Windows writes it).
+    if addr.startswith("["):
+        host, sep, rest = addr[1:].partition("]")
+        if sep:
+            if rest.startswith(":") and rest[1:].isdigit():
+                return host, int(rest[1:])
+            return host, 3389
+    # Bare IPv6 literal (2+ colons) — the whole thing is the host, no port suffix
+    # to split off (``rpartition(":")`` would mangle ``fe80::1`` into host+port).
+    if addr.count(":") > 1:
+        return addr, 3389
     host, sep, port = addr.rpartition(":")
     if sep and port.isdigit():
         return host, int(port)
@@ -43,7 +54,10 @@ def _conn_type_to_quality(conn_type: int) -> str:
 
 
 def render(profile: RdpProfile) -> str:
-    addr = profile.host + (f":{profile.port}" if profile.port != 3389 else "")
+    # Bracket an IPv6 literal so a non-default port stays unambiguous (and so it
+    # round-trips through ``_split_addr``).
+    host = f"[{profile.host}]" if ":" in profile.host else profile.host
+    addr = host + (f":{profile.port}" if profile.port != 3389 else "")
     lines = [
         f"full address:s:{addr}",
         f"screen mode id:i:{2 if profile.fullscreen else 1}",

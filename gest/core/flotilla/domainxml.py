@@ -19,6 +19,9 @@ from gest.core.flotilla.model import (
 )
 
 _DISK_LETTERS = "abcdefghijklmnop"
+# Disks take letters a..j; the two CD-ROM slots (install + virtio) take k, l. Cap
+# disks at 10 so they never collide with the CD-ROMs (or run off _DISK_LETTERS).
+_MAX_DISKS = 10
 
 
 def compile_domain(vessel: Vessel) -> str:
@@ -58,6 +61,11 @@ def _os(domain: ET.Element, vessel: Vessel) -> None:
 
 def _devices(domain: ET.Element, vessel: Vessel) -> None:
     devices = ET.SubElement(domain, "devices")
+
+    if len(vessel.disks) > _MAX_DISKS:
+        raise ValueError(
+            f"vessel {vessel.id!r} has {len(vessel.disks)} disks; the domain XML "
+            f"supports at most {_MAX_DISKS} (a..j; k, l are the CD-ROM slots)")
 
     for i, disk in enumerate(vessel.disks):
         d = ET.SubElement(devices, "disk", type="file", device="disk")
