@@ -333,9 +333,23 @@ def test_config_step_writes_a_real_file_and_becomes_satisfied(tmp_path):
     step = SetHostname()
     assert asyncio.run(step.is_satisfied(ctx)) is False
     asyncio.run(step.run(ctx))
-    written = tmp_path / "gentoo/etc/conf.d/hostname"
-    assert written.read_text() == 'hostname="gentoo"\n'
+    # both init formats: systemd /etc/hostname + OpenRC /etc/conf.d/hostname
+    assert (tmp_path / "gentoo/etc/hostname").read_text() == "gentoo\n"
+    assert (tmp_path / "gentoo/etc/conf.d/hostname").read_text() == 'hostname="gentoo"\n'
     assert fx.calls == []                               # host-side write, no executor/D-Bus
+    assert asyncio.run(step.is_satisfied(ctx)) is True
+
+
+def test_set_console_writes_both_vconsole_and_keymaps(tmp_path):
+    from gest.core.install.registry import SetConsole
+    root = str(tmp_path / "gentoo")
+    ctx = _ctx(FakeExecutor(), root=root)
+    object.__setattr__(ctx.plan, "keymap", "us")
+    step = SetConsole()
+    assert asyncio.run(step.is_satisfied(ctx)) is False
+    asyncio.run(step.run(ctx))
+    assert (tmp_path / "gentoo/etc/vconsole.conf").read_text() == "KEYMAP=us\n"   # systemd
+    assert 'keymap="us"' in (tmp_path / "gentoo/etc/conf.d/keymaps").read_text()  # OpenRC
     assert asyncio.run(step.is_satisfied(ctx)) is True
 
 
