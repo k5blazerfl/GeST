@@ -101,6 +101,20 @@ def test_define_writes_xml_and_calls_virsh(tmp_path):
     assert h.calls[-1][:4] == ["virsh", "--connect", backend.URI_SESSION, "define"]
 
 
+def test_lifecycle_failures_report_on_stderr(tmp_path):
+    import dataclasses
+    h = _H(tmp_path)
+    run_cli(["create", "deb"], env=h.env)
+    failing = dataclasses.replace(h.env, run_argv=lambda argv: 1)  # virsh returns nonzero
+    for cmd, word in ((["define", "deb"], "define"), (["start", "deb"], "start"),
+                      (["stop", "deb"], "stop")):
+        h.out.clear()
+        h.err.clear()
+        assert run_cli(cmd, env=failing) == 1
+        assert any(word in e and "failed" in e for e in h.err)  # failure on stderr…
+        assert not any("failed" in o for o in h.out)            # …not stdout
+
+
 def test_start_stop_console_dispatch(tmp_path):
     h = _H(tmp_path)
     run_cli(["create", "deb"], env=h.env)

@@ -202,7 +202,11 @@ def cmd_export(args, env: GangwayEnv) -> int:
         return 1
     text = rdpfile.render(profile)
     if args.output and args.output != "-":
-        Path(args.output).expanduser().write_text(text, encoding="utf-8")
+        try:
+            Path(args.output).expanduser().write_text(text, encoding="utf-8")
+        except OSError as exc:
+            env.io.err(f"cannot write {args.output}: {exc}")
+            return 1
         env.io.out(f"exported {args.name} to {args.output}")
     else:
         env.io.out(text)

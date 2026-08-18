@@ -289,8 +289,10 @@ def cmd_kill(args, env: DrydockEnv) -> int:
     if barrel is None:
         return 1
     rc = env.tool_spawn(maintenance.kill_argv(), maintenance.barrel_env(barrel))
-    env.io.out(f"killed wine processes in {barrel.id}" if rc == 0
-               else f"kill failed (rc={rc})")
+    if rc == 0:
+        env.io.out(f"killed wine processes in {barrel.id}")
+    else:
+        env.io.err(f"kill failed (rc={rc})")
     return rc
 
 
@@ -449,7 +451,11 @@ def cmd_export_recipe(args, env: DrydockEnv) -> int:
         return 1
     if args.output and args.output != "-":
         from pathlib import Path
-        Path(args.output).expanduser().write_text(text, encoding="utf-8")
+        try:
+            Path(args.output).expanduser().write_text(text, encoding="utf-8")
+        except OSError as exc:
+            env.io.err(f"cannot write {args.output}: {exc}")
+            return 1
         env.io.out(f"exported barrel {barrel.id} to {args.output}")
     else:
         env.io.out(text)
@@ -591,8 +597,12 @@ def cmd_import_lutris(args, env: DrydockEnv) -> int:
         env.io.err(str(exc))
         return 1
     if args.output and args.output != "-":
-        with open(os.path.expanduser(args.output), "w", encoding="utf-8") as fh:
-            fh.write(out)
+        try:
+            with open(os.path.expanduser(args.output), "w", encoding="utf-8") as fh:
+                fh.write(out)
+        except OSError as exc:
+            env.io.err(f"cannot write {args.output}: {exc}")
+            return 1
         env.io.out(f"wrote recipe to {args.output}")
     else:
         env.io.out(out)

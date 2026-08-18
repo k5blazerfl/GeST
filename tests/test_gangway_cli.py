@@ -3,6 +3,7 @@ all with injected spawn / credential-store / IO, so no FreeRDP, keychain, or bus
 
 from __future__ import annotations
 
+import dataclasses
 from typing import NamedTuple
 
 from gest.core.rdp import creds, launcher, run, store
@@ -113,6 +114,34 @@ def test_set_password_stores_via_keychain(tmp_path):
     attrs, label, pw = g.stored[0]
     assert attrs == {"service": "gangway", "host": "pc", "port": "3389", "user": "bob"}
     assert label == "Gangway: work" and pw == "hunter2"
+
+
+def test_creds_store_and_lookup_degrade_without_a_provider(monkeypatch):
+    # No Secret Service binary at all: BOTH wrappers must degrade to a falsy result,
+    # not raise. store() used to let the FileNotFoundError escape (unlike lookup()).
+    monkeypatch.setattr(creds, "SECRET_TOOL", "gangway-no-such-secret-tool-xyz")
+    assert creds.store({"host": "h"}, "L", "pw") is False
+    assert creds.lookup({"host": "h"}) is None
+
+
+def test_creds_store_and_lookup_reflect_the_return_code(monkeypatch):
+    # `true`/`false` stand in for a provider that accepts / rejects.
+    monkeypatch.setattr(creds, "SECRET_TOOL", "true")
+    assert creds.store({"host": "h"}, "L", "pw") is True
+    monkeypatch.setattr(creds, "SECRET_TOOL", "false")
+    assert creds.store({"host": "h"}, "L", "pw") is False
+    assert creds.lookup({"host": "h"}) is None
+
+
+def test_set_password_reports_failure_instead_of_crashing(tmp_path):
+    # A store that fails (e.g. no Secret Service) must surface the friendly message
+    # and exit 1 — the store()-degradation fix is what lets this branch run.
+    g = _env(tmp_path)
+    run_cli(["add", "work", "--host", "pc", "--user", "bob"], env=g.env)
+    failing = dataclasses.replace(g.env, cred_store=lambda *a: False)
+    g.err.clear()
+    assert run_cli(["set-password", "work"], env=failing) == 1
+    assert any("Secret Service" in e for e in g.err)
 
 
 def test_install_writes_launcher(tmp_path):
@@ -274,6 +303,17 @@ def test_export_to_file(tmp_path):
     assert run_cli(["export", "work", "-o", str(out)], env=g.env) == 0
     text = out.read_text()
     assert "full address:s:pc.corp" in text and "username:s:bob" in text
+
+
+def test_export_to_unwritable_path_errors_cleanly(tmp_path):
+    # a bad -o (missing parent dir) must report "cannot write", not raise OSError —
+    # symmetric with the guarded import read.
+    g = _env(tmp_path)
+    run_cli(["add", "work", "--host", "pc.corp"], env=g.env)
+    g.err.clear()
+    bad = str(tmp_path / "no-such-dir" / "out.rdp")
+    assert run_cli(["export", "work", "-o", bad], env=g.env) == 1
+    assert any("cannot write" in e for e in g.err)
 
 
 def test_export_to_stdout(tmp_path):

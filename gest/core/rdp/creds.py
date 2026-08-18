@@ -36,9 +36,17 @@ def clear_argv(attributes: Mapping[str, str]) -> list[str]:
 
 
 def store(attributes: Mapping[str, str], label: str, password: str) -> bool:
-    """Store ``password`` in the keychain (``secret-tool`` reads it from stdin)."""
-    result = subprocess.run(store_argv(attributes, label), input=password.encode(),
-                            capture_output=True)
+    """Store ``password`` in the keychain (``secret-tool`` reads it from stdin).
+
+    Returns ``False`` if the store failed *or* no Secret Service provider is
+    installed — mirroring :func:`lookup`'s graceful degradation, so the caller's
+    friendly "is a Secret Service running?" message fires instead of a traceback.
+    """
+    try:
+        result = subprocess.run(store_argv(attributes, label), input=password.encode(),
+                                capture_output=True)
+    except OSError:
+        return False
     return result.returncode == 0
 
 
