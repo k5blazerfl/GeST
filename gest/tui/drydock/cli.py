@@ -7,6 +7,7 @@ is the stub the synthesized ``.desktop`` Exec points at.
     drydock create office --runner wine --arch win32
     drydock register office /prefix/excel.exe --name Excel --gamescope --fsr
     drydock scan office            # adopt wine's auto-generated launchers
+    drydock materialize game.recipe   # create a bottle from a helm.recipe
     drydock prereqs office
     drydock run office excel
 """
@@ -228,9 +229,43 @@ def cmd_run(args, env: DrydockEnv) -> int:
     return env.launch_fn(bottle, program)
 
 
+def cmd_materialize(args, env: DrydockEnv) -> int:
+    from gest.core.drydock import materialize, recipe_store
+
+    try:
+        recipe = recipe_store.load(args.recipe)
+    except OSError as exc:
+        env.io.err(f"cannot read {args.recipe}: {exc}")
+        return 1
+    except (RuntimeError, ValueError) as exc:
+        env.io.err(str(exc))
+        return 1
+
+    bottle = materialize.bottle_from_recipe(recipe, args.name or "")
+    if not bottle.is_valid():
+        env.io.err("recipe has an invalid bottle (check runner/arch)")
+        return 2
+    if bottles.load_bottle(bottle.id, env.store_base) is not None and not args.force:
+        env.io.err(f"bottle {bottle.id!r} already exists (use --force to overwrite)")
+        return 1
+
+    bottles.save_bottle(bottle, env.store_base)
+    for program in bottle.programs:
+        _write_launcher(env, bottle, program)
+        _wire_customs(env, bottle, program)
+    if bottle.programs:
+        _refresh_db(env)
+    env.io.out(f"materialized bottle {bottle.id} with {len(bottle.programs)} program(s)")
+    if recipe.steps:
+        env.io.out(f"note: {len(recipe.steps)} install step(s) not run "
+                   "(needs host ops — roadmap phase 4/6)")
+    return 0
+
+
 COMMANDS: dict[str, Callable[..., int]] = {
     "create": cmd_create, "list": cmd_list, "show": cmd_show, "rm": cmd_rm,
     "register": cmd_register, "scan": cmd_scan, "prereqs": cmd_prereqs, "run": cmd_run,
+    "materialize": cmd_materialize,
 }
 
 
@@ -267,6 +302,11 @@ def build_parser() -> argparse.ArgumentParser:
     run = sub.add_parser("run", help="launch a program")
     run.add_argument("bottle")
     run.add_argument("program")
+
+    mat = sub.add_parser("materialize", help="create a bottle from a helm.recipe")
+    mat.add_argument("recipe", help="path to a helm.recipe YAML file")
+    mat.add_argument("--name", default="", help="override the bottle id/name")
+    mat.add_argument("--force", action="store_true", help="overwrite an existing bottle")
     return parser
 
 
