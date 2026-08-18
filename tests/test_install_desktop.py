@@ -38,7 +38,8 @@ def test_overlay_parent_is_created_under_root():
 def test_emerge_desktop_is_binary_only():
     # --usepkgonly: install from the quickpkg'd binpkgs, no ebuild tree / network / compile
     assert desktop.emerge_desktop_argv() == [
-        "emerge", "--usepkgonly", "--color", "n", "gui-apps/hede", "sys-boot/plymouth"]
+        "emerge", "--usepkgonly", "--color", "n",
+        "gui-apps/hede", "sys-boot/plymouth", "gui-libs/greetd"]
 
 
 def test_cleanup_removes_target_pkgdir():
