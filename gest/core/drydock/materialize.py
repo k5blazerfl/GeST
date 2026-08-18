@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from gest.core.drydock import bottles
 from gest.core.drydock.model import Bottle, Program
-from gest.core.drydock.recipe import Recipe
+from gest.core.drydock.recipe import Recipe, RecipeBottle, RecipeProgram
 
 
 def bottle_from_recipe(recipe: Recipe, bottle_id: str = "") -> Bottle:
@@ -35,3 +35,20 @@ def bottle_from_recipe(recipe: Recipe, bottle_id: str = "") -> Bottle:
             args=list(program.args), category=program.category,
         ))
     return bottle
+
+
+def recipe_from_bottle(bottle: Bottle) -> Recipe:
+    """The inverse of :func:`bottle_from_recipe`: capture a configured bottle as a
+    shareable recipe. This records the bottle *config* + programs — not the install
+    ``steps`` (those aren't kept on a bottle), so a materialize→export round-trip
+    preserves the runner/arch/verbs and programs, and leaves ``steps`` empty."""
+    category = "Game" if any(p.category == "Game" for p in bottle.programs) else "Application"
+    return Recipe(
+        app_name=bottle.name or bottle.id, app_id=bottle.id, categories=[category],
+        bottle=RecipeBottle(runner=bottle.runner, arch=bottle.arch,
+                            verbs=list(bottle.verbs), dxvk=bottle.dxvk,
+                            vkd3d=bottle.vkd3d, env=dict(bottle.env)),
+        programs=[RecipeProgram(name=p.name, exe=p.exe, args=list(p.args),
+                                category=p.category) for p in bottle.programs],
+        steps=[], files=[], prereqs="auto",
+    )

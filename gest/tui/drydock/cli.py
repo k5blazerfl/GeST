@@ -272,6 +272,27 @@ def cmd_materialize(args, env: DrydockEnv) -> int:
     return 0
 
 
+def cmd_export_recipe(args, env: DrydockEnv) -> int:
+    from gest.core.drydock import materialize, recipe_store
+
+    bottle = _load(env, args.bottle)
+    if bottle is None:
+        return 1
+    recipe = materialize.recipe_from_bottle(bottle)
+    try:
+        text = recipe_store.dumps(recipe)
+    except RuntimeError as exc:  # PyYAML missing
+        env.io.err(str(exc))
+        return 1
+    if args.output and args.output != "-":
+        from pathlib import Path
+        Path(args.output).expanduser().write_text(text, encoding="utf-8")
+        env.io.out(f"exported bottle {bottle.id} to {args.output}")
+    else:
+        env.io.out(text)
+    return 0
+
+
 def cmd_lint(args, env: DrydockEnv) -> int:
     from gest.core.drydock import recipe_lint, recipe_store
 
@@ -299,6 +320,7 @@ COMMANDS: dict[str, Callable[..., int]] = {
     "create": cmd_create, "list": cmd_list, "show": cmd_show, "rm": cmd_rm,
     "register": cmd_register, "scan": cmd_scan, "prereqs": cmd_prereqs, "run": cmd_run,
     "materialize": cmd_materialize, "lint": cmd_lint,
+    "export-recipe": cmd_export_recipe,
 }
 
 
@@ -345,6 +367,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     lint = sub.add_parser("lint", help="validate a helm.recipe (structure + references)")
     lint.add_argument("recipe", help="path to a helm.recipe YAML file")
+
+    exp = sub.add_parser("export-recipe", help="export a bottle's config as a helm.recipe")
+    exp.add_argument("bottle")
+    exp.add_argument("-o", "--output", default="-", help="write the recipe here (default: stdout)")
     return parser
 
 
