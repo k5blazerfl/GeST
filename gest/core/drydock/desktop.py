@@ -21,11 +21,12 @@ import shlex
 from pathlib import Path, PureWindowsPath
 
 from gest.core.customs import mime
-from gest.core.customs.desktop import DesktopEntry, build_exec
+from gest.core.customs.desktop import DesktopAction, DesktopEntry, build_exec
 from gest.core.customs.desktop import entry_path as _customs_entry_path
 from gest.core.drydock.barrels import slug
-from gest.core.drydock.model import Barrel, Program
+from gest.core.drydock.model import RUNNER_WINE, Barrel, Program
 
+DRYDOCK = "drydock"
 DRYDOCK_RUN = "drydock-run"
 # wine's winemenubuilder writes generated launchers here.
 WINE_APPS_DIR = "~/.local/share/applications/wine"
@@ -71,6 +72,20 @@ def local_exe_path(barrel: Barrel, program: Program) -> str:
     return exe
 
 
+def maintenance_actions(barrel: Barrel) -> list[DesktopAction]:
+    """Right-click jump-list actions for a barrel's launcher — the day-to-day Wine
+    chores, wired to the ``drydock`` verbs. Wine barrels only (Proton has its own
+    tooling via umu)."""
+    if barrel.runner != RUNNER_WINE:
+        return []
+    return [
+        DesktopAction(id="winecfg", name="Configure (Winecfg)",
+                      exec=build_exec([DRYDOCK, "winecfg", barrel.id])),
+        DesktopAction(id="kill", name="Force quit",
+                      exec=build_exec([DRYDOCK, "kill", barrel.id])),
+    ]
+
+
 def desktop_entry(barrel: Barrel, program: Program) -> DesktopEntry:
     categories = ["Game"] if program.category == "Game" else ["Utility"]
     return DesktopEntry(
@@ -81,6 +96,7 @@ def desktop_entry(barrel: Barrel, program: Program) -> DesktopEntry:
         categories=categories,
         mime_types=list(mime.DRYDOCK_TYPES),
         startup_wm_class=default_wm_class(program),
+        actions=maintenance_actions(barrel),
         extra={"X-GeST-Origin": "drydock", "X-Drydock-Barrel": barrel.id,
                "X-Drydock-Program": program.id},
     )

@@ -40,6 +40,25 @@ def test_game_category_and_wm_class_default():
     assert entry.startup_wm_class == "DOOM"  # derived from the exe basename
 
 
+def test_wine_launcher_has_maintenance_jumplist():
+    barrel = Barrel(id="office", name="Office", runner=RUNNER_WINE)
+    entry = desktop.desktop_entry(barrel, Program(id="excel", name="Excel", exe="x.exe"))
+    actions = {a.id: a for a in entry.actions}
+    assert set(actions) == {"winecfg", "kill"}
+    assert actions["winecfg"].exec == "drydock winecfg office"
+    assert actions["kill"].exec == "drydock kill office"
+    # they survive the Customs .desktop render/parse round-trip.
+    back = DesktopEntry.parse(entry.render())
+    assert {a.id for a in back.actions} == {"winecfg", "kill"}
+    assert "[Desktop Action winecfg]" in entry.render()
+
+
+def test_proton_launcher_has_no_wine_jumplist():
+    barrel = Barrel(id="game", name="Game", runner="proton")
+    entry = desktop.desktop_entry(barrel, Program(id="g", name="G", exe="g.exe"))
+    assert entry.actions == []  # Proton uses umu, not winecfg/wineserver directly
+
+
 # ---- harvesting wine launchers -----------------------------------------
 def test_extract_exe_from_wine_execs():
     def exe(line):
