@@ -23,34 +23,37 @@ _RETRY_WAIT = 3
 
 
 def latest_url(mirror: str, arch: str, flavor: str) -> str:
-    """The ``latest-stage3-<flavor>.txt`` pointer URL for ``arch``/``flavor``."""
+    """The ``latest-stage3-<arch>-<flavor>.txt`` pointer URL for ``arch``/``flavor``.
+
+    The mirror filename includes the arch (e.g. ``latest-stage3-amd64-systemd.txt``);
+    the arch-less form 404s.
+    """
     base = mirror.rstrip("/")
-    return f"{base}/releases/{arch}/autobuilds/latest-stage3-{flavor}.txt"
+    return f"{base}/releases/{arch}/autobuilds/latest-stage3-{arch}-{flavor}.txt"
+
+
+_STAGE3_EXTS = (".tar.xz", ".tar.gz", ".tar.bz2")
 
 
 def parse_latest(text: str) -> tuple[str, int]:
     """Parse a ``latest-stage3-*.txt`` pointer into ``(relpath, size_bytes)``.
 
-    Comment lines (``#``) and blanks are skipped; the data line is
-    ``<subdir>/<filename> <size_bytes>`` (e.g.
-    ``20240728T170331Z/stage3-amd64-openrc-20240728T170331Z.tar.xz 268435456``).
-    Newer indexes may append extra whitespace-separated fields after the size;
-    only the first two tokens are significant. Raises ``ValueError`` if no data
-    line is found.
+    The pointer is **PGP-clearsigned**, so it is not "comments then one data line":
+    it carries ``-----BEGIN/END PGP …-----`` armor and ``Hash:`` headers around the
+    real line. So rather than trust line position, find the data line by shape —
+    ``<subdir>/<tarball>.tar.<ext> <size_bytes> [extra…]`` (e.g.
+    ``20240728T170331Z/stage3-amd64-systemd-20240728T170331Z.tar.xz 268435456``).
+    Blank/comment/armor lines are skipped; raises ``ValueError`` if none is found.
     """
     for raw in text.splitlines():
         line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
+        if not line or line.startswith(("#", "-----")):
+            continue  # blank, comment, or PGP armor delimiter
         parts = line.split()
-        if len(parts) < 2:
-            raise ValueError(f"malformed stage3 index line: {raw!r}")
-        relpath, size = parts[0], parts[1]
-        try:
-            return relpath, int(size)
-        except ValueError as exc:
-            raise ValueError(f"malformed stage3 index size: {size!r}") from exc
-    raise ValueError("no data line in stage3 index")
+        if (len(parts) >= 2 and parts[0].endswith(_STAGE3_EXTS)
+                and parts[1].isdigit()):
+            return parts[0], int(parts[1])
+    raise ValueError("no stage3 data line in index")
 
 
 def tarball_url(mirror: str, arch: str, relpath: str) -> str:
