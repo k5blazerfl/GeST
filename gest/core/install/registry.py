@@ -320,9 +320,19 @@ class ProvisionDesktop(FuncStep):
         steps = [
             Step("repackage the live system into binpkgs",
                  desktop.quickpkg_argv(pkgdir=f"{root}{desktop.PKGDIR}")),
-            Step("prepare the overlay dir", desktop.overlay_parent_argv(root=root)),
-            Step("seed the Amphitheater overlay", desktop.seed_overlay_argv(root=root)),
         ]
+        # Seed the overlay CONTENT only if the live env actually ships it — the GeSI
+        # ISO can have an empty /var/db/repos. The git-backed repos.conf below is what
+        # lets the installed system `emerge --sync` it later; the --usepkgonly install
+        # needs no ebuild, so a missing overlay must not fail the install.
+        if os.path.isdir(desktop.OVERLAY_LOCATION):
+            steps += [
+                Step("prepare the overlay dir", desktop.overlay_parent_argv(root=root)),
+                Step("seed the Amphitheater overlay", desktop.seed_overlay_argv(root=root)),
+            ]
+        else:
+            _emit(on_progress, f"{desktop.OVERLAY_LOCATION} not present — skipping the "
+                  "overlay-content seed (repos.conf still written for day-2 sync)")
         await run_steps(steps, ctx.host, on_progress=on_progress)
         path = write_under_root(
             root, "/etc/portage/repos.conf/amphitheater.conf", desktop.repos_conf())

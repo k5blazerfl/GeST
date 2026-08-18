@@ -197,8 +197,17 @@ def test_cleanup_desktop_binpkgs_removes_target_pkgdir_when_enabled():
     assert [s.argv for s in steps] == [["rm", "-rf", f"{_ROOT}/var/cache/binpkgs"]]
 
 
-def test_provision_desktop_quickpkgs_and_seeds_overlay(tmp_path):
+def _patch_overlay_present(monkeypatch, present):
+    # scope the patch to the overlay path only, so write_under_root's real fs ops work
+    from gest.core.install import desktop, registry
+    real = os.path.isdir
+    monkeypatch.setattr(registry.os.path, "isdir",
+                        lambda p: present if p == desktop.OVERLAY_LOCATION else real(p))
+
+
+def test_provision_desktop_quickpkgs_and_seeds_overlay_when_present(tmp_path, monkeypatch):
     from gest.core.install.registry import ProvisionDesktop
+    _patch_overlay_present(monkeypatch, True)
     root = str(tmp_path / "gentoo")
     fx = FakeExecutor()
     ctx = _ctx(fx, root=root, plan=_desktop_plan())
@@ -211,10 +220,24 @@ def test_provision_desktop_quickpkgs_and_seeds_overlay(tmp_path):
     assert ["cp", "-a", "/var/db/repos/amphitheater",
             f"{root}/var/db/repos/amphitheater"] in fx.calls
     assert not any(c[:1] == ["chroot"] for c in fx.calls)       # host-side, never chrooted
-    # the git-backed repos.conf is written under the target root
     conf = tmp_path / "gentoo/etc/portage/repos.conf/amphitheater.conf"
     assert "sync-uri = https://github.com/k5blazerfl/Amphitheater" in conf.read_text()
     assert asyncio.run(step.is_satisfied(ctx)) is True          # marked done
+
+
+def test_provision_desktop_skips_overlay_seed_when_absent(tmp_path, monkeypatch):
+    # the GeSI ISO can have an empty /var/db/repos — the copy must be skipped, not fail,
+    # and the git-backed repos.conf must still be written (for day-2 sync).
+    from gest.core.install.registry import ProvisionDesktop
+    _patch_overlay_present(monkeypatch, False)
+    root = str(tmp_path / "gentoo")
+    fx = FakeExecutor()
+    ctx = _ctx(fx, root=root, plan=_desktop_plan())
+    asyncio.run(ProvisionDesktop().run(ctx))
+    assert any(c[:3] == ["env", f"PKGDIR={root}/var/cache/binpkgs", "quickpkg"] for c in fx.calls)
+    assert not any(c[:1] == ["cp"] for c in fx.calls)           # no overlay copy attempted
+    conf = tmp_path / "gentoo/etc/portage/repos.conf/amphitheater.conf"
+    assert "sync-uri = https://github.com/k5blazerfl/Amphitheater" in conf.read_text()
 
 
 def test_provision_desktop_is_a_noop_for_base_gentoo():
