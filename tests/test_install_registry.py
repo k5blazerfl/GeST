@@ -119,7 +119,7 @@ def test_registry_phases_are_non_decreasing():
     assert indices == sorted(indices)
     # the exact phase grouping
     assert [s.phase for s in reg[:3]] == [Phase.PREPARE_DISK] * 3
-    assert [s.phase for s in reg[3:13]] == [Phase.BASE_SYSTEM] * 10  # +HeDE desktop (×3)
+    assert [s.phase for s in reg[3:13]] == [Phase.BASE_SYSTEM] * 10  # +HeDE desktop (x3)
     assert [s.phase for s in reg[13:16]] == [Phase.CONFIGURE] * 3
     assert [s.phase for s in reg[16:19]] == [Phase.KERNEL_BOOT] * 3  # +m1n1 boot stub
     assert [s.phase for s in reg[19:22]] == [Phase.USERS_NETWORK] * 3
