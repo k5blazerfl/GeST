@@ -162,6 +162,36 @@ def list_upgradable() -> list[Package]:
     return [p for p in list_installed() if p.upgradable]
 
 
+def list_unavailable() -> list[tuple[str, str, bool]]:
+    """Installed packages with no ebuild in any configured repo (repo-orphans).
+
+    A package is *unavailable* when the porttree provides zero ebuilds for its
+    ``cp`` — its overlay renamed or dropped it, the overlay was removed, or the
+    ::gentoo tree cleaned it out. Such a package keeps working but lingers in the
+    vdb with nothing to reinstall or update it from. It is distinct from a
+    depclean orphan and slips through ``emerge --depclean``: a @world member is
+    *protected* from depclean, and one with installed dependents is *kept* — so
+    nothing routine surfaces it (only a warning buried in a full ``@world``
+    resolve). Returns ``(cp, version, world_member)`` rows, sorted by cp.
+
+    We test availability with the synchronous ``cp_list`` (never ``.match`` —
+    see the module note). A broken ebuild in an overlay can make ``cp_list``
+    raise; that means the cp *does* exist, so we treat it as available (never
+    flag it) rather than let one bad package masquerade as an orphan.
+    """
+    world = _world_atoms()
+    out: list[tuple[str, str, bool]] = []
+    for cpv in sorted(_VARDB.cpv_all()):
+        cp = cpv_getkey(cpv)
+        try:
+            available = _PORTDB.cp_list(cp)
+        except Exception:                        # pragma: no cover - portage quirks
+            continue
+        if not available:
+            out.append((cp, cpv_getversion(cpv), cp in world))
+    return out
+
+
 # Search-in fields that require reading package metadata → their aux_get key.
 _META_FIELD_KEYS = {"summary": "DESCRIPTION", "homepage": "HOMEPAGE", "license": "LICENSE"}
 

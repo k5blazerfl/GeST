@@ -101,6 +101,10 @@ _INTROSPECTION = f"""
       <arg type="as" name="atoms" direction="in"/>
       <arg type="b" name="started" direction="out"/>
     </method>
+    <method name="UnmergeMulti">
+      <arg type="as" name="atoms" direction="in"/>
+      <arg type="b" name="started" direction="out"/>
+    </method>
     <method name="Sync">
       <arg type="b" name="started" direction="out"/>
     </method>
@@ -294,6 +298,9 @@ class SoftwareService:
         elif method == "DepcleanMulti":
             (atoms,) = params.unpack()
             self._depclean_multi(atoms, sender, invocation)
+        elif method == "UnmergeMulti":
+            (atoms,) = params.unpack()
+            self._unmerge_multi(atoms, sender, invocation)
         elif method == "Sync":
             self._sync(sender, invocation)
         elif method == "SyncRepos":
@@ -468,6 +475,33 @@ class SoftwareService:
         invocation.return_value(GLib.Variant("(b)", (True,)))
         self._spawn_streaming([_EMERGE, "--depclean", "--color", "n", *atoms],
                               operation="A package removal")
+
+    def _unmerge_multi(self, atoms, sender: str, invocation) -> None:
+        """Forcibly remove exactly the named packages: emerge --unmerge <atoms>.
+
+        Unlike ``--depclean`` this performs no dependency safety check, so it can
+        remove a repo-orphan that depclean would protect (a @world member, or one
+        still depended on). The frontend is responsible for confirming and for
+        warning about reverse dependencies; the backend still validates every
+        atom (via :func:`world.unmerge_argv`) and gates on the same ``remove``
+        polkit action as depclean.
+        """
+        if self._reject_if_busy(invocation):
+            return
+        if not self._check_authorized(sender, polkit_action("remove")):
+            invocation.return_error_literal(
+                Gio.dbus_error_quark(), Gio.DBusError.ACCESS_DENIED,
+                "Not authorized to remove packages")
+            return
+        try:
+            argv = world.unmerge_argv(atoms, _EMERGE)
+        except ValueError:
+            invocation.return_error_literal(
+                Gio.dbus_error_quark(), Gio.DBusError.INVALID_ARGS,
+                "invalid or empty package atom list")
+            return
+        invocation.return_value(GLib.Variant("(b)", (True,)))
+        self._spawn_streaming(argv, operation="A package removal")
 
     def _sync(self, sender: str, invocation) -> None:
         """Sync the Portage tree: emerge --sync."""

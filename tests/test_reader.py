@@ -41,6 +41,20 @@ def test_upgradable_requires_installed_and_available_version():
     assert Package(cp="x/y", version="1", installed=True, available_version="2").upgradable
 
 
+def test_list_unavailable_invariants():
+    # Repo-orphans: installed cp's with no ebuild in any repo. We can't assume the
+    # host has any, so assert the invariants that must hold for every row returned.
+    rows = reader.list_unavailable()
+    cps = [cp for cp, _ver, _w in rows]
+    assert cps == sorted(cps)                      # sorted by cp
+    installed_cps = {p.cp for p in reader.list_installed()}
+    for cp, ver, world_member in rows:
+        assert cp in installed_cps                 # it is actually installed
+        assert ver                                 # carries the installed version
+        assert isinstance(world_member, bool)
+        assert not reader._PORTDB.cp_list(cp)      # truly has no ebuild anywhere
+
+
 def test_counts_are_consistent():
     c = reader.counts()
     assert c["installed"] == len(reader.list_installed())

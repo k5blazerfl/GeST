@@ -92,6 +92,43 @@ def deselect(atoms: list[str]) -> tuple[bool, str]:
     return run_backend(run)
 
 
+def unmerge(atoms: list[str]) -> tuple[bool, str]:
+    """Forcibly remove atoms (emerge --unmerge) and wait for completion.
+
+    Drives the streamed backend op to its Finished signal, collecting the emerge
+    log, and returns ``(ok, output)``. Blocking — the caller must confirm first
+    (this bypasses depclean's dependency safety net). A future refinement could
+    stream the log live via the OperationModule path; for the handful of small
+    packages a repo-orphan cleanup touches, running to completion is fine.
+    """
+    import asyncio
+
+    async def run():
+        from gest.core.software.backend_client import SoftwareBackend
+
+        backend = await SoftwareBackend().connect()
+        lines: list[str] = []
+        done = asyncio.get_running_loop().create_future()
+
+        def on_progress(batch: list[str]) -> None:
+            lines.extend(batch)
+
+        def on_finished(code: int) -> None:
+            if not done.done():
+                done.set_result(code)
+
+        try:
+            await backend.unmerge_multi(atoms, on_progress=on_progress,
+                                        on_finished=on_finished)
+            code = await done
+            tail = "\n".join(lines[-20:])
+            return [code == 0, tail if code == 0 else f"emerge exited {code}\n{tail}"]
+        finally:
+            await backend.close()
+
+    return run_backend(run)
+
+
 def _mark_news(selector: str, read: bool) -> tuple[bool, str]:
     async def run():
         from gest.core.software.backend_client import SoftwareBackend

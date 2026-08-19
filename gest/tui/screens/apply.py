@@ -89,6 +89,13 @@ def remove_plan(atoms: list[str]) -> Plan:
                 lambda b, p, f: b.depclean_multi(atoms, p, f))
 
 
+def unmerge_plan(atoms: list[str]) -> Plan:
+    """Forced removal (emerge --unmerge) — used to clear repo-orphans that
+    depclean protects. No dependency safety check, so the caller confirms first."""
+    return Plan("Unmerge", lambda: preview.preview_unmerge_many(atoms),
+                lambda b, p, f: b.unmerge_multi(atoms, p, f))
+
+
 class StreamLog:
     """Mixin: a lazily-created full on-disk log spill + coalesced redraws.
 

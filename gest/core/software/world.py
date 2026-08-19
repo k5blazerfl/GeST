@@ -39,3 +39,20 @@ def deselect_argv(atoms, emerge: str = "emerge") -> list[str]:
     if not atoms or any(not valid_atom(a) for a in atoms):
         raise ValueError("invalid or empty atom list")
     return [emerge, "--deselect", "--color", "n", *atoms]
+
+
+def unmerge_argv(atoms, emerge: str = "emerge") -> list[str]:
+    """Build the ``emerge --unmerge`` argv, validating every atom.
+
+    Unlike ``--depclean``, ``--unmerge`` removes exactly the named packages
+    *without* a dependency safety check — it is how a repo-orphan (which
+    depclean protects) is actually removed. Callers must therefore guard it
+    (confirm + a reverse-dependency warning) before use. Atom validation is the
+    same as :func:`deselect_argv`, so a bus caller cannot smuggle an
+    option-looking or malformed atom into the root subprocess; raises
+    :class:`ValueError` on an empty list or any bad atom.
+    """
+    atoms = list(atoms)
+    if not atoms or any(not valid_atom(a) for a in atoms):
+        raise ValueError("invalid or empty atom list")
+    return [emerge, "--unmerge", "--color", "n", *atoms]
