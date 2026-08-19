@@ -61,12 +61,15 @@ private slots:
     }
 
     void themercColours() {
-        // Focused titlebar is the accent tint; label uses the palette's
+        // Focused titlebar is a top-lit gradient: the accent at the top, a
+        // shadowed accent (×0.82) at the bottom. Label uses the palette's
         // luminance rule (teal → black text, navy → white).
         helm::ThemeSpec teal;
         teal.accent = QStringLiteral("#33d6c8");
         const QString t = helm::themercBody(teal);
+        QVERIFY(t.contains(QStringLiteral("window.active.title.bg: Gradient Vertical")));
         QVERIFY(t.contains(QStringLiteral("window.active.title.bg.color: #33d6c8")));
+        QVERIFY(t.contains(QStringLiteral("window.active.title.bg.colorTo: #2aafa4"))); // ×0.82
         QVERIFY(t.contains(QStringLiteral("window.active.label.text.color: #000000")));
 
         helm::ThemeSpec navy;
@@ -85,6 +88,110 @@ private slots:
         // Empty accent falls back to the Harbor default so the bar is always tinted.
         QVERIFY(helm::themercBody(helm::ThemeSpec{})
                     .contains(QStringLiteral("window.active.title.bg.color: #3aa6c4")));
+    }
+
+    // --from-world: with no explicit accent, the themerc takes the active
+    // world's accent, and it is NOT persisted back to hede.conf (so a later
+    // world switch still re-tints).
+    void applyFromWorldUsesWorldAccent() {
+        QTemporaryDir cfg, data, worlds;
+        qputenv("XDG_CONFIG_HOME", cfg.path().toUtf8());
+        qputenv("XDG_DATA_HOME", data.path().toUtf8());
+        // a world fixture with a distinctive accent
+        const QString hdir = QDir(worlds.path()).filePath(QStringLiteral("harbor"));
+        QDir().mkpath(hdir);
+        {
+            QFile y(QDir(hdir).filePath(QStringLiteral("theme.yaml")));
+            QVERIFY(y.open(QIODevice::WriteOnly));
+            y.write("id: harbor\naccent: '#123456'\n");
+        }
+        qputenv("HELM_WORLDS_DIR", worlds.path().toLocal8Bit());
+        // hede.conf exists but has no explicit appearance/accent
+        {
+            QSettings c(cfg.filePath(QStringLiteral("hede/hede.conf")), QSettings::IniFormat);
+            c.setValue(QStringLiteral("world/id"), QStringLiteral("harbor"));
+        }
+
+        helm::applyThemeFromWorld();
+        QFile tf(data.filePath(QStringLiteral("themes/Helm/labwc/themerc")));
+        QVERIFY(tf.open(QIODevice::ReadOnly));
+        QVERIFY(QString::fromUtf8(tf.readAll())
+                    .contains(QStringLiteral("window.active.title.bg.color: #123456")));
+        // not persisted as an explicit choice
+        QSettings c(cfg.filePath(QStringLiteral("hede/hede.conf")), QSettings::IniFormat);
+        QVERIFY(c.value(QStringLiteral("appearance/accent")).toString().isEmpty());
+
+        qunsetenv("HELM_WORLDS_DIR");
+        qunsetenv("XDG_CONFIG_HOME");
+        qunsetenv("XDG_DATA_HOME");
+    }
+
+    // An explicit accent wins over the world even via --from-world.
+    void applyFromWorldRespectsExplicitAccent() {
+        QTemporaryDir cfg, data, worlds;
+        qputenv("XDG_CONFIG_HOME", cfg.path().toUtf8());
+        qputenv("XDG_DATA_HOME", data.path().toUtf8());
+        const QString hdir = QDir(worlds.path()).filePath(QStringLiteral("harbor"));
+        QDir().mkpath(hdir);
+        {
+            QFile y(QDir(hdir).filePath(QStringLiteral("theme.yaml")));
+            QVERIFY(y.open(QIODevice::WriteOnly));
+            y.write("id: harbor\naccent: '#123456'\n");
+        }
+        qputenv("HELM_WORLDS_DIR", worlds.path().toLocal8Bit());
+        {
+            QSettings c(cfg.filePath(QStringLiteral("hede/hede.conf")), QSettings::IniFormat);
+            c.setValue(QStringLiteral("appearance/accent"), QStringLiteral("#abcdef"));
+        }
+
+        helm::applyThemeFromWorld();
+        QFile tf(data.filePath(QStringLiteral("themes/Helm/labwc/themerc")));
+        QVERIFY(tf.open(QIODevice::ReadOnly));
+        QVERIFY(QString::fromUtf8(tf.readAll())
+                    .contains(QStringLiteral("window.active.title.bg.color: #abcdef")));
+
+        qunsetenv("HELM_WORLDS_DIR");
+        qunsetenv("XDG_CONFIG_HOME");
+        qunsetenv("XDG_DATA_HOME");
+    }
+
+    // setWorld writes [world] id, drops the explicit accent, and regenerates the
+    // themerc from the new world; an unknown world changes nothing.
+    void setWorldSwitchesAndAdoptsAccent() {
+        QTemporaryDir cfg, data, worlds;
+        qputenv("XDG_CONFIG_HOME", cfg.path().toUtf8());
+        qputenv("XDG_DATA_HOME", data.path().toUtf8());
+        auto make = [&](const QString &id, const QString &accent) {
+            const QString d = QDir(worlds.path()).filePath(id);
+            QDir().mkpath(d);
+            QFile y(QDir(d).filePath(QStringLiteral("theme.yaml")));
+            QVERIFY(y.open(QIODevice::WriteOnly));
+            y.write(QStringLiteral("id: %1\naccent: '%2'\n").arg(id, accent).toUtf8());
+        };
+        make(QStringLiteral("harbor"), QStringLiteral("#3aa6c4"));
+        make(QStringLiteral("emberforge"), QStringLiteral("#e8853a"));
+        qputenv("HELM_WORLDS_DIR", worlds.path().toLocal8Bit());
+        // start with an explicit accent that a world switch should drop
+        {
+            QSettings c(cfg.filePath(QStringLiteral("hede/hede.conf")), QSettings::IniFormat);
+            c.setValue(QStringLiteral("appearance/accent"), QStringLiteral("#ffffff"));
+        }
+
+        QVERIFY(!helm::setWorld(QStringLiteral("nope"))); // unknown → false, no change
+        QVERIFY(helm::setWorld(QStringLiteral("emberforge")));
+
+        QSettings c(cfg.filePath(QStringLiteral("hede/hede.conf")), QSettings::IniFormat);
+        QCOMPARE(c.value(QStringLiteral("world/id")).toString(), QStringLiteral("emberforge"));
+        QVERIFY(c.value(QStringLiteral("appearance/accent")).toString().isEmpty()); // dropped
+        // themerc regenerated from the new world's accent
+        QFile tf(data.filePath(QStringLiteral("themes/Helm/labwc/themerc")));
+        QVERIFY(tf.open(QIODevice::ReadOnly));
+        QVERIFY(QString::fromUtf8(tf.readAll())
+                    .contains(QStringLiteral("window.active.title.bg.color: #e8853a")));
+
+        qunsetenv("HELM_WORLDS_DIR");
+        qunsetenv("XDG_CONFIG_HOME");
+        qunsetenv("XDG_DATA_HOME");
     }
 
     // Anti-drift: the committed default asset must equal themercBody(default).

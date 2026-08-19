@@ -1,8 +1,11 @@
 #include "palette.h"
 
 #include "config.h"
+#include "world.h"
 
 #include <QApplication>
+#include <QFileInfo>
+#include <QFileSystemWatcher>
 
 namespace helm {
 
@@ -37,18 +40,51 @@ QPalette buildPalette(bool dark, const QColor &accent) {
     return p;
 }
 
+QColor effectiveAccent(const Config &cfg) {
+    // 1) an explicit [appearance] accent (the user's helm-theme choice) wins.
+    const QColor explicitAccent(cfg.string(QStringLiteral("appearance/accent")));
+    if (explicitAccent.isValid())
+        return explicitAccent;
+    // 2) the active world's accent — switching worlds re-tints the shell.
+    const World world = loadWorld(cfg.string(QStringLiteral("world/id"), QStringLiteral("harbor")));
+    const QColor worldAccent(world.accent);
+    if (worldAccent.isValid())
+        return worldAccent;
+    // 3) the built-in Harbor teal.
+    return harborAccent();
+}
+
 void applyAppearance() {
     const Config cfg;
     const bool dark = cfg.string(QStringLiteral("appearance/dark")) == QLatin1String("true");
-    QColor accent(cfg.string(QStringLiteral("appearance/accent")));
-    if (!accent.isValid())
-        accent = harborAccent(); // Harbor teal by default — HeDE is styled out of the box
+    const QColor accent = effectiveAccent(cfg);
 
     if (auto *app = qobject_cast<QApplication *>(QApplication::instance())) {
         app->setStyle(QStringLiteral("Fusion")); // honours a custom palette
         app->setStyleSheet(styleSheet(dark, accent));
     }
     QGuiApplication::setPalette(buildPalette(dark, accent));
+}
+
+void watchAppearance() {
+    QCoreApplication *app = QCoreApplication::instance();
+    if (!app)
+        return;
+    const QString path = Config().path();
+    auto *watcher = new QFileSystemWatcher(app);
+    // Watch the directory too: QSettings rewrites via a temp file + rename, which
+    // drops the per-file watch, so we re-arm on every signal.
+    watcher->addPath(QFileInfo(path).absolutePath());
+    if (QFileInfo::exists(path))
+        watcher->addPath(path);
+
+    auto reapply = [watcher, path]() {
+        if (!watcher->files().contains(path) && QFileInfo::exists(path))
+            watcher->addPath(path); // re-arm after an atomic rewrite
+        applyAppearance();
+    };
+    QObject::connect(watcher, &QFileSystemWatcher::fileChanged, app, reapply);
+    QObject::connect(watcher, &QFileSystemWatcher::directoryChanged, app, reapply);
 }
 
 } // namespace helm
