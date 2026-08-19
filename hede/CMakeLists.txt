@@ -43,6 +43,7 @@ install(FILES data/wayland-sessions/hede.desktop
 # discovers these via the XDG app dirs; sefe also registers as the folder
 # (inode/directory) handler.
 install(FILES data/applications/sefe.desktop
+              data/applications/hold.desktop
         DESTINATION ${CMAKE_INSTALL_PREFIX}/share/applications)
 install(DIRECTORY data/labwc data/wayfire data/grub data/worlds
         DESTINATION ${CMAKE_INSTALL_PREFIX}/share/hede)
