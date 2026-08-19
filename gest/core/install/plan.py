@@ -57,6 +57,23 @@ class NetworkSpec:
 
 
 @dataclass(slots=True, frozen=True)
+class GpuSpec:
+    """The target's GPU driver setup.
+
+    ``video_cards`` are the ``VIDEO_CARDS`` tokens written to make.conf (e.g.
+    ``("nvidia",)`` or ``("amdgpu", "radeonsi")``), typically auto-detected from
+    ``lspci`` via ``hwflags.detect``. ``nvidia_proprietary`` requests the
+    out-of-tree ``x11-drivers/nvidia-drivers`` stack — license acceptance, the
+    kernel module, DRM modeset and a nouveau blacklist — rather than nouveau, which
+    modern GeForce cards need for a working Wayland/HeDE desktop. The empty/``False``
+    default is safe: firmware only, no GPU driver (what the stage3 ships stands).
+    """
+
+    video_cards: tuple[str, ...] = ()
+    nvidia_proprietary: bool = False
+
+
+@dataclass(slots=True, frozen=True)
 class InstallPlan:
     """Everything one install needs, assembled and reviewed before execution."""
 
@@ -83,3 +100,6 @@ class InstallPlan:
     desktop: bool = False          # install the HeDE desktop (gui-apps/hede + plymouth);
     # False = base Gentoo. GeSI sets it True. Gates the InstallDesktop step and, with
     # it, whether seamless boot can take effect (its plymouth/theme deps come from here).
+    gpu: GpuSpec = field(default_factory=GpuSpec)   # VIDEO_CARDS + optional NVIDIA
+    # proprietary stack; drives WriteMakeConf's VIDEO_CARDS and the InstallGpuDrivers
+    # step. Default (empty) installs firmware only — no driver — a safe no-op.

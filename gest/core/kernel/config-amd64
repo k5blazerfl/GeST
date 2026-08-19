@@ -6252,7 +6252,7 @@ CONFIG_DRM_SCHED=m
 # Drivers for system framebuffers
 #
 # CONFIG_DRM_EFIDRM is not set
-# CONFIG_DRM_SIMPLEDRM is not set
+CONFIG_DRM_SIMPLEDRM=y
 # CONFIG_DRM_VESADRM is not set
 # end of Drivers for system framebuffers
 

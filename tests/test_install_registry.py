@@ -52,6 +52,7 @@ _EXPECTED_LABELS = [
     "Install kernel sources",
     "Stage the kernel config",
     "Build the kernel",
+    "Install GPU drivers & firmware",
     "Install the bootloader",
     "Install the m1n1 boot stub",
     "Set the root password",
@@ -72,6 +73,7 @@ _MARKER_KEYS = {
     "Install kernel sources": "install_kernel_sources",
     "Stage the kernel config": "stage_kernel_config",
     "Build the kernel": "build_kernel",
+    "Install GPU drivers & firmware": "install_gpu_drivers",
     "Install the bootloader": "install_bootloader",
     "Install the m1n1 boot stub": "install_boot_stub",
     "Enable the HeDE session": "enable_desktop_session",
@@ -128,9 +130,9 @@ def test_registry_phases_are_non_decreasing():
     assert [s.phase for s in reg[:3]] == [Phase.PREPARE_DISK] * 3
     assert [s.phase for s in reg[3:13]] == [Phase.BASE_SYSTEM] * 10  # +HeDE desktop (x3)
     assert [s.phase for s in reg[13:16]] == [Phase.CONFIGURE] * 3
-    assert [s.phase for s in reg[16:21]] == [Phase.KERNEL_BOOT] * 5  # +sources +stage-config +m1n1
-    assert [s.phase for s in reg[21:24]] == [Phase.USERS_NETWORK] * 3
-    assert [s.phase for s in reg[24:25]] == [Phase.FINISH]           # +HeDE session
+    assert [s.phase for s in reg[16:22]] == [Phase.KERNEL_BOOT] * 6  # +sources +stage-config +gpu +m1n1
+    assert [s.phase for s in reg[22:25]] == [Phase.USERS_NETWORK] * 3
+    assert [s.phase for s in reg[25:26]] == [Phase.FINISH]           # +HeDE session
 
 
 def test_registry_chroot_and_opens_chroot_flags():
@@ -148,8 +150,8 @@ def test_registry_marker_keys():
 
 def test_tier2_default_empty():
     # base rows + 3 HeDE desktop steps + kernel-sources + stage-kernel-config +
-    # enable-session + the arm64-gated m1n1 boot stub (inert on x86)
-    assert len(build_registry(_plan())) == 25
+    # gpu-drivers + enable-session + the arm64-gated m1n1 boot stub (inert on x86)
+    assert len(build_registry(_plan())) == 26
 
 
 def test_boot_stub_step_is_arm64_gated():

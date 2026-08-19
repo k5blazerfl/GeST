@@ -575,6 +575,13 @@ class InstallRunScreen(Screen):
         try:
             stage3 = await self.app.run_blocking(
                 lambda: assemble.resolve_stage3(self._sel.variant))
+            # Auto-detect the GPU (lspci) unless it was set explicitly, so a detected
+            # NVIDIA card gets the proprietary driver + a working Wayland/HeDE desktop
+            # and every install gets firmware. Empty on a host with no detectable GPU.
+            if not self._sel.video_cards:
+                detected = await self.app.run_blocking(assemble.resolve_gpu)
+                self._sel.video_cards = detected.video_cards
+                self._sel.nvidia_proprietary = detected.nvidia_proprietary
             plan = assemble.assemble_plan(self._sel, stage3)
         except Exception as exc:
             self._finish(False, f"Could not prepare the install: {exc}")

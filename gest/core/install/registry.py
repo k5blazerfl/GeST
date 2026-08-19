@@ -42,7 +42,7 @@ from gest.core.exec.runner import OnProgress
 from gest.core.exec.steps import Step, run_steps
 from gest.core.firewall import nft as fw_nft
 from gest.core.firewall.model import FirewallPolicy
-from gest.core.install import desktop
+from gest.core.install import desktop, gpu
 from gest.core.install.context import InstallContext
 from gest.core.install.plan import InstallPlan, Phase
 from gest.core.install.step import ArgvStep, FuncStep, InstallStep
@@ -240,6 +240,11 @@ class WriteMakeConf(FuncStep):
             text = ""
         jobs = ctx.plan.kernel.jobs if ctx.plan.kernel.jobs > 0 else 1
         rendered = shell.render(text, "MAKEOPTS", f"-j{jobs}")
+        # VIDEO_CARDS must be set before @world so mesa/xorg build with the right
+        # driver USE; the driver packages themselves come later (InstallGpuDrivers).
+        cards = gpu.video_cards_value(ctx.plan.gpu)
+        if cards:
+            rendered = shell.render(rendered, "VIDEO_CARDS", cards)
         path = write_under_root(ctx.root, "/etc/portage/make.conf", rendered)
         _emit(on_progress, f"wrote {path}")
 
@@ -638,6 +643,49 @@ class BuildKernel(ArgvStep):
         return ctx.state.done(self.key)
 
 
+class InstallGpuDrivers(FuncStep):
+    """Install firmware (always) + the NVIDIA proprietary driver (when requested).
+
+    A fresh stage3 ships no ``sys-kernel/linux-firmware``, so hardware needing
+    firmware (NVIDIA GSP, most Wi-Fi) has none on the installed system. This step
+    always installs it. When ``plan.gpu.nvidia_proprietary`` is set it also accepts
+    ``NVIDIA-r2``, emerges ``x11-drivers/nvidia-drivers`` (its out-of-tree module
+    builds against the just-built kernel), rebuilds ``@module-rebuild``, and drops a
+    modprobe.d file enabling ``nvidia_drm`` KMS + blacklisting nouveau — what a
+    Wayland/HeDE desktop needs on a modern GeForce card. Runs after ``BuildKernel``
+    (so the module has a kernel) and before ``InstallBootloader``.
+
+    Config writes (``package.license``, ``modprobe.d``) go through the host-side
+    root seam; the emerges run in the target's chroot.
+    """
+
+    label = "Install GPU drivers & firmware"
+    phase = Phase.KERNEL_BOOT
+    target_aware = True          # writes package.license + modprobe.d under the root
+    key = "install_gpu_drivers"
+
+    async def run(self, ctx: InstallContext, on_progress: OnProgress | None = None) -> None:
+        spec = ctx.plan.gpu
+        # Accept the licenses the driver/firmware atoms need BEFORE emerging them,
+        # else the emerge is license-masked (linux-fw-redistributable / NVIDIA-r2).
+        lic = write_under_root(ctx.root, gpu.PACKAGE_LICENSE, gpu.package_license(spec))
+        _emit(on_progress, f"wrote {lic}")
+        steps = [Step(f"emerge {atom}", _emerge_argv(ctx.plan, atom))
+                 for atom in gpu.driver_atoms(spec)]
+        if spec.nvidia_proprietary:
+            # NOT --noreplace: rebuild the module against the freshly built kernel.
+            steps.append(Step("rebuild external kernel modules",
+                              ["emerge", "--color", "n", "@module-rebuild"]))
+        await run_steps(steps, ctx.target, on_progress=on_progress)
+        if spec.nvidia_proprietary:
+            path = write_under_root(ctx.root, gpu.MODPROBE_CONF, gpu.modprobe_conf())
+            _emit(on_progress, f"wrote {path} (nvidia_drm KMS + nouveau blacklist)")
+        ctx.state.mark(self)
+
+    async def is_satisfied(self, ctx: InstallContext) -> bool:
+        return ctx.state.done(self.key)
+
+
 class InstallBootloader(ArgvStep):
     """Install GRUB + regenerate its config inside the target (``install_steps``)."""
 
@@ -970,6 +1018,7 @@ def build_registry(plan: InstallPlan, *, root_secret: Secret | None = None) -> l
         InstallKernelSources(),
         StageKernelConfig(),
         BuildKernel(),
+        InstallGpuDrivers(),        # firmware always; NVIDIA proprietary when requested
         InstallBootloader(),
         InstallBootStub(),          # arm64/Asahi only; no-op on x86
         _root_password_step(root_secret),
