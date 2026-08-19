@@ -48,6 +48,7 @@ private:
     void newFolder();
     void refresh();
     void showProperties();
+    void openWith();
     void showContextMenu(QAbstractItemView *view, const QPoint &pos);
 
     QAbstractItemView *activeView() const;
@@ -72,6 +73,7 @@ private:
     QAction *_newFolderAct = nullptr;
     QAction *_refreshAct = nullptr;
     QAction *_propsAct = nullptr;
+    QAction *_openWithAct = nullptr;
 
     QString _current;
     QStringList _history;

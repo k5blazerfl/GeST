@@ -9,6 +9,7 @@ target_link_libraries(sefe PRIVATE
     Qt6::Widgets
     sefe-lib
     helm-appearance
+    helm-apps    # desktopentry: scan + Exec argv for "Open with"
     helm-common
 )
 install(TARGETS sefe RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)

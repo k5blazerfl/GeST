@@ -1,6 +1,7 @@
 #include "sefe.h"
 
 #include <QDir>
+#include <QFileInfo>
 #include <QStandardPaths>
 
 namespace helm::sefe {
@@ -95,6 +96,12 @@ QString normalizePath(const QString &input, const QString &base) {
         s = b + QLatin1Char('/') + s;
     }
     return QDir::cleanPath(s);
+}
+
+bool isWindowsExecutable(const QString &path) {
+    static const QStringList exts = {QStringLiteral("exe"), QStringLiteral("msi"),
+                                     QStringLiteral("lnk"), QStringLiteral("bat")};
+    return exts.contains(QFileInfo(path).suffix().toLower());
 }
 
 } // namespace helm::sefe

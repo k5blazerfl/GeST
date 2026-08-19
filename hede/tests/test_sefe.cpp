@@ -137,6 +137,16 @@ private slots:
         QVERIFY(!QFile::exists(root + "/src"));
     }
 
+    void windowsExecutableByExtension() {
+        QVERIFY(helm::sefe::isWindowsExecutable(QStringLiteral("/x/setup.exe")));
+        QVERIFY(helm::sefe::isWindowsExecutable(QStringLiteral("/x/GAME.EXE"))); // case-insensitive
+        QVERIFY(helm::sefe::isWindowsExecutable(QStringLiteral("/x/pkg.msi")));
+        QVERIFY(helm::sefe::isWindowsExecutable(QStringLiteral("/x/app.lnk")));
+        QVERIFY(helm::sefe::isWindowsExecutable(QStringLiteral("/x/run.bat")));
+        QVERIFY(!helm::sefe::isWindowsExecutable(QStringLiteral("/x/notes.txt")));
+        QVERIFY(!helm::sefe::isWindowsExecutable(QStringLiteral("/x/folder")));
+    }
+
     void placesIncludeHomeAndComputer() {
         // Point HOME + XDG at a temp tree so the set is deterministic.
         QTemporaryDir tmp;

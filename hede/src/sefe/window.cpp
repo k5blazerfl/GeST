@@ -1,10 +1,13 @@
 #include "window.h"
 
 #include "addressbar.h"
+#include "desktopentry.h" // helm-apps: scan + Exec argv (Open with)
+#include "launch.h"       // helm-common: launchDetached
 #include "ops.h"
 #include "sefe.h"
 
 #include <QAbstractItemView>
+#include <QDialogButtonBox>
 #include <QAction>
 #include <QApplication>
 #include <QClipboard>
@@ -36,6 +39,7 @@
 #include <QToolBar>
 #include <QTreeView>
 #include <QUrl>
+#include <QVBoxLayout>
 
 namespace helm::sefe {
 
@@ -115,6 +119,7 @@ SefeWindow::SefeWindow(QWidget *parent) : QMainWindow(parent) {
     _refreshAct = op(QStringLiteral("Refresh"), QKeySequence(Qt::Key_F5), &SefeWindow::refresh);
     _propsAct = op(QStringLiteral("Properties"),
                    QKeySequence(Qt::ALT | Qt::Key_Return), &SefeWindow::showProperties);
+    _openWithAct = op(QStringLiteral("Open with…"), QKeySequence(), &SefeWindow::openWith);
 
     // --- details + icons views over the shared model ---
     auto initView = [this](QAbstractItemView *v) {
@@ -350,11 +355,53 @@ void SefeWindow::showProperties() {
     dlg->show();
 }
 
+void SefeWindow::openWith() {
+    const QStringList sel = selectedPaths();
+    if (sel.isEmpty())
+        return;
+    const QString file = sel.first();
+
+    QDialog dlg(this);
+    dlg.setWindowTitle(QStringLiteral("Open with"));
+    auto *layout = new QVBoxLayout(&dlg);
+    layout->addWidget(new QLabel(
+        QStringLiteral("Open “%1” with:").arg(QFileInfo(file).fileName()), &dlg));
+
+    auto *list = new QListWidget(&dlg);
+    QList<helm::DesktopEntry> apps; // parallel to the rows below
+    for (const helm::DesktopEntry &e : helm::scanDesktopEntries(helm::defaultApplicationDirs())) {
+        if (e.noDisplay || e.hidden || e.exec.isEmpty())
+            continue;
+        apps.push_back(e);
+        new QListWidgetItem(QIcon::fromTheme(e.icon), e.name, list);
+    }
+    layout->addWidget(list);
+
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Open | QDialogButtonBox::Cancel, &dlg);
+    layout->addWidget(buttons);
+    connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    connect(list, &QListWidget::itemDoubleClicked, &dlg, &QDialog::accept);
+
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+    const int row = list->currentRow();
+    if (row < 0 || row >= apps.size())
+        return;
+    QStringList argv = helm::commandArgv(apps.at(row));
+    if (argv.isEmpty())
+        return;
+    argv.append(file); // commandArgv strips %f/%u — append the target ourselves
+    helm::launchDetached(argv.first(), argv.mid(1));
+}
+
 void SefeWindow::showContextMenu(QAbstractItemView *view, const QPoint &pos) {
     const QModelIndex idx = view->indexAt(pos);
     QMenu menu(this);
     if (idx.isValid()) {
         menu.addAction(_openAct);
+        if (!_model->isDir(idx))
+            menu.addAction(_openWithAct);
         menu.addSeparator();
         menu.addAction(_cutAct);
         menu.addAction(_copyAct);

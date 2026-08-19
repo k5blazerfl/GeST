@@ -46,4 +46,9 @@ QString parentDir(const QString &dir);
 // "~", and resolves a relative entry against `base` (or home if `base` empty).
 QString normalizePath(const QString &input, const QString &base = QString());
 
+// True if `path` names a Windows executable/installer/shortcut by extension
+// (.exe/.msi/.lnk/.bat, case-insensitive) — the files SeFE routes to Drydock
+// rather than a native handler.
+bool isWindowsExecutable(const QString &path);
+
 } // namespace helm::sefe
