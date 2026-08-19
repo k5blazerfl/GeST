@@ -6,6 +6,9 @@ Everything here is a pure value (paths, atom lists, config bodies) so the
 chroot. The step accepts the licenses these atoms need, emerges them into the
 target, and (for NVIDIA) drops a modprobe.d file that enables DRM KMS and
 blacklists nouveau — what a Wayland/HeDE desktop needs on a modern GeForce card.
+
+See ``docs/design/installer-gpu.md`` for the full design (ordering, cmdline vs
+modprobe.d, the framebuffer/boot flow, and the per-vendor matrix).
 """
 
 from __future__ import annotations
