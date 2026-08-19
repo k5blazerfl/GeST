@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets Test WaylandClient WaylandClientPrivate DBus)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Svg Test WaylandClient WaylandClientPrivate DBus)
 find_package(LayerShellQt REQUIRED)
 find_package(LibArchive REQUIRED) # hold-core's archive engine
 

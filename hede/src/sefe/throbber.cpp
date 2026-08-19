@@ -2,10 +2,12 @@
 
 #include "palette.h" // helm::harborAccent — accent fallback
 
+#include <QFile>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPalette>
 #include <QRadialGradient>
+#include <QSvgRenderer>
 #include <QTimer>
 #include <QtMath>
 
@@ -14,7 +16,7 @@ namespace {
 
 constexpr int kFrameMs = 33;       // ~30 fps
 constexpr int kMinVisibleMs = 550; // deliberate throb even for instant work
-constexpr qreal kSpinMax = 7.0;    // deg/frame ≈ 0.58 rev/s — a stately spin
+constexpr qreal kSpinMax = 6.0;    // deg/frame ≈ 0.5 rev/s — a stately wheel
 constexpr qreal kEase = 0.12;      // spin ease-in / wind-down
 
 } // namespace
@@ -22,7 +24,9 @@ constexpr qreal kEase = 0.12;      // spin ease-in / wind-down
 HelmThrobber::HelmThrobber(QWidget *parent) : QWidget(parent) {
     setCursor(Qt::PointingHandCursor);
     setToolTip(QStringLiteral("Seahorse"));
-    _emblem = QImage(QStringLiteral(":/seahorse/emblem.png"));
+    QFile f(QStringLiteral(":/seahorse/wheel.svg"));
+    if (f.open(QIODevice::ReadOnly))
+        _svg = f.readAll();
     _timer = new QTimer(this);
     _timer->setInterval(kFrameMs);
     connect(_timer, &QTimer::timeout, this, &HelmThrobber::tick);
@@ -37,28 +41,25 @@ QColor HelmThrobber::accent() const {
     return a;
 }
 
-// Colourise the neutral grayscale emblem to `accent()` while keeping its
-// luminance (glowing metal in the biome colour), then scale to `px`. Standard
-// recolour recipe: multiply the accent through, then re-intersect the alpha.
+// Rasterise the wheel SVG at `px` device pixels, tinted to accent() by
+// substituting the accent hex for the SVG's `currentColor`. Cached so we only
+// re-render when the accent or size actually changes.
 const QPixmap &HelmThrobber::tinted(int px) {
     const QColor acc = accent();
     if (!_tinted.isNull() && _tintedFor == acc && _tintedPx == px)
         return _tinted;
-    if (_emblem.isNull()) { // no art embedded — leave the cache null
-        _tinted = QPixmap();
-        _tintedFor = acc;
-        _tintedPx = px;
-        return _tinted;
+    px = std::max(1, px);
+    QPixmap pm(px, px);
+    pm.fill(Qt::transparent);
+    if (!_svg.isEmpty()) {
+        QByteArray svg = _svg;
+        svg.replace("currentColor", acc.name(QColor::HexRgb).toUtf8());
+        QSvgRenderer r(svg);
+        QPainter p(&pm);
+        p.setRenderHint(QPainter::Antialiasing, true);
+        r.render(&p); // fills the pixmap (SVG viewBox is square)
     }
-    QImage img = _emblem.convertToFormat(QImage::Format_ARGB32_Premultiplied);
-    QPainter p(&img);
-    p.setCompositionMode(QPainter::CompositionMode_Multiply);
-    p.fillRect(img.rect(), acc);
-    p.setCompositionMode(QPainter::CompositionMode_DestinationIn);
-    p.drawImage(0, 0, _emblem); // restore the original (luminance) alpha
-    p.end();
-    _tinted = QPixmap::fromImage(
-        img.scaled(px, px, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    _tinted = pm;
     _tintedFor = acc;
     _tintedPx = px;
     return _tinted;
@@ -92,7 +93,7 @@ void HelmThrobber::tick() {
     _spin += (target - _spin) * kEase;
     _angle = std::fmod(_angle + _spin, 360.0);
     if (_spinning)
-        _pulse += 0.12; // bloom breathes while working
+        _pulse += 0.11; // glow breathes while working
 
     update();
 
@@ -113,42 +114,33 @@ void HelmThrobber::paintEvent(QPaintEvent *) {
     const qreal alive = qBound(0.0, _spin / kSpinMax, 1.0);
     const QColor acc = accent();
 
-    // --- accent bloom behind the emblem, breathing while busy ---
+    // --- soft accent glow behind the wheel, breathing while busy (gentle:
+    //     plain SourceOver at low alpha — no additive blend to blow out) ---
     if (alive > 0.01) {
-        const qreal base = _intensity == Intensity::Lively ? 0.42 : 0.28;
+        const qreal base = _intensity == Intensity::Lively ? 0.34 : 0.22;
         const qreal breathe = 0.5 + 0.5 * std::sin(_pulse);
-        const qreal a = alive * base * (0.55 + 0.45 * breathe);
-        const qreal r = std::min(width(), height()) * 0.62;
+        const qreal a = alive * base * (0.6 + 0.4 * breathe);
+        const qreal r = std::min(width(), height()) * 0.58;
         QRadialGradient g(c, r);
         QColor glow = acc;
         glow.setAlphaF(a);
         g.setColorAt(0.0, glow);
         glow.setAlphaF(0.0);
         g.setColorAt(1.0, glow);
-        p.setCompositionMode(QPainter::CompositionMode_Plus);
         p.fillRect(rect(), g);
-        p.setCompositionMode(QPainter::CompositionMode_SourceOver);
     }
 
-    // --- the emblem: rotate while busy, rest dim + still when idle ---
+    // --- the wheel: crisp vector, rotate while busy, rest dim + still idle ---
     const qreal dpr = devicePixelRatioF();
-    const int px = int(std::min(width(), height()) * dpr);
+    const int px = std::max(1, int(std::min(width(), height()) * dpr));
     const QPixmap &pm = tinted(px);
-    if (!pm.isNull()) {
-        p.save();
-        p.translate(c);
-        p.rotate(_angle);
-        p.setOpacity(0.45 + 0.55 * alive); // idle rests dim; brightens as it spins
-        const qreal w = pm.width() / dpr, h = pm.height() / dpr;
-        p.drawPixmap(QRectF(-w / 2.0, -h / 2.0, w, h), pm, pm.rect());
-        p.restore();
-    } else { // no art embedded — a dim accent dot so the berth is never empty
-        p.setBrush(acc);
-        p.setPen(Qt::NoPen);
-        p.setOpacity(0.4 + 0.6 * alive);
-        const qreal r = std::min(width(), height()) * 0.28;
-        p.drawEllipse(c, r, r);
-    }
+    const qreal side = std::min(width(), height());
+    p.save();
+    p.translate(c);
+    p.rotate(_angle);
+    p.setOpacity(0.5 + 0.5 * alive); // idle rests dim; brightens as it spins
+    p.drawPixmap(QRectF(-side / 2.0, -side / 2.0, side, side), pm, pm.rect());
+    p.restore();
 }
 
 void HelmThrobber::mouseReleaseEvent(QMouseEvent *e) {

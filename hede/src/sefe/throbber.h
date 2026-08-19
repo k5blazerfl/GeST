@@ -1,8 +1,8 @@
 #pragma once
 
+#include <QByteArray>
 #include <QColor>
 #include <QElapsedTimer>
-#include <QImage>
 #include <QPixmap>
 #include <QWidget>
 
@@ -12,14 +12,14 @@ namespace helm::sefe {
 
 // HelmThrobber — Seahorse's "old grey whistle test" busy light, in the spirit of
 // Netscape Navigator's throbber: it rests on a static mark when idle and comes
-// alive while the app is working, then settles. HeDE's mark is a rendered,
-// glowing ship's-wheel / compass emblem (authored with the local Ollama→SDXL art
-// pipeline, embedded as :/seahorse/emblem.png). The emblem ships as a NEUTRAL
-// grayscale glow, so the widget tints it to the active biome accent — pulled
-// live from the palette Highlight (kept current by applyAppearance()/
-// watchAppearance()) — and, being radially symmetric, rotating it while busy
-// gives a seamless loop with a soft accent bloom. Idle, it rests dim and still.
-// Clicking it sails Home, like Netscape's throbber → home page.
+// alive while the app is working, then settles. HeDE's mark IS a ship's wheel,
+// so the throbber is that wheel: the HeDE brand mark's wheel (from
+// docs/design/assets/hede-mark-flat.svg, seal removed so it's 8-fold radially
+// symmetric), embedded as :/seahorse/wheel.svg. It's rasterised crisp at the
+// exact widget size and tinted to the active biome accent — pulled live from the
+// palette Highlight (kept current by applyAppearance()/watchAppearance()) — then
+// rotated while busy for a seamless loop with a soft accent glow. Idle, it rests
+// dim and still. Clicking it sails Home, like Netscape's throbber → home page.
 //
 // Busy is ref-counted: begin()/end() nest, so overlapping operations keep it
 // spinning and it settles only when the last ends. A short minimum-visible span
@@ -62,8 +62,8 @@ class HelmThrobber : public QWidget {
 
     QTimer *_timer = nullptr;
     QElapsedTimer _shownSince; // guards the minimum-visible span
-    QImage _emblem;            // neutral grayscale glow (alpha = luminance)
-    QPixmap _tinted;           // cached tinted+scaled emblem
+    QByteArray _svg;           // the wheel SVG template (currentColor placeholder)
+    QPixmap _tinted;           // cached tinted+rasterised wheel
     QColor _tintedFor;         // accent the cache was built for
     int _tintedPx = 0;         // device px the cache was built for
     Intensity _intensity = Intensity::Calm;
