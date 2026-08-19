@@ -165,18 +165,27 @@ def _sync_boot_theme(accent: str, world: str, root: str) -> tuple[bool, str]:
     — we only place the files."""
     from gest.core.bootloader import seamless
 
-    if not _ACCENT_RE.match(accent):
+    if accent and not _ACCENT_RE.match(accent):
         raise ValueError(f"invalid accent (expected #RRGGBB): {accent!r}")
     if world and not _WORLD_RE.match(world):
         raise ValueError(f"invalid world id: {world!r}")
+    if not accent and not world:
+        raise ValueError("need an accent or a world to sync the boot theme")
 
     lines: list[str] = []
     with tempfile.TemporaryDirectory(prefix="gest-boot-theme-") as staging:
-        argv = [_HELM_THEME, f"--emit-boot-theme={staging}", f"--accent={accent}"]
+        # Accent tints the chrome; world selects the scene. With only a world,
+        # helm-theme derives the chrome accent from it too — so the session can
+        # pass an empty accent when the user hasn't overridden it.
+        argv = [_HELM_THEME, f"--emit-boot-theme={staging}"]
+        if accent:
+            argv.append(f"--accent={accent}")
         if world:
             argv.append(f"--world={world}")
         ok, out = _run(argv)
-        lines.append(f"emit boot theme ({accent}, world={world or '-'}): {'ok' if ok else out}")
+        lines.append(
+            f"emit boot theme (accent={accent or '-'}, world={world or '-'}): "
+            f"{'ok' if ok else out}")
         if not ok:
             return False, "\n".join(lines)
 
