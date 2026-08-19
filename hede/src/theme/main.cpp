@@ -10,15 +10,18 @@
 // labwc titlebar skin.
 //   helm-theme --dark --accent=#33d6c8 [--gtk-theme=Adwaita-dark] [--icon-theme=Papirus]
 //   helm-theme --from-world     (seed from the active biome; run at session start)
-//   helm-theme --list-worlds    (print installed worlds: "<id>\t<name>")
+//   helm-theme --list-worlds    (installed worlds, tab-sep: id name accent wallpaper)
 //   helm-theme --world=<id>     (switch to a world; a running shell re-themes live)
 int main(int argc, char **argv) {
     QCoreApplication app(argc, argv);
     const QStringList args = app.arguments().mid(1);
 
     if (args.contains(QStringLiteral("--list-worlds"))) {
+        // One world per line, tab-separated: id, name, accent, wallpaper path.
+        // A GUI picker reads this to build thumbnails without re-resolving worlds.
         for (const helm::World &w : helm::listWorlds())
-            std::printf("%s\t%s\n", qPrintable(w.id), qPrintable(w.name));
+            std::printf("%s\t%s\t%s\t%s\n", qPrintable(w.id), qPrintable(w.name),
+                        qPrintable(w.accent), qPrintable(w.wallpaperPath()));
         return 0;
     }
 
