@@ -1,0 +1,14 @@
+schema: helm.world/0.1
+id: stormwatch
+name: Stormwatch
+# storm-lit coast, cold cyan light breaking through cloud
+accent: '#5fd0dd'
+bar:
+  style: glass
+  tint: slate
+wallpaper_art:
+  image: wallpaper.png
+  fit: cover
+credit:
+  art: Generated locally — SDXL on AMD Radeon 8060S (gfx1151)
+  pipeline: 'hiedi Voyage: helm-titlebar-skins'

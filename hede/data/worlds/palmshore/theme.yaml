@@ -1,0 +1,14 @@
+schema: helm.world/0.1
+id: palmshore
+name: Palmshore
+# bright tropical shore, tall palms framing a wide gold sun
+accent: '#e0a83a'
+bar:
+  style: glass
+  tint: warm
+wallpaper_art:
+  image: wallpaper.png
+  fit: cover
+credit:
+  art: Generated locally — SDXL on AMD Radeon 8060S (gfx1151)
+  pipeline: 'hiedi Voyage: helm-titlebar-skins'

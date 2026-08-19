@@ -33,6 +33,13 @@ QString themercBody(const ThemeSpec &s);
 // so a world switch isn't frozen into appearance/accent. See applyThemeFromWorld.
 QStringList applyTheme(const ThemeSpec &s, bool persistAppearance = true);
 
+// Switch the active world: write hede.conf [world] id and drop any explicit
+// [appearance] accent (picking a world adopts its colour), then regenerate the
+// labwc + GTK theme from it (applyThemeFromWorld). Returns false if `id` names
+// no installed world (nothing is changed). The hede.conf write is what a running
+// shell (helm-bg / helm-panel via a config watcher) reacts to for a live switch.
+bool setWorld(const QString &id);
+
 // Regenerate the labwc titlebar + GTK theme from the active world: the accent
 // is the explicit [appearance] accent if set, else the active world's accent
 // (hede.conf [world] id, default "harbor"), else the Harbor default. Does NOT

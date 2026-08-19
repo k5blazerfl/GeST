@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QList>
 #include <QString>
 
 namespace helm {
@@ -42,5 +43,9 @@ World parseWorldYaml(const QString &text, const QString &baseDir = QString());
 // first (dev/tests), then each XDG data dir's `hede/worlds` (so the packaged
 // /usr/share/hede/worlds is found). Returns an invalid World if not found.
 World loadWorld(const QString &id);
+
+// Every world found on the search path, deduped by id (an earlier root shadows a
+// later one), sorted by display name. For a world switcher / enumeration.
+QList<World> listWorlds();
 
 } // namespace helm

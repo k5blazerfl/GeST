@@ -4,6 +4,8 @@
 #include "world.h"
 
 #include <QApplication>
+#include <QFileInfo>
+#include <QFileSystemWatcher>
 
 namespace helm {
 
@@ -62,6 +64,27 @@ void applyAppearance() {
         app->setStyleSheet(styleSheet(dark, accent));
     }
     QGuiApplication::setPalette(buildPalette(dark, accent));
+}
+
+void watchAppearance() {
+    QCoreApplication *app = QCoreApplication::instance();
+    if (!app)
+        return;
+    const QString path = Config().path();
+    auto *watcher = new QFileSystemWatcher(app);
+    // Watch the directory too: QSettings rewrites via a temp file + rename, which
+    // drops the per-file watch, so we re-arm on every signal.
+    watcher->addPath(QFileInfo(path).absolutePath());
+    if (QFileInfo::exists(path))
+        watcher->addPath(path);
+
+    auto reapply = [watcher, path]() {
+        if (!watcher->files().contains(path) && QFileInfo::exists(path))
+            watcher->addPath(path); // re-arm after an atomic rewrite
+        applyAppearance();
+    };
+    QObject::connect(watcher, &QFileSystemWatcher::fileChanged, app, reapply);
+    QObject::connect(watcher, &QFileSystemWatcher::directoryChanged, app, reapply);
 }
 
 } // namespace helm

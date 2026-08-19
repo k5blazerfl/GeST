@@ -155,6 +155,45 @@ private slots:
         qunsetenv("XDG_DATA_HOME");
     }
 
+    // setWorld writes [world] id, drops the explicit accent, and regenerates the
+    // themerc from the new world; an unknown world changes nothing.
+    void setWorldSwitchesAndAdoptsAccent() {
+        QTemporaryDir cfg, data, worlds;
+        qputenv("XDG_CONFIG_HOME", cfg.path().toUtf8());
+        qputenv("XDG_DATA_HOME", data.path().toUtf8());
+        auto make = [&](const QString &id, const QString &accent) {
+            const QString d = QDir(worlds.path()).filePath(id);
+            QDir().mkpath(d);
+            QFile y(QDir(d).filePath(QStringLiteral("theme.yaml")));
+            QVERIFY(y.open(QIODevice::WriteOnly));
+            y.write(QStringLiteral("id: %1\naccent: '%2'\n").arg(id, accent).toUtf8());
+        };
+        make(QStringLiteral("harbor"), QStringLiteral("#3aa6c4"));
+        make(QStringLiteral("emberforge"), QStringLiteral("#e8853a"));
+        qputenv("HELM_WORLDS_DIR", worlds.path().toLocal8Bit());
+        // start with an explicit accent that a world switch should drop
+        {
+            QSettings c(cfg.filePath(QStringLiteral("hede/hede.conf")), QSettings::IniFormat);
+            c.setValue(QStringLiteral("appearance/accent"), QStringLiteral("#ffffff"));
+        }
+
+        QVERIFY(!helm::setWorld(QStringLiteral("nope"))); // unknown → false, no change
+        QVERIFY(helm::setWorld(QStringLiteral("emberforge")));
+
+        QSettings c(cfg.filePath(QStringLiteral("hede/hede.conf")), QSettings::IniFormat);
+        QCOMPARE(c.value(QStringLiteral("world/id")).toString(), QStringLiteral("emberforge"));
+        QVERIFY(c.value(QStringLiteral("appearance/accent")).toString().isEmpty()); // dropped
+        // themerc regenerated from the new world's accent
+        QFile tf(data.filePath(QStringLiteral("themes/Helm/labwc/themerc")));
+        QVERIFY(tf.open(QIODevice::ReadOnly));
+        QVERIFY(QString::fromUtf8(tf.readAll())
+                    .contains(QStringLiteral("window.active.title.bg.color: #e8853a")));
+
+        qunsetenv("HELM_WORLDS_DIR");
+        qunsetenv("XDG_CONFIG_HOME");
+        qunsetenv("XDG_DATA_HOME");
+    }
+
     // Anti-drift: the committed default asset must equal themercBody(default).
     void themercDefaultMatchesAsset() {
         QFile f(QStringLiteral(HELM_THEMERC_DEFAULT));

@@ -172,6 +172,26 @@ QStringList applyTheme(const ThemeSpec &s, bool persistAppearance) {
     return written;
 }
 
+bool setWorld(const QString &id) {
+    if (!loadWorld(id).valid())
+        return false; // no such installed world — leave everything as-is
+
+    const QString base = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation);
+    const QString hede = base + QStringLiteral("/hede/hede.conf");
+    QDir().mkpath(QFileInfo(hede).absolutePath());
+    {
+        QSettings conf(hede, QSettings::IniFormat);
+        conf.setValue(QStringLiteral("world/id"), id);
+        conf.remove(QStringLiteral("appearance/accent")); // adopt the world's accent
+        conf.sync();
+        if (conf.status() != QSettings::NoError)
+            return false;
+    }
+    // Regenerate the window chrome from the now-active world (labwc + GTK).
+    applyThemeFromWorld();
+    return true;
+}
+
 QStringList applyThemeFromWorld() {
     const QString base = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation);
     QSettings conf(base + QStringLiteral("/hede/hede.conf"), QSettings::IniFormat);

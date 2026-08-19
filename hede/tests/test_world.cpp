@@ -86,6 +86,29 @@ private slots:
         qunsetenv("HELM_WORLDS_DIR");
         QVERIFY(!w.valid());
     }
+
+    void listWorldsSortedByName() {
+        QTemporaryDir worlds;
+        auto make = [&](const QString &id, const QString &name) {
+            const QString d = QDir(worlds.path()).filePath(id);
+            QDir().mkpath(d);
+            QFile y(QDir(d).filePath(QStringLiteral("theme.yaml")));
+            QVERIFY(y.open(QIODevice::WriteOnly));
+            y.write(QStringLiteral("id: %1\nname: %2\naccent: '#3aa6c4'\n").arg(id, name).toUtf8());
+        };
+        make(QStringLiteral("harbor"), QStringLiteral("Harbor"));
+        make(QStringLiteral("emberforge"), QStringLiteral("Emberforge"));
+        make(QStringLiteral("bogus"), QString()); // no id? has id; keep valid
+        qputenv("HELM_WORLDS_DIR", worlds.path().toLocal8Bit());
+        const QList<helm::World> ws = helm::listWorlds();
+        qunsetenv("HELM_WORLDS_DIR");
+        // sorted by display name: Emberforge, Harbor, (bogus has empty name → first)
+        QVERIFY(ws.size() >= 2);
+        const int ie = [&] { for (int i = 0; i < ws.size(); ++i) if (ws[i].id == "emberforge") return i; return -1; }();
+        const int ih = [&] { for (int i = 0; i < ws.size(); ++i) if (ws[i].id == "harbor") return i; return -1; }();
+        QVERIFY(ie >= 0 && ih >= 0);
+        QVERIFY(ie < ih); // Emberforge before Harbor
+    }
 };
 
 QTEST_MAIN(TestWorld)

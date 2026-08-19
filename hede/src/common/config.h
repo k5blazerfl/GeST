@@ -18,6 +18,9 @@ class Config {
     // Generic accessor for feature-specific keys (e.g. "wallpaper/mode").
     QString string(const QString &key, const QString &def = QString()) const;
 
+    // The backing INI path — for watching the file for live config changes.
+    QString path() const { return m_path; }
+
   private:
     QString m_path;
 };

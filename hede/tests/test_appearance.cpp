@@ -93,13 +93,29 @@ private slots:
 
     void styleSheetGlassBar() {
         const QString qss = helm::styleSheet(false, helm::harborAccent());
-        QVERIFY(qss.contains(QStringLiteral("#HelmBar")));           // the glass bar
-        QVERIFY(qss.contains(QStringLiteral("Segoe UI")));           // familiar font
-        QVERIFY(qss.contains(QStringLiteral("rgba(11,38,46,0.82)"))); // bar_tint (navy glass)
+        QVERIFY(qss.contains(QStringLiteral("#HelmBar"))); // the glass bar
+        QVERIFY(qss.contains(QStringLiteral("Segoe UI"))); // familiar font
+        // bar_tint is the world-derived deep glass, at 82%.
+        const QColor g = helm::barTint(helm::harborAccent());
+        const QString bar =
+            QStringLiteral("rgba(%1,%2,%3,0.82)").arg(g.red()).arg(g.green()).arg(g.blue());
+        QVERIFY2(qss.contains(bar), qPrintable(bar));
         // accent drives selection: Harbor #3aa6c4 → rgb(58,166,196) at 34%
         QVERIFY(qss.contains(QStringLiteral("rgba(58,166,196,0.34)")));
         // an invalid accent falls back to Harbor rather than producing an unstyled bar
         QVERIFY(helm::styleSheet(false, QColor()).contains(QStringLiteral("rgba(58,166,196")));
+    }
+
+    // The glass tint tracks the accent's hue and stays deep/dark in every world.
+    void barTintTracksHue() {
+        const QColor cool = helm::barTint(QColor(QStringLiteral("#3aa6c4"))); // Harbor teal
+        const QColor warm = helm::barTint(QColor(QStringLiteral("#e8853a"))); // Emberforge
+        QVERIFY(cool.blue() > cool.red());  // cool accent → blue-leaning glass
+        QVERIFY(warm.red() > warm.blue());  // warm accent → red-leaning glass
+        QVERIFY(cool.value() < 80 && warm.value() < 80); // both deep
+        // a truly achromatic accent (hsvHue -1) falls back to the Harbor hue,
+        // so the glass is tinted, never grey.
+        QCOMPARE(helm::barTint(QColor(128, 128, 128)).hsvHue(), helm::harborAccent().hsvHue());
     }
 
     void barGlyphAndStartTile() {

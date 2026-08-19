@@ -5,6 +5,8 @@
 #include <QFileInfo>
 #include <QStandardPaths>
 
+#include <algorithm>
+
 namespace helm {
 
 QString World::wallpaperPath() const {
@@ -80,30 +82,62 @@ World parseWorldYaml(const QString &text, const QString &baseDir) {
     return w;
 }
 
-World loadWorld(const QString &id) {
-    if (id.isEmpty())
-        return World();
+namespace {
 
+// The world search roots, highest priority first: $HELM_WORLDS_DIR (dev/tests),
+// then each XDG data dir's `hede/worlds` (the package installs the defaults
+// under /usr/share/hede/worlds).
+QStringList worldRoots() {
     QStringList roots;
     const QByteArray env = qgetenv("HELM_WORLDS_DIR");
     if (!env.isEmpty())
         roots << QString::fromLocal8Bit(env);
-    // XDG data dirs (~/.local/share, …, /usr/share) each hold a hede/worlds tree;
-    // the package installs the default worlds under /usr/share/hede/worlds.
     const auto dataDirs = QStandardPaths::standardLocations(QStandardPaths::GenericDataLocation);
     for (const QString &d : dataDirs)
         roots << d + QStringLiteral("/hede/worlds");
+    return roots;
+}
 
-    for (const QString &root : roots) {
-        const QString dir = QDir(root).filePath(id);
-        QFile f(QDir(dir).filePath(QStringLiteral("theme.yaml")));
-        if (!f.open(QIODevice::ReadOnly | QIODevice::Text))
-            continue;
-        const World w = parseWorldYaml(QString::fromUtf8(f.readAll()), dir);
+// Load the world in directory `dir` (its theme.yaml), or an invalid World.
+World loadWorldDir(const QString &dir) {
+    QFile f(QDir(dir).filePath(QStringLiteral("theme.yaml")));
+    if (!f.open(QIODevice::ReadOnly | QIODevice::Text))
+        return World();
+    return parseWorldYaml(QString::fromUtf8(f.readAll()), dir);
+}
+
+} // namespace
+
+World loadWorld(const QString &id) {
+    if (id.isEmpty())
+        return World();
+    for (const QString &root : worldRoots()) {
+        const World w = loadWorldDir(QDir(root).filePath(id));
         if (w.valid())
             return w;
     }
     return World();
+}
+
+QList<World> listWorlds() {
+    QList<World> out;
+    QStringList seen;
+    for (const QString &root : worldRoots()) {
+        const QDir dir(root);
+        const auto entries = dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
+        for (const QString &id : entries) {
+            if (seen.contains(id))
+                continue; // an earlier root already provided this id
+            const World w = loadWorldDir(dir.filePath(id));
+            if (w.valid()) {
+                out << w;
+                seen << w.id;
+            }
+        }
+    }
+    std::sort(out.begin(), out.end(),
+              [](const World &a, const World &b) { return a.name.localeAwareCompare(b.name) < 0; });
+    return out;
 }
 
 } // namespace helm
