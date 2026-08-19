@@ -4,7 +4,7 @@ qt_add_library(sefe-lib STATIC sefe.cpp ops.cpp archivemodel.cpp)
 target_include_directories(sefe-lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(sefe-lib PUBLIC Qt6::Core hold-core) # hold-core: archive listing (browse-in-place)
 
-qt_add_executable(sefe main.cpp window.cpp addressbar.cpp iconprovider.cpp)
+qt_add_executable(sefe main.cpp window.cpp addressbar.cpp iconprovider.cpp throbber.cpp)
 target_link_libraries(sefe PRIVATE
     Qt6::Widgets
     sefe-lib

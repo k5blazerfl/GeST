@@ -4,16 +4,21 @@
 #include "archivemodel.h" // hold: browse-in-place (Hold H3)
 #include "desktopentry.h" // helm-apps: scan + Exec argv (Open with)
 #include "holdcore.h"     // hold-core: archive extract/create (Hold H2)
+#include "config.h"       // helm::Config: throbber intensity knob
 #include "iconprovider.h"
 #include "launch.h"       // helm-common: launchDetached
 #include "ops.h"
 #include "sefe.h"
+#include "throbber.h"     // HelmThrobber: the Netscape-style busy light
 
 #include <QAbstractItemView>
 #include <QDialogButtonBox>
 #include <QAction>
 #include <QApplication>
 #include <QClipboard>
+#include <QThread>
+#include <QSizePolicy>
+#include <utility>
 #include <QDateTime>
 #include <QDesktopServices>
 #include <QDialog>
@@ -100,6 +105,20 @@ SefeWindow::SefeWindow(QWidget *parent) : QMainWindow(parent) {
     bar->addSeparator();
     auto *viewAct = bar->addAction(QIcon::fromTheme(QStringLiteral("view-list-details")),
                                    QStringLiteral("Toggle view"));
+
+    // --- the Helm throbber, pinned top-right (Netscape's spot) ---
+    auto *spacer = new QWidget(this);
+    spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    bar->addWidget(spacer);
+    _throbber = new HelmThrobber(this);
+    if (helm::Config().string(QStringLiteral("seahorse/throbber"),
+                              QStringLiteral("calm")).compare(
+            QStringLiteral("lively"), Qt::CaseInsensitive) == 0)
+        _throbber->setIntensity(HelmThrobber::Intensity::Lively);
+    // Clicking the throbber sails Home — like Netscape's throbber → home page.
+    connect(_throbber, &HelmThrobber::clicked, this,
+            [this] { navigateTo(QDir::homePath()); });
+    bar->addWidget(_throbber);
 
     // --- operation actions (shortcuts live window-wide; reused in menus) ---
     auto op = [this](const QString &text, const QKeySequence &keys, void (SefeWindow::*slot)()) {
@@ -226,6 +245,26 @@ SefeWindow::~SefeWindow() {
     delete _extractTemp;
 }
 
+template <class Work, class Done>
+void SefeWindow::runBusy(const QString &activity, Work work, Done done) {
+    _throbber->begin(activity);
+    auto *thread = QThread::create(
+        [this, work = std::move(work), done = std::move(done)]() mutable {
+            auto payload = work(); // hold-core runs here, off the UI thread
+            // Deliver the result on the UI thread. If the window is gone by now,
+            // Qt drops this queued call (receiver destroyed) — no dangling use.
+            QMetaObject::invokeMethod(
+                this,
+                [this, payload = std::move(payload), done = std::move(done)]() mutable {
+                    done(payload);
+                    _throbber->end();
+                },
+                Qt::QueuedConnection);
+        });
+    connect(thread, &QThread::finished, thread, &QThread::deleteLater);
+    thread->start();
+}
+
 // --- navigation ---
 
 void SefeWindow::navigateTo(const QString &dir, bool record) {
@@ -309,13 +348,23 @@ void SefeWindow::openArchiveEntry(const QString &inner) {
         _extractTemp = new QTemporaryDir; // session-lifetime scratch for opened entries
     if (!_extractTemp->isValid())
         return;
-    const helm::hold::Result r =
-        helm::hold::extract(_archiveModel->archivePath(), inner, _extractTemp->path());
-    if (!r.ok) {
-        statusBar()->showMessage(QStringLiteral("Open failed: %1").arg(r.error));
-        return;
-    }
-    QDesktopServices::openUrl(QUrl::fromLocalFile(QDir(_extractTemp->path()).filePath(inner)));
+    const QString archive = _archiveModel->archivePath();
+    const QString tempDir = _extractTemp->path();
+    // Extract the one entry on a worker thread (the throbber spins), then open
+    // it once it lands.
+    runBusy(
+        QStringLiteral("Opening %1…").arg(QFileInfo(inner).fileName()),
+        [archive, inner, tempDir]() -> QString {
+            const helm::hold::Result r = helm::hold::extract(archive, inner, tempDir);
+            return r.ok ? QString() : r.error; // empty == success
+        },
+        [this, inner, tempDir](const QString &error) {
+            if (error.isEmpty())
+                QDesktopServices::openUrl(
+                    QUrl::fromLocalFile(QDir(tempDir).filePath(inner)));
+            else
+                statusBar()->showMessage(QStringLiteral("Open failed: %1").arg(error));
+        });
 }
 
 void SefeWindow::goBack() {
@@ -549,15 +598,29 @@ void SefeWindow::copyPaths() {
 // off-thread pass is a later polish; large archives will block until then.
 
 void SefeWindow::extractHere() {
-    for (const QString &archive : selectedPaths()) {
-        if (!helm::hold::isArchive(archive))
-            continue;
-        const helm::hold::Result r = helm::hold::extractAll(archive, _current);
-        statusBar()->showMessage(r.ok ? QStringLiteral("Extracted %1").arg(QFileInfo(archive).fileName())
-                                      : QStringLiteral("Extract failed: %1").arg(r.error));
-        if (!r.ok)
-            return;
-    }
+    QStringList archives;
+    for (const QString &p : selectedPaths())
+        if (helm::hold::isArchive(p))
+            archives << p;
+    if (archives.isEmpty())
+        return;
+    const QString dest = _current;
+    runBusy(
+        archives.size() == 1
+            ? QStringLiteral("Extracting %1…").arg(QFileInfo(archives.first()).fileName())
+            : QStringLiteral("Extracting %1 archives…").arg(archives.size()),
+        [archives, dest]() -> QString {
+            int ok = 0;
+            for (const QString &archive : archives) {
+                const helm::hold::Result r = helm::hold::extractAll(archive, dest);
+                if (!r.ok)
+                    return QStringLiteral("Extract failed: %1").arg(r.error);
+                ++ok;
+            }
+            return ok == 1 ? QStringLiteral("Extracted %1").arg(QFileInfo(archives.first()).fileName())
+                           : QStringLiteral("Extracted %1 archives").arg(ok);
+        },
+        [this](const QString &msg) { statusBar()->showMessage(msg); });
 }
 
 void SefeWindow::extractTo() {
@@ -569,9 +632,15 @@ void SefeWindow::extractTo() {
         QFileDialog::getExistingDirectory(this, QStringLiteral("Extract to"), _current);
     if (dest.isEmpty())
         return;
-    const helm::hold::Result r = helm::hold::extractAll(*it, dest);
-    statusBar()->showMessage(r.ok ? QStringLiteral("Extracted to %1").arg(dest)
-                                  : QStringLiteral("Extract failed: %1").arg(r.error));
+    const QString archive = *it;
+    runBusy(
+        QStringLiteral("Extracting %1…").arg(QFileInfo(archive).fileName()),
+        [archive, dest]() -> QString {
+            const helm::hold::Result r = helm::hold::extractAll(archive, dest);
+            return r.ok ? QStringLiteral("Extracted to %1").arg(dest)
+                        : QStringLiteral("Extract failed: %1").arg(r.error);
+        },
+        [this](const QString &msg) { statusBar()->showMessage(msg); });
 }
 
 void SefeWindow::compressSelection() {
@@ -580,9 +649,14 @@ void SefeWindow::compressSelection() {
         return;
     const QString name = compressTargetName(sel, entriesOf(_current));
     const QString dest = QDir(_current).filePath(name);
-    const helm::hold::Result r = helm::hold::create(sel, dest);
-    statusBar()->showMessage(r.ok ? QStringLiteral("Created %1").arg(name)
-                                  : QStringLiteral("Compress failed: %1").arg(r.error));
+    runBusy(
+        QStringLiteral("Compressing to %1…").arg(name),
+        [sel, dest, name]() -> QString {
+            const helm::hold::Result r = helm::hold::create(sel, dest);
+            return r.ok ? QStringLiteral("Created %1").arg(name)
+                        : QStringLiteral("Compress failed: %1").arg(r.error);
+        },
+        [this](const QString &msg) { statusBar()->showMessage(msg); });
 }
 
 void SefeWindow::showContextMenu(QAbstractItemView *view, const QPoint &pos) {
