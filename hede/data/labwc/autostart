@@ -12,6 +12,11 @@ if command -v swayidle >/dev/null 2>&1 && command -v swaylock >/dev/null 2>&1; t
     swayidle -w timeout 600 'swaylock -f' before-sleep 'swaylock -f' &
 fi
 
+# Seed the labwc titlebar + GTK theme from the active world (respects an explicit
+# user accent); runs before the shell maps so windows come up in the world's
+# colour, and labwc --reconfigure picks up the freshly written themerc live.
+command -v helm-theme >/dev/null 2>&1 && helm-theme --from-world >/dev/null 2>&1
+
 # HeDE's own shell components.
 helm-bg &
 helm-notifyd &

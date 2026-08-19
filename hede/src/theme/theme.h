@@ -25,9 +25,20 @@ ThemeSpec parseThemeArgs(const QStringList &args); // --dark/--light/--accent=â€
 // the same luminance rule as the shell palette (see helm::contrastText).
 QString themercBody(const ThemeSpec &s);
 
-// Write the theme: GTK 3/4 settings.ini + the [appearance] block in hede.conf
-// (under $XDG_CONFIG_HOME) + the Helm labwc themerc (under $XDG_DATA_HOME).
-// Returns the files written (empty on failure).
-QStringList applyTheme(const ThemeSpec &s);
+// Write the theme: GTK 3/4 settings.ini + (when persistAppearance) the
+// [appearance] block in hede.conf (under $XDG_CONFIG_HOME) + the Helm labwc
+// themerc (under $XDG_DATA_HOME). Returns the files written (empty on failure).
+// persistAppearance=false skips the hede.conf [appearance] write â€” used when the
+// accent is derived from the active world rather than an explicit user choice,
+// so a world switch isn't frozen into appearance/accent. See applyThemeFromWorld.
+QStringList applyTheme(const ThemeSpec &s, bool persistAppearance = true);
+
+// Regenerate the labwc titlebar + GTK theme from the active world: the accent
+// is the explicit [appearance] accent if set, else the active world's accent
+// (hede.conf [world] id, default "harbor"), else the Harbor default. Does NOT
+// persist the accent (persistAppearance=false), so switching worlds keeps
+// re-tinting the window chrome. Run at session start to match the shell palette
+// (which resolves the same precedence live via helm::effectiveAccent).
+QStringList applyThemeFromWorld();
 
 } // namespace helm

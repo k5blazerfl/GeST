@@ -8,10 +8,13 @@
 // helm-theme: apply a HeDE appearance choice to GTK + the shell palette + the
 // labwc titlebar skin.
 //   helm-theme --dark --accent=#33d6c8 [--gtk-theme=Adwaita-dark] [--icon-theme=Papirus]
+//   helm-theme --from-world   (seed from the active biome; run at session start)
 int main(int argc, char **argv) {
     QCoreApplication app(argc, argv);
-    const helm::ThemeSpec spec = helm::parseThemeArgs(app.arguments().mid(1));
-    const QStringList written = helm::applyTheme(spec);
+    const QStringList args = app.arguments().mid(1);
+    const QStringList written = args.contains(QStringLiteral("--from-world"))
+                                    ? helm::applyThemeFromWorld()
+                                    : helm::applyTheme(helm::parseThemeArgs(args));
     if (written.isEmpty()) {
         std::fprintf(stderr, "helm-theme: failed to write any config\n");
         return 1;
