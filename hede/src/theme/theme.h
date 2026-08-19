@@ -25,6 +25,30 @@ ThemeSpec parseThemeArgs(const QStringList &args); // --dark/--light/--accent=�
 // the same luminance rule as the shell palette (see helm::contrastText).
 QString themercBody(const ThemeSpec &s);
 
+// --- boot-splash generators (the seamless-boot chain) ---
+// The Harbor default accent, shared by the fallbacks below and themercBody.
+QString defaultAccent(); // "#3aa6c4"
+
+// A Plymouth script-theme body (hede.script): the Harbor scene under a thin
+// progress tracker whose bar — and the pre-image fallback fill — track the
+// accent (empty → Harbor default). The scene image is unchanged here; only the
+// palette tracks the world (per-world scene art is a later slice).
+QString plymouthScriptBody(const QString &accent);
+
+// A GRUB theme body (theme.txt): the boot menu laid over background.png, with
+// the letterbox (desktop-color) and the highlighted entry (selected_item_color)
+// tinted to the accent (empty → Harbor default). Menu/label text stays a fixed
+// legible neutral.
+QString grubThemeBody(const QString &accent);
+
+// Stage the boot theme for the privileged installer to pick up: writes the
+// generated hede.script + GRUB theme.txt under $XDG_DATA_HOME/hede/boot/ (user-
+// writable). A root step (GeST's ConfigureSeamlessBoot) copies these into
+// /usr/share and regenerates the initramfs — the boot splash can't repaint live
+// like the desktop, so it's staged here and applied out of band. Returns the
+// files written (empty on failure).
+QStringList stageBootTheme(const QString &accent);
+
 // Write the theme: GTK 3/4 settings.ini + (when persistAppearance) the
 // [appearance] block in hede.conf (under $XDG_CONFIG_HOME) + the Helm labwc
 // themerc (under $XDG_DATA_HOME). Returns the files written (empty on failure).

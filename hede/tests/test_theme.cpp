@@ -50,10 +50,13 @@ private slots:
         s.dark = true;
         s.accent = QStringLiteral("#33d6c8");
         const QStringList written = helm::applyTheme(s);
-        QVERIFY(written.size() >= 4); // gtk-3.0, gtk-4.0, hede.conf, themerc
+        QVERIFY(written.size() >= 6); // gtk-3.0, gtk-4.0, hede.conf, themerc, + 2 boot
         QVERIFY(QFile::exists(cfg.filePath(QStringLiteral("gtk-3.0/settings.ini"))));
         QVERIFY(QFile::exists(cfg.filePath(QStringLiteral("gtk-4.0/settings.ini"))));
         QVERIFY(QFile::exists(data.filePath(QStringLiteral("themes/Helm/labwc/themerc"))));
+        // Boot splash is staged under $XDG_DATA_HOME/hede/boot for the installer.
+        QVERIFY(QFile::exists(data.filePath(QStringLiteral("hede/boot/plymouth/hede/hede.script"))));
+        QVERIFY(QFile::exists(data.filePath(QStringLiteral("hede/boot/grub/hede/theme.txt"))));
         QSettings conf(cfg.filePath(QStringLiteral("hede/hede.conf")), QSettings::IniFormat);
         QCOMPARE(conf.value(QStringLiteral("appearance/accent")).toString(),
                  QStringLiteral("#33d6c8"));
@@ -201,6 +204,37 @@ private slots:
                  qPrintable(f.fileName()));
         const QString onDisk = QString::fromUtf8(f.readAll());
         QCOMPARE(onDisk, helm::themercBody(helm::ThemeSpec{}));
+    }
+
+    // The boot splash tracks the accent: the Plymouth progress bar / fallback
+    // fill and the GRUB letterbox / highlighted entry are all accent-derived,
+    // and an empty accent falls back to Harbor so the boot is always themed.
+    void bootThemeColours() {
+        const QString ply = helm::plymouthScriptBody(QStringLiteral("#e8853a")); // ember
+        QVERIFY(ply.contains(QStringLiteral("Image.Text(\" \", 0.910, 0.522, 0.227)"))); // bar
+        QVERIFY(ply.contains(QStringLiteral("// #e8853a accent")));
+        QVERIFY(ply.contains(QStringLiteral("SetBackgroundTopColor(0.145, 0.082, 0.035)"))); // ×0.16
+
+        const QString grub = helm::grubThemeBody(QStringLiteral("#e8853a"));
+        QVERIFY(grub.contains(QStringLiteral("desktop-color: \"#251509\"")));        // deep ×0.16
+        QVERIFY(grub.contains(QStringLiteral("selected_item_color = \"#f1b689\"")));  // lighten .40
+
+        // Empty accent → Harbor default in both generators.
+        QVERIFY(helm::plymouthScriptBody(QString())
+                    .contains(QStringLiteral("// #3aa6c4 accent")));
+        QVERIFY(helm::grubThemeBody(QString())
+                    .contains(QStringLiteral("desktop-color: \"#091b1f\"")));
+    }
+
+    // Anti-drift: the committed boot assets must equal the default generators.
+    void bootDefaultsMatchAssets() {
+        QFile p(QStringLiteral(HELM_PLYMOUTH_DEFAULT));
+        QVERIFY2(p.open(QIODevice::ReadOnly | QIODevice::Text), qPrintable(p.fileName()));
+        QCOMPARE(QString::fromUtf8(p.readAll()), helm::plymouthScriptBody(QString()));
+
+        QFile g(QStringLiteral(HELM_GRUB_DEFAULT));
+        QVERIFY2(g.open(QIODevice::ReadOnly | QIODevice::Text), qPrintable(g.fileName()));
+        QCOMPARE(QString::fromUtf8(g.readAll()), helm::grubThemeBody(QString()));
     }
 };
 
