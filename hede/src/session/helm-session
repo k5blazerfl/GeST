@@ -10,11 +10,18 @@
 export XDG_CURRENT_DESKTOP=HeDE
 export XDG_SESSION_TYPE=wayland
 export QT_QPA_PLATFORM=wayland
-# Server-side decorations across the session: Qt's client-side titlebar doesn't
-# draw under labwc, so drop CSD and let the compositor decorate. Every session
-# child inherits this (previously it lived only in the live-CD greetd wrapper, so
-# a normal install had it nowhere and shell-launched apps came up frameless).
-export QT_WAYLAND_DISABLE_WINDOWDECORATION=1
+# Window decorations. Default: server-side (labwc draws the titlebar) — Qt's
+# client-side titlebar is disabled so shell-launched apps aren't frameless.
+# Opt-in HELM_CSD=1 switches Qt apps to the `helm` client-side decoration plugin
+# (painterly nine-patch frames from the active world), the path to true painterly
+# titlebars labwc's SSD can't provide. Still being QEMU-verified (visual +
+# SSD/CSD negotiation with labwc); see docs/design/hede-theme.md.
+if [ "${HELM_CSD:-0}" = "1" ]; then
+	export QT_WAYLAND_DECORATION=helm
+	unset QT_WAYLAND_DISABLE_WINDOWDECORATION
+else
+	export QT_WAYLAND_DISABLE_WINDOWDECORATION=1
+fi
 
 : "${HELM_COMPOSITOR:=labwc}"
 

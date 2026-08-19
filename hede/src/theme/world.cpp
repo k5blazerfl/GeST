@@ -16,6 +16,13 @@ QString World::wallpaperPath() const {
     return QFileInfo::exists(p) ? p : QString();
 }
 
+QString World::framePath() const {
+    if (frameImage.isEmpty() || baseDir.isEmpty())
+        return QString();
+    const QString p = QDir(baseDir).filePath(frameImage);
+    return QFileInfo::exists(p) ? p : QString();
+}
+
 namespace {
 
 // Strip one layer of matching surrounding quotes (values like '#3aa6c4').
@@ -76,8 +83,14 @@ World parseWorldYaml(const QString &text, const QString &baseDir) {
                 w.barStyle = val;
             else if (key == QLatin1String("tint"))
                 w.barTint = val;
+        } else if (section == QLatin1String("decoration_art")) {
+            // Only the frame source is read here; the insets are fixed defaults
+            // (World.frameTop/…) matching the compositor. The nested `border:`
+            // mapping is documentation and is skipped by this scalar reader.
+            if (key == QLatin1String("source"))
+                w.frameImage = val;
         }
-        // decoration_art / credit and any deeper nesting are ignored for now.
+        // credit and any deeper nesting are ignored.
     }
     return w;
 }

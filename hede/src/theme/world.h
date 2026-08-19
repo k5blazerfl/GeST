@@ -27,11 +27,23 @@ struct World {
     QString barStyle; // "glass" | "solid" (empty → glass)
     QString barTint;  // "cool" | "warm" | … (empty if unset)
 
+    // decoration_art — the nine-patch window frame (helm.frame/0.1). The insets
+    // are the decoration margins (titlebar height + border thickness) in source
+    // pixels; they match make-frame.py in the helm-titlebar-skins Voyage and the
+    // helm Qt decoration plugin. The frame image's centre is transparent.
+    QString frameImage;    // decoration_art.source, e.g. "frame.png" (empty → none)
+    int frameTop = 40;     // titlebar band height
+    int frameLeft = 8;     // side/bottom border thickness
+    int frameRight = 8;
+    int frameBottom = 8;
+
     bool valid() const { return !id.isEmpty(); }
 
     // Absolute path to the wallpaper, or empty if the world defines none or the
     // file is missing on disk.
     QString wallpaperPath() const;
+    // Absolute path to the nine-patch frame image, or empty if none/missing.
+    QString framePath() const;
 };
 
 // Parse a helm.world/0.1 document. `baseDir` is recorded so wallpaperPath() can

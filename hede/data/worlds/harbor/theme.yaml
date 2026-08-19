@@ -2,9 +2,9 @@ schema: helm.world/0.1
 id: harbor
 name: Harbor
 # The default HeDE world: an ocean harbour at rest. The teal accent is a role
-# that re-tints the whole shell; the scene is the desktop wallpaper. The
-# nine-slice painterly window frame (decoration_art/frame.png) and the panel
-# skin arrive in later slices — this bundle ships the wallpaper + palette.
+# that re-tints the whole shell; the scene is the desktop wallpaper; the
+# nine-patch frame.png is the painterly window titlebar (via the helm Qt
+# decoration plugin). A panel skin may follow.
 accent: '#3aa6c4'
 bar:
   style: glass
@@ -12,6 +12,14 @@ bar:
 wallpaper_art:
   image: wallpaper.png
   fit: cover
+decoration_art:
+  source: frame.png
+  slice: 44
+  border:
+    top: 40
+    right: 8
+    bottom: 8
+    left: 8
 credit:
   art: Generated locally — SDXL on AMD Radeon 8060S (gfx1151)
   pipeline: 'hiedi Voyage: helm-titlebar-skins'
