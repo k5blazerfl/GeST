@@ -89,6 +89,27 @@ Two guards now make that impossible to ship:
 - **`packaging/release-overlay.py`** generates both overlays from the tag tarball
   in one step, so the ebuild and its `DIST` are always written together.
 
+## Third-party packages in Amphitheater
+
+Amphitheater also carries a few packages that are **not** built from a GeST/HeDE
+tag — their ebuild source lives here in `packaging/<pkg>/` and a small
+`amphi-<pkg>.py` script generates the lean `<cat>/<pkg>/` directory in
+Amphitheater (versioned ebuild + `metadata.xml` + a single-`DIST` `Manifest`),
+exactly like `amphi-hede.py` does for `gui-apps/hede`. Each writes nothing
+without `--push`; run the dry run first and eyeball the diff.
+
+- **`gui-apps/claude-desktop`** — Anthropic's official Claude Desktop, repackaged
+  from the upstream Linux `.deb` on `downloads.claude.ai` (a prebuilt Electron
+  app; nothing is compiled). `packaging/amphi-claude-desktop.py` reads Anthropic's
+  live apt index for the newest release, downloads and verifies that `.deb`
+  against the index `SHA256`, computes the Gentoo `DIST`, and regenerates the
+  overlay dir from `packaging/claude-desktop/claude-desktop.ebuild`:
+
+  ```console
+  $ packaging/amphi-claude-desktop.py            # dry run: newest version
+  $ packaging/amphi-claude-desktop.py --push     # commit + push to Amphitheater
+  ```
+
 ## Cutting a new release
 
 1. Bump `__version__` + `pyproject.toml`, commit, then tag and push:

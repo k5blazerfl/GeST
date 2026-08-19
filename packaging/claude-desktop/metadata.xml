@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<maintainer type="person">
+		<email>k5blazerfl@fastmail.com</email>
+		<name>k5blazerfl</name>
+	</maintainer>
+	<longdescription lang="en">
+		Claude Desktop is Anthropic's official desktop application for Claude.ai.
+		This ebuild repackages the upstream Linux .deb served from Anthropic's own
+		apt repository (downloads.claude.ai) — a prebuilt Electron application that
+		bundles its own Electron runtime and app.asar. Nothing is compiled; the
+		.deb's declared dependencies are mapped to Gentoo atoms and the /usr tree
+		(binary, resources, hicolor icons, and the claude:// scheme-handler desktop
+		entry) is installed verbatim.
+	</longdescription>
+	<use>
+		<flag name="suid-sandbox">
+			Install a setuid-root chrome-sandbox helper for Electron's hardened
+			namespace sandbox. With this disabled, Claude is launched with
+			--no-sandbox instead.
+		</flag>
+		<flag name="cowork">
+			Pull in QEMU and OVMF for Claude's local VM sandbox ("computer use" /
+			cowork), which boots the bundled microVM image via virtiofsd.
+		</flag>
+	</use>
+	<upstream>
+		<remote-id type="github">anthropics/claude-desktop</remote-id>
+	</upstream>
+</pkgmetadata>
