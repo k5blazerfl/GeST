@@ -115,10 +115,12 @@ def test_minimal_is_a_strict_subset_of_the_full_registry():
     minimal = {s.label for s in build_minimal_registry(_plan())}
     assert minimal < full                           # strict subset
     # the dropped steps are exactly the HeDE desktop (provision/install/cleanup) +
-    # day-1 niceties + optional user/network (a bootable base system needs none)
+    # GPU drivers/firmware (not boot-critical) + day-1 niceties + optional
+    # user/network (a bootable base system needs none)
     assert full - minimal == {
         "Provision the HeDE desktop", "Install the HeDE desktop",
         "Clean up desktop binpkgs", "Enable the HeDE session",
+        "Install GPU drivers & firmware",
         "Set timezone and locale", "Set the hostname", "Set the console keymap",
         "Create the user account", "Configure the network",
     }

@@ -166,6 +166,7 @@ step, and `teardown_chroot` closes it in the engine's `finally` (§5), never as 
 | 12 | Configure | `SetHostname` | system `SetHostname`, `root=ctx.root` | no | yes | `<root>/etc/conf.d/hostname` matches |
 | 13 | Configure | `SetConsole` | `console.set_conf_value` keymap/font, `root=ctx.root` | no | yes | `<root>/etc/conf.d/keymaps` matches |
 | 14 | Kernel & boot | `BuildKernel` | `kernel.build_steps(BuildConfig(...))` via the target executor | **yes** | no | marker (long; source_dir built) |
+| 14a | Kernel & boot | `InstallGpuDrivers` | `gpu.*` builders — accept licenses, `emerge` `linux-firmware` (always) + `nvidia-drivers` (when `plan.gpu.nvidia_proprietary`) + `@module-rebuild`, write `modprobe.d` KMS/nouveau-blacklist | **yes** (emerge) | yes (config writes) | marker |
 | 15 | Kernel & boot | `InstallBootloader` | `bootloader.install_steps(InstallConfig(firmware, boot_directory, …))` | **yes**¹ | yes¹ | marker |
 | 16 | Users & network | `SetRootPassword` | `users.chpasswd_input("root", pw)` (stdin) | **yes** | no | always re-run if requested |
 | 17 | Users & network | `CreateUser` | `users.useradd_argv(...)` + `users.gpasswd_argv("wheel", user, add=True)` | **yes** | no | user present in `<root>/etc/passwd` |
