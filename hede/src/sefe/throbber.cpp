@@ -13,7 +13,7 @@ namespace {
 
 constexpr int kFrameMs = 33;       // ~30 fps
 constexpr int kMinVisibleMs = 650; // a couple of comets even for instant work
-constexpr qreal kHorizon = 0.60;   // comets live above this fraction of the scene
+constexpr qreal kHorizon = 1.0;    // backdrop is a full starfield — comets fill it
 
 // Draw one shooting star, in the spirit of the Netscape meteor: a tapering wedge
 // tail fading through icy blue to nothing, a soft additive head bloom, and a
