@@ -71,6 +71,10 @@ class GpuSpec:
 
     video_cards: tuple[str, ...] = ()
     nvidia_proprietary: bool = False
+    kernel_open: bool = False       # build nvidia-drivers with the OPEN kernel modules
+    # (USE=kernel-open). NVIDIA-recommended for Turing+ (RTX 20-series and newer, incl.
+    # Ada); NOT supported on pre-Turing cards, so it's off by default. Only meaningful
+    # with nvidia_proprietary.
 
 
 @dataclass(slots=True, frozen=True)

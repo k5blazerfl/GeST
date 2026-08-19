@@ -670,6 +670,11 @@ class InstallGpuDrivers(FuncStep):
         # else the emerge is license-masked (linux-fw-redistributable / NVIDIA-r2).
         lic = write_under_root(ctx.root, gpu.PACKAGE_LICENSE, gpu.package_license(spec))
         _emit(on_progress, f"wrote {lic}")
+        # USE flags (e.g. nvidia-drivers[kernel-open]) must be set before the emerge.
+        use = gpu.package_use(spec)
+        if use:
+            up = write_under_root(ctx.root, gpu.PACKAGE_USE, use)
+            _emit(on_progress, f"wrote {up} (nvidia-drivers[kernel-open])")
         steps = [Step(f"emerge {atom}", _emerge_argv(ctx.plan, atom))
                  for atom in gpu.driver_atoms(spec)]
         if spec.nvidia_proprietary:

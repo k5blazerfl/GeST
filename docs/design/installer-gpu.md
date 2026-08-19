@@ -21,6 +21,7 @@ into the install.
 | --- | --- |
 | `video_cards` | the `VIDEO_CARDS` tokens for make.conf (`("nvidia",)`, `("amdgpu", "radeonsi")`, …) |
 | `nvidia_proprietary` | install `x11-drivers/nvidia-drivers` (license + module + KMS + nouveau blacklist) instead of nouveau |
+| `kernel_open` | build nvidia-drivers with the **open** kernel modules (`USE=kernel-open`) — NVIDIA-recommended for Turing+/Ada; off by default (unsupported pre-Turing), only meaningful with `nvidia_proprietary` |
 
 `nvidia_proprietary` implies a `nvidia` token (added in `assemble._build_gpu`), so
 asking for the proprietary stack is self-contained.
@@ -40,9 +41,10 @@ stack, and the NVIDIA-only hardening never touches amdgpu/i915.
 ### User override
 
 The installer overview's **Graphics** row edits the choice: auto-detect (default),
-NVIDIA proprietary, nouveau, a custom `VIDEO_CARDS` string, or none (firmware only).
-Picking anything but auto sets `gpu_auto = False`, so the RunScreen skips detection and
-takes the selection as-is.
+NVIDIA proprietary, nouveau, a custom `VIDEO_CARDS` string, or none (firmware only),
+plus an *open kernel modules* checkbox (`kernel_open`, applied only to the NVIDIA
+proprietary choices). Picking anything but auto sets `gpu_auto = False`, so the
+RunScreen skips detection and takes the selection as-is.
 
 ## The install steps
 
@@ -55,6 +57,8 @@ takes the selection as-is.
    - **always** emerge `sys-kernel/linux-firmware` (fixes the general no-firmware gap —
      GSP, Wi-Fi, etc. — not just NVIDIA);
    - when proprietary: emerge `x11-drivers/nvidia-drivers`, then `@module-rebuild`;
+     with the open kernel modules requested (`GpuSpec.kernel_open`), first write
+     `package.use/gest-gpu` with `x11-drivers/nvidia-drivers kernel-open`;
    - write `/etc/modprobe.d/gest-gpu.conf` — `blacklist nouveau` + `options nvidia_drm
      modeset=1 fbdev=1`;
    - merge the nouveau blacklist + `nvidia_drm.modeset=1` into `GRUB_CMDLINE_LINUX`
@@ -105,7 +109,5 @@ preserves them (it only manages `GRUB_CMDLINE_LINUX_DEFAULT`).
   the pivot. Deferred: genkernel's `--firmware` bundles all of `/lib/firmware` (huge
   initramfs) and targeted bundling needs exact per-ASIC filenames; the post-pivot path
   works with the root firmware this feature installs, and efifb covers the early splash.
-- **`nvidia-drivers[kernel-open]`** (NVIDIA's open kernel modules, recommended for
-  Turing+/Ada) as an option — currently the default (closed) module is used.
 - **Real-hardware validation** on the Ryzen 9900X3D / RTX 4070 Ti Super rig — the
   intended first end-to-end test.

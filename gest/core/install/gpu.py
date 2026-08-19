@@ -22,6 +22,8 @@ from gest.core.install.plan import GpuSpec
 PACKAGE_LICENSE = "/etc/portage/package.license/gest-gpu"
 #: modprobe.d drop-in enabling NVIDIA DRM KMS + blacklisting nouveau.
 MODPROBE_CONF = "/etc/modprobe.d/gest-gpu.conf"
+#: package.use fragment GeST owns for GPU atoms (e.g. nvidia-drivers[kernel-open]).
+PACKAGE_USE = "/etc/portage/package.use/gest-gpu"
 
 #: linux-firmware carries NVIDIA GSP blobs + most Wi-Fi/other firmware; a fresh
 #: stage3 ships none, so we always install it.
@@ -44,6 +46,16 @@ def driver_atoms(gpu: GpuSpec) -> list[str]:
     if gpu.nvidia_proprietary:
         atoms.append(NVIDIA_ATOM)
     return atoms
+
+
+def package_use(gpu: GpuSpec) -> str:
+    """The ``package.use`` body for GPU atoms, or ``""`` when none is needed. Sets
+    ``kernel-open`` on nvidia-drivers when the open kernel modules are requested
+    (NVIDIA-recommended for Turing+/Ada). Meaningful only with the proprietary stack."""
+    if gpu.nvidia_proprietary and gpu.kernel_open:
+        return ("# GPU USE flags — managed by GeST\n"
+                f"{NVIDIA_ATOM} kernel-open\n")
+    return ""
 
 
 def package_license(gpu: GpuSpec) -> str:

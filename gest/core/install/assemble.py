@@ -95,6 +95,7 @@ class InstallSelections:
     # assembly), so a detected GeForce card gets a working Wayland/HeDE desktop.
     video_cards: tuple[str, ...] = ()
     nvidia_proprietary: bool = False
+    kernel_open: bool = False           # nvidia-drivers[kernel-open] (Turing+/Ada)
     gpu_auto: bool = True               # auto-detect the GPU (lspci) at install time;
     # False = the user overrode it in the UI, so video_cards/nvidia_proprietary are
     # taken as-is (including an explicit "none" = empty). Not a plan field (UI-only).
@@ -157,7 +158,8 @@ def _build_gpu(sel: InstallSelections) -> GpuSpec:
     cards = tuple(sel.video_cards)
     if sel.nvidia_proprietary and "nvidia" not in cards:
         cards = (*cards, "nvidia")
-    return GpuSpec(video_cards=cards, nvidia_proprietary=sel.nvidia_proprietary)
+    return GpuSpec(video_cards=cards, nvidia_proprietary=sel.nvidia_proprietary,
+                   kernel_open=sel.kernel_open and sel.nvidia_proprietary)
 
 
 def resolve_gpu(runner: hwdetect.Runner | None = None) -> GpuSpec:

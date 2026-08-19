@@ -68,6 +68,15 @@ def test_driver_atoms_add_nvidia_when_proprietary():
     assert gpu.driver_atoms(spec) == ["sys-kernel/linux-firmware", "x11-drivers/nvidia-drivers"]
 
 
+def test_package_use_kernel_open_only_for_nvidia():
+    on = gpu.package_use(
+        GpuSpec(video_cards=("nvidia",), nvidia_proprietary=True, kernel_open=True))
+    assert "x11-drivers/nvidia-drivers kernel-open" in on
+    # off, or requested without the proprietary stack → nothing
+    assert gpu.package_use(GpuSpec(video_cards=("nvidia",), nvidia_proprietary=True)) == ""
+    assert gpu.package_use(GpuSpec(video_cards=("amdgpu",), kernel_open=True)) == ""
+
+
 def test_package_license_accepts_firmware_and_optionally_nvidia():
     base = gpu.package_license(GpuSpec(video_cards=("amdgpu",)))
     assert "sys-kernel/linux-firmware linux-fw-redistributable" in base
@@ -137,6 +146,17 @@ def test_assemble_passes_through_video_cards():
 def test_assemble_defaults_to_no_gpu():
     plan = assemble_plan(InstallSelections(disk="sda", root_password="x"), _STAGE3)
     assert plan.gpu == GpuSpec()
+
+
+def test_assemble_kernel_open_gated_on_nvidia_proprietary():
+    # kernel-open with the proprietary stack → carried through
+    p1 = assemble_plan(InstallSelections(disk="sda", root_password="x",
+                                         nvidia_proprietary=True, kernel_open=True), _STAGE3)
+    assert p1.gpu.kernel_open is True
+    # kernel-open without proprietary NVIDIA is meaningless → dropped
+    p2 = assemble_plan(InstallSelections(disk="sda", root_password="x",
+                                         video_cards=("amdgpu",), kernel_open=True), _STAGE3)
+    assert p2.gpu.kernel_open is False
 
 
 def test_resolve_gpu_opts_into_proprietary_for_nvidia():
@@ -224,3 +244,20 @@ def test_install_gpu_drivers_firmware_only(tmp_path):
     assert ["emerge", "--color", "n", "@module-rebuild"] not in inner
     assert not os.path.exists(root + gpu.MODPROBE_CONF)
     assert not os.path.exists(os.path.join(root, "etc", "default", "grub"))  # no cmdline write
+    assert not os.path.exists(root + gpu.PACKAGE_USE)                        # no kernel-open
+
+
+def test_install_gpu_drivers_kernel_open(tmp_path):
+    root, inner, _, _ = _run_gpu_step(
+        tmp_path, GpuSpec(video_cards=("nvidia",), nvidia_proprietary=True, kernel_open=True))
+    # USE flag set before the emerge; driver still emerged
+    assert "x11-drivers/nvidia-drivers kernel-open" in Path(root + gpu.PACKAGE_USE).read_text()
+    assert ["emerge", "--getbinpkg", "--color", "n", "--noreplace",
+            "x11-drivers/nvidia-drivers"] in inner
+
+
+def test_install_gpu_drivers_no_package_use_without_kernel_open(tmp_path):
+    # default NVIDIA (closed modules) writes no package.use
+    root, _, _, _ = _run_gpu_step(
+        tmp_path, GpuSpec(video_cards=("nvidia",), nvidia_proprietary=True))
+    assert not os.path.exists(root + gpu.PACKAGE_USE)

@@ -119,7 +119,7 @@ class InstallOverviewScreen(Screen):
         if self._sel.gpu_auto:
             return "auto-detect (lspci)"
         if self._sel.nvidia_proprietary:
-            return "NVIDIA proprietary"
+            return "NVIDIA proprietary" + (" (open modules)" if self._sel.kernel_open else "")
         if self._sel.video_cards:
             return " ".join(self._sel.video_cards)
         return "none (firmware only)"
@@ -447,6 +447,8 @@ class InstallOverviewScreen(Screen):
         buttons = {key: urwid.RadioButton(group, label, state=(key == current))
                    for key, label in modes}
         custom = urwid.Edit("VIDEO_CARDS: ", " ".join(s.video_cards) if current == "custom" else "")
+        kopen = urwid.CheckBox("Open kernel modules — nvidia-drivers[kernel-open] "
+                               "(Turing+/Ada)", state=s.kernel_open)
 
         def save():
             mode = next(k for k, b in buttons.items() if b.state)
@@ -463,13 +465,15 @@ class InstallOverviewScreen(Screen):
                 s.nvidia_proprietary = "nvidia" in tokens
             else:  # none
                 s.gpu_auto, s.video_cards, s.nvidia_proprietary = False, (), False
+            # kernel-open only applies to NVIDIA proprietary — assemble gates it.
+            s.kernel_open = kopen.state
             self.app.pop()
             self._render()
 
         modal = Modal(self.app, "Graphics driver",
                       [urwid.Text(("hint", "Detected NVIDIA cards get the proprietary "
                                    "driver; every install gets firmware.")),
-                       urwid.Divider(), *buttons.values(), urwid.Divider(), custom],
+                       urwid.Divider(), *buttons.values(), urwid.Divider(), custom, kopen],
                       [("Save", save), ("Cancel", self.app.pop)])
         self.app.push_modal(modal, width=("relative", 70), height=("relative", 62))
 
