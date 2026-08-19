@@ -1,6 +1,7 @@
 #include "window.h"
 
 #include "addressbar.h"
+#include "archivemodel.h" // hold: browse-in-place (Hold H3)
 #include "desktopentry.h" // helm-apps: scan + Exec argv (Open with)
 #include "holdcore.h"     // hold-core: archive extract/create (Hold H2)
 #include "iconprovider.h"
@@ -40,6 +41,7 @@
 #include <QSplitter>
 #include <QStackedWidget>
 #include <QStatusBar>
+#include <QTemporaryDir>
 #include <QToolBar>
 #include <QTreeView>
 #include <QUrl>
@@ -220,18 +222,50 @@ SefeWindow::SefeWindow(QWidget *parent) : QMainWindow(parent) {
 SefeWindow::~SefeWindow() {
     _model->setIconProvider(nullptr); // stop the model using it before we free it
     delete _iconProvider;
+    delete _archiveModel;
+    delete _extractTemp;
 }
 
 // --- navigation ---
 
 void SefeWindow::navigateTo(const QString &dir, bool record) {
     const QString path = QDir::cleanPath(dir);
-    _current = path;
-    _model->setRootPath(path);
-    const QModelIndex root = _model->index(path);
-    _details->setRootIndex(root);
-    _icons->setRootIndex(root);
+    const ArchiveSplit split = splitArchivePath(path);
 
+    // Switch both views to `m` (only when it actually changes, to keep the
+    // details columns) then root them at `root`.
+    auto useModel = [this](QAbstractItemModel *m, const QModelIndex &root) {
+        if (_details->model() != m) {
+            _details->setModel(m);
+            _icons->setModel(m);
+            _details->setColumnWidth(0, 320);
+            _details->header()->setStretchLastSection(true);
+        }
+        _details->setRootIndex(root);
+        _icons->setRootIndex(root);
+    };
+
+    if (split.archive.isEmpty()) { // filesystem
+        _inArchive = false;
+        _model->setRootPath(path);
+        useModel(_model, _model->index(path));
+        if (_archiveModel) { // left the archive — drop its model
+            delete _archiveModel;
+            _archiveModel = nullptr;
+        }
+    } else { // inside an archive
+        if (!_archiveModel || _archiveModel->archivePath() != split.archive) {
+            ArchiveModel *old = _archiveModel;
+            _archiveModel = new ArchiveModel(split.archive);
+            useModel(_archiveModel, _archiveModel->indexForInner(split.inner));
+            delete old; // views no longer reference it
+        } else {
+            useModel(_archiveModel, _archiveModel->indexForInner(split.inner));
+        }
+        _inArchive = true;
+    }
+
+    _current = path;
     _address->setPath(path);
     setWindowTitle(helm::sefe::windowTitle(path));
     highlightPlace(path);
@@ -249,13 +283,39 @@ void SefeWindow::navigateTo(const QString &dir, bool record) {
 void SefeWindow::openIndex(const QModelIndex &index) {
     if (!index.isValid())
         return;
+    if (_inArchive && _archiveModel) { // inside an archive
+        const QString inner = _archiveModel->innerPath(index);
+        if (_archiveModel->isDir(index))
+            navigateTo(_archiveModel->archivePath() + QLatin1Char('/') + inner);
+        else
+            openArchiveEntry(inner);
+        return;
+    }
     const QString path = _model->filePath(index);
     if (_model->isDir(index))
         navigateTo(path);
     else if (isWindowsExecutable(path))
         helm::launchDetached(QStringLiteral("drydock"), {QStringLiteral("open"), path});
+    else if (helm::hold::isArchive(path))
+        navigateTo(path); // walk into the archive (browse-in-place)
     else
         QDesktopServices::openUrl(QUrl::fromLocalFile(path));
+}
+
+void SefeWindow::openArchiveEntry(const QString &inner) {
+    if (!_archiveModel)
+        return;
+    if (!_extractTemp)
+        _extractTemp = new QTemporaryDir; // session-lifetime scratch for opened entries
+    if (!_extractTemp->isValid())
+        return;
+    const helm::hold::Result r =
+        helm::hold::extract(_archiveModel->archivePath(), inner, _extractTemp->path());
+    if (!r.ok) {
+        statusBar()->showMessage(QStringLiteral("Open failed: %1").arg(r.error));
+        return;
+    }
+    QDesktopServices::openUrl(QUrl::fromLocalFile(QDir(_extractTemp->path()).filePath(inner)));
 }
 
 void SefeWindow::goBack() {
@@ -298,6 +358,8 @@ QAbstractItemView *SefeWindow::activeView() const {
 
 QStringList SefeWindow::selectedPaths() const {
     QStringList out;
+    if (_inArchive)
+        return out; // archive browsing is read-only — filesystem ops don't apply
     QAbstractItemView *v = activeView();
     if (!v || !v->selectionModel())
         return out;
@@ -526,6 +588,14 @@ void SefeWindow::compressSelection() {
 void SefeWindow::showContextMenu(QAbstractItemView *view, const QPoint &pos) {
     const QModelIndex idx = view->indexAt(pos);
     QMenu menu(this);
+    if (_inArchive) { // read-only browsing: just Open the clicked entry
+        if (idx.isValid()) {
+            QAction *open = menu.addAction(QStringLiteral("Open"));
+            connect(open, &QAction::triggered, this, [this, idx] { openIndex(idx); });
+            menu.exec(view->viewport()->mapToGlobal(pos));
+        }
+        return;
+    }
     if (idx.isValid()) {
         const bool isDir = _model->isDir(idx);
         const QString path = _model->filePath(idx);

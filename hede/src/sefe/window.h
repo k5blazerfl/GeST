@@ -11,11 +11,13 @@ class QListWidget;
 class QModelIndex;
 class QPoint;
 class QStackedWidget;
+class QTemporaryDir;
 class QTreeView;
 
 namespace helm::sefe {
 
 class AddressBar;
+class ArchiveModel;
 class ThumbnailIconProvider;
 
 // The SeFE main window. Slice 3 "Operations": read/write now — the full
@@ -36,6 +38,7 @@ private:
     // navigation (slice 2)
     void navigateTo(const QString &dir, bool record = true);
     void openIndex(const QModelIndex &index);
+    void openArchiveEntry(const QString &inner); // extract-on-demand + open
     void goBack();
     void goForward();
     void goUp();
@@ -64,6 +67,9 @@ private:
 
     QFileSystemModel *_model = nullptr;
     ThumbnailIconProvider *_iconProvider = nullptr; // owned; outlives the model
+    ArchiveModel *_archiveModel = nullptr;          // owned; the archive being browsed
+    bool _inArchive = false;                        // views are showing an archive
+    QTemporaryDir *_extractTemp = nullptr;          // scratch for open-an-entry
     QTreeView *_details = nullptr;
     QListView *_icons = nullptr;
     QListWidget *_places = nullptr;

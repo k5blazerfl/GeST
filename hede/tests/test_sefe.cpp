@@ -5,6 +5,8 @@
 #include <QStringList>
 #include <QTemporaryDir>
 
+#include "archivemodel.h"
+#include "holdcore.h"
 #include "ops.h"
 #include "sefe.h"
 
@@ -153,6 +155,62 @@ private slots:
                  QStringLiteral("Photos (2).zip"));
     }
 
+    void splitArchivePathFindsTheArchive() {
+        QTemporaryDir tmp;
+        const QString root = tmp.path();
+        writeFile(root + "/a.txt", "hi");
+        const QString zip = root + "/bundle.zip";
+        QVERIFY(helm::hold::create({root + "/a.txt"}, zip).ok);
+
+        // the archive file itself → inner ""
+        auto s = helm::sefe::splitArchivePath(zip);
+        QCOMPARE(s.archive, zip);
+        QVERIFY(s.inner.isEmpty());
+        // a path "inside" the archive → archive + inner
+        s = helm::sefe::splitArchivePath(zip + "/sub/a.txt");
+        QCOMPARE(s.archive, zip);
+        QCOMPARE(s.inner, QStringLiteral("sub/a.txt"));
+        // a plain filesystem path → no archive
+        QVERIFY(helm::sefe::splitArchivePath(root + "/a.txt").archive.isEmpty());
+    }
+
+    void archiveModelBuildsTheTree() {
+        QTemporaryDir tmp;
+        const QString root = tmp.path();
+        QVERIFY(QDir(root).mkpath(QStringLiteral("src/sub")));
+        writeFile(root + "/src/a.txt", "hello");
+        writeFile(root + "/src/sub/b.txt", "deep");
+        const QString zip = root + "/out.zip";
+        QVERIFY(helm::hold::create({root + "/src/a.txt", root + "/src/sub"}, zip).ok);
+
+        helm::sefe::ArchiveModel model(zip);
+        QVERIFY(model.ok());
+        QCOMPARE(model.columnCount({}), int(helm::sefe::ArchiveModel::ColumnCount));
+
+        // top level: "sub" (dir, sorted first) + "a.txt"
+        QCOMPARE(model.rowCount({}), 2);
+        const QModelIndex sub = model.index(0, 0, {});
+        QCOMPARE(model.data(sub, Qt::DisplayRole).toString(), QStringLiteral("sub"));
+        QVERIFY(model.isDir(sub));
+        QCOMPARE(model.data(sub, Qt::DisplayRole).toString(), QStringLiteral("sub"));
+        QCOMPARE(model.data(model.index(1, 0, {}), Qt::DisplayRole).toString(),
+                 QStringLiteral("a.txt"));
+
+        // into "sub": one file b.txt
+        QCOMPARE(model.rowCount(sub), 1);
+        const QModelIndex b = model.index(0, 0, sub);
+        QCOMPARE(model.innerPath(b), QStringLiteral("sub/b.txt"));
+        QVERIFY(!model.isDir(b));
+        QCOMPARE(model.data(model.index(0, helm::sefe::ArchiveModel::Type, sub), Qt::DisplayRole)
+                     .toString(),
+                 QStringLiteral("File"));
+
+        // indexForInner round-trips + parent() walks back up
+        QCOMPARE(model.indexForInner(QStringLiteral("sub")), sub);
+        QCOMPARE(model.parent(b), sub);
+        QVERIFY(!model.parent(sub).isValid()); // top level
+    }
+
     void windowsExecutableByExtension() {
         QVERIFY(helm::sefe::isWindowsExecutable(QStringLiteral("/x/setup.exe")));
         QVERIFY(helm::sefe::isWindowsExecutable(QStringLiteral("/x/GAME.EXE"))); // case-insensitive
@@ -179,6 +237,13 @@ private slots:
         QCOMPARE(ps.first().path, tmp.path());
         QCOMPARE(ps.last().path, QStringLiteral("/"));
         qunsetenv("XDG_CONFIG_HOME");
+    }
+
+private:
+    static void writeFile(const QString &path, const QByteArray &data) {
+        QFile f(path);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write(data);
     }
 };
 
