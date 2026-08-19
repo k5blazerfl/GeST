@@ -167,11 +167,22 @@ def resolve_gpu(runner: hwdetect.Runner | None = None) -> GpuSpec:
 
     Returns a :class:`GpuSpec` with the detected VIDEO_CARDS tokens, opting into the
     NVIDIA proprietary stack when an NVIDIA card is present (nouveau can't drive a
-    modern GeForce under Wayland/HeDE). The UI calls this to populate the selections
-    before assembly; empty on a host with no detectable GPU (or no ``lspci``).
+    modern GeForce under Wayland/HeDE), and into the OPEN kernel modules when the
+    card is Turing-or-newer (NVIDIA-recommended, and it sidesteps closed-module IBT
+    issues). The UI calls this to populate the selections before assembly; empty on a
+    host with no detectable GPU (or no ``lspci``).
     """
-    cards = hwdetect.detect_video_cards(runner) if runner else hwdetect.detect_video_cards()
-    return GpuSpec(video_cards=tuple(cards), nvidia_proprietary="nvidia" in cards)
+    run = runner or hwdetect._default_runner
+    try:
+        rc, out = run(["lspci"])
+    except FileNotFoundError:
+        return GpuSpec()
+    if rc != 0:
+        return GpuSpec()
+    cards = hwdetect.parse_video_cards(out)
+    nvidia = "nvidia" in cards
+    return GpuSpec(video_cards=tuple(cards), nvidia_proprietary=nvidia,
+                   kernel_open=nvidia and hwdetect.nvidia_open_recommended(out))
 
 
 def _build_network(sel: InstallSelections) -> NetworkSpec:

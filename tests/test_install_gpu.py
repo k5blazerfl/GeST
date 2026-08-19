@@ -159,10 +159,33 @@ def test_assemble_kernel_open_gated_on_nvidia_proprietary():
     assert p2.gpu.kernel_open is False
 
 
-def test_resolve_gpu_opts_into_proprietary_for_nvidia():
+def test_resolve_gpu_opts_into_proprietary_and_open_for_ada():
+    # AD103 = Ada (Turing+) → proprietary stack AND open kernel modules
     spec = resolve_gpu(_lspci(
         "01:00.0 VGA compatible controller: NVIDIA Corporation AD103 [GeForce RTX 4070 Ti]"))
-    assert spec == GpuSpec(video_cards=("nvidia",), nvidia_proprietary=True)
+    assert spec == GpuSpec(video_cards=("nvidia",), nvidia_proprietary=True, kernel_open=True)
+
+
+def test_resolve_gpu_pre_turing_keeps_closed_modules():
+    # GP104 = Pascal (pre-Turing) → proprietary, but the closed module (no kernel-open)
+    spec = resolve_gpu(_lspci(
+        "01:00.0 VGA compatible controller: NVIDIA Corporation GP104 [GeForce GTX 1080]"))
+    assert spec.nvidia_proprietary is True and spec.kernel_open is False
+
+
+def test_resolve_gpu_unknown_codename_defaults_closed():
+    # description without a codename → conservative (closed module)
+    spec = resolve_gpu(_lspci(
+        "01:00.0 VGA compatible controller: NVIDIA Corporation [GeForce RTX 4070 Ti]"))
+    assert spec.nvidia_proprietary is True and spec.kernel_open is False
+
+
+def test_nvidia_open_recommended_by_codename():
+    from gest.core.hwflags import detect
+    ada = "VGA compatible controller: NVIDIA Corporation AD103 [GeForce RTX 4070 Ti]"
+    pascal = "VGA compatible controller: NVIDIA Corporation GP104 [GeForce GTX 1080]"
+    assert detect.nvidia_open_recommended(ada) is True
+    assert detect.nvidia_open_recommended(pascal) is False
 
 
 def test_resolve_gpu_amd_is_not_proprietary():

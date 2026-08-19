@@ -29,9 +29,13 @@ asking for the proprietary stack is self-contained.
 ### Detection (`assemble.resolve_gpu`)
 
 The peer of `resolve_stage3`: it runs `lspci` (I/O) via `hwflags.detect` and returns a
-`GpuSpec`, opting into the proprietary stack when an NVIDIA card is present. The TUI
-installer calls it at install time unless the user overrode the choice
-(`InstallSelections.gpu_auto`), so a detected card is handled hands-off.
+`GpuSpec`, opting into the proprietary stack when an NVIDIA card is present — and into
+the **open kernel modules** when the card's `lspci` codename is Turing-or-newer
+(`TU/GA/AD/GB…`), which is NVIDIA-recommended and sidesteps closed-module IBT issues on
+kernels built with `CONFIG_X86_KERNEL_IBT`. Cards whose codename `lspci` doesn't spell
+out fall back to the closed module (conservative). The TUI installer calls this at
+install time unless the user overrode the choice (`InstallSelections.gpu_auto`), so a
+detected card is handled hands-off.
 
 **Hybrid graphics** (e.g. a Ryzen X3D's RDNA2 iGPU alongside a discrete GeForce) are
 handled naturally: `detect_video_cards` accumulates every GPU, so `VIDEO_CARDS` gets
