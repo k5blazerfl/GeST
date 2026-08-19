@@ -137,6 +137,22 @@ private slots:
         QVERIFY(!QFile::exists(root + "/src"));
     }
 
+    void compressTargetNaming() {
+        // single item → its stem; folders & multi-dot names handled
+        QCOMPARE(helm::sefe::compressTargetName({QStringLiteral("/x/report.pdf")}, {}),
+                 QStringLiteral("report.zip"));
+        QCOMPARE(helm::sefe::compressTargetName({QStringLiteral("/x/Photos")}, {}),
+                 QStringLiteral("Photos.zip"));
+        // several items → Archive.zip
+        QCOMPARE(helm::sefe::compressTargetName(
+                     {QStringLiteral("/x/a.txt"), QStringLiteral("/x/b.txt")}, {}),
+                 QStringLiteral("Archive.zip"));
+        // collisions escalate
+        QCOMPARE(helm::sefe::compressTargetName({QStringLiteral("/x/Photos")},
+                                                {QStringLiteral("Photos.zip")}),
+                 QStringLiteral("Photos (2).zip"));
+    }
+
     void windowsExecutableByExtension() {
         QVERIFY(helm::sefe::isWindowsExecutable(QStringLiteral("/x/setup.exe")));
         QVERIFY(helm::sefe::isWindowsExecutable(QStringLiteral("/x/GAME.EXE"))); // case-insensitive

@@ -2,6 +2,7 @@
 
 #include <QSet>
 #include <QString>
+#include <QStringList>
 
 // SeFE file operations. The naming helpers are pure (unit-tested); the copy/move
 // helpers touch the filesystem (integration-tested with a temp dir). The window
@@ -24,5 +25,10 @@ bool copyRecursively(const QString &src, const QString &dst);
 // Move `src` to the full path `dst`: a rename when possible, else a recursive
 // copy followed by removing `src` (handles a cross-filesystem move).
 bool moveItem(const QString &src, const QString &dst);
+
+// The default ".zip" name when compressing `paths` into a directory whose
+// entries are `existing`: "<stem>.zip" for a single item, "Archive.zip" for
+// several, disambiguated with " (2)", " (3)", … on collision.
+QString compressTargetName(const QStringList &paths, const QSet<QString> &existing);
 
 } // namespace helm::sefe

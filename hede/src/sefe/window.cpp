@@ -2,6 +2,7 @@
 
 #include "addressbar.h"
 #include "desktopentry.h" // helm-apps: scan + Exec argv (Open with)
+#include "holdcore.h"     // hold-core: archive extract/create (Hold H2)
 #include "iconprovider.h"
 #include "launch.h"       // helm-common: launchDetached
 #include "ops.h"
@@ -16,6 +17,7 @@
 #include <QDesktopServices>
 #include <QDialog>
 #include <QDir>
+#include <QFileDialog>
 #include <QFile>
 #include <QFileInfo>
 #include <QFileSystemModel>
@@ -42,6 +44,8 @@
 #include <QTreeView>
 #include <QUrl>
 #include <QVBoxLayout>
+
+#include <algorithm>
 
 namespace helm::sefe {
 
@@ -129,6 +133,10 @@ SefeWindow::SefeWindow(QWidget *parent) : QMainWindow(parent) {
                    &SefeWindow::shareFolder);
     _copyPathAct = op(QStringLiteral("Copy location"),
                       QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_C), &SefeWindow::copyPaths);
+    _extractHereAct = op(QStringLiteral("Extract here"), QKeySequence(), &SefeWindow::extractHere);
+    _extractToAct = op(QStringLiteral("Extract to…"), QKeySequence(), &SefeWindow::extractTo);
+    _compressAct = op(QStringLiteral("Compress to .zip"), QKeySequence(),
+                      &SefeWindow::compressSelection);
     auto *selectAllAct = op(QStringLiteral("Select all"), QKeySequence::SelectAll, nullptr);
     connect(selectAllAct, &QAction::triggered, this,
             [this] { if (auto *v = activeView()) v->selectAll(); });
@@ -475,19 +483,65 @@ void SefeWindow::copyPaths() {
         QApplication::clipboard()->setText(sel.join(QLatin1Char('\n')));
 }
 
+// H2: quick archive actions over hold-core. Synchronous for now — a progress /
+// off-thread pass is a later polish; large archives will block until then.
+
+void SefeWindow::extractHere() {
+    for (const QString &archive : selectedPaths()) {
+        if (!helm::hold::isArchive(archive))
+            continue;
+        const helm::hold::Result r = helm::hold::extractAll(archive, _current);
+        statusBar()->showMessage(r.ok ? QStringLiteral("Extracted %1").arg(QFileInfo(archive).fileName())
+                                      : QStringLiteral("Extract failed: %1").arg(r.error));
+        if (!r.ok)
+            return;
+    }
+}
+
+void SefeWindow::extractTo() {
+    const QStringList sel = selectedPaths();
+    const auto it = std::find_if(sel.begin(), sel.end(), helm::hold::isArchive);
+    if (it == sel.end())
+        return;
+    const QString dest =
+        QFileDialog::getExistingDirectory(this, QStringLiteral("Extract to"), _current);
+    if (dest.isEmpty())
+        return;
+    const helm::hold::Result r = helm::hold::extractAll(*it, dest);
+    statusBar()->showMessage(r.ok ? QStringLiteral("Extracted to %1").arg(dest)
+                                  : QStringLiteral("Extract failed: %1").arg(r.error));
+}
+
+void SefeWindow::compressSelection() {
+    const QStringList sel = selectedPaths();
+    if (sel.isEmpty())
+        return;
+    const QString name = compressTargetName(sel, entriesOf(_current));
+    const QString dest = QDir(_current).filePath(name);
+    const helm::hold::Result r = helm::hold::create(sel, dest);
+    statusBar()->showMessage(r.ok ? QStringLiteral("Created %1").arg(name)
+                                  : QStringLiteral("Compress failed: %1").arg(r.error));
+}
+
 void SefeWindow::showContextMenu(QAbstractItemView *view, const QPoint &pos) {
     const QModelIndex idx = view->indexAt(pos);
     QMenu menu(this);
     if (idx.isValid()) {
         const bool isDir = _model->isDir(idx);
+        const QString path = _model->filePath(idx);
         menu.addAction(_openAct);
         if (!isDir) {
             menu.addAction(_openWithAct);
-            if (isWindowsExecutable(_model->filePath(idx)))
+            if (isWindowsExecutable(path))
                 menu.addAction(_drydockAct);
+            if (helm::hold::isArchive(path)) {
+                menu.addAction(_extractHereAct);
+                menu.addAction(_extractToAct);
+            }
         }
         if (isDir)
             menu.addAction(_shareAct); // share this folder to the session
+        menu.addAction(_compressAct);  // compress the selection to a .zip
         menu.addSeparator();
         menu.addAction(_cutAct);
         menu.addAction(_copyAct);

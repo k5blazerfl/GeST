@@ -75,4 +75,19 @@ bool moveItem(const QString &src, const QString &dst) {
     return QFileInfo(src).isDir() ? QDir(src).removeRecursively() : QFile::remove(src);
 }
 
+QString compressTargetName(const QStringList &paths, const QSet<QString> &existing) {
+    QString stem = paths.size() == 1 ? QFileInfo(paths.first()).completeBaseName()
+                                     : QStringLiteral("Archive");
+    if (stem.isEmpty())
+        stem = QStringLiteral("Archive");
+    QString cand = stem + QStringLiteral(".zip");
+    if (!existing.contains(cand))
+        return cand;
+    for (int n = 2;; ++n) {
+        cand = QStringLiteral("%1 (%2).zip").arg(stem).arg(n);
+        if (!existing.contains(cand))
+            return cand;
+    }
+}
+
 } // namespace helm::sefe
