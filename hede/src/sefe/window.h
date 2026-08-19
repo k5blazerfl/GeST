@@ -49,6 +49,8 @@ private:
     void refresh();
     void showProperties();
     void openWith();
+    void runInDrydock();  // .exe/.msi/.lnk → drydock open
+    void shareFolder();   // a folder → gangway share (RDP drive)
     void showContextMenu(QAbstractItemView *view, const QPoint &pos);
 
     QAbstractItemView *activeView() const;
@@ -74,6 +76,8 @@ private:
     QAction *_refreshAct = nullptr;
     QAction *_propsAct = nullptr;
     QAction *_openWithAct = nullptr;
+    QAction *_drydockAct = nullptr;
+    QAction *_shareAct = nullptr;
 
     QString _current;
     QStringList _history;

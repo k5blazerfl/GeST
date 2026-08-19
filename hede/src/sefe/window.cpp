@@ -120,6 +120,9 @@ SefeWindow::SefeWindow(QWidget *parent) : QMainWindow(parent) {
     _propsAct = op(QStringLiteral("Properties"),
                    QKeySequence(Qt::ALT | Qt::Key_Return), &SefeWindow::showProperties);
     _openWithAct = op(QStringLiteral("Open with…"), QKeySequence(), &SefeWindow::openWith);
+    _drydockAct = op(QStringLiteral("Run in Drydock"), QKeySequence(), &SefeWindow::runInDrydock);
+    _shareAct = op(QStringLiteral("Share this folder to the session"), QKeySequence(),
+                   &SefeWindow::shareFolder);
 
     // --- details + icons views over the shared model ---
     auto initView = [this](QAbstractItemView *v) {
@@ -211,8 +214,10 @@ void SefeWindow::openIndex(const QModelIndex &index) {
     const QString path = _model->filePath(index);
     if (_model->isDir(index))
         navigateTo(path);
+    else if (isWindowsExecutable(path))
+        helm::launchDetached(QStringLiteral("drydock"), {QStringLiteral("open"), path});
     else
-        QDesktopServices::openUrl(QUrl::fromLocalFile(path)); // slice 4 routes via Customs
+        QDesktopServices::openUrl(QUrl::fromLocalFile(path));
 }
 
 void SefeWindow::goBack() {
@@ -395,13 +400,34 @@ void SefeWindow::openWith() {
     helm::launchDetached(argv.first(), argv.mid(1));
 }
 
+void SefeWindow::runInDrydock() {
+    const QStringList sel = selectedPaths();
+    if (!sel.isEmpty())
+        helm::launchDetached(QStringLiteral("drydock"), {QStringLiteral("open"), sel.first()});
+}
+
+void SefeWindow::shareFolder() {
+    // Share the selected folder, else the folder we're viewing.
+    QString folder = _current;
+    const QStringList sel = selectedPaths();
+    if (sel.size() == 1 && QFileInfo(sel.first()).isDir())
+        folder = sel.first();
+    helm::launchDetached(QStringLiteral("gangway"), {QStringLiteral("share"), folder});
+}
+
 void SefeWindow::showContextMenu(QAbstractItemView *view, const QPoint &pos) {
     const QModelIndex idx = view->indexAt(pos);
     QMenu menu(this);
     if (idx.isValid()) {
+        const bool isDir = _model->isDir(idx);
         menu.addAction(_openAct);
-        if (!_model->isDir(idx))
+        if (!isDir) {
             menu.addAction(_openWithAct);
+            if (isWindowsExecutable(_model->filePath(idx)))
+                menu.addAction(_drydockAct);
+        }
+        if (isDir)
+            menu.addAction(_shareAct); // share this folder to the session
         menu.addSeparator();
         menu.addAction(_cutAct);
         menu.addAction(_copyAct);
@@ -414,6 +440,8 @@ void SefeWindow::showContextMenu(QAbstractItemView *view, const QPoint &pos) {
         _pasteAct->setEnabled(!_clip.isEmpty());
         menu.addAction(_newFolderAct);
         menu.addAction(_pasteAct);
+        menu.addSeparator();
+        menu.addAction(_shareAct); // share the current folder to the session
     }
     menu.exec(view->viewport()->mapToGlobal(pos));
 }

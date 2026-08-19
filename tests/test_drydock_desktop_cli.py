@@ -255,3 +255,31 @@ def test_cli_rm_unregisters_identity(tmp_path):
     assert identity_store.load(g.identity_path).resolve("excel") is not None
     run_cli(["rm", "office"], env=g.env)
     assert identity_store.load(g.identity_path).resolve("excel") is None
+
+
+def test_open_runs_loose_exe_in_the_only_barrel(tmp_path):
+    g = _env(tmp_path)
+    run_cli(["create", "Games", "--runner", "wine"], env=g.env)
+    assert run_cli(["open", "/p/game.exe"], env=g.env) == 0
+    assert len(g.launched) == 1
+    barrel, program = g.launched[0]
+    assert barrel.id == "games"
+    assert program.exe == "/p/game.exe"   # abspath of an already-absolute path
+    assert program.name == "game.exe"
+
+
+def test_open_errors_when_no_barrel_exists(tmp_path):
+    g = _env(tmp_path)
+    assert run_cli(["open", "/p/game.exe"], env=g.env) == 2
+    assert not g.launched
+    assert "--barrel" in "\n".join(g.err)
+
+
+def test_open_ambiguous_barrels_need_explicit_choice(tmp_path):
+    g = _env(tmp_path)
+    run_cli(["create", "Games", "--runner", "wine"], env=g.env)
+    run_cli(["create", "Office", "--runner", "wine"], env=g.env)
+    assert run_cli(["open", "/p/game.exe"], env=g.env) == 2  # ambiguous
+    assert run_cli(["open", "/p/game.exe", "--barrel", "office"], env=g.env) == 0
+    barrel, _ = g.launched[0]
+    assert barrel.id == "office"

@@ -167,6 +167,31 @@ def cmd_open(args, env: GangwayEnv) -> int:
     return _launch(env, profile, dry_run=args.dry_run)
 
 
+def cmd_share(args, env: GangwayEnv) -> int:
+    """Open a session sharing a specific local folder as an RDP drive — used by a
+    file manager (SeFE) "share this folder to the session". Resolves the profile
+    from --profile, else the only saved profile, else errors."""
+    name = args.profile
+    if not name:
+        names = store.list_profiles(env.store_base)
+        if len(names) != 1:
+            found = ", ".join(names) if names else "none"
+            env.io.err(f"pass --profile: found {len(names)} profiles ({found})")
+            return 2
+        name = names[0]
+    profile = store.load_profile(name, env.store_base)
+    if profile is None:
+        env.io.err(f"no such profile {name!r}")
+        return 1
+    folder = os.path.abspath(os.path.expanduser(args.folder))
+    profile.drive_redirect = True # emit /drive:HeDE,<folder> even if the profile disabled it
+    if args.dry_run:
+        from gest.core.rdp import commands
+        env.io.out(" ".join(commands.build_argv(profile, share_path=folder, from_stdin=False)))
+        return 0
+    return env.launch_fn(profile, share_path=folder)
+
+
 def cmd_open_file(args, env: GangwayEnv) -> int:
     try:
         profile = rdptarget.profile_from_target(args.target)
@@ -260,6 +285,7 @@ def cmd_unregister_handler(args, env: GangwayEnv) -> int:
 COMMANDS: dict[str, Callable[..., int]] = {
     "list": cmd_list, "add": cmd_add, "rm": cmd_rm, "show": cmd_show,
     "set-password": cmd_set_password, "install": cmd_install, "open": cmd_open,
+    "share": cmd_share,
     "open-file": cmd_open_file, "register-handler": cmd_register_handler,
     "unregister-handler": cmd_unregister_handler,
     "import": cmd_import, "export": cmd_export, "discover": cmd_discover,
@@ -303,6 +329,13 @@ def build_parser() -> argparse.ArgumentParser:
                         help="override: connect in a window")
     screen.add_argument("--fullscreen", action="store_true",
                         help="override: connect fullscreen")
+
+    sh = sub.add_parser("share", help="open a session sharing a local folder (RDP drive)")
+    sh.add_argument("folder")
+    sh.add_argument("--profile", default="",
+                    help="profile to use (default: the only saved profile)")
+    sh.add_argument("--dry-run", action="store_true",
+                    help="print the FreeRDP command instead of launching")
 
     of = sub.add_parser("open-file", help="launch a .rdp file or rdp:// URI ad-hoc")
     of.add_argument("target", help="a .rdp file path, a file:// URL, or an rdp:// URI")
