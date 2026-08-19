@@ -99,8 +99,8 @@ _MINIMAL_LABELS = [
     "Partition the disk", "Make filesystems", "Mount the target",
     "Unpack the stage3 tarball", "Generate /etc/fstab", "Write make.conf",
     "Prepare the chroot", "Sync the Portage tree", "Select the profile",
-    "Emerge @world", "Install kernel sources", "Build the kernel",
-    "Install the bootloader",
+    "Emerge @world", "Install kernel sources", "Stage the kernel config",
+    "Build the kernel", "Install the bootloader",
     "Install the m1n1 boot stub", "Set the root password",
 ]
 

@@ -19,6 +19,7 @@ from gest.core.bootloader.install import InstallConfig
 from gest.core.disk import mount as disk_mount
 from gest.core.disk import provision
 from gest.core.install.plan import InstallPlan, NetworkSpec, UserSpec
+from gest.core.kernel import config as kconfig
 from gest.core.kernel.build import BuildConfig
 from gest.core.network import netifrc, resolv
 from gest.core.stage3 import index
@@ -222,7 +223,14 @@ def assemble_plan(sel: InstallSelections, stage3: Stage3Selection) -> InstallPla
         # provides plymouth + the HeDE theme the genkernel/GRUB steps need.
         kernel=BuildConfig(
             method=sel.kernel_method, jobs=sel.kernel_jobs,
-            initramfs=sel.kernel_initramfs, plymouth=use_seamless),
+            initramfs=sel.kernel_initramfs, plymouth=use_seamless,
+            # genkernel's default config lacks virtio etc., so a VM install can't
+            # find its root disk. Point it at the curated per-arch config the
+            # installer ships (staged into the target by StageKernelConfig) when
+            # one exists for this arch; else fall back to genkernel's default.
+            kernel_config=(kconfig.TARGET_KERNEL_CONFIG
+                           if sel.kernel_method == "genkernel"
+                           and kconfig.bundled_config(arch) is not None else "")),
         bootloader=InstallConfig(
             firmware=sel.firmware, efi_directory=sel.efi_directory, disk=sel.boot_disk,
             # The bootloader step runs chrooted into the target (native paths),
