@@ -134,9 +134,9 @@ def set_boot_sync_text(existing: str, on: bool) -> str:
                     len(lines))
     for k in range(boot_start + 1, boot_end):  # replace an existing key in place
         if re.match(r"\s*sync_with_biome\s*=", lines[k]):
-            return "\n".join(lines[:k] + [newline] + lines[k + 1:]) + "\n"
+            return "\n".join([*lines[:k], newline, *lines[k + 1:]]) + "\n"
     # section present but key absent → insert right after the header
-    return "\n".join(lines[:boot_start + 1] + [newline] + lines[boot_start + 1:]) + "\n"
+    return "\n".join([*lines[:boot_start + 1], newline, *lines[boot_start + 1:]]) + "\n"
 
 
 def write_boot_sync(path: str, on: bool) -> None:
