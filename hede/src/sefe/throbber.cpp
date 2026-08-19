@@ -4,35 +4,25 @@
 
 #include <QMouseEvent>
 #include <QPainter>
-#include <QPainterPath>
 #include <QPalette>
-#include <QRandomGenerator>
+#include <QRadialGradient>
 #include <QTimer>
 #include <QtMath>
 
 namespace helm::sefe {
 namespace {
 
-constexpr int kFrameMs = 33;      // ~30 fps
+constexpr int kFrameMs = 33;       // ~30 fps
 constexpr int kMinVisibleMs = 550; // deliberate throb even for instant work
-constexpr qreal kSpinMax = 8.0;   // deg/frame ≈ 0.67 rev/s — a readable spin
-constexpr qreal kEase = 0.14;     // spin ease-in / wind-down
-
-// Linear blend of two colours (including alpha) by t in [0,1].
-QColor mix(const QColor &a, const QColor &b, qreal t) {
-    t = qBound(0.0, t, 1.0);
-    return QColor::fromRgbF(a.redF() + (b.redF() - a.redF()) * t,
-                            a.greenF() + (b.greenF() - a.greenF()) * t,
-                            a.blueF() + (b.blueF() - a.blueF()) * t,
-                            a.alphaF() + (b.alphaF() - a.alphaF()) * t);
-}
+constexpr qreal kSpinMax = 7.0;    // deg/frame ≈ 0.58 rev/s — a stately spin
+constexpr qreal kEase = 0.12;      // spin ease-in / wind-down
 
 } // namespace
 
 HelmThrobber::HelmThrobber(QWidget *parent) : QWidget(parent) {
     setCursor(Qt::PointingHandCursor);
     setToolTip(QStringLiteral("Seahorse"));
-    setAttribute(Qt::WA_Hover);
+    _emblem = QImage(QStringLiteral(":/seahorse/emblem.png"));
     _timer = new QTimer(this);
     _timer->setInterval(kFrameMs);
     connect(_timer, &QTimer::timeout, this, &HelmThrobber::tick);
@@ -47,10 +37,31 @@ QColor HelmThrobber::accent() const {
     return a;
 }
 
-QColor HelmThrobber::glyph() const {
-    QColor g = palette().color(QPalette::WindowText);
-    g.setAlpha(130); // idle wheel rests dim — it's just a mark
-    return g;
+// Colourise the neutral grayscale emblem to `accent()` while keeping its
+// luminance (glowing metal in the biome colour), then scale to `px`. Standard
+// recolour recipe: multiply the accent through, then re-intersect the alpha.
+const QPixmap &HelmThrobber::tinted(int px) {
+    const QColor acc = accent();
+    if (!_tinted.isNull() && _tintedFor == acc && _tintedPx == px)
+        return _tinted;
+    if (_emblem.isNull()) { // no art embedded — leave the cache null
+        _tinted = QPixmap();
+        _tintedFor = acc;
+        _tintedPx = px;
+        return _tinted;
+    }
+    QImage img = _emblem.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+    QPainter p(&img);
+    p.setCompositionMode(QPainter::CompositionMode_Multiply);
+    p.fillRect(img.rect(), acc);
+    p.setCompositionMode(QPainter::CompositionMode_DestinationIn);
+    p.drawImage(0, 0, _emblem); // restore the original (luminance) alpha
+    p.end();
+    _tinted = QPixmap::fromImage(
+        img.scaled(px, px, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    _tintedFor = acc;
+    _tintedPx = px;
+    return _tinted;
 }
 
 void HelmThrobber::begin(const QString &activity) {
@@ -59,7 +70,6 @@ void HelmThrobber::begin(const QString &activity) {
     ++_busy;
     if (!_timer->isActive()) {
         _shownSince.start();
-        _sinceSpawn = 1000; // let the first star appear promptly
         _timer->start();
     }
 }
@@ -71,32 +81,7 @@ void HelmThrobber::end() {
         setToolTip(QStringLiteral("Seahorse"));
         _activity.clear();
     }
-    // tick() handles settling (honours the minimum-visible span + star cleanup).
-}
-
-void HelmThrobber::maybeSpawnStar() {
-    const int interval = _intensity == Intensity::Lively ? 9 : 16; // frames
-    const int cap = _intensity == Intensity::Lively ? 3 : 2;
-    if (++_sinceSpawn < interval || _stars.size() >= cap)
-        return;
-    // A little jitter so the field never feels metronomic.
-    if (QRandomGenerator::global()->bounded(100) < 35)
-        return;
-    _sinceSpawn = 0;
-
-    const qreal w = width(), h = height();
-    auto *rng = QRandomGenerator::global();
-    // Shooting stars fall top-left → bottom-right across the sky behind the
-    // wheel, at a shallow diagonal, each a touch different.
-    const qreal ang = qDegreesToRadians(18.0 + rng->bounded(24)); // 18–42°
-    const qreal speed = (w / 9.0) * (0.85 + rng->generateDouble() * 0.4);
-    Star s;
-    s.pos = QPointF(rng->generateDouble() * w * 0.5 - w * 0.15,   // start off/near left
-                    rng->generateDouble() * h * 0.5 - h * 0.1);   // upper band
-    s.vel = QPointF(std::cos(ang) * speed, std::sin(ang) * speed);
-    s.life = 1.0;
-    s.len = w * (0.45 + rng->generateDouble() * 0.25);
-    _stars.push_back(s);
+    // tick() handles settling (honours the minimum-visible span).
 }
 
 void HelmThrobber::tick() {
@@ -106,27 +91,12 @@ void HelmThrobber::tick() {
     const qreal target = _spinning ? kSpinMax : 0.0;
     _spin += (target - _spin) * kEase;
     _angle = std::fmod(_angle + _spin, 360.0);
-
     if (_spinning)
-        maybeSpawnStar();
-
-    // Advance + cull stars.
-    const QRectF bounds = rect().adjusted(-width() * 0.3, -height() * 0.3,
-                                          width() * 0.3, height() * 0.3);
-    for (int i = _stars.size() - 1; i >= 0; --i) {
-        Star &s = _stars[i];
-        s.pos += s.vel;
-        s.life -= 0.11;
-        if (s.life <= 0.0 || !bounds.contains(s.pos))
-            _stars.remove(i);
-    }
+        _pulse += 0.12; // bloom breathes while working
 
     update();
-    stopIfSettled();
-}
 
-void HelmThrobber::stopIfSettled() {
-    if (!_spinning && _spin < 0.05 && _stars.isEmpty()) {
+    if (!_spinning && _spin < 0.05) { // settled — rest
         _spin = 0.0;
         _shownSince.invalidate();
         _timer->stop();
@@ -137,66 +107,48 @@ void HelmThrobber::stopIfSettled() {
 void HelmThrobber::paintEvent(QPaintEvent *) {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing, true);
+    p.setRenderHint(QPainter::SmoothPixmapTransform, true);
 
     const QPointF c(width() / 2.0, height() / 2.0);
-    const qreal R = std::min(width(), height()) / 2.0 - 2.0;
+    const qreal alive = qBound(0.0, _spin / kSpinMax, 1.0);
     const QColor acc = accent();
 
-    // --- shooting stars, behind the wheel ---
-    for (const Star &s : _stars) {
-        const QPointF tail = s.pos - s.vel / std::hypot(s.vel.x(), s.vel.y()) * s.len;
-        QLinearGradient g(tail, s.pos);
-        QColor head = acc;
-        head.setAlphaF(s.life * (_intensity == Intensity::Lively ? 0.75 : 0.55));
-        QColor faint = acc;
-        faint.setAlpha(0);
-        g.setColorAt(0.0, faint);
-        g.setColorAt(1.0, head);
-        QPen sp(QBrush(g), 1.6);
-        sp.setCapStyle(Qt::RoundCap);
-        p.setPen(sp);
-        p.drawLine(tail, s.pos);
-        // bright head dot
+    // --- accent bloom behind the emblem, breathing while busy ---
+    if (alive > 0.01) {
+        const qreal base = _intensity == Intensity::Lively ? 0.42 : 0.28;
+        const qreal breathe = 0.5 + 0.5 * std::sin(_pulse);
+        const qreal a = alive * base * (0.55 + 0.45 * breathe);
+        const qreal r = std::min(width(), height()) * 0.62;
+        QRadialGradient g(c, r);
+        QColor glow = acc;
+        glow.setAlphaF(a);
+        g.setColorAt(0.0, glow);
+        glow.setAlphaF(0.0);
+        g.setColorAt(1.0, glow);
+        p.setCompositionMode(QPainter::CompositionMode_Plus);
+        p.fillRect(rect(), g);
+        p.setCompositionMode(QPainter::CompositionMode_SourceOver);
+    }
+
+    // --- the emblem: rotate while busy, rest dim + still when idle ---
+    const qreal dpr = devicePixelRatioF();
+    const int px = int(std::min(width(), height()) * dpr);
+    const QPixmap &pm = tinted(px);
+    if (!pm.isNull()) {
+        p.save();
+        p.translate(c);
+        p.rotate(_angle);
+        p.setOpacity(0.45 + 0.55 * alive); // idle rests dim; brightens as it spins
+        const qreal w = pm.width() / dpr, h = pm.height() / dpr;
+        p.drawPixmap(QRectF(-w / 2.0, -h / 2.0, w, h), pm, pm.rect());
+        p.restore();
+    } else { // no art embedded — a dim accent dot so the berth is never empty
+        p.setBrush(acc);
         p.setPen(Qt::NoPen);
-        p.setBrush(head);
-        p.drawEllipse(s.pos, 1.3, 1.3);
+        p.setOpacity(0.4 + 0.6 * alive);
+        const qreal r = std::min(width(), height()) * 0.28;
+        p.drawEllipse(c, r, r);
     }
-
-    // --- the Helm (ship's wheel) ---
-    // Colour eases from the dim idle glyph toward the biome accent as it spins.
-    const qreal alive = qBound(0.0, _spin / kSpinMax, 1.0);
-    const QColor wheel = mix(glyph(), acc, alive);
-
-    p.save();
-    p.translate(c);
-    p.rotate(_angle);
-
-    const qreal rimR = R * 0.72; // rim radius
-    const qreal hubR = R * 0.18; // hub radius
-    QPen rimPen(wheel, std::max<qreal>(1.4, R * 0.14));
-    rimPen.setCapStyle(Qt::RoundCap);
-
-    // rim
-    p.setPen(rimPen);
-    p.setBrush(Qt::NoBrush);
-    p.drawEllipse(QPointF(0, 0), rimR, rimR);
-
-    // eight spokes + handle pegs sticking out past the rim
-    QPen spokePen(wheel, std::max<qreal>(1.2, R * 0.11));
-    spokePen.setCapStyle(Qt::RoundCap);
-    p.setPen(spokePen);
-    for (int i = 0; i < 8; ++i) {
-        const qreal a = qDegreesToRadians(i * 45.0);
-        const QPointF dir(std::cos(a), std::sin(a));
-        p.drawLine(dir * hubR, dir * rimR);           // spoke
-        p.drawLine(dir * rimR, dir * (R * 0.98));      // handle peg
-    }
-
-    // hub
-    p.setPen(Qt::NoPen);
-    p.setBrush(wheel);
-    p.drawEllipse(QPointF(0, 0), hubR, hubR);
-    p.restore();
 }
 
 void HelmThrobber::mouseReleaseEvent(QMouseEvent *e) {
