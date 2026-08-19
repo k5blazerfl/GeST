@@ -42,7 +42,7 @@ install(DIRECTORY data/labwc data/wayfire data/grub
 # regenerates a per-user copy under ~/.local/share/themes that shadows this one.
 install(DIRECTORY data/themes
         DESTINATION ${CMAKE_INSTALL_PREFIX}/share)
-# The Plymouth boot splash (the ship's helm on Harbor navy). Installed by the
+# The Plymouth boot splash (the Harbor scene).  Installed by the
 # package so it exists in stage1 — catalyst's genkernel bakes it into the livecd
 # initramfs (build_kernel runs before the root overlay), and the installer points
 # an installed system's boot splash at it too.
