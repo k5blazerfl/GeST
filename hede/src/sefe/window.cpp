@@ -2,6 +2,7 @@
 
 #include "addressbar.h"
 #include "desktopentry.h" // helm-apps: scan + Exec argv (Open with)
+#include "iconprovider.h"
 #include "launch.h"       // helm-common: launchDetached
 #include "ops.h"
 #include "sefe.h"
@@ -30,6 +31,7 @@
 #include <QLocale>
 #include <QMenu>
 #include <QMimeData>
+#include <QMimeDatabase>
 #include <QModelIndex>
 #include <QSet>
 #include <QShortcut>
@@ -60,6 +62,8 @@ SefeWindow::SefeWindow(QWidget *parent) : QMainWindow(parent) {
     // accident; F2 / context-menu "Rename" call view->edit() explicitly.
     _model = new QFileSystemModel(this);
     _model->setReadOnly(false);
+    _iconProvider = new ThumbnailIconProvider;
+    _model->setIconProvider(_iconProvider); // image thumbnails; not owned by the model
     _model->setRootPath(initialDir());
 
     // --- toolbar: navigation + view toggle + address bar ---
@@ -123,6 +127,11 @@ SefeWindow::SefeWindow(QWidget *parent) : QMainWindow(parent) {
     _drydockAct = op(QStringLiteral("Run in Drydock"), QKeySequence(), &SefeWindow::runInDrydock);
     _shareAct = op(QStringLiteral("Share this folder to the session"), QKeySequence(),
                    &SefeWindow::shareFolder);
+    _copyPathAct = op(QStringLiteral("Copy location"),
+                      QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_C), &SefeWindow::copyPaths);
+    auto *selectAllAct = op(QStringLiteral("Select all"), QKeySequence::SelectAll, nullptr);
+    connect(selectAllAct, &QAction::triggered, this,
+            [this] { if (auto *v = activeView()) v->selectAll(); });
 
     // --- details + icons views over the shared model ---
     auto initView = [this](QAbstractItemView *v) {
@@ -142,10 +151,26 @@ SefeWindow::SefeWindow(QWidget *parent) : QMainWindow(parent) {
     _details->sortByColumn(0, Qt::AscendingOrder);
     _details->setColumnWidth(0, 320);
     _details->header()->setStretchLastSection(true);
+    // Right-click the header to show/hide columns (Name stays).
+    _details->header()->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(_details->header(), &QWidget::customContextMenuRequested, this,
+            [this](const QPoint &p) {
+                QMenu menu(this);
+                for (int col = 1; col < _model->columnCount(); ++col) {
+                    QAction *a = menu.addAction(
+                        _model->headerData(col, Qt::Horizontal).toString());
+                    a->setCheckable(true);
+                    a->setChecked(!_details->isColumnHidden(col));
+                    connect(a, &QAction::toggled, this,
+                            [this, col](bool on) { _details->setColumnHidden(col, !on); });
+                }
+                menu.exec(_details->header()->mapToGlobal(p));
+            });
 
     _icons = new QListView(this);
     initView(_icons);
     _icons->setViewMode(QListView::IconMode);
+    _icons->setIconSize(QSize(64, 64)); // room for image thumbnails
     _icons->setResizeMode(QListView::Adjust);
     _icons->setWrapping(true);
     _icons->setSpacing(12);
@@ -182,6 +207,11 @@ SefeWindow::SefeWindow(QWidget *parent) : QMainWindow(parent) {
 
     statusBar();
     navigateTo(initialDir());
+}
+
+SefeWindow::~SefeWindow() {
+    _model->setIconProvider(nullptr); // stop the model using it before we free it
+    delete _iconProvider;
 }
 
 // --- navigation ---
@@ -373,12 +403,35 @@ void SefeWindow::openWith() {
         QStringLiteral("Open “%1” with:").arg(QFileInfo(file).fileName()), &dlg));
 
     auto *list = new QListWidget(&dlg);
-    QList<helm::DesktopEntry> apps; // parallel to the rows below
-    for (const helm::DesktopEntry &e : helm::scanDesktopEntries(helm::defaultApplicationDirs())) {
-        if (e.noDisplay || e.hidden || e.exec.isEmpty())
-            continue;
+    const QVector<helm::DesktopEntry> entries =
+        helm::scanDesktopEntries(helm::defaultApplicationDirs());
+    const QString mime = QMimeDatabase().mimeTypeForFile(file).name();
+
+    QList<helm::DesktopEntry> apps; // selectable rows; item UserRole = index here
+    auto valid = [](const helm::DesktopEntry &e) {
+        return !e.noDisplay && !e.hidden && !e.exec.isEmpty();
+    };
+    auto addApp = [&](const helm::DesktopEntry &e) {
+        auto *it = new QListWidgetItem(QIcon::fromTheme(e.icon), e.name, list);
+        it->setData(Qt::UserRole, apps.size());
         apps.push_back(e);
-        new QListWidgetItem(QIcon::fromTheme(e.icon), e.name, list);
+    };
+    // Recommended (declared handlers for this file's MIME type) first...
+    QSet<QString> recommended;
+    for (const helm::DesktopEntry &e : helm::handlersForMimeType(entries, mime)) {
+        if (valid(e)) {
+            addApp(e);
+            recommended.insert(e.id);
+        }
+    }
+    // ...then a non-selectable divider and every other app.
+    if (!apps.isEmpty()) {
+        auto *sep = new QListWidgetItem(QStringLiteral("— All applications —"), list);
+        sep->setFlags(Qt::NoItemFlags);
+    }
+    for (const helm::DesktopEntry &e : entries) {
+        if (valid(e) && !recommended.contains(e.id))
+            addApp(e);
     }
     layout->addWidget(list);
 
@@ -390,10 +443,11 @@ void SefeWindow::openWith() {
 
     if (dlg.exec() != QDialog::Accepted)
         return;
-    const int row = list->currentRow();
-    if (row < 0 || row >= apps.size())
-        return;
-    QStringList argv = helm::commandArgv(apps.at(row));
+    QListWidgetItem *chosen = list->currentItem();
+    const QVariant which = chosen ? chosen->data(Qt::UserRole) : QVariant();
+    if (!which.isValid())
+        return; // nothing selected, or the divider
+    QStringList argv = helm::commandArgv(apps.at(which.toInt()));
     if (argv.isEmpty())
         return;
     argv.append(file); // commandArgv strips %f/%u — append the target ourselves
@@ -415,6 +469,12 @@ void SefeWindow::shareFolder() {
     helm::launchDetached(QStringLiteral("gangway"), {QStringLiteral("share"), folder});
 }
 
+void SefeWindow::copyPaths() {
+    const QStringList sel = selectedPaths();
+    if (!sel.isEmpty())
+        QApplication::clipboard()->setText(sel.join(QLatin1Char('\n')));
+}
+
 void SefeWindow::showContextMenu(QAbstractItemView *view, const QPoint &pos) {
     const QModelIndex idx = view->indexAt(pos);
     QMenu menu(this);
@@ -431,6 +491,7 @@ void SefeWindow::showContextMenu(QAbstractItemView *view, const QPoint &pos) {
         menu.addSeparator();
         menu.addAction(_cutAct);
         menu.addAction(_copyAct);
+        menu.addAction(_copyPathAct);
         menu.addSeparator();
         menu.addAction(_renameAct);
         menu.addAction(_deleteAct);

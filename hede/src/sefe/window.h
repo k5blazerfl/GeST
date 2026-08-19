@@ -16,6 +16,7 @@ class QTreeView;
 namespace helm::sefe {
 
 class AddressBar;
+class ThumbnailIconProvider;
 
 // The SeFE main window. Slice 3 "Operations": read/write now — the full
 // keyboard contract (F2 rename, Del → Trash, Ctrl+C/X/V, Ctrl+Shift+N new
@@ -26,6 +27,7 @@ class SefeWindow : public QMainWindow {
     Q_OBJECT
 public:
     explicit SefeWindow(QWidget *parent = nullptr);
+    ~SefeWindow() override;
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
@@ -51,12 +53,14 @@ private:
     void openWith();
     void runInDrydock();  // .exe/.msi/.lnk → drydock open
     void shareFolder();   // a folder → gangway share (RDP drive)
+    void copyPaths();     // selected paths → clipboard as text
     void showContextMenu(QAbstractItemView *view, const QPoint &pos);
 
     QAbstractItemView *activeView() const;
     QStringList selectedPaths() const;
 
     QFileSystemModel *_model = nullptr;
+    ThumbnailIconProvider *_iconProvider = nullptr; // owned; outlives the model
     QTreeView *_details = nullptr;
     QListView *_icons = nullptr;
     QListWidget *_places = nullptr;
@@ -78,6 +82,7 @@ private:
     QAction *_openWithAct = nullptr;
     QAction *_drydockAct = nullptr;
     QAction *_shareAct = nullptr;
+    QAction *_copyPathAct = nullptr;
 
     QString _current;
     QStringList _history;

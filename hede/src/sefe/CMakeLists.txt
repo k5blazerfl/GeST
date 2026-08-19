@@ -4,7 +4,7 @@ qt_add_library(sefe-lib STATIC sefe.cpp ops.cpp)
 target_include_directories(sefe-lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(sefe-lib PUBLIC Qt6::Core)
 
-qt_add_executable(sefe main.cpp window.cpp addressbar.cpp)
+qt_add_executable(sefe main.cpp window.cpp addressbar.cpp iconprovider.cpp)
 target_link_libraries(sefe PRIVATE
     Qt6::Widgets
     sefe-lib
