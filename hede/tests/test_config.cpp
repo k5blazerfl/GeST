@@ -12,7 +12,7 @@ private slots:
         QTemporaryDir dir;
         const QString path = dir.filePath(QStringLiteral("hede.conf"));
         const helm::Config cfg(path);
-        QCOMPARE(cfg.panelHeight(), 32);
+        QCOMPARE(cfg.panelHeight(), 46); // tokens.bar.height
         QCOMPARE(cfg.terminalCommand(), QStringLiteral("foot"));
     }
     void overrides() {
