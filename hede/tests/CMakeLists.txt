@@ -57,6 +57,10 @@ qt_add_executable(test-world test_world.cpp)
 target_link_libraries(test-world PRIVATE Qt6::Test helm-theme-lib)
 add_test(NAME world COMMAND test-world)
 
+qt_add_executable(test-sefe test_sefe.cpp)
+target_link_libraries(test-sefe PRIVATE Qt6::Test sefe-lib)
+add_test(NAME sefe COMMAND test-sefe)
+
 qt_add_executable(test-nineslice test_nineslice.cpp)
 target_link_libraries(test-nineslice PRIVATE Qt6::Test Qt6::Gui helm-theme-lib)
 add_test(NAME nineslice COMMAND test-nineslice)

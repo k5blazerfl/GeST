@@ -28,6 +28,7 @@ add_subdirectory(src/panel)
 add_subdirectory(src/menu)
 add_subdirectory(src/bg)
 add_subdirectory(src/notify)
+add_subdirectory(src/sefe)
 add_subdirectory(tests)
 
 # --- data / session files ---------------------------------------------------
@@ -36,6 +37,11 @@ install(PROGRAMS src/session/helm-session
 install(FILES data/wayland-sessions/hede.desktop
               data/wayland-sessions/hede-effects.desktop
         DESTINATION ${CMAKE_INSTALL_PREFIX}/share/wayland-sessions)
+# Application launchers (the first per-app .desktop HeDE ships): helm-menu
+# discovers these via the XDG app dirs; sefe also registers as the folder
+# (inode/directory) handler.
+install(FILES data/applications/sefe.desktop
+        DESTINATION ${CMAKE_INSTALL_PREFIX}/share/applications)
 install(DIRECTORY data/labwc data/wayfire data/grub data/worlds
         DESTINATION ${CMAKE_INSTALL_PREFIX}/share/hede)
 # The Helm labwc titlebar theme lands in the XDG theme search path
