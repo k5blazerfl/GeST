@@ -46,7 +46,19 @@ def grub_mkconfig_argv(
 ) -> list[str]:
     if not _valid_path(output):
         raise ValueError(f"invalid output path: {output!r}")
-    return [grub_mkconfig, "-o", output]
+    # Write via a shell stdout-redirect rather than grub-mkconfig's own ``-o``. Inside
+    # the long-running installer, ``grub-mkconfig -o`` has produced a **0-byte**
+    # grub.cfg — leaving a system that drops to the GRUB rescue prompt on boot —
+    # even though the identical command run standalone always works; ``-o`` does its
+    # own ``exec >tmp`` + rename, and that internal redirect is what comes up empty.
+    # Redirecting stdout ourselves sidesteps it. Then: retry once, and only commit a
+    # NON-empty result (``test -s``) — so an empty config fails the step loudly
+    # instead of silently shipping an unbootable install (installer bug #13).
+    tmp = f"{output}.gest-new"
+    script = (f"{grub_mkconfig} >{tmp} 2>/dev/null; "
+              f"test -s {tmp} || {grub_mkconfig} >{tmp} 2>/dev/null; "
+              f"test -s {tmp} && mv -f {tmp} {output}")
+    return ["sh", "-c", script]
 
 
 def grub_install_argv(
