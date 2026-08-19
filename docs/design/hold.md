@@ -13,11 +13,12 @@ SeFE gains archive browsing *via the shared Hold engine* · Depends on:
 > backed by a shared engine both apps speak. Hold-the-app owns the heavy path
 > (passwords, formats, create wizard); Seahorse owns the everyday path.
 
-## Seahorse is the main support ship
+## Seahorse is a capital ship
 
-Seahorse is not the flagship — it is the **fleet's main support ship**, and its
-importance must not be understated. It is where the user actually *lives*, and
-the other vessels dock at it rather than the reverse:
+Seahorse is not the flagship — but it is a **capital ship** of the fleet, and its
+importance must not be understated (a fleet has several capital ships that aren't
+the one the admiral sails on). It is where the user actually *lives*, and the
+other vessels dock at it rather than the reverse:
 
 - **Drydock** — double-click a Windows `.exe` in SeFE → runs in Drydock.
 - **Gangway** — right-click a folder → shared into the RDP session.
@@ -26,7 +27,7 @@ the other vessels dock at it rather than the reverse:
 So SeFE is HeDE's **integration hub**. Every "I have a *thing*, do the right
 action" flows through it. That is why Hold integrates *tightly* — a loose
 "opens in another window" handoff would waste the hub. The tighter Hold binds to
-the support ship, the more the whole fleet feels like one vessel.
+the capital ship, the more the whole fleet feels like one vessel.
 
 ## The tight model: archives are folders
 
