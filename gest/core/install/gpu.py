@@ -10,6 +10,8 @@ blacklists nouveau — what a Wayland/HeDE desktop needs on a modern GeForce car
 
 from __future__ import annotations
 
+import re
+
 from gest.core.install.plan import GpuSpec
 
 #: The ``package.license`` fragment GeST owns for GPU/firmware atoms (a file inside
@@ -64,3 +66,48 @@ def modprobe_conf() -> str:
         "blacklist nouveau\n"
         "options nvidia_drm modeset=1 fbdev=1\n"
     )
+
+
+#: Kernel cmdline args for the NVIDIA proprietary stack. The modprobe.d file above
+#: only takes effect once the real root is mounted, but genkernel builds the
+#: initramfs BEFORE the driver is installed — so without a cmdline blacklist nouveau
+#: can still bind the card during early boot. These force the blacklist + DRM KMS
+#: from the very first stage.
+NVIDIA_CMDLINE = (
+    "rd.driver.blacklist=nouveau modprobe.blacklist=nouveau "
+    "nvidia_drm.modeset=1 nvidia_drm.fbdev=1"
+)
+#: The /etc/default/grub key the args merge into (applies to every boot entry).
+GRUB_CMDLINE_KEY = "GRUB_CMDLINE_LINUX"
+
+
+def kernel_cmdline(gpu: GpuSpec) -> str:
+    """Extra kernel cmdline args this GPU needs — the nouveau-blacklist + modeset
+    for the NVIDIA proprietary stack; ``""`` otherwise (in-kernel amdgpu/i915 need
+    no cmdline coaxing)."""
+    return NVIDIA_CMDLINE if gpu.nvidia_proprietary else ""
+
+
+def apply_gpu_cmdline(existing: str, gpu: GpuSpec) -> str:
+    """Merge :func:`kernel_cmdline` into ``GRUB_CMDLINE_LINUX`` in an
+    ``/etc/default/grub`` body, appending (deduped) to any existing value and
+    rewriting the line in place; appends the key if absent. Idempotent, and a no-op
+    when the GPU needs no args — so re-running an install never doubles the args."""
+    args = kernel_cmdline(gpu)
+    if not args:
+        return existing
+    want = args.split()
+    key_re = re.compile(rf'^\s*#?\s*{GRUB_CMDLINE_KEY}=(?:"(.*)"|(.*))\s*$')
+    lines = existing.split("\n")
+    for i, line in enumerate(lines):
+        m = key_re.match(line)
+        if m:
+            cur = (m.group(1) if m.group(1) is not None else m.group(2)).split()
+            merged = cur + [a for a in want if a not in cur]
+            lines[i] = f'{GRUB_CMDLINE_KEY}="{" ".join(merged)}"'
+            return "\n".join(lines)
+    if lines and lines[-1].strip():
+        lines.append("")
+    lines.append("# GPU cmdline — managed by GeST")
+    lines.append(f'{GRUB_CMDLINE_KEY}="{" ".join(want)}"')
+    return "\n".join(lines)

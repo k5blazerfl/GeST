@@ -680,6 +680,20 @@ class InstallGpuDrivers(FuncStep):
         if spec.nvidia_proprietary:
             path = write_under_root(ctx.root, gpu.MODPROBE_CONF, gpu.modprobe_conf())
             _emit(on_progress, f"wrote {path} (nvidia_drm KMS + nouveau blacklist)")
+        # Also put the blacklist + modeset on the kernel cmdline: genkernel built the
+        # initramfs before this step, so a modprobe.d file alone can't stop nouveau
+        # binding during early boot. Merged into /etc/default/grub now, before
+        # InstallBootloader runs grub-mkconfig. (No-op for non-NVIDIA GPUs.)
+        if gpu.kernel_cmdline(spec):
+            grub_path = "/etc/default/grub"
+            existing = ""
+            try:
+                with open(rootpath.resolve(ctx.root, grub_path), encoding="utf-8") as fh:
+                    existing = fh.read()
+            except OSError:
+                pass
+            gp = write_under_root(ctx.root, grub_path, gpu.apply_gpu_cmdline(existing, spec))
+            _emit(on_progress, f"wrote {gp} (nouveau blacklist + nvidia_drm.modeset cmdline)")
         ctx.state.mark(self)
 
     async def is_satisfied(self, ctx: InstallContext) -> bool:

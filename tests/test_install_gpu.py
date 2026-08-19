@@ -82,6 +82,42 @@ def test_modprobe_conf_enables_kms_and_blacklists_nouveau():
     assert "options nvidia_drm modeset=1 fbdev=1" in conf
 
 
+def test_kernel_cmdline_nvidia_only():
+    nv = gpu.kernel_cmdline(GpuSpec(video_cards=("nvidia",), nvidia_proprietary=True))
+    assert "modprobe.blacklist=nouveau" in nv and "nvidia_drm.modeset=1" in nv
+    assert gpu.kernel_cmdline(GpuSpec(video_cards=("amdgpu",))) == ""
+
+
+def test_apply_gpu_cmdline_appends_and_is_idempotent():
+    spec = GpuSpec(video_cards=("nvidia",), nvidia_proprietary=True)
+    out = gpu.apply_gpu_cmdline('GRUB_CMDLINE_LINUX="rootflags=x"\n', spec)
+    line = next(ln for ln in out.splitlines() if ln.startswith("GRUB_CMDLINE_LINUX="))
+    assert "rootflags=x" in line and "nvidia_drm.modeset=1" in line
+    # re-running does not double the args
+    assert gpu.apply_gpu_cmdline(out, spec) == out
+
+
+def test_apply_gpu_cmdline_adds_key_when_absent():
+    out = gpu.apply_gpu_cmdline("# empty grub default\n",
+                                GpuSpec(video_cards=("nvidia",), nvidia_proprietary=True))
+    assert 'GRUB_CMDLINE_LINUX="' in out and "nvidia_drm.modeset=1" in out
+
+
+def test_apply_gpu_cmdline_noop_for_non_nvidia():
+    body = 'GRUB_CMDLINE_LINUX=""\n'
+    assert gpu.apply_gpu_cmdline(body, GpuSpec(video_cards=("amdgpu",))) == body
+
+
+def test_resolve_gpu_hybrid_amd_igpu_plus_nvidia_dgpu():
+    # the 9900X3D has an RDNA2 iGPU alongside the 4070 Ti Super — both must land in
+    # VIDEO_CARDS, and the presence of NVIDIA still opts into the proprietary stack.
+    spec = resolve_gpu(_lspci(
+        "05:00.0 VGA compatible controller: Advanced Micro Devices [AMD/ATI] Raphael",
+        "01:00.0 VGA compatible controller: NVIDIA Corporation AD103 [GeForce RTX 4070 Ti]"))
+    assert "amdgpu" in spec.video_cards and "nvidia" in spec.video_cards
+    assert spec.nvidia_proprietary is True
+
+
 # --- assemble → GpuSpec + auto-detect ---------------------------------------
 
 def test_assemble_nvidia_proprietary_implies_a_nvidia_token():
@@ -170,6 +206,9 @@ def test_install_gpu_drivers_nvidia(tmp_path):
     assert ["emerge", "--color", "n", "@module-rebuild"] in inner
     # modprobe.d modeset/blacklist dropped
     assert "options nvidia_drm modeset=1 fbdev=1" in Path(root + gpu.MODPROBE_CONF).read_text()
+    # kernel cmdline hardening written to /etc/default/grub
+    grub = Path(root, "etc", "default", "grub").read_text()
+    assert "modprobe.blacklist=nouveau" in grub and "nvidia_drm.modeset=1" in grub
     assert asyncio.run(step.is_satisfied(ctx)) is True   # marked done
 
 
@@ -184,3 +223,4 @@ def test_install_gpu_drivers_firmware_only(tmp_path):
     assert not any("nvidia-drivers" in tok for argv in inner for tok in argv)
     assert ["emerge", "--color", "n", "@module-rebuild"] not in inner
     assert not os.path.exists(root + gpu.MODPROBE_CONF)
+    assert not os.path.exists(os.path.join(root, "etc", "default", "grub"))  # no cmdline write

@@ -86,6 +86,7 @@ class InstallOverviewScreen(Screen):
             ("Network", self._network_value, self._edit_network),
             ("Day-2 setup", self._tier2_value, self._edit_tier2),
             ("Kernel", self._kernel_value, self._edit_kernel),
+            ("Graphics", self._gpu_value, self._edit_gpu),
             ("Bootloader", self._bootloader_value, self._edit_bootloader),
             ("Root password", self._rootpw_value, self._edit_rootpw),
         ]
@@ -113,6 +114,15 @@ class InstallOverviewScreen(Screen):
 
     def _rootpw_value(self) -> str:
         return "•••••• (set)" if self._sel.root_password else "— required —"
+
+    def _gpu_value(self) -> str:
+        if self._sel.gpu_auto:
+            return "auto-detect (lspci)"
+        if self._sel.nvidia_proprietary:
+            return "NVIDIA proprietary"
+        if self._sel.video_cards:
+            return " ".join(self._sel.video_cards)
+        return "none (firmware only)"
 
     def _tier2_value(self) -> str:
         if not self._sel.tier2:
@@ -412,6 +422,57 @@ class InstallOverviewScreen(Screen):
                       [("Save", save), ("Cancel", self.app.pop)])
         self.app.push_modal(modal, width=("relative", 68), height=("relative", 54))
 
+    def _edit_gpu(self) -> None:
+        # Modes map to (gpu_auto, video_cards, nvidia_proprietary). "Custom" reads the
+        # tokens from the edit field; "Auto" re-enables lspci detection at install time.
+        s = self._sel
+        if s.gpu_auto:
+            current = "auto"
+        elif s.nvidia_proprietary:
+            current = "nvidia"
+        elif tuple(s.video_cards) == ("nouveau",):
+            current = "nouveau"
+        elif s.video_cards:
+            current = "custom"
+        else:
+            current = "none"
+        group: list = []
+        modes = [
+            ("auto", "Auto-detect (lspci) — recommended"),
+            ("nvidia", "NVIDIA proprietary (nvidia-drivers + KMS)"),
+            ("nouveau", "nouveau (open NVIDIA driver)"),
+            ("custom", "Custom VIDEO_CARDS …"),
+            ("none", "None (firmware only, no driver)"),
+        ]
+        buttons = {key: urwid.RadioButton(group, label, state=(key == current))
+                   for key, label in modes}
+        custom = urwid.Edit("VIDEO_CARDS: ", " ".join(s.video_cards) if current == "custom" else "")
+
+        def save():
+            mode = next(k for k, b in buttons.items() if b.state)
+            if mode == "auto":
+                s.gpu_auto, s.video_cards, s.nvidia_proprietary = True, (), False
+            elif mode == "nvidia":
+                s.gpu_auto, s.video_cards, s.nvidia_proprietary = False, ("nvidia",), True
+            elif mode == "nouveau":
+                s.gpu_auto, s.video_cards, s.nvidia_proprietary = False, ("nouveau",), False
+            elif mode == "custom":
+                tokens = tuple(custom.edit_text.split())
+                s.gpu_auto = False
+                s.video_cards = tokens
+                s.nvidia_proprietary = "nvidia" in tokens
+            else:  # none
+                s.gpu_auto, s.video_cards, s.nvidia_proprietary = False, (), False
+            self.app.pop()
+            self._render()
+
+        modal = Modal(self.app, "Graphics driver",
+                      [urwid.Text(("hint", "Detected NVIDIA cards get the proprietary "
+                                   "driver; every install gets firmware.")),
+                       urwid.Divider(), *buttons.values(), urwid.Divider(), custom],
+                      [("Save", save), ("Cancel", self.app.pop)])
+        self.app.push_modal(modal, width=("relative", 70), height=("relative", 62))
+
     def _edit_bootloader(self) -> None:
         fw = urwid.Edit("Firmware (uefi/bios): ", self._sel.firmware)
         efi = urwid.Edit("ESP mount (uefi)    : ", self._sel.efi_directory)
@@ -575,10 +636,10 @@ class InstallRunScreen(Screen):
         try:
             stage3 = await self.app.run_blocking(
                 lambda: assemble.resolve_stage3(self._sel.variant))
-            # Auto-detect the GPU (lspci) unless it was set explicitly, so a detected
+            # Auto-detect the GPU (lspci) unless the user overrode it, so a detected
             # NVIDIA card gets the proprietary driver + a working Wayland/HeDE desktop
             # and every install gets firmware. Empty on a host with no detectable GPU.
-            if not self._sel.video_cards:
+            if self._sel.gpu_auto:
                 detected = await self.app.run_blocking(assemble.resolve_gpu)
                 self._sel.video_cards = detected.video_cards
                 self._sel.nvidia_proprietary = detected.nvidia_proprietary

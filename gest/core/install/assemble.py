@@ -95,6 +95,9 @@ class InstallSelections:
     # assembly), so a detected GeForce card gets a working Wayland/HeDE desktop.
     video_cards: tuple[str, ...] = ()
     nvidia_proprietary: bool = False
+    gpu_auto: bool = True               # auto-detect the GPU (lspci) at install time;
+    # False = the user overrode it in the UI, so video_cards/nvidia_proprietary are
+    # taken as-is (including an explicit "none" = empty). Not a plan field (UI-only).
     # Seamless graphical boot (GRUB Harbor theme + Plymouth splash in the initramfs).
     # Its plymouth/theme deps come from the desktop, so it only takes EFFECT when
     # install_desktop is also on (see assemble_plan) — the desktop gate is what keeps
