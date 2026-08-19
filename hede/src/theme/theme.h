@@ -41,13 +41,25 @@ QString plymouthScriptBody(const QString &accent);
 // legible neutral.
 QString grubThemeBody(const QString &accent);
 
-// Stage the boot theme for the privileged installer to pick up: writes the
-// generated hede.script + GRUB theme.txt under $XDG_DATA_HOME/hede/boot/ (user-
-// writable). A root step (GeST's ConfigureSeamlessBoot) copies these into
-// /usr/share and regenerates the initramfs — the boot splash can't repaint live
-// like the desktop, so it's staged here and applied out of band. Returns the
-// files written (empty on failure).
+// Write the generated boot theme (hede.script + GRUB theme.txt) under ``dir``,
+// as ``<dir>/plymouth/hede/hede.script`` and ``<dir>/grub/hede/theme.txt``.
+// Returns the files written (empty on failure). The privileged installer emits
+// to a root-owned dir with an explicit accent (--emit-boot-theme); the session
+// stages under $XDG_DATA_HOME (stageBootTheme).
+QStringList writeBootTheme(const QString &dir, const QString &accent);
+
+// Stage the boot theme for the privileged installer to pick up: writeBootTheme
+// under $XDG_DATA_HOME/hede/boot/ (user-writable). A root step (GeST's
+// SyncBootTheme) installs these into /usr/share + /boot and rebuilds the
+// initramfs — the boot splash can't repaint live like the desktop, so it's
+// staged here and applied out of band. Returns the files written.
 QStringList stageBootTheme(const QString &accent);
+
+// The accent the shell/boot resolve for the active session: the explicit
+// [appearance] accent if set, else the active world's accent (hede.conf
+// [world] id, default "harbor"), else the Harbor default. Mirrors the shell's
+// helm::effectiveAccent and applyThemeFromWorld's precedence.
+QString activeAccent();
 
 // Write the theme: GTK 3/4 settings.ini + (when persistAppearance) the
 // [appearance] block in hede.conf (under $XDG_CONFIG_HOME) + the Helm labwc

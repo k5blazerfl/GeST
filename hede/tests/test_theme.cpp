@@ -226,6 +226,49 @@ private slots:
                     .contains(QStringLiteral("desktop-color: \"#091b1f\"")));
     }
 
+    // writeBootTheme emits both files under an explicit dir (what the root
+    // SyncBootTheme calls via --emit-boot-theme), byte-equal to the generators.
+    void writeBootThemeToDir() {
+        QTemporaryDir dir;
+        const QStringList w = helm::writeBootTheme(dir.path(), QStringLiteral("#e8853a"));
+        QCOMPARE(w.size(), 2);
+        QFile ply(dir.filePath(QStringLiteral("plymouth/hede/hede.script")));
+        QVERIFY(ply.open(QIODevice::ReadOnly));
+        QCOMPARE(QString::fromUtf8(ply.readAll()),
+                 helm::plymouthScriptBody(QStringLiteral("#e8853a")));
+        QFile grub(dir.filePath(QStringLiteral("grub/hede/theme.txt")));
+        QVERIFY(grub.open(QIODevice::ReadOnly));
+        QCOMPARE(QString::fromUtf8(grub.readAll()),
+                 helm::grubThemeBody(QStringLiteral("#e8853a")));
+    }
+
+    // activeAccent: explicit [appearance] accent wins, else the active world's.
+    void activeAccentPrecedence() {
+        QTemporaryDir cfg, worlds;
+        qputenv("XDG_CONFIG_HOME", cfg.path().toUtf8());
+        const QString hdir = QDir(worlds.path()).filePath(QStringLiteral("harbor"));
+        QDir().mkpath(hdir);
+        {
+            QFile y(QDir(hdir).filePath(QStringLiteral("theme.yaml")));
+            QVERIFY(y.open(QIODevice::WriteOnly));
+            y.write("id: harbor\naccent: '#123456'\n");
+        }
+        qputenv("HELM_WORLDS_DIR", worlds.path().toLocal8Bit());
+        {
+            QSettings c(cfg.filePath(QStringLiteral("hede/hede.conf")), QSettings::IniFormat);
+            c.setValue(QStringLiteral("world/id"), QStringLiteral("harbor"));
+        }
+        QCOMPARE(helm::activeAccent(), QStringLiteral("#123456")); // world accent
+        {
+            QSettings c(cfg.filePath(QStringLiteral("hede/hede.conf")), QSettings::IniFormat);
+            c.setValue(QStringLiteral("appearance/accent"), QStringLiteral("#abcdef"));
+        }
+        QCOMPARE(helm::activeAccent(), QStringLiteral("#abcdef")); // explicit wins
+
+        qunsetenv("HELM_WORLDS_DIR");
+        qunsetenv("XDG_CONFIG_HOME");
+    }
+
     // Anti-drift: the committed boot assets must equal the default generators.
     void bootDefaultsMatchAssets() {
         QFile p(QStringLiteral(HELM_PLYMOUTH_DEFAULT));

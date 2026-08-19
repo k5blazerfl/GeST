@@ -309,20 +309,34 @@ QStringList applyTheme(const ThemeSpec &s, bool persistAppearance) {
     return written;
 }
 
-QStringList stageBootTheme(const QString &accent) {
-    const QString base = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
-    const QString bootDir = base + QStringLiteral("/hede/boot");
+QStringList writeBootTheme(const QString &dir, const QString &accent) {
     QStringList written;
 
-    const QString script = bootDir + QStringLiteral("/plymouth/hede/hede.script");
+    const QString script = dir + QStringLiteral("/plymouth/hede/hede.script");
     if (writeText(script, plymouthScriptBody(accent)))
         written << script;
 
-    const QString grub = bootDir + QStringLiteral("/grub/hede/theme.txt");
+    const QString grub = dir + QStringLiteral("/grub/hede/theme.txt");
     if (writeText(grub, grubThemeBody(accent)))
         written << grub;
 
     return written;
+}
+
+QStringList stageBootTheme(const QString &accent) {
+    const QString base = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
+    return writeBootTheme(base + QStringLiteral("/hede/boot"), accent);
+}
+
+QString activeAccent() {
+    const QString base = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation);
+    QSettings conf(base + QStringLiteral("/hede/hede.conf"), QSettings::IniFormat);
+    const QString explicitAccent = conf.value(QStringLiteral("appearance/accent")).toString();
+    if (!explicitAccent.isEmpty())
+        return explicitAccent;
+    const QString id = conf.value(QStringLiteral("world/id"), QStringLiteral("harbor")).toString();
+    const QString a = loadWorld(id).accent;
+    return a.isEmpty() ? defaultAccent() : a;
 }
 
 bool setWorld(const QString &id) {
@@ -353,16 +367,8 @@ QStringList applyThemeFromWorld() {
     s.dark = conf.value(QStringLiteral("appearance/dark")).toBool();
     s.gtkTheme = conf.value(QStringLiteral("appearance/gtk-theme")).toString();
     s.iconTheme = conf.value(QStringLiteral("appearance/icon-theme")).toString();
-
-    // Accent precedence mirrors helm::effectiveAccent: explicit choice, else the
-    // active world, else (empty →) themercBody's Harbor default.
-    const QString explicitAccent = conf.value(QStringLiteral("appearance/accent")).toString();
-    if (!explicitAccent.isEmpty()) {
-        s.accent = explicitAccent;
-    } else {
-        const QString id = conf.value(QStringLiteral("world/id"), QStringLiteral("harbor")).toString();
-        s.accent = loadWorld(id).accent;
-    }
+    // Accent precedence mirrors helm::effectiveAccent (see activeAccent).
+    s.accent = activeAccent();
     return applyTheme(s, /*persistAppearance=*/false);
 }
 

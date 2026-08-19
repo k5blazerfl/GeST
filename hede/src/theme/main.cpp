@@ -12,9 +12,33 @@
 //   helm-theme --from-world     (seed from the active biome; run at session start)
 //   helm-theme --list-worlds    (installed worlds, tab-sep: id name accent wallpaper)
 //   helm-theme --world=<id>     (switch to a world; a running shell re-themes live)
+//   helm-theme --emit-boot-theme=<dir> [--accent=#hex]
+//                               (write the tinted Plymouth + GRUB boot theme into
+//                                <dir>, no session side-effects; GeST's root
+//                                SyncBootTheme uses this to re-tint + rebuild the
+//                                initramfs. Accent defaults to the active world.)
 int main(int argc, char **argv) {
     QCoreApplication app(argc, argv);
     const QStringList args = app.arguments().mid(1);
+
+    QString emitDir;
+    for (const QString &a : args)
+        if (a.startsWith(QStringLiteral("--emit-boot-theme=")))
+            emitDir = a.section(QLatin1Char('='), 1);
+    if (!emitDir.isEmpty()) {
+        QString accent = helm::parseThemeArgs(args).accent; // --accent= or empty
+        if (accent.isEmpty())
+            accent = helm::activeAccent();
+        const QStringList written = helm::writeBootTheme(emitDir, accent);
+        if (written.isEmpty()) {
+            std::fprintf(stderr, "helm-theme: failed to write boot theme to %s\n",
+                         qPrintable(emitDir));
+            return 1;
+        }
+        for (const QString &p : written)
+            std::printf("wrote %s\n", qPrintable(p));
+        return 0;
+    }
 
     if (args.contains(QStringLiteral("--list-worlds"))) {
         // One world per line, tab-separated: id, name, accent, wallpaper path.

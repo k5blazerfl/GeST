@@ -10,6 +10,7 @@ argv is re-validated server-side via the shared command builder.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -51,17 +52,31 @@ _INTROSPECTION = f"""
       <arg type="b" name="ok" direction="out"/>
       <arg type="s" name="output" direction="out"/>
     </method>
+    <method name="SyncBootTheme">
+      <arg type="s" name="accent" direction="in"/>
+      <arg type="s" name="root" direction="in"/>
+      <arg type="b" name="ok" direction="out"/>
+      <arg type="s" name="output" direction="out"/>
+    </method>
   </interface>
 </node>
 """
 
 _GRUB_MKCONFIG = shutil.which("grub-mkconfig") or "/usr/sbin/grub-mkconfig"
 _GRUB_INSTALL = shutil.which("grub-install") or "/usr/sbin/grub-install"
+_HELM_THEME = shutil.which("helm-theme") or "/usr/bin/helm-theme"
+
+# Accent crossing the trust boundary must be exactly "#RRGGBB": it becomes an
+# argv element to helm-theme, which bakes the boot theme (a Plymouth *script* run
+# as root in the initramfs). We regenerate from this single validated primitive
+# rather than accept caller-supplied theme text.
+_ACCENT_RE = re.compile(r"\A#[0-9a-fA-F]{6}\Z")
 
 _POLKIT = {
     "RegenerateGrub": BOOTLOADER_POLKIT,
     "InstallGrub": BOOTLOADER_INSTALL_POLKIT,
     "ConfigureSeamlessBoot": BOOTLOADER_POLKIT,  # edits grub config, like RegenerateGrub
+    "SyncBootTheme": BOOTLOADER_POLKIT,  # re-tints the installed boot theme + initramfs
 }
 _METHODS = tuple(_POLKIT)
 
@@ -113,6 +128,48 @@ def _configure_seamless(root: str) -> tuple[bool, str]:
     return True, "\n".join(lines)
 
 
+def _sync_boot_theme(accent: str, root: str) -> tuple[bool, str]:
+    """Re-tint the installed boot theme to ``accent`` (a validated ``#RRGGBB``).
+
+    helm-theme regenerates the tinted Plymouth script + GRUB theme.txt into a
+    root-owned temp dir (``--emit-boot-theme``, no session side-effects); we
+    atomic-write each into place, then rebuild the initramfs so Plymouth picks up
+    the new script. GRUB reads its theme.txt from /boot, so it needs no rebuild.
+    Requires a prior ConfigureSeamlessBoot (this overwrites files it installed).
+    On a target root (``root`` set) the initramfs rebuild is left to the target's
+    own kernel build — we only place the files."""
+    from gest.core.bootloader import seamless
+
+    if not _ACCENT_RE.match(accent):
+        raise ValueError(f"invalid accent (expected #RRGGBB): {accent!r}")
+
+    lines: list[str] = []
+    with tempfile.TemporaryDirectory(prefix="gest-boot-theme-") as staging:
+        ok, out = _run([_HELM_THEME, f"--emit-boot-theme={staging}", f"--accent={accent}"])
+        lines.append(f"emit boot theme ({accent}): {'ok' if ok else out}")
+        if not ok:
+            return False, "\n".join(lines)
+
+        for src, dst in seamless.boot_theme_installs(staging=staging, root=root):
+            try:
+                with open(src, encoding="utf-8") as f:
+                    text = f.read()
+                _atomic_write(dst, text)
+            except OSError as exc:
+                lines.append(f"install {dst}: {exc}")
+                return False, "\n".join(lines)
+            lines.append(f"install {dst}: ok")
+
+    if root:
+        lines.append("initramfs rebuild: deferred to the target's kernel build")
+        return True, "\n".join(lines)
+
+    step = seamless.initramfs_regen_step()
+    ok, out = _run(step.argv)
+    lines.append(f"{step.label}: {'ok' if ok else out}")
+    return ok, "\n".join(lines)
+
+
 class BootloaderService:
     """Implements the ``org.gentoo.gest.Bootloader`` interface."""
 
@@ -144,6 +201,10 @@ class BootloaderService:
                 (root,) = params.unpack()
                 ok, out = _configure_seamless(root)
                 detail = "configure seamless boot"
+            elif method == "SyncBootTheme":
+                accent, root = params.unpack()
+                ok, out = _sync_boot_theme(accent, root)
+                detail = f"sync boot theme {accent}"
             else:  # InstallGrub
                 firmware, efi_dir, boot_id, removable, disk, boot_dir = params.unpack()
                 argv = commands.grub_install_argv(

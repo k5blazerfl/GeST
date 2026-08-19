@@ -36,6 +36,13 @@ class BootloaderBackend:
         Plymouth splash. Returns (ok, output); regenerate grub.cfg afterward."""
         return await self._iface.call_configure_seamless_boot(root)
 
+    async def sync_boot_theme(self, accent, root=""):
+        """Re-tint the installed boot theme (Plymouth + GRUB) to ``accent``
+        ("#RRGGBB") and rebuild the initramfs. Returns (ok, output). Requires a
+        prior :meth:`configure_seamless_boot`; the desktop background is
+        unaffected — only the boot palette tracks the biome."""
+        return await self._iface.call_sync_boot_theme(accent, root)
+
     async def close(self) -> None:
         if self._bus is not None:
             self._bus.disconnect()
