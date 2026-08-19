@@ -47,7 +47,9 @@ Explorer's frame, in the order a Windows user reaches for it
 - **Main view** — **details** (Name / Size / Type / Modified, sortable columns)
   with a large-icons toggle. **Double-click opens, single-click selects** — the
   Windows default, explicitly *not* KDE single-click-open.
-- **Toolbar + status bar**, a menu bar, and per-item + background context menus.
+- **Toolbar + status bar** (selected-item count / total size + free disk space,
+  à la Open-Shell's Classic Explorer — see [References](#reference--the-windows-classic-touchstone)),
+  a menu bar, and per-item + background context menus.
 
 ## Architecture
 
@@ -116,6 +118,20 @@ Opt-in painterly CSD via the `helm-decoration` nine-patch plugin is a later poli
   `scanDesktopEntries(defaultApplicationDirs())`.
 - Register SeFE as the `inode/directory` default (`xdg-mime default`) so folders —
   including "Open containing folder" from other apps — land in SeFE.
+
+## Reference — the Windows-classic touchstone
+
+We keep **[Open-Shell](https://github.com/Open-Shell/Open-Shell-Menu)** (MIT;
+the community continuation of Classic Shell) as a **behavioural reference** for
+SeFE's classic chrome — the up-button toolbar, the status bar (selected count /
+size + free space), and the classic copy UI. It is a **reference, not a
+dependency or fork**: it is Windows-only C++ (Win32/COM/ATL) and its "Classic
+Explorer" is a toolbar add-on to Windows Explorer, not a standalone browser — so
+we port *concepts* into Qt, not code. (MIT is GPL-compatible, so a copied snippet
+would be legal with its notice, but the platform makes that near-moot.) Mine it
+for the **defaults** that read as "classic Windows," not for its deep toggle
+surface — familiarity is the default here, not a settings maze
+([hede-familiarity.md](hede-familiarity.md)).
 
 ## Phasing (slices)
 
