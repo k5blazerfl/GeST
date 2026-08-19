@@ -2,6 +2,8 @@
 
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPainterPath>
+#include <QRadialGradient>
 #include <QRandomGenerator>
 #include <QTimer>
 #include <QtMath>
@@ -12,6 +14,50 @@ namespace {
 constexpr int kFrameMs = 33;       // ~30 fps
 constexpr int kMinVisibleMs = 650; // a couple of comets even for instant work
 constexpr qreal kHorizon = 0.60;   // comets live above this fraction of the scene
+
+// Draw one shooting star, in the spirit of the Netscape meteor: a tapering wedge
+// tail fading through icy blue to nothing, a soft additive head bloom, and a
+// bright white core. `head` is the leading point, `dir` a unit vector along
+// travel, `len` the tail length, `life` in [0,1] the fade, `w` the head width.
+void drawComet(QPainter &p, const QPointF &head, const QPointF &dir,
+               qreal len, qreal life, qreal w) {
+    const QPointF tip = head - dir * len;
+    const QPointF perp(-dir.y(), dir.x());
+
+    // tapering wedge: full width at the head, narrowing to a point at the tip
+    QPainterPath wedge;
+    wedge.moveTo(head + perp * (w * 0.5));
+    wedge.lineTo(head - perp * (w * 0.5));
+    wedge.lineTo(tip);
+    wedge.closeSubpath();
+    QLinearGradient g(head, tip);
+    QColor bright(224, 242, 255); bright.setAlphaF(0.92 * life); // icy-white head
+    QColor mid(150, 198, 255);    mid.setAlphaF(0.30 * life);    // pale blue body
+    QColor gone(150, 198, 255);   gone.setAlphaF(0.0);           // fades out
+    g.setColorAt(0.0, bright);
+    g.setColorAt(0.5, mid);
+    g.setColorAt(1.0, gone);
+    p.setPen(Qt::NoPen);
+    p.setBrush(g);
+    p.drawPath(wedge);
+
+    // soft head bloom — additive is safe here (it sits over the dark sky)
+    p.setCompositionMode(QPainter::CompositionMode_Plus);
+    const qreal br = w * 2.3;
+    QRadialGradient rg(head, br);
+    QColor glow(170, 214, 255); glow.setAlphaF(0.55 * life);
+    rg.setColorAt(0.0, glow);
+    glow.setAlphaF(0.0);
+    rg.setColorAt(1.0, glow);
+    p.setBrush(rg);
+    p.drawEllipse(head, br, br);
+    p.setCompositionMode(QPainter::CompositionMode_SourceOver);
+
+    // bright white core
+    QColor core(255, 255, 255); core.setAlphaF(life);
+    p.setBrush(core);
+    p.drawEllipse(head, w * 0.52, w * 0.52);
+}
 
 } // namespace
 
@@ -133,24 +179,10 @@ void HelmThrobber::paintEvent(QPaintEvent *) {
         if (sp <= 0.0001)
             continue;
         const QPointF dir = c.vel / sp;
-        const QPointF tail = c.pos - dir * c.len;
         const qreal life = std::sin(M_PI * qBound(0.0, c.progress, 1.0)); // fade in/out
-        QColor icy(214, 238, 255);
-        QLinearGradient g(tail, c.pos);
-        QColor c0 = icy; c0.setAlphaF(0.0);
-        QColor c1 = icy; c1.setAlphaF(0.85 * life);
-        g.setColorAt(0.0, c0);
-        g.setColorAt(1.0, c1);
-        QPen pen(QBrush(g), std::max<qreal>(1.0, S * 0.018));
-        pen.setCapStyle(Qt::RoundCap);
-        p.setPen(pen);
-        p.drawLine(tail, c.pos);
-        // bright head
-        p.setPen(Qt::NoPen);
-        QColor head(255, 255, 255); head.setAlphaF(life);
-        p.setBrush(head);
-        const qreal r = std::max<qreal>(1.0, S * 0.022);
-        p.drawEllipse(c.pos, r, r);
+        // head width scales gently with tail length (longer ⇒ a touch bolder)
+        const qreal w = std::max<qreal>(1.4, S * 0.05 * (0.75 + c.len / S));
+        drawComet(p, c.pos, dir, c.len, life, w);
     }
     p.restore();
 }
