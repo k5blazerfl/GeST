@@ -130,7 +130,8 @@ def test_registry_phases_are_non_decreasing():
     assert [s.phase for s in reg[:3]] == [Phase.PREPARE_DISK] * 3
     assert [s.phase for s in reg[3:13]] == [Phase.BASE_SYSTEM] * 10  # +HeDE desktop (x3)
     assert [s.phase for s in reg[13:16]] == [Phase.CONFIGURE] * 3
-    assert [s.phase for s in reg[16:22]] == [Phase.KERNEL_BOOT] * 6  # +sources +stage-config +gpu +m1n1
+    # KERNEL_BOOT: sources, stage-config, build, gpu-drivers, bootloader, m1n1
+    assert [s.phase for s in reg[16:22]] == [Phase.KERNEL_BOOT] * 6
     assert [s.phase for s in reg[22:25]] == [Phase.USERS_NETWORK] * 3
     assert [s.phase for s in reg[25:26]] == [Phase.FINISH]           # +HeDE session
 
