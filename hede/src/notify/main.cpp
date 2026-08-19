@@ -21,6 +21,7 @@ int main(int argc, char **argv) {
     QApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("helm-notifyd"));
     helm::applyAppearance();
+    helm::watchAppearance(); // re-tint live on a world/accent switch
 
     auto *toasts = new helm::ToastStack;
     toasts->winId();

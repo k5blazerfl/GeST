@@ -1,5 +1,7 @@
 qt_add_library(helm-theme-lib STATIC
     theme.cpp
+    world.cpp
+    nineslice.cpp
 )
 target_include_directories(helm-theme-lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(helm-theme-lib PUBLIC Qt6::Core)

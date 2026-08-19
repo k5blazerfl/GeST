@@ -1,47 +1,39 @@
-// HeDE boot splash — the brass helm on Harbor navy, gently breathing, with a
-// thin accent progress line. Colours track hede-tokens (surface #0e2c34, accent
-// #3aa6c4). Kept to one image (logo.png) so it stays light in the initramfs.
-
-Window.SetBackgroundTopColor(0.055, 0.173, 0.204);    // #0e2c34 Harbor surface
-Window.SetBackgroundBottomColor(0.020, 0.055, 0.075); // deeper abyss toward the bottom
+// HeDE boot splash — the Harbor scene under a thin accent progress tracker at the
+// bottom. Colours track hede-tokens (accent #3aa6c4). One 256-colour image keeps
+// it reasonably light in the initramfs.
 
 screen_w = Window.GetWidth();
 screen_h = Window.GetHeight();
 
-logo.image = Image("logo.png");
-logo.sprite = Sprite(logo.image);
-logo.x = Window.GetX() + screen_w / 2 - logo.image.GetWidth() / 2;
-logo.y = Window.GetY() + screen_h / 2 - logo.image.GetHeight() / 2;
-logo.sprite.SetPosition(logo.x, logo.y, 0);
+// Fallback fill if the image can't load: Harbor deep navy (#0a1633).
+Window.SetBackgroundTopColor(0.039, 0.086, 0.200);
+Window.SetBackgroundBottomColor(0.039, 0.086, 0.200);
 
-// A thin accent progress line under the logo, drawn as a 1px teal image scaled
-// to the current boot progress.
-bar.dot = Image.Text(" ", 0.227, 0.651, 0.769); // #3aa6c4 teal — a coloured pixel
-bar.y = logo.y + logo.image.GetHeight() + 28;
-bar.max = screen_w * 0.28;
-bar.sprite = Sprite();
-bar.sprite.SetImage(bar.dot);
-bar.sprite.SetPosition(screen_w / 2, bar.y, 1);
+// Full-screen Harbor scene, scaled to fill the display.
+bg.sprite = Sprite(Image("background.png").Scale(screen_w, screen_h));
+bg.sprite.SetPosition(0, 0, 0);
 
-progress = 0;
+// Progress tracker — bottom middle: a teal fill growing over a faint rail.
+track.w = screen_w * 0.30;
+track.x = screen_w / 2 - track.w / 2;
+track.y = screen_h - 54;
 
-fun refresh_cb() {
-    progress++;
-    // Gentle breathing on the logo so it never looks frozen.
-    opacity = 0.72 + 0.28 * Math.Sin(progress / 22);
-    logo.sprite.SetOpacity(opacity);
-}
-Plymouth.SetRefreshFunction(refresh_cb);
+rail.sprite = Sprite(Image.Text(" ", 0.85, 0.9, 0.95).Scale(track.w, 3));
+rail.sprite.SetPosition(track.x, track.y, 1);
+rail.sprite.SetOpacity(0.18);
+
+bar.pixel = Image.Text(" ", 0.227, 0.651, 0.769);   // #3aa6c4 teal
+bar.sprite = Sprite(bar.pixel.Scale(2, 3));
+bar.sprite.SetPosition(track.x, track.y, 2);
 
 fun boot_progress_cb(duration, pct) {
-    width = bar.max * pct;
-    if (width < 1) width = 1;
-    bar.sprite.SetImage(bar.dot.Scale(width, 2));
-    bar.sprite.SetPosition(screen_w / 2 - width / 2, bar.y, 1);
+    width = track.w * pct;
+    if (width < 2) width = 2;
+    bar.sprite.SetImage(bar.pixel.Scale(width, 3));
+    bar.sprite.SetPosition(track.x, track.y, 2);
 }
 Plymouth.SetBootProgressFunction(boot_progress_cb);
 
-// Boot messages (fsck, quiet-mode notices) are suppressed by the quiet cmdline;
-// if any arrive, keep them off the clean splash.
+// Boot messages are suppressed by the quiet cmdline; keep any off the clean splash.
 fun message_cb(text) { }
 Plymouth.SetMessageFunction(message_cb);

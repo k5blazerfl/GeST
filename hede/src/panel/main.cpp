@@ -17,6 +17,7 @@ int main(int argc, char **argv) {
     app.setApplicationName(QStringLiteral("helm-panel"));
     app.setDesktopFileName(QStringLiteral("helm-panel"));
     helm::applyAppearance();
+    helm::watchAppearance(); // re-tint live on a world/accent switch
 
     helm::Panel panel;
     panel.winId(); // realise the platform window so we can grab its QWindow
