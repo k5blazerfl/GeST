@@ -14,9 +14,16 @@ QColor contrastText(const QColor &bg);
 // A shell palette: dark or light base, `accent` as the Highlight (if valid).
 QPalette buildPalette(bool dark, const QColor &accent);
 
-// The default HeDE accent — Harbor teal (helm.theme worlds.harbor). Used when
-// the user hasn't picked one, so the shell is Harbor-styled out of the box.
+// The default HeDE accent — Harbor teal (helm.theme worlds.harbor). The final
+// fallback when neither the user nor the active world supplies one.
 QColor harborAccent();
+
+// The accent the shell should use, in precedence order: an explicit
+// [appearance] accent (the user's choice via helm-theme) wins; else the active
+// world's accent (hede.conf [world] id, default "harbor"), so switching worlds
+// re-tints the whole shell; else harborAccent(). `cfg` is the HeDE config.
+class Config;
+QColor effectiveAccent(const Config &cfg);
 
 // A Qt style sheet for the HeDE shell surfaces — the glass bar plus the shared
 // Helm token look (fonts, radii, accent selection) — derived from the

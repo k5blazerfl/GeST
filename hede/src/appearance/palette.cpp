@@ -1,6 +1,7 @@
 #include "palette.h"
 
 #include "config.h"
+#include "world.h"
 
 #include <QApplication>
 
@@ -37,12 +38,24 @@ QPalette buildPalette(bool dark, const QColor &accent) {
     return p;
 }
 
+QColor effectiveAccent(const Config &cfg) {
+    // 1) an explicit [appearance] accent (the user's helm-theme choice) wins.
+    const QColor explicitAccent(cfg.string(QStringLiteral("appearance/accent")));
+    if (explicitAccent.isValid())
+        return explicitAccent;
+    // 2) the active world's accent — switching worlds re-tints the shell.
+    const World world = loadWorld(cfg.string(QStringLiteral("world/id"), QStringLiteral("harbor")));
+    const QColor worldAccent(world.accent);
+    if (worldAccent.isValid())
+        return worldAccent;
+    // 3) the built-in Harbor teal.
+    return harborAccent();
+}
+
 void applyAppearance() {
     const Config cfg;
     const bool dark = cfg.string(QStringLiteral("appearance/dark")) == QLatin1String("true");
-    QColor accent(cfg.string(QStringLiteral("appearance/accent")));
-    if (!accent.isValid())
-        accent = harborAccent(); // Harbor teal by default — HeDE is styled out of the box
+    const QColor accent = effectiveAccent(cfg);
 
     if (auto *app = qobject_cast<QApplication *>(QApplication::instance())) {
         app->setStyle(QStringLiteral("Fusion")); // honours a custom palette

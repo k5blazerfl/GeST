@@ -1,6 +1,22 @@
 #include <QtTest>
 
+#include <QDir>
+#include <QSettings>
+#include <QTemporaryDir>
+
+#include "config.h"
 #include "palette.h"
+
+// Write a minimal world with the given accent under <worldsDir>/<id>/theme.yaml.
+static void writeWorld(const QString &worldsDir, const QString &id, const QString &accent) {
+    const QString dir = QDir(worldsDir).filePath(id);
+    QDir().mkpath(dir);
+    QFile y(QDir(dir).filePath(QStringLiteral("theme.yaml")));
+    if (y.open(QIODevice::WriteOnly)) {
+        y.write(QStringLiteral("id: %1\naccent: '%2'\n").arg(id, accent).toUtf8());
+        y.close();
+    }
+}
 
 class TestAppearance : public QObject {
     Q_OBJECT
@@ -29,6 +45,50 @@ private slots:
 
     void harborDefault() {
         QCOMPARE(helm::harborAccent(), QColor(QStringLiteral("#3aa6c4")));
+    }
+
+    // An explicit [appearance] accent always wins, even with a world present.
+    void effectiveAccentPrefersExplicit() {
+        QTemporaryDir worlds;
+        writeWorld(worlds.path(), QStringLiteral("harbor"), QStringLiteral("#aabbcc"));
+        qputenv("HELM_WORLDS_DIR", worlds.path().toLocal8Bit());
+        QTemporaryDir cfgdir;
+        const QString path = cfgdir.filePath(QStringLiteral("hede.conf"));
+        {
+            QSettings s(path, QSettings::IniFormat);
+            s.setValue(QStringLiteral("appearance/accent"), QStringLiteral("#123456"));
+        }
+        QCOMPARE(helm::effectiveAccent(helm::Config(path)), QColor(QStringLiteral("#123456")));
+        qunsetenv("HELM_WORLDS_DIR");
+    }
+
+    // No explicit accent → the active world's accent tints the shell.
+    void effectiveAccentFromWorld() {
+        QTemporaryDir worlds;
+        writeWorld(worlds.path(), QStringLiteral("harbor"), QStringLiteral("#3aa6c4"));
+        writeWorld(worlds.path(), QStringLiteral("emberforge"), QStringLiteral("#e8853a"));
+        qputenv("HELM_WORLDS_DIR", worlds.path().toLocal8Bit());
+        QTemporaryDir cfgdir;
+        const QString path = cfgdir.filePath(QStringLiteral("hede.conf"));
+        // default world (harbor)
+        QCOMPARE(helm::effectiveAccent(helm::Config(path)), QColor(QStringLiteral("#3aa6c4")));
+        // switching worlds re-tints
+        {
+            QSettings s(path, QSettings::IniFormat);
+            s.setValue(QStringLiteral("world/id"), QStringLiteral("emberforge"));
+        }
+        QCOMPARE(helm::effectiveAccent(helm::Config(path)), QColor(QStringLiteral("#e8853a")));
+        qunsetenv("HELM_WORLDS_DIR");
+    }
+
+    // No explicit accent and no world resolvable → built-in Harbor teal.
+    void effectiveAccentFallsBackToHarbor() {
+        QTemporaryDir empty;
+        qputenv("HELM_WORLDS_DIR", empty.path().toLocal8Bit());
+        QTemporaryDir cfgdir;
+        QCOMPARE(helm::effectiveAccent(helm::Config(cfgdir.filePath(QStringLiteral("hede.conf")))),
+                 helm::harborAccent());
+        qunsetenv("HELM_WORLDS_DIR");
     }
 
     void styleSheetGlassBar() {
