@@ -61,6 +61,16 @@ QStringList stageBootTheme(const QString &accent);
 // helm::effectiveAccent and applyThemeFromWorld's precedence.
 QString activeAccent();
 
+// The active world id (hede.conf [world] id, default "harbor") — the biome the
+// boot splash scene tracks; pairs with activeAccent for the chrome.
+QString activeWorldId();
+
+// Copy world ``worldId``'s boot scene (World::bootPath) into ``dir`` as
+// ``plymouth/hede/background.png``, so the splash art tracks the biome. Returns
+// the written path, or empty if the world has no boot.png (the installed default
+// is then left in place). Used by --emit-boot-theme.
+QString emitBootScene(const QString &dir, const QString &worldId);
+
 // Write the theme: GTK 3/4 settings.ini + (when persistAppearance) the
 // [appearance] block in hede.conf (under $XDG_CONFIG_HOME) + the Helm labwc
 // themerc (under $XDG_DATA_HOME). Returns the files written (empty on failure).

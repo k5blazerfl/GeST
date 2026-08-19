@@ -97,6 +97,10 @@ def stage_theme_steps(*, root: str = "") -> list[Step]:
 # initramfs, so it only takes effect after an initramfs rebuild.
 PLYMOUTH_SCRIPT_DST = "/usr/share/plymouth/themes/hede/hede.script"
 GRUB_THEME_TXT_DST = THEME_TXT  # /boot/grub/themes/hede/theme.txt
+# The per-biome splash scene (slice 2). helm-theme copies the active world's
+# boot.png here; overwriting it is what makes the splash *art* track the biome
+# (the chrome above tracks the accent). Baked into the initramfs like the script.
+PLYMOUTH_BG_DST = "/usr/share/plymouth/themes/hede/background.png"
 
 
 def boot_theme_installs(*, staging: str, root: str = "") -> list[tuple[str, str]]:
@@ -108,6 +112,13 @@ def boot_theme_installs(*, staging: str, root: str = "") -> list[tuple[str, str]
         (f"{staging}/plymouth/hede/hede.script", f"{root}{PLYMOUTH_SCRIPT_DST}"),
         (f"{staging}/grub/hede/theme.txt", f"{root}{GRUB_THEME_TXT_DST}"),
     ]
+
+
+def boot_scene_install(*, staging: str, root: str = "") -> tuple[str, str]:
+    """The ``(src, dst)`` for the per-biome splash scene. Best-effort: the src is
+    present only when the active world ships a boot.png, so the backend installs
+    it only if emitted — a world without one keeps the default Harbor scene."""
+    return (f"{staging}/plymouth/hede/background.png", f"{root}{PLYMOUTH_BG_DST}")
 
 
 def initramfs_regen_step() -> Step:

@@ -81,6 +81,16 @@ def test_boot_theme_installs_root_prefix():
     assert "/mnt/gentoo/boot/grub/themes/hede/theme.txt" in dsts
 
 
+def test_boot_scene_install_pair():
+    src, dst = seamless.boot_scene_install(staging="/run/x")
+    assert src == "/run/x/plymouth/hede/background.png"
+    assert dst == seamless.PLYMOUTH_BG_DST
+    assert dst.endswith("/plymouth/themes/hede/background.png")
+    # root prefix seam
+    _, dst2 = seamless.boot_scene_install(staging="/run/x", root="/mnt/gentoo")
+    assert dst2 == f"/mnt/gentoo{seamless.PLYMOUTH_BG_DST}"
+
+
 def test_initramfs_regen_step_is_genkernel_initramfs_plymouth():
     step = seamless.initramfs_regen_step()
     assert step.argv[0] == "genkernel"

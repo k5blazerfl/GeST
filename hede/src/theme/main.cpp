@@ -12,29 +12,41 @@
 //   helm-theme --from-world     (seed from the active biome; run at session start)
 //   helm-theme --list-worlds    (installed worlds, tab-sep: id name accent wallpaper)
 //   helm-theme --world=<id>     (switch to a world; a running shell re-themes live)
-//   helm-theme --emit-boot-theme=<dir> [--accent=#hex]
-//                               (write the tinted Plymouth + GRUB boot theme into
-//                                <dir>, no session side-effects; GeST's root
-//                                SyncBootTheme uses this to re-tint + rebuild the
-//                                initramfs. Accent defaults to the active world.)
+//   helm-theme --emit-boot-theme=<dir> [--accent=#hex] [--world=<id>]
+//                               (write the tinted Plymouth + GRUB boot theme and
+//                                the world's boot scene into <dir>, no session
+//                                side-effects; GeST's root SyncBootTheme uses this
+//                                to re-tint + rebuild the initramfs. Accent/world
+//                                default to the active session.)
 int main(int argc, char **argv) {
     QCoreApplication app(argc, argv);
     const QStringList args = app.arguments().mid(1);
 
-    QString emitDir;
-    for (const QString &a : args)
+    QString emitDir, emitWorld;
+    for (const QString &a : args) {
         if (a.startsWith(QStringLiteral("--emit-boot-theme=")))
             emitDir = a.section(QLatin1Char('='), 1);
+        else if (a.startsWith(QStringLiteral("--world=")))
+            emitWorld = a.section(QLatin1Char('='), 1);
+    }
     if (!emitDir.isEmpty()) {
+        // The biome to emit: explicit --world, else the active world. Its accent
+        // tints the chrome unless --accent overrides; its boot.png is the scene.
+        const QString world = emitWorld.isEmpty() ? helm::activeWorldId() : emitWorld;
         QString accent = helm::parseThemeArgs(args).accent; // --accent= or empty
         if (accent.isEmpty())
+            accent = helm::loadWorld(world).accent;
+        if (accent.isEmpty())
             accent = helm::activeAccent();
-        const QStringList written = helm::writeBootTheme(emitDir, accent);
+        QStringList written = helm::writeBootTheme(emitDir, accent);
         if (written.isEmpty()) {
             std::fprintf(stderr, "helm-theme: failed to write boot theme to %s\n",
                          qPrintable(emitDir));
             return 1;
         }
+        const QString scene = helm::emitBootScene(emitDir, world);
+        if (!scene.isEmpty())
+            written << scene;
         for (const QString &p : written)
             std::printf("wrote %s\n", qPrintable(p));
         return 0;

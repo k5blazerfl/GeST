@@ -269,6 +269,53 @@ private slots:
         qunsetenv("XDG_CONFIG_HOME");
     }
 
+    // activeWorldId: hede.conf [world] id, default harbor.
+    void activeWorldIdDefaultAndSet() {
+        QTemporaryDir cfg;
+        qputenv("XDG_CONFIG_HOME", cfg.path().toUtf8());
+        QCOMPARE(helm::activeWorldId(), QStringLiteral("harbor")); // default
+        {
+            QSettings c(cfg.filePath(QStringLiteral("hede/hede.conf")), QSettings::IniFormat);
+            c.setValue(QStringLiteral("world/id"), QStringLiteral("stormwatch"));
+        }
+        QCOMPARE(helm::activeWorldId(), QStringLiteral("stormwatch"));
+        qunsetenv("XDG_CONFIG_HOME");
+    }
+
+    // emitBootScene copies the world's boot.png over the Plymouth background (so
+    // the splash art tracks the biome), overwrites on re-emit, and is a no-op for
+    // a world that ships no boot.png (the installed default is left in place).
+    void emitBootSceneCopiesWorldBootPng() {
+        QTemporaryDir worlds, out;
+        auto world = [&](const QString &id, bool withBoot) {
+            const QString d = QDir(worlds.path()).filePath(id);
+            QDir().mkpath(d);
+            QFile y(QDir(d).filePath(QStringLiteral("theme.yaml")));
+            QVERIFY(y.open(QIODevice::WriteOnly));
+            y.write(QStringLiteral("id: %1\naccent: '#e8853a'\n").arg(id).toUtf8());
+            if (withBoot) {
+                QFile b(QDir(d).filePath(QStringLiteral("boot.png")));
+                QVERIFY(b.open(QIODevice::WriteOnly));
+                b.write("PNGDATA");
+            }
+        };
+        world(QStringLiteral("emberforge"), true);
+        world(QStringLiteral("bare"), false);
+        qputenv("HELM_WORLDS_DIR", worlds.path().toLocal8Bit());
+
+        const QString p = helm::emitBootScene(out.path(), QStringLiteral("emberforge"));
+        QCOMPARE(p, out.filePath(QStringLiteral("plymouth/hede/background.png")));
+        QFile f(p);
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        QCOMPARE(f.readAll(), QByteArray("PNGDATA"));
+        // re-emit overwrites (QFile::copy would otherwise refuse an existing dst)
+        QVERIFY(!helm::emitBootScene(out.path(), QStringLiteral("emberforge")).isEmpty());
+        // no boot.png → empty, nothing written
+        QVERIFY(helm::emitBootScene(out.path(), QStringLiteral("bare")).isEmpty());
+
+        qunsetenv("HELM_WORLDS_DIR");
+    }
+
     // Anti-drift: the committed boot assets must equal the default generators.
     void bootDefaultsMatchAssets() {
         QFile p(QStringLiteral(HELM_PLYMOUTH_DEFAULT));

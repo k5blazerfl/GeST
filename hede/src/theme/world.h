@@ -44,6 +44,11 @@ struct World {
     QString wallpaperPath() const;
     // Absolute path to the nine-patch frame image, or empty if none/missing.
     QString framePath() const;
+    // Absolute path to the boot-optimised splash scene (``boot.png`` in the
+    // world dir, by convention: 16:9, palette-reduced to stay initramfs-light),
+    // or empty if none/missing. The seamless boot chain copies this over the
+    // Plymouth background so the splash art tracks the active biome.
+    QString bootPath() const;
 };
 
 // Parse a helm.world/0.1 document. `baseDir` is recorded so wallpaperPath() can

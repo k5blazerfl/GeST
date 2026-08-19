@@ -325,7 +325,18 @@ QStringList writeBootTheme(const QString &dir, const QString &accent) {
 
 QStringList stageBootTheme(const QString &accent) {
     const QString base = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
-    return writeBootTheme(base + QStringLiteral("/hede/boot"), accent);
+    const QString dir = base + QStringLiteral("/hede/boot");
+    QStringList written = writeBootTheme(dir, accent);
+    const QString scene = emitBootScene(dir, activeWorldId());
+    if (!scene.isEmpty())
+        written << scene;
+    return written;
+}
+
+QString activeWorldId() {
+    const QString base = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation);
+    QSettings conf(base + QStringLiteral("/hede/hede.conf"), QSettings::IniFormat);
+    return conf.value(QStringLiteral("world/id"), QStringLiteral("harbor")).toString();
 }
 
 QString activeAccent() {
@@ -334,9 +345,18 @@ QString activeAccent() {
     const QString explicitAccent = conf.value(QStringLiteral("appearance/accent")).toString();
     if (!explicitAccent.isEmpty())
         return explicitAccent;
-    const QString id = conf.value(QStringLiteral("world/id"), QStringLiteral("harbor")).toString();
-    const QString a = loadWorld(id).accent;
+    const QString a = loadWorld(activeWorldId()).accent;
     return a.isEmpty() ? defaultAccent() : a;
+}
+
+QString emitBootScene(const QString &dir, const QString &worldId) {
+    const QString src = loadWorld(worldId).bootPath();
+    if (src.isEmpty())
+        return QString(); // no per-world scene → leave the installed default
+    const QString dst = dir + QStringLiteral("/plymouth/hede/background.png");
+    QDir().mkpath(QFileInfo(dst).absolutePath());
+    QFile::remove(dst); // QFile::copy refuses to overwrite an existing target
+    return QFile::copy(src, dst) ? dst : QString();
 }
 
 bool setWorld(const QString &id) {

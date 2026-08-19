@@ -54,6 +54,7 @@ _INTROSPECTION = f"""
     </method>
     <method name="SyncBootTheme">
       <arg type="s" name="accent" direction="in"/>
+      <arg type="s" name="world" direction="in"/>
       <arg type="s" name="root" direction="in"/>
       <arg type="b" name="ok" direction="out"/>
       <arg type="s" name="output" direction="out"/>
@@ -71,6 +72,11 @@ _HELM_THEME = shutil.which("helm-theme") or "/usr/bin/helm-theme"
 # as root in the initramfs). We regenerate from this single validated primitive
 # rather than accept caller-supplied theme text.
 _ACCENT_RE = re.compile(r"\A#[0-9a-fA-F]{6}\Z")
+# The world id (scene selector) is likewise a validated slug — helm-theme copies
+# the *packaged* /usr/share/hede/worlds/<id>/boot.png (root-trusted), so the id,
+# not caller-supplied image bytes, is what crosses the boundary. Empty = chrome
+# only (keep the current scene).
+_WORLD_RE = re.compile(r"\A[a-z0-9][a-z0-9-]*\Z")
 
 _POLKIT = {
     "RegenerateGrub": BOOTLOADER_POLKIT,
@@ -102,6 +108,21 @@ def _atomic_write(path: str, text: str) -> None:
         raise
 
 
+def _atomic_copy(src: str, dst: str) -> None:
+    """Copy the (binary) file ``src`` to ``dst`` atomically (temp + rename),
+    creating the parent dir. Used for the per-biome splash scene image."""
+    directory = os.path.dirname(dst) or "."
+    os.makedirs(directory, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=directory)
+    try:
+        with os.fdopen(fd, "wb") as out, open(src, "rb") as f:
+            shutil.copyfileobj(f, out)
+        os.replace(tmp, dst)
+    except BaseException:
+        os.unlink(tmp)
+        raise
+
+
 def _configure_seamless(root: str) -> tuple[bool, str]:
     """Apply the seamless-boot config under ``root`` ("" = the live host, or a
     target root like /mnt/gentoo): rewrite ``/etc/default/grub`` via the pure
@@ -128,28 +149,38 @@ def _configure_seamless(root: str) -> tuple[bool, str]:
     return True, "\n".join(lines)
 
 
-def _sync_boot_theme(accent: str, root: str) -> tuple[bool, str]:
-    """Re-tint the installed boot theme to ``accent`` (a validated ``#RRGGBB``).
+def _sync_boot_theme(accent: str, world: str, root: str) -> tuple[bool, str]:
+    """Re-tint the installed boot theme to ``accent`` (a validated ``#RRGGBB``)
+    and, when ``world`` (a validated slug) is given, swap the splash scene to that
+    biome's boot.png so the splash *art* tracks it too — the desktop background is
+    untouched.
 
-    helm-theme regenerates the tinted Plymouth script + GRUB theme.txt into a
-    root-owned temp dir (``--emit-boot-theme``, no session side-effects); we
-    atomic-write each into place, then rebuild the initramfs so Plymouth picks up
-    the new script. GRUB reads its theme.txt from /boot, so it needs no rebuild.
-    Requires a prior ConfigureSeamlessBoot (this overwrites files it installed).
-    On a target root (``root`` set) the initramfs rebuild is left to the target's
-    own kernel build — we only place the files."""
+    helm-theme regenerates the tinted Plymouth script + GRUB theme.txt and copies
+    the world's packaged boot.png into a root-owned temp dir (``--emit-boot-theme``,
+    no session side-effects); we atomic-write/copy each into place, then rebuild
+    the initramfs so Plymouth picks up the new script + scene. GRUB reads its
+    theme.txt from /boot, so it needs no rebuild. Requires a prior
+    ConfigureSeamlessBoot (this overwrites files it installed). On a target root
+    (``root`` set) the initramfs rebuild is left to the target's own kernel build
+    — we only place the files."""
     from gest.core.bootloader import seamless
 
     if not _ACCENT_RE.match(accent):
         raise ValueError(f"invalid accent (expected #RRGGBB): {accent!r}")
+    if world and not _WORLD_RE.match(world):
+        raise ValueError(f"invalid world id: {world!r}")
 
     lines: list[str] = []
     with tempfile.TemporaryDirectory(prefix="gest-boot-theme-") as staging:
-        ok, out = _run([_HELM_THEME, f"--emit-boot-theme={staging}", f"--accent={accent}"])
-        lines.append(f"emit boot theme ({accent}): {'ok' if ok else out}")
+        argv = [_HELM_THEME, f"--emit-boot-theme={staging}", f"--accent={accent}"]
+        if world:
+            argv.append(f"--world={world}")
+        ok, out = _run(argv)
+        lines.append(f"emit boot theme ({accent}, world={world or '-'}): {'ok' if ok else out}")
         if not ok:
             return False, "\n".join(lines)
 
+        # Chrome (Plymouth script + GRUB theme.txt): required, atomic text write.
         for src, dst in seamless.boot_theme_installs(staging=staging, root=root):
             try:
                 with open(src, encoding="utf-8") as f:
@@ -159,6 +190,18 @@ def _sync_boot_theme(accent: str, root: str) -> tuple[bool, str]:
                 lines.append(f"install {dst}: {exc}")
                 return False, "\n".join(lines)
             lines.append(f"install {dst}: ok")
+
+        # Scene image: best-effort — present only when the world ships a boot.png.
+        scene_src, scene_dst = seamless.boot_scene_install(staging=staging, root=root)
+        if os.path.exists(scene_src):
+            try:
+                _atomic_copy(scene_src, scene_dst)
+            except OSError as exc:
+                lines.append(f"install {scene_dst}: {exc}")
+                return False, "\n".join(lines)
+            lines.append(f"install {scene_dst}: ok")
+        else:
+            lines.append("scene: none for this world; keeping the current splash")
 
     if root:
         lines.append("initramfs rebuild: deferred to the target's kernel build")
@@ -202,9 +245,9 @@ class BootloaderService:
                 ok, out = _configure_seamless(root)
                 detail = "configure seamless boot"
             elif method == "SyncBootTheme":
-                accent, root = params.unpack()
-                ok, out = _sync_boot_theme(accent, root)
-                detail = f"sync boot theme {accent}"
+                accent, world, root = params.unpack()
+                ok, out = _sync_boot_theme(accent, world, root)
+                detail = f"sync boot theme {accent} world={world or '-'}"
             else:  # InstallGrub
                 firmware, efi_dir, boot_id, removable, disk, boot_dir = params.unpack()
                 argv = commands.grub_install_argv(
