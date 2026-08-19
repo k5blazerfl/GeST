@@ -46,6 +46,7 @@ from gest.core.install.context import InstallContext
 from gest.core.install.plan import InstallPlan, Phase
 from gest.core.install.step import ArgvStep, FuncStep, InstallStep
 from gest.core.install.write import write_under_root
+from gest.core.kernel import config as kconfig
 from gest.core.kernel.build import build_steps
 from gest.core.network import hosts as net_hosts
 from gest.core.network import netifrc
@@ -565,13 +566,50 @@ class InstallKernelSources(ArgvStep):
     key = "install_kernel_sources"
 
     def build(self, ctx: InstallContext) -> list[Step]:
-        return [
+        steps = [
             Step("emerge gentoo-sources", _emerge_argv(ctx.plan, "sys-kernel/gentoo-sources")),
-            Step("select /usr/src/linux", set_argv("kernel", 1)),
         ]
+        if ctx.plan.kernel.method == "genkernel":
+            # A fresh stage3/@world has no genkernel; the build step needs it in the
+            # target. USE=-firmware skips the (masked, license-gated) linux-firmware
+            # dep — the initramfs needs no firmware to reach the root fs; hardware
+            # firmware lives on the installed root, loaded after the pivot.
+            steps.append(Step("emerge genkernel", _emerge_argv(
+                ctx.plan, "sys-kernel/genkernel", env={"USE": "-firmware"})))
+        steps.append(Step("select /usr/src/linux", set_argv("kernel", 1)))
+        return steps
 
     async def is_satisfied(self, ctx: InstallContext) -> bool:
         return ctx.state.done(self.key)
+
+
+class StageKernelConfig(FuncStep):
+    """Write the curated per-arch kernel config into the target for genkernel.
+
+    Runs host-side (writes into the target root) before ``BuildKernel``. A no-op
+    unless ``plan.kernel.kernel_config`` is set (genkernel method + a config is
+    bundled for the arch — see ``gest.core.kernel.config``); genkernel's default
+    config lacks virtio etc., so a VM install couldn't otherwise find its root.
+    """
+
+    label = "Stage the kernel config"
+    phase = Phase.KERNEL_BOOT
+    target_aware = True          # writes into the target root from the live host
+    key = "stage_kernel_config"
+
+    async def run(self, ctx: InstallContext, on_progress: OnProgress | None = None) -> None:
+        cfg = ctx.plan.kernel.kernel_config
+        if not cfg:
+            return
+        data = kconfig.bundled_config(ctx.plan.arch)
+        if data is None:            # assemble only sets cfg when one exists; belt-and-suspenders
+            return
+        path = write_under_root(ctx.root, cfg, data.decode("utf-8"))
+        _emit(on_progress, f"staged the {ctx.plan.arch} kernel config → {path}")
+        ctx.state.mark(self)
+
+    async def is_satisfied(self, ctx: InstallContext) -> bool:
+        return not ctx.plan.kernel.kernel_config or ctx.state.done(self.key)
 
 
 class BuildKernel(ArgvStep):
@@ -599,7 +637,15 @@ class InstallBootloader(ArgvStep):
     key = "install_bootloader"
 
     def build(self, ctx: InstallContext) -> list[Step]:
-        return install_steps(ctx.plan.bootloader, arch=ctx.plan.arch)
+        # A fresh stage3/@world ships no bootloader, so grub-install/grub-mkconfig
+        # would fail (exit 127). Emerge GRUB (+ efibootmgr for the UEFI NVRAM entry)
+        # first, building the platform grub-install needs (efi-64 / pc).
+        uefi = ctx.plan.bootloader.firmware == "uefi"
+        atoms = ["sys-boot/grub"] + (["sys-boot/efibootmgr"] if uefi else [])
+        steps = [Step("emerge the bootloader", _emerge_argv(
+            ctx.plan, *atoms, env={"GRUB_PLATFORMS": "efi-64" if uefi else "pc"}))]
+        steps.extend(install_steps(ctx.plan.bootloader, arch=ctx.plan.arch))
+        return steps
 
     async def is_satisfied(self, ctx: InstallContext) -> bool:
         return ctx.state.done(self.key)
@@ -781,13 +827,18 @@ class ChrootCmdStep(ArgvStep):
         return ctx.state.done(self.key)
 
 
-def _emerge_argv(plan: InstallPlan, atom: str) -> list[str]:
-    """`emerge` an atom in-chroot: --noreplace so an already-present package is a
-    quick no-op; --getbinpkg when the plan prefers binaries."""
+def _emerge_argv(plan: InstallPlan, *atoms: str,
+                 env: dict[str, str] | None = None) -> list[str]:
+    """`emerge` one or more atoms in-chroot: --noreplace so an already-present
+    package is a quick no-op; --getbinpkg when the plan prefers binaries. ``env``
+    prepends ``env KEY=VALUE …`` (e.g. USE / GRUB_PLATFORMS for a single emerge)."""
     argv = ["emerge", "--color", "n", "--noreplace"]
     if plan.binary_pref:
         argv.insert(1, "--getbinpkg")
-    return [*argv, atom]
+    argv = [*argv, *atoms]
+    if env:
+        argv = ["env", *(f"{k}={v}" for k, v in env.items()), *argv]
+    return argv
 
 
 # Sensible install-time defaults for the opt-in day-2 modules.
@@ -896,6 +947,7 @@ def build_registry(plan: InstallPlan, *, root_secret: Secret | None = None) -> l
         SetHostname(),
         SetConsole(),
         InstallKernelSources(),
+        StageKernelConfig(),
         BuildKernel(),
         InstallBootloader(),
         InstallBootStub(),          # arm64/Asahi only; no-op on x86
@@ -940,6 +992,7 @@ def build_minimal_registry(
         SetProfile(),
         EmergeWorld(),
         InstallKernelSources(),
+        StageKernelConfig(),
         BuildKernel(),
         InstallBootloader(),
         InstallBootStub(),          # arm64/Asahi only; no-op on x86 — boot-critical there

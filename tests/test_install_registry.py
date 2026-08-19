@@ -50,6 +50,7 @@ _EXPECTED_LABELS = [
     "Set the hostname",
     "Set the console keymap",
     "Install kernel sources",
+    "Stage the kernel config",
     "Build the kernel",
     "Install the bootloader",
     "Install the m1n1 boot stub",
@@ -69,6 +70,7 @@ _MARKER_KEYS = {
     "Install the HeDE desktop": "install_desktop",
     "Clean up desktop binpkgs": "cleanup_desktop_binpkgs",
     "Install kernel sources": "install_kernel_sources",
+    "Stage the kernel config": "stage_kernel_config",
     "Build the kernel": "build_kernel",
     "Install the bootloader": "install_bootloader",
     "Install the m1n1 boot stub": "install_boot_stub",
@@ -126,9 +128,9 @@ def test_registry_phases_are_non_decreasing():
     assert [s.phase for s in reg[:3]] == [Phase.PREPARE_DISK] * 3
     assert [s.phase for s in reg[3:13]] == [Phase.BASE_SYSTEM] * 10  # +HeDE desktop (x3)
     assert [s.phase for s in reg[13:16]] == [Phase.CONFIGURE] * 3
-    assert [s.phase for s in reg[16:20]] == [Phase.KERNEL_BOOT] * 4  # +kernel sources, +m1n1
-    assert [s.phase for s in reg[20:23]] == [Phase.USERS_NETWORK] * 3
-    assert [s.phase for s in reg[23:24]] == [Phase.FINISH]           # +HeDE session
+    assert [s.phase for s in reg[16:21]] == [Phase.KERNEL_BOOT] * 5  # +sources +stage-config +m1n1
+    assert [s.phase for s in reg[21:24]] == [Phase.USERS_NETWORK] * 3
+    assert [s.phase for s in reg[24:25]] == [Phase.FINISH]           # +HeDE session
 
 
 def test_registry_chroot_and_opens_chroot_flags():
@@ -145,9 +147,9 @@ def test_registry_marker_keys():
 
 
 def test_tier2_default_empty():
-    # base rows + 3 HeDE desktop steps + kernel-sources + enable-session + the
-    # arm64-gated m1n1 boot stub (inert on x86)
-    assert len(build_registry(_plan())) == 24
+    # base rows + 3 HeDE desktop steps + kernel-sources + stage-kernel-config +
+    # enable-session + the arm64-gated m1n1 boot stub (inert on x86)
+    assert len(build_registry(_plan())) == 25
 
 
 def test_boot_stub_step_is_arm64_gated():
@@ -164,6 +166,70 @@ def test_boot_stub_step_is_arm64_gated():
     steps = step.build(arm)
     assert [s.argv for s in steps] == [["update-m1n1", "/efi/m1n1/boot.bin"]]
     assert asyncio.run(step.is_satisfied(arm)) is False        # not yet done → runs
+
+
+def _genkernel_plan(**kernel_kw):
+    import dataclasses
+    plan = _plan()
+    object.__setattr__(plan, "kernel",
+                       dataclasses.replace(plan.kernel, method="genkernel", **kernel_kw))
+    return plan
+
+
+def test_install_kernel_sources_adds_genkernel_for_the_genkernel_method():
+    from gest.core.install.registry import InstallKernelSources
+    # make method (default test plan): gentoo-sources only, no genkernel
+    base = InstallKernelSources().build(_ctx(FakeExecutor()))
+    assert not any("sys-kernel/genkernel" in s.argv for s in base)
+    # genkernel method: also emerges genkernel with USE=-firmware (skips linux-firmware)
+    steps = InstallKernelSources().build(_ctx(FakeExecutor(), plan=_genkernel_plan()))
+    by_label = {s.label: s.argv for s in steps}
+    assert "sys-kernel/gentoo-sources" in by_label["emerge gentoo-sources"]
+    gk = by_label["emerge genkernel"]
+    assert gk[:2] == ["env", "USE=-firmware"] and "sys-kernel/genkernel" in gk
+    assert steps[-1].argv == ["eselect", "kernel", "set", "1"]   # select /usr/src/linux last
+
+
+def test_install_bootloader_emerges_grub_and_efibootmgr_first():
+    from gest.core.install.registry import InstallBootloader
+    steps = InstallBootloader().build(_ctx(FakeExecutor()))       # default plan → uefi
+    first = steps[0].argv
+    assert first[:2] == ["env", "GRUB_PLATFORMS=efi-64"]          # build the efi platform
+    assert "sys-boot/grub" in first and "sys-boot/efibootmgr" in first
+    assert any(s.argv and s.argv[0] == "grub-install" for s in steps)  # then install GRUB
+
+
+def test_stage_kernel_config_writes_the_bundled_virtio_config(tmp_path):
+    from gest.core.install.registry import StageKernelConfig
+    from gest.core.kernel import config as kconfig
+    root = str(tmp_path / "mnt")
+    os.makedirs(root)
+    plan = _genkernel_plan(kernel_config=kconfig.TARGET_KERNEL_CONFIG)
+    object.__setattr__(plan, "arch", "amd64")
+    ctx = _ctx(FakeExecutor(), root=root, plan=plan)
+    step = StageKernelConfig()
+    assert asyncio.run(step.is_satisfied(ctx)) is False           # config set, not yet done
+    asyncio.run(step.run(ctx))
+    written = root + kconfig.TARGET_KERNEL_CONFIG
+    assert os.path.isfile(written)
+    with open(written) as fh:
+        assert "CONFIG_VIRTIO_BLK=y" in fh.read()                 # the fix: virtio built in
+    # inert when no config is set (make method / arch with none bundled)
+    inert = _ctx(FakeExecutor())
+    assert asyncio.run(StageKernelConfig().is_satisfied(inert)) is True
+
+
+def test_assemble_sets_the_kernel_config_for_genkernel_amd64():
+    from gest.core.install.assemble import InstallSelections, assemble_plan
+    from gest.core.kernel import config as kconfig
+    from gest.core.stage3.model import Stage3Selection
+    stage3 = Stage3Selection(url="https://m/s.tar.xz", filename="s.tar.xz", size=1,
+                             digests_url="https://m/s.DIGESTS", signature_url="https://m/s.asc")
+    # default amd64 systemd variant + genkernel → the shipped virtio config is wired
+    plan = assemble_plan(
+        InstallSelections(disk="vda", kernel_method="genkernel", root_password="x"), stage3)
+    assert plan.arch == "amd64"
+    assert plan.kernel.kernel_config == kconfig.TARGET_KERNEL_CONFIG
 
 
 def _desktop_plan():
