@@ -3,11 +3,13 @@
 #include <QMainWindow>
 #include <QStringList>
 
+class QAbstractItemView;
 class QAction;
 class QFileSystemModel;
 class QListView;
 class QListWidget;
 class QModelIndex;
+class QPoint;
 class QStackedWidget;
 class QTreeView;
 
@@ -15,17 +17,21 @@ namespace helm::sefe {
 
 class AddressBar;
 
-// The SeFE main window. Slice 2 "Navigation": a Places pane, a breadcrumb /
-// typeable address bar, details + icons views over a shared QFileSystemModel,
-// and Back/Forward/Up history — double-click opens (folder → navigate, file →
-// default handler), single-click selects. Read-only still; file operations land
-// in slice 3 (see docs/design/sefe.md).
+// The SeFE main window. Slice 3 "Operations": read/write now — the full
+// keyboard contract (F2 rename, Del → Trash, Ctrl+C/X/V, Ctrl+Shift+N new
+// folder, F5 refresh, Alt+Enter properties) plus item/background context menus,
+// on top of slice 2's Places pane + address bar + details/icons navigation.
+// See docs/design/sefe.md.
 class SefeWindow : public QMainWindow {
     Q_OBJECT
 public:
     explicit SefeWindow(QWidget *parent = nullptr);
 
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override;
+
 private:
+    // navigation (slice 2)
     void navigateTo(const QString &dir, bool record = true);
     void openIndex(const QModelIndex &index);
     void goBack();
@@ -34,19 +40,44 @@ private:
     void updateNavActions();
     void highlightPlace(const QString &dir);
 
+    // operations (slice 3)
+    void renameSelected();
+    void deleteSelected();
+    void copySelected(bool cut);
+    void paste();
+    void newFolder();
+    void refresh();
+    void showProperties();
+    void showContextMenu(QAbstractItemView *view, const QPoint &pos);
+
+    QAbstractItemView *activeView() const;
+    QStringList selectedPaths() const;
+
     QFileSystemModel *_model = nullptr;
     QTreeView *_details = nullptr;
     QListView *_icons = nullptr;
     QListWidget *_places = nullptr;
     QStackedWidget *_viewStack = nullptr;
     AddressBar *_address = nullptr;
+
     QAction *_backAct = nullptr;
     QAction *_fwdAct = nullptr;
     QAction *_upAct = nullptr;
+    QAction *_openAct = nullptr;
+    QAction *_renameAct = nullptr;
+    QAction *_deleteAct = nullptr;
+    QAction *_copyAct = nullptr;
+    QAction *_cutAct = nullptr;
+    QAction *_pasteAct = nullptr;
+    QAction *_newFolderAct = nullptr;
+    QAction *_refreshAct = nullptr;
+    QAction *_propsAct = nullptr;
 
     QString _current;
-    QStringList _history; // visited dirs; _histIndex is the current position
+    QStringList _history;
     int _histIndex = -1;
+    QStringList _clip; // cut/copied paths
+    bool _clipCut = false;
 };
 
 } // namespace helm::sefe

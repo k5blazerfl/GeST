@@ -1,9 +1,11 @@
 #include <QtTest>
 
 #include <QDir>
+#include <QFile>
 #include <QStringList>
 #include <QTemporaryDir>
 
+#include "ops.h"
 #include "sefe.h"
 
 class TestSefe : public QObject {
@@ -79,6 +81,60 @@ private slots:
         // trims and empty → base
         QCOMPARE(helm::sefe::normalizePath(QStringLiteral("  /tmp  ")), QStringLiteral("/tmp"));
         QCOMPARE(helm::sefe::normalizePath(QString(), QStringLiteral("/var")), QStringLiteral("/var"));
+    }
+
+    void newFolderNameDisambiguates() {
+        QCOMPARE(helm::sefe::newFolderName({}), QStringLiteral("New folder"));
+        QCOMPARE(helm::sefe::newFolderName({QStringLiteral("New folder")}),
+                 QStringLiteral("New folder (2)"));
+        QCOMPARE(helm::sefe::newFolderName(
+                     {QStringLiteral("New folder"), QStringLiteral("New folder (2)")}),
+                 QStringLiteral("New folder (3)"));
+    }
+
+    void copyNameIsWindowsStyle() {
+        // " - Copy" goes before the extension; folders have none.
+        QCOMPARE(helm::sefe::copyName(QStringLiteral("Report.txt"), {}),
+                 QStringLiteral("Report - Copy.txt"));
+        QCOMPARE(helm::sefe::copyName(QStringLiteral("Work"), {}),
+                 QStringLiteral("Work - Copy"));
+        // dotfiles have no extension
+        QCOMPARE(helm::sefe::copyName(QStringLiteral(".bashrc"), {}),
+                 QStringLiteral(".bashrc - Copy"));
+        // collisions escalate
+        QCOMPARE(helm::sefe::copyName(QStringLiteral("Work"),
+                                      {QStringLiteral("Work - Copy")}),
+                 QStringLiteral("Work - Copy (2)"));
+        QCOMPARE(helm::sefe::copyName(
+                     QStringLiteral("a.txt"),
+                     {QStringLiteral("a - Copy.txt"), QStringLiteral("a - Copy (2).txt")}),
+                 QStringLiteral("a - Copy (3).txt"));
+    }
+
+    void copyAndMoveRecursively() {
+        QTemporaryDir tmp;
+        const QString root = tmp.path();
+        // src/  ├─ file.txt   └─ sub/nested.txt
+        QDir(root).mkpath(QStringLiteral("src/sub"));
+        QFile a(root + "/src/file.txt");
+        QVERIFY(a.open(QIODevice::WriteOnly));
+        a.write("hello");
+        a.close();
+        QFile b(root + "/src/sub/nested.txt");
+        QVERIFY(b.open(QIODevice::WriteOnly));
+        b.write("deep");
+        b.close();
+
+        // copy → both trees exist
+        QVERIFY(helm::sefe::copyRecursively(root + "/src", root + "/copy"));
+        QVERIFY(QFile::exists(root + "/copy/file.txt"));
+        QVERIFY(QFile::exists(root + "/copy/sub/nested.txt"));
+        QVERIFY(QFile::exists(root + "/src/file.txt")); // source untouched
+
+        // move → target exists, source gone
+        QVERIFY(helm::sefe::moveItem(root + "/src", root + "/moved"));
+        QVERIFY(QFile::exists(root + "/moved/sub/nested.txt"));
+        QVERIFY(!QFile::exists(root + "/src"));
     }
 
     void placesIncludeHomeAndComputer() {
