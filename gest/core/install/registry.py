@@ -33,6 +33,7 @@ from gest.core import rootpath
 from gest.core.bootloader import m1n1
 from gest.core.bootloader.install import install_steps
 from gest.core.chroot.prepare import prepare_chroot
+from gest.core.disk import fstab as disk_fstab
 from gest.core.disk import mount as disk_mount
 from gest.core.disk import provision
 from gest.core.disk import reader as disk_reader
@@ -210,7 +211,17 @@ class WriteFstab(FuncStep):
         _emit(on_progress, f"wrote {path}")
 
     async def is_satisfied(self, ctx: InstallContext) -> bool:
-        return os.path.exists(rootpath.resolve(ctx.root, "/etc/fstab"))
+        # The stage3 ALWAYS ships a template /etc/fstab (every entry commented out),
+        # so a bare os.path.exists() wrongly marks this done and SKIPS it — leaving
+        # the template with no root entry. systemd-remount-fs then never remounts /
+        # read-write, so /etc/machine-id can't be written and systemd-logind's state
+        # dir can't be created → no seat → a black desktop. Only satisfied once a
+        # *valid generated* fstab (at least one real entry) is on disk.
+        path = rootpath.resolve(ctx.root, "/etc/fstab")
+        if not os.path.exists(path):
+            return False
+        with open(path) as fh:
+            return disk_fstab.valid_generated_fstab(fh.read())
 
 
 class WriteMakeConf(FuncStep):

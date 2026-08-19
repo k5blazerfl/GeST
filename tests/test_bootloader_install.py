@@ -113,7 +113,9 @@ def test_install_direct_runs_grub_install_then_mkconfig():
     cfg = install.InstallConfig(firmware="uefi")
     seen: list[int] = []
     asyncio.run(install.install(cfg, ex, on_step=seen.append))
-    assert [c[0] for c in ex.calls] == ["grub-install", "grub-mkconfig"]
+    # grub-mkconfig now runs under `sh -c` (stdout-redirect + retry + non-empty gate)
+    assert [c[0] for c in ex.calls] == ["grub-install", "sh"]
+    assert "grub-mkconfig" in ex.calls[1][-1]                     # …still grub-mkconfig inside
     assert seen == [0, 1]
 
 

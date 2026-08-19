@@ -450,6 +450,27 @@ def test_marker_gated_step_is_skipped_when_marked():
     assert fx.calls == []                               # nothing ran
 
 
+def test_writefstab_is_not_satisfied_by_the_stage3_template(tmp_path):
+    # The stage3 ships an all-commented /etc/fstab. A bare exists() check marked the
+    # step done → it was SKIPPED every install → no root entry → read-only root →
+    # logind/machine-id/desktop all break. It must only be satisfied by a VALID
+    # generated fstab (bug #17).
+    from gest.core.install.registry import WriteFstab
+    root = str(tmp_path / "mnt")
+    os.makedirs(os.path.join(root, "etc"))
+    ctx = _ctx(FakeExecutor(), root=root)
+    step = WriteFstab()
+    fstab = os.path.join(root, "etc", "fstab")
+    assert asyncio.run(step.is_satisfied(ctx)) is False          # absent → run it
+    with open(fstab, "w") as fh:                                 # stage3 template (all commented)
+        fh.write("# <fs> <mountpoint> <type> <opts> <dump> <pass>\n"
+                 "#UUID=58e72203-57d1-4497-81ad-97655bd56494 / xfs defaults 0 1\n")
+    assert asyncio.run(step.is_satisfied(ctx)) is False          # template → still run it
+    with open(fstab, "w") as fh:                                 # a real generated fstab
+        fh.write("UUID=1bebf1f8-dc6b-4a25-a848-45a5928edec2\t/\text4\tdefaults\t0 1\n")
+    assert asyncio.run(step.is_satisfied(ctx)) is True           # valid → done
+
+
 def test_createuser_satisfied_when_no_user_requested():
     reg = build_registry(_plan(user=None))
     create = next(s for s in reg if isinstance(s, CreateUser))
