@@ -456,6 +456,20 @@ def test_createuser_satisfied_when_no_user_requested():
     assert asyncio.run(create.is_satisfied(_ctx(FakeExecutor()))) is True
 
 
+def test_createuser_adds_desktop_device_groups_only_for_a_desktop_install():
+    # a desktop autologin user needs video/input/audio/render (best-effort per group)
+    desk = _plan(user=UserSpec("alice", wheel=True))
+    object.__setattr__(desk, "desktop", True)
+    grp = [s.argv for s in CreateUser().build(_ctx(FakeExecutor(), plan=desk))
+           if s.argv and s.argv[0] == "sh"]
+    assert grp and all(g in grp[0][-1] for g in ("video", "input", "audio", "render"))
+    assert "getent group" in grp[0][-1]                      # best-effort: skip missing groups
+    # a base (non-desktop) install gets wheel only, no device-group step
+    base = _plan(user=UserSpec("alice", wheel=True))          # desktop=False default
+    assert not any(s.argv and s.argv[0] == "sh"
+                   for s in CreateUser().build(_ctx(FakeExecutor(), plan=base)))
+
+
 # --- config writes go to real files on the host (no D-Bus) ------------------
 
 def test_config_step_writes_a_real_file_and_becomes_satisfied(tmp_path):

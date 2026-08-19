@@ -727,6 +727,16 @@ class CreateUser(ArgvStep):
         if user.wheel:
             steps.append(Step(f"add {user.name} to wheel",
                               gpasswd_argv("wheel", user.name, add=True)))
+        if ctx.plan.desktop:
+            # A desktop autologin user needs GPU/input/audio access. systemd-logind
+            # grants it to the active session via seat ACLs, but the conventional
+            # groups are belt-and-suspenders (and needed if a compositor probes them
+            # directly). Best-effort per group so one the profile didn't create can't
+            # fail the install.
+            steps.append(Step(f"add {user.name} to the desktop device groups", [
+                "sh", "-c",
+                'for g in video input audio render; do getent group "$g" '
+                f'>/dev/null && gpasswd -a {user.name} "$g"; done']))
         return steps
 
     async def is_satisfied(self, ctx: InstallContext) -> bool:
