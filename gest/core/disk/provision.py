@@ -212,6 +212,43 @@ def uefi_plan(disk_name: str, esp_size: str, swap_size: str, root_fs: str) -> Di
     return plan
 
 
+# A legacy-BIOS install on a GPT disk needs a small unformatted BIOS-boot
+# partition (gdisk type EF02) for GRUB to embed core.img into — GPT has no
+# post-MBR gap, so without it grub-install refuses ("this GPT partition label
+# contains no BIOS Boot Partition; embedding won't be possible … will not proceed
+# with blocklists"). 2 MiB is the conventional size and leaves room for core.img.
+BIOS_BOOT_SIZE = "2M"
+
+
+def bios_plan(disk_name: str, swap_size: str, root_fs: str) -> DiskPlan:
+    """Build a GPT/BIOS ``DiskPlan``: a BIOS-boot partition + optional swap + root.
+
+    Legacy-BIOS counterpart of :func:`uefi_plan`. There is no ESP — BIOS GRUB
+    embeds ``core.img`` in the ``EF02`` partition and reads ``/boot/grub`` from the
+    root filesystem. The BIOS-boot partition carries no filesystem (it is written
+    raw), so it never appears in the mount plan or fstab. ``swap_size`` empty means
+    no swap. Raises ``ValueError`` on an unsupported root filesystem or a bad
+    size/label (checked eagerly via :func:`plan_steps`).
+    """
+    if root_fs not in commands.FS_KINDS or root_fs == "swap":
+        raise ValueError(f"unsupported root filesystem: {root_fs!r}")
+    partitions: list[Partition] = []
+    filesystems: list[Filesystem] = []
+    number = 1
+    partitions.append(Partition(number, BIOS_BOOT_SIZE, "EF02", "BIOS"))
+    number += 1                    # no Filesystem: GRUB embeds core.img raw here
+    if swap_size:
+        partitions.append(Partition(number, swap_size, "8200", "swap"))
+        filesystems.append(Filesystem(partition_device(disk_name, number), "swap", "swap"))
+        number += 1
+    partitions.append(Partition(number, "rest", "8300", "root"))
+    filesystems.append(Filesystem(partition_device(disk_name, number), root_fs, "root"))
+    plan = DiskPlan(disk=f"/dev/{disk_name}", wipe=True,
+                    partitions=partitions, filesystems=filesystems)
+    plan_steps(plan)          # validate sizes/labels eagerly; raises ValueError
+    return plan
+
+
 def plan_phase_labels(plan: DiskPlan) -> list[str]:
     """Coarse, one-per-phase labels for the backend path (and the apply UI).
 

@@ -226,6 +226,13 @@ def profile_name(arch: str, flavor: str) -> str:
     return f"{base}/systemd" if flavor.endswith("systemd") else base
 
 
+def _dev_path(name: str) -> str:
+    """A ``/dev`` node from a bare disk name (``vda`` -> ``/dev/vda``); an
+    already-absolute ``/dev/...`` path passes through unchanged."""
+    name = name.strip()
+    return name if name.startswith("/dev/") else f"/dev/{name}"
+
+
 def assemble_plan(sel: InstallSelections, stage3: Stage3Selection) -> InstallPlan:
     """Build the frozen :class:`InstallPlan` from ``sel`` and a resolved ``stage3``.
 
@@ -261,7 +268,12 @@ def assemble_plan(sel: InstallSelections, stage3: Stage3Selection) -> InstallPla
     # step; requesting it without the desktop is a no-op, not a broken install.
     use_seamless = sel.seamless and sel.install_desktop
     profile = profile_name(arch, sel.variant.flavor)
-    disk = provision.uefi_plan(sel.disk, sel.esp_size, sel.swap_size, sel.root_fs)
+    # BIOS installs need a GPT layout with a BIOS-boot partition (no ESP); UEFI
+    # needs the ESP. The bootloader step branches on firmware to match this layout.
+    if sel.firmware == "bios":
+        disk = provision.bios_plan(sel.disk, sel.swap_size, sel.root_fs)
+    else:
+        disk = provision.uefi_plan(sel.disk, sel.esp_size, sel.swap_size, sel.root_fs)
     mount = disk_mount.derive_mount_plan(disk, sel.target_root)
     return InstallPlan(
         disk=disk,
@@ -280,7 +292,13 @@ def assemble_plan(sel: InstallSelections, stage3: Stage3Selection) -> InstallPla
                            if sel.kernel_method == "genkernel"
                            and kconfig.bundled_config(arch) is not None else "")),
         bootloader=InstallConfig(
-            firmware=sel.firmware, efi_directory=sel.efi_directory, disk=sel.boot_disk,
+            firmware=sel.firmware, efi_directory=sel.efi_directory,
+            # BIOS GRUB writes to the target disk's /dev node. GeST stores disk names
+            # bare ("vda"), but grub-install needs the device path, so normalise here
+            # (as provision does for the layout) and default to the install disk when
+            # no separate BIOS target was chosen. UEFI ignores this field.
+            disk=(_dev_path(sel.boot_disk or sel.disk)
+                  if sel.firmware == "bios" else sel.boot_disk),
             # The bootloader step runs chrooted into the target (native paths),
             # so seamless writes/stages inside the target with root="" — the chroot
             # is the seam. (plymouth is baked into the initramfs by BuildKernel above.)
