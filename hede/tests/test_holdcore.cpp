@@ -444,6 +444,47 @@ private slots:
         QCOMPARE(res.error, QStringLiteral("cancelled"));
     }
 
+    // A3: encrypted round-trip — create an AES-256 zip, then extract needs the
+    // passphrase (missing/wrong → needsPassphrase; right → the real content).
+    void encryptRoundTrip() {
+        QTemporaryDir tmp;
+        const QString root = tmp.path();
+        writeFile(root + "/secret.txt", "classified");
+        const QString zip = root + "/enc.zip";
+        const auto cr =
+            helm::hold::create({root + "/secret.txt"}, zip, {}, QStringLiteral("s3cret"));
+        if (!cr.ok)
+            QSKIP("this libarchive build can't write encrypted zips");
+        QVERIFY(QFile::exists(zip));
+        QVERIFY(helm::hold::isEncrypted(zip));
+
+        // no passphrase → refused, flagged for a prompt, nothing written
+        const auto no = helm::hold::extractAll(zip, root + "/no");
+        QVERIFY(!no.ok);
+        QVERIFY(no.needsPassphrase);
+        QVERIFY(!QFile::exists(root + "/no/secret.txt"));
+
+        // wrong passphrase → also flagged
+        const auto wrong = helm::hold::extractAll(zip, root + "/wrong", {}, {},
+                                                  helm::hold::Overwrite::Replace,
+                                                  QStringLiteral("nope"));
+        QVERIFY(!wrong.ok);
+        QVERIFY(wrong.needsPassphrase);
+
+        // right passphrase → the real content
+        const auto ok = helm::hold::extractAll(zip, root + "/ok", {}, {},
+                                               helm::hold::Overwrite::Replace,
+                                               QStringLiteral("s3cret"));
+        QVERIFY2(ok.ok, qPrintable(ok.error));
+        QCOMPARE(readFile(root + "/ok/secret.txt"), QByteArray("classified"));
+
+        // a plain archive is not flagged encrypted
+        writeFile(root + "/plain.txt", "hi");
+        const QString plain = root + "/plain.zip";
+        QVERIFY(helm::hold::create({root + "/plain.txt"}, plain).ok);
+        QVERIFY(!helm::hold::isEncrypted(plain));
+    }
+
 private:
     static void writeFile(const QString &path, const QByteArray &data) {
         QFile f(path);

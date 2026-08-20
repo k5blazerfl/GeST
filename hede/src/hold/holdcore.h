@@ -43,6 +43,9 @@ struct Result {
     // whose target leaves the destination). Extraction of the rest still succeeds
     // (`ok == true`); the UI can report "N entries skipped for safety".
     QStringList skipped;
+    // The archive is encrypted and the passphrase was missing or wrong (A3). The op
+    // failed (`ok == false`); Seahorse prompts (or reads the Keychain) and retries.
+    bool needsPassphrase = false;
 };
 
 // A progress/cancel hook for the long-running ops (A0, docs/design/archive-support.md).
@@ -125,8 +128,14 @@ struct Edits {
 
 // --- libarchive-backed engine ---
 
-// List an archive's entries (directories and files).
+// List an archive's entries (directories and files). Entry NAMES are readable even
+// for an encrypted archive (zip encrypts data, not the central directory), so no
+// passphrase is needed to browse; one is only needed to extract encrypted data.
 Listing list(const QString &archive);
+
+// True if `archive` has encrypted entries (needs a passphrase to extract). Cheap —
+// opens and checks the header. False for a plain or unreadable archive.
+bool isEncrypted(const QString &archive);
 
 // Apply `edits` to `archive` in place (decision A — the streaming mutation engine):
 // stream every source entry through a fresh writer of the SAME format + filters
@@ -144,25 +153,31 @@ Result rewrite(const QString &archive, const Edits &edits, const Progress &progr
 // total=-1 (the entry count isn't known until the stream ends).
 Result extractAll(const QString &archive, const QString &destDir,
                   const Progress &progress = {}, const Limits &limits = {},
-                  Overwrite overwrite = Overwrite::Replace);
+                  Overwrite overwrite = Overwrite::Replace, const QString &passphrase = {});
 
 // Extract the single entry `entryPath` (its parent dirs recreated) into
 // `destDir`. Errors if no such entry. (Single + fast — no progress hook.)
-Result extract(const QString &archive, const QString &entryPath, const QString &destDir);
+Result extract(const QString &archive, const QString &entryPath, const QString &destDir,
+               const QString &passphrase = {});
 
 // Extract the named `entryPaths` (and everything under a requested directory) into
 // `destDir` in ONE pass over the archive — the multi-select extract. Progress is
 // reported against entryPaths.size().
 Result extractEntries(const QString &archive, const QStringList &entryPaths,
                       const QString &destDir, const Progress &progress = {},
-                      const Limits &limits = {}, Overwrite overwrite = Overwrite::Replace);
+                      const Limits &limits = {}, Overwrite overwrite = Overwrite::Replace,
+                      const QString &passphrase = {});
 
 // Create an archive at `archivePath` from host `files`, each stored by its base
 // name (directories added recursively). Format is inferred from the extension:
 // .zip/.cbz → zip, .7z → 7z, else a tar with an optional gzip/bzip2/xz filter
 // (.tar, .tar.gz/.tgz, .tar.bz2/.tbz2, .tar.xz/.txz). Reports progress against the
 // top-level `files` count; a cancel removes the partial output.
-Result create(const QStringList &files, const QString &archivePath, const Progress &progress = {});
+// A non-empty `passphrase` encrypts the output (AES-256 for zip/cbz; the format's
+// native encryption for others that support it). Encryption depends on the linked
+// libarchive's build — create returns an error if it can't encrypt this format.
+Result create(const QStringList &files, const QString &archivePath, const Progress &progress = {},
+              const QString &passphrase = {});
 
 } // namespace helm::hold
 

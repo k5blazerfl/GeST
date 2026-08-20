@@ -101,11 +101,15 @@ namespace {
 struct Reader {
     struct archive *a = archive_read_new();
     ~Reader() { archive_read_free(a); }
-    bool open(const QString &path) {
+    bool open(const QString &path, const QString &passphrase = QString()) {
         archive_read_support_filter_all(a);
         archive_read_support_format_all(a);
+        if (!passphrase.isEmpty())
+            archive_read_add_passphrase(a, passphrase.toUtf8().constData()); // decrypt entries
         return archive_read_open_filename(a, path.toLocal8Bit().constData(), 10240) == ARCHIVE_OK;
     }
+    // >0 if the archive has encrypted entries, 0 if none, <0 if unknown/unsupported.
+    int encryptedEntries() const { return archive_read_has_encrypted_entries(a); }
     QString error() const { return QString::fromUtf8(archive_error_string(a)); }
 };
 
@@ -213,13 +217,17 @@ Result cancelledResult() {
 // a requested directory. `progress` reports count-based advances and can cancel.
 Result extractImpl(const QString &archive, const QString &destDir, const QSet<QString> *want,
                    qint64 total, const Progress &progress, const Limits &limits,
-                   Overwrite overwrite) {
+                   Overwrite overwrite, const QString &passphrase) {
     Result r;
     Reader reader;
-    if (!reader.open(archive)) {
+    if (!reader.open(archive, passphrase)) {
         r.error = reader.error();
         return r;
     }
+    // Encrypted-archive tracking (A3): checked per entry in the loop (the encryption
+    // flag isn't reliably known until a header is read). A wrong/missing passphrase
+    // surfaces via Result::needsPassphrase so Seahorse can prompt and retry.
+    bool sawEncrypted = false;
     const QString base = QDir::cleanPath(destDir);
     QDir().mkpath(base);
 
@@ -234,6 +242,14 @@ Result extractImpl(const QString &archive, const QString &destDir, const QSet<QS
         if (limits.maxEntries > 0 && ++seen > limits.maxEntries) {
             r.error = QStringLiteral("archive exceeds the %1-entry limit").arg(limits.maxEntries);
             return r;
+        }
+        if (archive_entry_is_encrypted(entry)) { // A3: this entry's data is encrypted
+            sawEncrypted = true;
+            if (passphrase.isEmpty()) {
+                r.needsPassphrase = true;
+                r.error = QStringLiteral("passphrase required");
+                return r;
+            }
         }
         const QString name = decodeEntryName(archive_entry_pathname(entry));
         if (want) {
@@ -280,9 +296,12 @@ Result extractImpl(const QString &archive, const QString &destDir, const QSet<QS
                 archive_read_data_skip(reader.a);
                 continue;
             }
-            const Result w = writeData(reader.a, dest, written, limits);
-            if (!w.ok)
+            Result w = writeData(reader.a, dest, written, limits);
+            if (!w.ok) {
+                if (sawEncrypted) // a read failure on encrypted data = wrong passphrase
+                    w.needsPassphrase = true;
                 return w;
+            }
         }
         // Ratio guard (the compressed-vs-uncompressed zip bomb), checked only past a
         // floor so ordinary small files never trip it.
@@ -478,31 +497,52 @@ Listing list(const QString &archive) {
     return out;
 }
 
-Result extractAll(const QString &archive, const QString &destDir, const Progress &progress,
-                  const Limits &limits, Overwrite overwrite) {
-    return extractImpl(archive, destDir, nullptr, -1, progress, limits, overwrite);
+bool isEncrypted(const QString &archive) {
+    Reader reader;
+    if (!reader.open(archive))
+        return false;
+    // Force the format to be probed so encryptedEntries() has an answer.
+    struct archive_entry *e = nullptr;
+    archive_read_next_header(reader.a, &e);
+    return reader.encryptedEntries() > 0;
 }
 
-Result extract(const QString &archive, const QString &entryPath, const QString &destDir) {
+Result extractAll(const QString &archive, const QString &destDir, const Progress &progress,
+                  const Limits &limits, Overwrite overwrite, const QString &passphrase) {
+    return extractImpl(archive, destDir, nullptr, -1, progress, limits, overwrite, passphrase);
+}
+
+Result extract(const QString &archive, const QString &entryPath, const QString &destDir,
+               const QString &passphrase) {
     const QSet<QString> want{entryPath};
-    return extractImpl(archive, destDir, &want, 1, {}, {}, Overwrite::Replace);
+    return extractImpl(archive, destDir, &want, 1, {}, {}, Overwrite::Replace, passphrase);
 }
 
 Result extractEntries(const QString &archive, const QStringList &entryPaths, const QString &destDir,
-                      const Progress &progress, const Limits &limits, Overwrite overwrite) {
+                      const Progress &progress, const Limits &limits, Overwrite overwrite,
+                      const QString &passphrase) {
     if (entryPaths.isEmpty()) {
         Result r;
         r.ok = true;
         return r;
     }
     const QSet<QString> want(entryPaths.begin(), entryPaths.end());
-    return extractImpl(archive, destDir, &want, entryPaths.size(), progress, limits, overwrite);
+    return extractImpl(archive, destDir, &want, entryPaths.size(), progress, limits, overwrite,
+                       passphrase);
 }
 
-Result create(const QStringList &files, const QString &archivePath, const Progress &progress) {
+Result create(const QStringList &files, const QString &archivePath, const Progress &progress,
+              const QString &passphrase) {
     Result r;
     struct archive *a = archive_write_new();
-    configureWriteFormat(a, archivePath.toLower());
+    const QString lower = archivePath.toLower();
+    configureWriteFormat(a, lower);
+    if (!passphrase.isEmpty()) { // A3: encrypt the output
+        archive_write_set_passphrase(a, passphrase.toUtf8().constData());
+        // zip needs an explicit strong cipher; other formats use their own on the passphrase.
+        if (lower.endsWith(QLatin1String(".zip")) || lower.endsWith(QLatin1String(".cbz")))
+            archive_write_set_options(a, "zip:encryption=aes256");
+    }
     if (archive_write_open_filename(a, archivePath.toLocal8Bit().constData()) != ARCHIVE_OK) {
         r.error = QString::fromUtf8(archive_error_string(a));
         archive_write_free(a);
