@@ -41,18 +41,38 @@ stand up the machine that builds the installer.
 From the dev box:
 
 ```sh
-packaging/livecd/run-on-builder.sh --boot        # build remotely, pull ISO, boot it locally
-packaging/livecd/run-on-builder.sh --boot --uefi # same, OVMF instead of SeaBIOS
+packaging/livecd/run-on-builder.sh --smoke       # build remotely, pull ISO, headless PASS/FAIL
+packaging/livecd/run-on-builder.sh --boot        # ... or open an interactive QEMU window instead
+packaging/livecd/run-on-builder.sh --smoke --uefi # same, OVMF instead of SeaBIOS
 ```
 
 It rsyncs your current checkout (latest HEAD, no push needed), runs
 `spin-up.sh --no-boot` on the builder, and pulls the ISO (+ `.sha256`) into
-`~/gest-isos`. Boot-testing stays **local on purpose** — `qemu-test.sh` opens a
-QEMU display a headless builder can't show.
+`~/gest-isos`. QEMU runs **locally on purpose** — the headless builder has no
+display. `--smoke` is the unattended gate (`boot-smoke.sh`: boots headless and
+asserts the image reaches the greeter); `--boot` is the interactive window
+(`qemu-test.sh`) for clicking through the installer.
 
 Useful flags: `--out DIR` (where the ISO lands), `--snapshot ID` /
 `--storedir DIR` (passthrough to catalyst), `--sync-only` (just push the
 checkout).
+
+## The validated build → release flow
+
+The build is gated end to end — no manual "did it install the right version /
+does it boot" checks:
+
+1. **`run-on-builder.sh --smoke`** — builds on the builder, where `build.sh`
+   automatically runs **`assert-iso-versions.sh`** after catalyst: the build
+   *fails* if `app-admin/gest` / `gui-apps/hede` came from a stale **binary
+   package** (the hede-0.3.0 fallback bug) or at a version that doesn't match the
+   overlay. Then the ISO is pulled back and **`boot-smoke.sh`** boots it headless
+   and asserts it reaches the greeter. Green here = the ISO installs the right
+   versions *and* boots.
+2. **`packaging/stack-status.py --strict --amphitheater /var/db/repos/amphitheater`**
+   — before you tidelock, confirm every version line agrees across source ↔
+   overlay ↔ Manifest ↔ Amphitheater ↔ the ISO you just built (`--build-log`).
+3. Tidelock.
 
 ## The binhost dividend
 
@@ -69,5 +89,5 @@ quickpkg-the-live-env hack and makes both ISO builds and GeSI installs fast.
 ## What's not automated (yet)
 
 - The base OS install on the builder (step 1) — that's yours.
-- An automated pass/fail boot smoke (`qemu-test.sh` is currently interactive)
-  and a build-log version-assertion gate — next on the maintenance roadmap.
+- Nightly/CI scheduling of `run-on-builder.sh --smoke` on the build host (the
+  gate exists; wiring it to a timer/cron is the remaining step).

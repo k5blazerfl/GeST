@@ -5,7 +5,7 @@
 #   packaging/livecd/run-on-builder.sh [--builder user@host] [--out DIR]
 #                                      [--workdir DIR] [--snapshot ID]
 #                                      [--storedir DIR] [--sync-only]
-#                                      [--boot [--uefi]]
+#                                      [--boot [--uefi]] [--smoke [--uefi]]
 #
 # Catalyst is heavy (CPU + IO); this drives it on a dedicated Gentoo build host
 # instead of your laptop. It does three things over SSH:
@@ -15,9 +15,13 @@
 #      writes config.env, runs catalyst)
 #   3. rsyncs the built ISO (+ .sha256 if present) back to --out on this machine
 #
-# Boot-testing stays LOCAL on purpose: qemu-test.sh opens a QEMU display, which
-# a headless builder can't show. Pass --boot to launch qemu-test.sh here on the
-# pulled ISO once it lands (add --uefi for OVMF instead of SeaBIOS).
+# Boot-testing stays LOCAL on purpose: QEMU runs on this machine, not the
+# headless builder. Two options once the ISO lands:
+#   --smoke   unattended pass/fail — boot headless and assert the image reaches
+#             the greeter (boot-smoke.sh). This is the gate; use it in scripts.
+#   --boot    interactive — open a QEMU window (qemu-test.sh) to click through
+#             the installer yourself.
+# Add --uefi to either for OVMF instead of SeaBIOS.
 #
 # The builder is a normal Gentoo box you provisioned yourself (handbook / stage3
 # — no GeSI dependency). It must have: dev-util/catalyst configured, a matching
@@ -38,6 +42,7 @@ snapshot=""
 storedir=""
 sync_only=0
 boot=0
+smoke=0
 firmware="bios"
 
 while [ $# -gt 0 ]; do
@@ -49,6 +54,7 @@ while [ $# -gt 0 ]; do
         --storedir) storedir="$2"; shift 2 ;;
         --sync-only) sync_only=1; shift ;;
         --boot)     boot=1; shift ;;
+        --smoke)    smoke=1; shift ;;
         --uefi)     firmware="uefi"; shift ;;
         -h|--help)  grep -E '^#( |$)' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "unknown option: $1" >&2; exit 1 ;;
@@ -133,6 +139,20 @@ local_iso="${out}/$(basename "${remote_iso}")"
 say "ISO ready: ${local_iso}  ($(du -h "${local_iso}" | cut -f1))"
 
 # --- 4. optional local boot-test --------------------------------------------
+# --smoke: unattended headless pass/fail (the gate). Needs boot-smoke.sh, which
+# ships alongside this script once the ISO-build-gates change has landed; degrade
+# gracefully if this checkout predates it.
+if [ "${smoke}" = 1 ]; then
+    command -v qemu-system-x86_64 >/dev/null \
+        || die "--smoke needs qemu on THIS machine (emerge app-emulation/qemu)"
+    if [ -x "${here}/boot-smoke.sh" ]; then
+        say "Headless boot-smoke (${firmware})"
+        exec "${here}/boot-smoke.sh" "${local_iso}" "${firmware}"
+    fi
+    die "--smoke needs boot-smoke.sh (not in this checkout) — pull the ISO-build-gates change, or use --boot"
+fi
+
+# --boot: interactive QEMU window.
 if [ "${boot}" = 1 ]; then
     command -v qemu-system-x86_64 >/dev/null \
         || die "--boot needs qemu on THIS machine (emerge app-emulation/qemu)"
@@ -140,4 +160,7 @@ if [ "${boot}" = 1 ]; then
     exec "${here}/qemu-test.sh" "${local_iso}" "${firmware}"
 fi
 echo
+if [ -x "${here}/boot-smoke.sh" ]; then
+    echo "Smoke-test it locally with:  packaging/livecd/boot-smoke.sh '${local_iso}' ${firmware}"
+fi
 echo "Boot it locally with:  packaging/livecd/qemu-test.sh '${local_iso}' ${firmware}"
