@@ -38,6 +38,8 @@
 #include <QListWidget>
 #include <QLocale>
 #include <QMenu>
+#include <QMenuBar>
+#include <QMessageBox>
 #include <QMimeData>
 #include <QMimeDatabase>
 #include <QModelIndex>
@@ -103,8 +105,8 @@ SefeWindow::SefeWindow(QWidget *parent) : QMainWindow(parent) {
     connect(editShortcut, &QShortcut::activated, _address, &AddressBar::beginEdit);
 
     bar->addSeparator();
-    auto *viewAct = bar->addAction(QIcon::fromTheme(QStringLiteral("view-list-details")),
-                                   QStringLiteral("Toggle view"));
+    _viewToggleAct = bar->addAction(QIcon::fromTheme(QStringLiteral("view-list-details")),
+                                    QStringLiteral("Toggle view"));
 
     // --- the Helm throbber, pinned top-right (Netscape's spot) ---
     auto *spacer = new QWidget(this);
@@ -159,9 +161,11 @@ SefeWindow::SefeWindow(QWidget *parent) : QMainWindow(parent) {
     _compressAct = op(QStringLiteral("Compress to .zip"), QKeySequence(),
                       &SefeWindow::compressSelection);
     _holdAct = op(QStringLiteral("Open with Hold"), QKeySequence(), &SefeWindow::openInHold);
-    auto *selectAllAct = op(QStringLiteral("Select all"), QKeySequence::SelectAll, nullptr);
-    connect(selectAllAct, &QAction::triggered, this,
+    _selectAllAct = op(QStringLiteral("Select all"), QKeySequence::SelectAll, nullptr);
+    connect(_selectAllAct, &QAction::triggered, this,
             [this] { if (auto *v = activeView()) v->selectAll(); });
+
+    buildMenuBar(); // File/Edit/View/Go/Tools/Help over the same actions
 
     // --- details + icons views over the shared model ---
     auto initView = [this](QAbstractItemView *v) {
@@ -209,7 +213,7 @@ SefeWindow::SefeWindow(QWidget *parent) : QMainWindow(parent) {
     _viewStack = new QStackedWidget(this);
     _viewStack->addWidget(_details);
     _viewStack->addWidget(_icons);
-    connect(viewAct, &QAction::triggered, this, [this] {
+    connect(_viewToggleAct, &QAction::triggered, this, [this] {
         _viewStack->setCurrentIndex(_viewStack->currentIndex() == 0 ? 1 : 0);
         const QModelIndex root = _model->index(_current);
         _details->setRootIndex(root);
@@ -244,6 +248,80 @@ SefeWindow::~SefeWindow() {
     delete _iconProvider;
     delete _archiveModel;
     delete _extractTemp;
+}
+
+// The default menu bar. Every entry is one of the QActions already built in the
+// constructor, so the menu bar, the toolbar, and the right-click menu all drive
+// the same action (shortcuts stay in sync). Only two actions are menu-only: the
+// Menu Bar toggle and About.
+void SefeWindow::buildMenuBar() {
+    QMenuBar *mb = menuBar();
+
+    QMenu *file = mb->addMenu(QStringLiteral("&File"));
+    file->addAction(_newFolderAct);
+    file->addAction(_openAct);
+    file->addAction(_openWithAct);
+    file->addSeparator();
+    file->addAction(_extractHereAct);
+    file->addAction(_extractToAct);
+    file->addAction(_compressAct);
+    file->addSeparator();
+    file->addAction(_propsAct);
+    QAction *closeAct = file->addAction(QStringLiteral("Close"));
+    closeAct->setShortcut(QKeySequence::Close); // Ctrl+W
+    connect(closeAct, &QAction::triggered, this, &QWidget::close);
+
+    QMenu *edit = mb->addMenu(QStringLiteral("&Edit"));
+    edit->addAction(_cutAct);
+    edit->addAction(_copyAct);
+    edit->addAction(_pasteAct);
+    edit->addSeparator();
+    edit->addAction(_renameAct);
+    edit->addAction(_deleteAct);
+    edit->addSeparator();
+    edit->addAction(_copyPathAct);
+    edit->addAction(_selectAllAct);
+
+    QMenu *view = mb->addMenu(QStringLiteral("&View"));
+    view->addAction(_viewToggleAct);
+    view->addAction(_refreshAct);
+    view->addSeparator();
+    _menuBarAct = view->addAction(QStringLiteral("Menu &Bar"));
+    _menuBarAct->setCheckable(true);
+    _menuBarAct->setChecked(true);
+    _menuBarAct->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_M));
+    connect(_menuBarAct, &QAction::toggled, mb, &QWidget::setVisible);
+    addAction(_menuBarAct); // window-wide, so Ctrl+M restores a hidden bar
+
+    QMenu *go = mb->addMenu(QStringLiteral("&Go"));
+    go->addAction(_backAct);
+    go->addAction(_fwdAct);
+    go->addAction(_upAct);
+    go->addSeparator();
+    for (const Place &p : places()) {
+        QAction *a = go->addAction(QIcon::fromTheme(p.icon), p.name);
+        const QString path = p.path;
+        connect(a, &QAction::triggered, this, [this, path] { navigateTo(path); });
+    }
+
+    QMenu *tools = mb->addMenu(QStringLiteral("&Tools"));
+    tools->addAction(_drydockAct);
+    tools->addAction(_shareAct);
+    tools->addSeparator();
+    tools->addAction(_holdAct);
+
+    QMenu *help = mb->addMenu(QStringLiteral("&Help"));
+    QAction *about = help->addAction(QStringLiteral("&About Seahorse"));
+    connect(about, &QAction::triggered, this, &SefeWindow::showAbout);
+}
+
+void SefeWindow::showAbout() {
+    QMessageBox::about(
+        this, QStringLiteral("About Seahorse"),
+        QStringLiteral("<b>Seahorse</b> — the Seahorse File Explorer (SeFE)<br>"
+                       "HeDE's native file manager.<br><br>"
+                       "Browse your hold — with archive browse-in-place, and "
+                       "Drydock / Gangway / Hold interop."));
 }
 
 template <class Work, class Done>
