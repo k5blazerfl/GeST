@@ -14,11 +14,12 @@ namespace helm::sefe {
 // settles. The animation is a 30-frame sprite sheet (:/seahorse/throbber.png,
 // 6×5 grid): while busy it plays the loop (the moon runs its phases, the sky and
 // wheel carry a hand-placed "nightly snapshot" wobble); idle it rests on the
-// full-moon frame. Clicking it sails Home, like Netscape's throbber → home page.
+// frame matching TONIGHT'S real moon phase (restFrame()), so a resting Seahorse
+// shows the actual moon over the Helm. Clicking it sails Home, like Netscape's.
 //
 // Busy is ref-counted: begin()/end() nest, so overlapping operations keep it
 // playing; it settles only when the last ends — and then only once the loop
-// comes back around to the rest frame, so it always parks on the full moon
+// comes back around to the rest frame, so it always parks on tonight's moon
 // (after a minimum-visible span, so instant work still animates rather than
 // flickering).
 class HelmThrobber : public QWidget {
@@ -50,18 +51,18 @@ class HelmThrobber : public QWidget {
     void mouseReleaseEvent(QMouseEvent *) override;
 
   private:
-    void tick(); // advance one sprite frame
+    void tick();            // advance one sprite frame
+    int restFrame() const;  // the sprite frame matching tonight's real moon phase
 
     static constexpr int kCols = 6;
     static constexpr int kRows = 5;
     static constexpr int kCount = 30;
-    static constexpr int kRestFrame = 0; // full moon
 
     QTimer *_timer = nullptr;
     QElapsedTimer _shownSince; // guards the minimum-visible span
     QPixmap _sheet;            // the 6×5 sprite sheet
     int _fw = 0, _fh = 0;      // frame size within the sheet
-    int _frame = kRestFrame;
+    int _frame = 0;            // set to restFrame() at construction
     int _busy = 0;             // active begin() count
     bool _active = false;      // busy (or within the minimum-visible span)
     QString _activity;         // current tooltip verb
