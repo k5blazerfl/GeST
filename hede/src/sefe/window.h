@@ -3,6 +3,8 @@
 #include <QMainWindow>
 #include <QStringList>
 
+#include <functional>
+
 class QAbstractItemView;
 class QAction;
 class QFileSystemModel;
@@ -21,6 +23,7 @@ class ArchiveModel; // the archive tree model lives in the shared hold-core lib
 namespace helm::sefe {
 
 class AddressBar;
+class HelmThrobber;
 class ThumbnailIconProvider;
 
 // The SeFE main window. Slice 3 "Operations": read/write now — the full
@@ -69,6 +72,13 @@ private:
     QAbstractItemView *activeView() const;
     QStringList selectedPaths() const;
 
+    // Run `work` off the UI thread while the Helm throbber spins, then deliver
+    // its result to `done` back on the UI thread. Keeps hold-core archive work
+    // (extract/compress) from freezing the window — and makes the throbber spin
+    // for real. Defined in window.cpp (only instantiated there).
+    template <class Work, class Done>
+    void runBusy(const QString &activity, Work work, Done done);
+
     QFileSystemModel *_model = nullptr;
     ThumbnailIconProvider *_iconProvider = nullptr; // owned; outlives the model
     helm::hold::ArchiveModel *_archiveModel = nullptr; // owned; the archive being browsed
@@ -79,6 +89,7 @@ private:
     QListWidget *_places = nullptr;
     QStackedWidget *_viewStack = nullptr;
     AddressBar *_address = nullptr;
+    HelmThrobber *_throbber = nullptr; // Netscape-style busy light (top-right)
 
     QAction *_backAct = nullptr;
     QAction *_fwdAct = nullptr;
