@@ -262,3 +262,29 @@ def test_uefi_plan_rejects_bad_root_fs():
         provision.uefi_plan("sda", "512M", "", "swap")     # swap isn't a root fs
     with pytest.raises(ValueError):
         provision.uefi_plan("sda", "512M", "", "reiser4")  # unsupported
+
+
+def test_bios_plan_with_swap():
+    plan = provision.bios_plan("sda", "8G", "ext4")
+    assert plan.disk == "/dev/sda" and plan.wipe
+    # A BIOS-boot partition (EF02) leads, then swap, then root; no ESP.
+    assert [(p.number, p.size, p.type_guid) for p in plan.partitions] == \
+        [(1, "2M", "EF02"), (2, "8G", "8200"), (3, "rest", "8300")]
+    # The EF02 partition carries no filesystem — it never gets mkfs'd, mounted, or
+    # written to fstab (GRUB embeds core.img into it raw).
+    assert [(f.device, f.kind) for f in plan.filesystems] == \
+        [("/dev/sda2", "swap"), ("/dev/sda3", "ext4")]
+    assert "EF00" not in [p.type_guid for p in plan.partitions]   # no ESP
+
+
+def test_bios_plan_without_swap():
+    plan = provision.bios_plan("nvme0n1", "", "xfs")
+    assert [(p.number, p.type_guid) for p in plan.partitions] == [(1, "EF02"), (2, "8300")]
+    assert [(f.device, f.kind) for f in plan.filesystems] == [("/dev/nvme0n1p2", "xfs")]
+
+
+def test_bios_plan_rejects_bad_root_fs():
+    with pytest.raises(ValueError):
+        provision.bios_plan("sda", "", "swap")
+    with pytest.raises(ValueError):
+        provision.bios_plan("sda", "", "reiser4")
