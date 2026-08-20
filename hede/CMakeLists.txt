@@ -29,8 +29,8 @@ add_subdirectory(src/panel)
 add_subdirectory(src/menu)
 add_subdirectory(src/bg)
 add_subdirectory(src/notify)
-add_subdirectory(src/sefe)
 add_subdirectory(src/hold)
+add_subdirectory(src/sefe)
 add_subdirectory(tests)
 
 # --- data / session files ---------------------------------------------------
