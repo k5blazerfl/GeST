@@ -69,6 +69,12 @@ private:
     void openInHold();    // an archive → the standalone Hold app
     void showContextMenu(QAbstractItemView *view, const QPoint &pos);
 
+    // Menu bar (on by default; the whole File/Edit/View/Go/Tools/Help surface is
+    // wired to the same QActions the toolbar and context menu use). View → Menu
+    // Bar (Ctrl+M) hides it. See docs/design/seahorse-appearance.md.
+    void buildMenuBar();
+    void showAbout();
+
     QAbstractItemView *activeView() const;
     QStringList selectedPaths() const;
 
@@ -111,6 +117,9 @@ private:
     QAction *_extractToAct = nullptr;
     QAction *_compressAct = nullptr;
     QAction *_holdAct = nullptr;
+    QAction *_viewToggleAct = nullptr; // Details ⇄ Icons (also the toolbar button)
+    QAction *_selectAllAct = nullptr;
+    QAction *_menuBarAct = nullptr;     // View → Menu Bar (checkable, Ctrl+M)
 
     QString _current;
     QStringList _history;
