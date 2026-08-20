@@ -196,6 +196,82 @@ private slots:
         QCOMPARE(readFile(root + "/k/a (1).txt"), QByteArray("new"));   // new alongside
     }
 
+    // A2: the streaming mutation engine — remove / rename / add in one rewrite.
+    void rewriteRemoveRenameAdd() {
+        QTemporaryDir tmp;
+        const QString root = tmp.path();
+        QVERIFY(QDir(root).mkpath(QStringLiteral("src/sub")));
+        writeFile(root + "/src/a.txt", "A");
+        writeFile(root + "/src/b.txt", "B");
+        writeFile(root + "/src/sub/c.txt", "C");
+        const QString zip = root + "/x.zip";
+        QVERIFY(helm::hold::create({root + "/src"}, zip).ok);
+        writeFile(root + "/new.txt", "N");
+
+        helm::hold::Edits e;
+        e.remove << QStringLiteral("src/b.txt");
+        e.rename.append({QStringLiteral("src/a.txt"), QStringLiteral("src/renamed.txt")});
+        e.add.append({root + "/new.txt", QStringLiteral("src/new.txt")});
+        QVERIFY2(helm::hold::rewrite(zip, e).ok, "rewrite");
+
+        const auto listed = helm::hold::list(zip);
+        QVERIFY(listed.ok);
+        QStringList names;
+        for (const auto &en : listed.entries)
+            names << en.path;
+        QVERIFY(!names.contains(QStringLiteral("src/b.txt")));      // removed
+        QVERIFY(!names.contains(QStringLiteral("src/a.txt")));      // renamed away
+        QVERIFY(names.contains(QStringLiteral("src/renamed.txt"))); // renamed to
+        QVERIFY(names.contains(QStringLiteral("src/new.txt")));     // added
+        QVERIFY(names.contains(QStringLiteral("src/sub/c.txt")));   // untouched
+
+        QVERIFY(helm::hold::extractAll(zip, root + "/ex").ok);
+        QCOMPARE(readFile(root + "/ex/src/renamed.txt"), QByteArray("A")); // content followed
+        QCOMPARE(readFile(root + "/ex/src/new.txt"), QByteArray("N"));
+        QVERIFY(!QFile::exists(root + "/ex/src/b.txt"));
+    }
+
+    // A2: renaming a directory carries its whole subtree (prefix rename).
+    void rewriteDirSubtree() {
+        QTemporaryDir tmp;
+        const QString root = tmp.path();
+        QVERIFY(QDir(root).mkpath(QStringLiteral("d/inner")));
+        writeFile(root + "/d/inner/x.txt", "X");
+        const QString zip = root + "/d.zip";
+        QVERIFY(helm::hold::create({root + "/d"}, zip).ok);
+
+        helm::hold::Edits e;
+        e.rename.append({QStringLiteral("d/inner"), QStringLiteral("d/moved")});
+        QVERIFY(helm::hold::rewrite(zip, e).ok);
+        const auto listed = helm::hold::list(zip);
+        QStringList names;
+        for (const auto &en : listed.entries)
+            names << en.path;
+        QVERIFY(names.contains(QStringLiteral("d/moved/x.txt")));
+        QVERIFY(!names.contains(QStringLiteral("d/inner/x.txt")));
+    }
+
+    // A2: a failed rewrite leaves the original archive intact (atomic temp-then-swap).
+    void rewriteFailureLeavesOriginalIntact() {
+        QTemporaryDir tmp;
+        const QString root = tmp.path();
+        writeFile(root + "/a.txt", "A");
+        const QString zip = root + "/x.zip";
+        QVERIFY(helm::hold::create({root + "/a.txt"}, zip).ok);
+        const int before = helm::hold::list(zip).entries.size();
+
+        helm::hold::Edits e;
+        e.add.append({root + "/does-not-exist", QStringLiteral("nope.txt")}); // will fail
+        QVERIFY(!helm::hold::rewrite(zip, e).ok);
+
+        const auto after = helm::hold::list(zip);
+        QVERIFY(after.ok);                             // still a valid archive
+        QCOMPARE(after.entries.size(), before);        // and unchanged
+        QVERIFY(helm::hold::extractAll(zip, root + "/ex").ok);
+        QCOMPARE(readFile(root + "/ex/a.txt"), QByteArray("A"));
+        QVERIFY(!QFile::exists(zip + ".holdtmp"));      // temp cleaned up
+    }
+
     // create → list → extract round-trip through libarchive (zip).
     void zipRoundTrip() {
         QTemporaryDir tmp;

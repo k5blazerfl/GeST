@@ -399,6 +399,42 @@ Result addPath(struct archive *a, const QString &fsPath, const QString &archiveN
     return r;
 }
 
+// The entry's name after `edits`, or "" if it should be dropped. Removes win over
+// renames; a directory path affects its whole subtree (prefix match).
+QString applyEdits(const QString &name, const Edits &edits) {
+    for (const QString &rm : edits.remove)
+        if (name == rm || name.startsWith(rm + QLatin1Char('/')))
+            return QString(); // removed (subtree for a directory)
+    for (const Edits::Rename &rn : edits.rename) {
+        if (name == rn.from)
+            return rn.to;
+        if (name.startsWith(rn.from + QLatin1Char('/')))
+            return rn.to + name.mid(rn.from.size()); // prefix rename (subtree)
+    }
+    return name;
+}
+
+// Stream the current read entry's data blocks into the writer.
+Result copyEntryData(struct archive *r, struct archive *w) {
+    Result out;
+    const void *buff = nullptr;
+    size_t len = 0;
+    la_int64_t offset = 0;
+    int rc;
+    while ((rc = archive_read_data_block(r, &buff, &len, &offset)) == ARCHIVE_OK) {
+        if (archive_write_data(w, buff, len) < 0) {
+            out.error = QString::fromUtf8(archive_error_string(w));
+            return out;
+        }
+    }
+    if (rc != ARCHIVE_EOF) {
+        out.error = QString::fromUtf8(archive_error_string(r));
+        return out;
+    }
+    out.ok = true;
+    return out;
+}
+
 } // namespace
 
 Listing list(const QString &archive) {
@@ -485,6 +521,113 @@ Result create(const QStringList &files, const QString &archivePath, const Progre
     }
     archive_write_close(a);
     archive_write_free(a);
+    r.ok = true;
+    return r;
+}
+
+Result rewrite(const QString &archive, const Edits &edits, const Progress &progress) {
+    Result r;
+    if (edits.isEmpty()) { // nothing to do — don't churn the file
+        r.ok = true;
+        return r;
+    }
+    Reader reader;
+    if (!reader.open(archive)) {
+        r.error = reader.error();
+        return r;
+    }
+
+    const QString tmp = archive + QStringLiteral(".holdtmp");
+    QFile::remove(tmp); // clear any stale temp
+
+    struct archive *w = archive_write_new();
+    bool writerOpen = false;
+    // Any failure below discards the temp and leaves the original untouched.
+    auto fail = [&](const QString &err) -> Result {
+        if (writerOpen)
+            archive_write_close(w);
+        archive_write_free(w);
+        QFile::remove(tmp);
+        Result res;
+        res.error = err;
+        return res;
+    };
+
+    // Open the writer cloning the source's format + filters. Deferred until we've
+    // read the first header (that's when the format is known); an empty source
+    // falls back to the extension.
+    bool writerReady = false;
+    auto openWriterFrom = [&](bool haveEntry) -> bool {
+        if (haveEntry) {
+            if (archive_write_set_format(w, archive_format(reader.a)) != ARCHIVE_OK)
+                return false; // a read-only format (e.g. RAR) — can't rebuild it
+            for (int i = 0; i < archive_filter_count(reader.a); ++i) {
+                const int fc = archive_filter_code(reader.a, i);
+                if (fc != ARCHIVE_FILTER_NONE)
+                    archive_write_add_filter(w, fc);
+            }
+        } else {
+            configureWriteFormat(w, archive.toLower()); // empty archive → guess by extension
+        }
+        if (archive_write_open_filename(w, tmp.toLocal8Bit().constData()) != ARCHIVE_OK)
+            return false;
+        writerOpen = true;
+        writerReady = true;
+        return true;
+    };
+
+    qint64 done = 0;
+    struct archive_entry *entry = nullptr;
+    int rc;
+    while ((rc = archive_read_next_header(reader.a, &entry)) == ARCHIVE_OK) {
+        if (progress.cancelled && progress.cancelled())
+            return fail(QStringLiteral("cancelled"));
+        if (!writerReady && !openWriterFrom(/*haveEntry=*/true))
+            return fail(QStringLiteral("this archive's format can't be modified"));
+
+        const QString name = decodeEntryName(archive_entry_pathname(entry));
+        const QString newName = applyEdits(name, edits);
+        if (newName.isEmpty()) { // removed
+            archive_read_data_skip(reader.a);
+            continue;
+        }
+        if (newName != name)
+            archive_entry_set_pathname(entry, newName.toLocal8Bit().constData());
+        if (archive_write_header(w, entry) != ARCHIVE_OK)
+            return fail(QString::fromUtf8(archive_error_string(w)));
+        const Result cp = copyEntryData(reader.a, w);
+        if (!cp.ok)
+            return fail(cp.error);
+        if (progress.step)
+            progress.step(++done, -1, newName);
+    }
+    if (rc != ARCHIVE_EOF)
+        return fail(reader.error());
+    if (!writerReady && !openWriterFrom(/*haveEntry=*/false)) // empty source archive
+        return fail(QStringLiteral("cannot rebuild this archive"));
+
+    for (const Edits::Add &add : edits.add) {
+        if (progress.cancelled && progress.cancelled())
+            return fail(QStringLiteral("cancelled"));
+        const Result ar = addPath(w, add.fsPath, add.innerPath);
+        if (!ar.ok)
+            return fail(ar.error);
+        if (progress.step)
+            progress.step(++done, -1, add.innerPath);
+    }
+
+    archive_write_close(w);
+    archive_write_free(w);
+
+    // Atomic swap: same-directory rename replaces the original in one step.
+    std::error_code ec;
+    std::filesystem::rename(std::filesystem::path(tmp.toLocal8Bit().toStdString()),
+                            std::filesystem::path(archive.toLocal8Bit().toStdString()), ec);
+    if (ec) {
+        QFile::remove(tmp);
+        r.error = QStringLiteral("cannot replace %1").arg(QFileInfo(archive).fileName());
+        return r;
+    }
     r.ok = true;
     return r;
 }

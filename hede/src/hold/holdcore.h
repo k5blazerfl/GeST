@@ -97,10 +97,40 @@ QString safeJoin(const QString &destDir, const QString &entryPath);
 bool symlinkEscapes(const QString &destDir, const QString &entryPath,
                     const QString &linkTarget);
 
+// A set of mutations to apply to an archive via rewrite(). All paths are
+// archive-relative ('/'-separated). `remove` drops an entry — for a directory, its
+// whole subtree. `rename` moves from→to — for a directory, its subtree moves with
+// it (prefix rename). `add` ingests a host file/dir/symlink (recursively, like
+// create) at `innerPath`. Removes win over renames when both name a path.
+struct Edits {
+    struct Add {
+        QString fsPath;    // host path to ingest
+        QString innerPath; // where it lands inside the archive
+    };
+    struct Rename {
+        QString from;
+        QString to;
+    };
+    QList<Add> add;
+    QStringList remove;
+    QList<Rename> rename;
+
+    bool isEmpty() const { return add.isEmpty() && remove.isEmpty() && rename.isEmpty(); }
+};
+
 // --- libarchive-backed engine ---
 
 // List an archive's entries (directories and files).
 Listing list(const QString &archive);
+
+// Apply `edits` to `archive` in place (decision A — the streaming mutation engine):
+// stream every source entry through a fresh writer of the SAME format + filters
+// (dropping removes, applying renames), append the adds, then atomically swap the
+// rebuilt archive over the original. The source is never corrupted on failure or
+// cancel — the temp is discarded and the original left intact. One pass,
+// format-preserving. Formats libarchive can read but not write (e.g. RAR) are
+// refused. Delete / rename / new-folder / add in Seahorse all reduce to this.
+Result rewrite(const QString &archive, const Edits &edits, const Progress &progress = {});
 
 // Extract every entry into `destDir` (created if needed). Entries whose paths
 // would escape `destDir` (safeJoin) or whose symlink target escapes it
