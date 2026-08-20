@@ -67,6 +67,12 @@ struct Limits {
     qint64 ratioFloorBytes = 32LL * 1024 * 1024;     // ...only checked past this output
 };
 
+// How extraction resolves a destination file that already exists (A1, decision D).
+// Seahorse pre-scans for collisions, prompts once, and passes the chosen policy in;
+// Replace (overwrite) is the default and matches the prior behavior. KeepBoth writes
+// the incoming entry under a disambiguated "name (1).ext".
+enum class Overwrite { Replace, Skip, KeepBoth };
+
 // --- pure helpers (no libarchive; unit-tested) ---
 
 // True if `path` looks like a browsable archive by extension (zip/tar family,
@@ -102,7 +108,8 @@ Listing list(const QString &archive);
 // blows past `limits` (a zip bomb) is refused. Reports count-based progress with
 // total=-1 (the entry count isn't known until the stream ends).
 Result extractAll(const QString &archive, const QString &destDir,
-                  const Progress &progress = {}, const Limits &limits = {});
+                  const Progress &progress = {}, const Limits &limits = {},
+                  Overwrite overwrite = Overwrite::Replace);
 
 // Extract the single entry `entryPath` (its parent dirs recreated) into
 // `destDir`. Errors if no such entry. (Single + fast — no progress hook.)
@@ -113,7 +120,7 @@ Result extract(const QString &archive, const QString &entryPath, const QString &
 // reported against entryPaths.size().
 Result extractEntries(const QString &archive, const QStringList &entryPaths,
                       const QString &destDir, const Progress &progress = {},
-                      const Limits &limits = {});
+                      const Limits &limits = {}, Overwrite overwrite = Overwrite::Replace);
 
 // Create an archive at `archivePath` from host `files`, each stored by its base
 // name (directories added recursively). Format is inferred from the extension:

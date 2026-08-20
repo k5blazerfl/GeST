@@ -162,6 +162,39 @@ Result writeSymlink(const QString &linkTarget, const QString &target) {
     return r;
 }
 
+// A free "name (1).ext" beside `path`, for the keep-both overwrite policy.
+QString uniqueName(const QString &path) {
+    const QFileInfo fi(path);
+    const QString dir = fi.absolutePath();
+    const QString base = fi.completeBaseName();
+    const QString suffix = fi.suffix();
+    for (int i = 1; i < 10000; ++i) {
+        const QString cand = suffix.isEmpty()
+            ? QStringLiteral("%1/%2 (%3)").arg(dir, fi.fileName(), QString::number(i))
+            : QStringLiteral("%1/%2 (%3).%4").arg(dir, base, QString::number(i), suffix);
+        if (!QFileInfo::exists(cand) && !QFileInfo(cand).isSymLink())
+            return cand;
+    }
+    return path; // give up (astronomically unlikely) and let Replace win
+}
+
+// Resolve the on-disk target for `target` under the overwrite `policy`. Returns the
+// path to write, or "" to skip this entry (no collision → `target` unchanged).
+QString resolveOverwrite(const QString &target, Overwrite policy) {
+    const QFileInfo fi(target);
+    if (!fi.exists() && !fi.isSymLink())
+        return target; // nothing there — no conflict
+    switch (policy) {
+    case Overwrite::Skip:
+        return QString();
+    case Overwrite::KeepBoth:
+        return uniqueName(target);
+    case Overwrite::Replace:
+        break;
+    }
+    return target;
+}
+
 Result cancelledResult() {
     Result r;
     r.error = QStringLiteral("cancelled");
@@ -172,7 +205,8 @@ Result cancelledResult() {
 // every entry; otherwise an entry is taken if its name is in `want` or lies under
 // a requested directory. `progress` reports count-based advances and can cancel.
 Result extractImpl(const QString &archive, const QString &destDir, const QSet<QString> *want,
-                   qint64 total, const Progress &progress, const Limits &limits) {
+                   qint64 total, const Progress &progress, const Limits &limits,
+                   Overwrite overwrite) {
     Result r;
     Reader reader;
     if (!reader.open(archive)) {
@@ -223,13 +257,23 @@ Result extractImpl(const QString &archive, const QString &destDir, const QSet<QS
                 r.skipped << name;
                 continue;
             }
-            const Result w = writeSymlink(linkTarget, target);
+            const QString dest = resolveOverwrite(target, overwrite);
+            if (dest.isEmpty()) { // Skip policy, existing target
+                archive_read_data_skip(reader.a);
+                continue;
+            }
+            const Result w = writeSymlink(linkTarget, dest);
             if (!w.ok)
                 return w;
         } else if (entryIsDir(entry, name)) {
-            QDir().mkpath(target);
+            QDir().mkpath(target); // dirs merge; overwrite policy is a file concern
         } else {
-            const Result w = writeData(reader.a, target, written, limits);
+            const QString dest = resolveOverwrite(target, overwrite);
+            if (dest.isEmpty()) { // Skip policy, existing target
+                archive_read_data_skip(reader.a);
+                continue;
+            }
+            const Result w = writeData(reader.a, dest, written, limits);
             if (!w.ok)
                 return w;
         }
@@ -364,24 +408,24 @@ Listing list(const QString &archive) {
 }
 
 Result extractAll(const QString &archive, const QString &destDir, const Progress &progress,
-                  const Limits &limits) {
-    return extractImpl(archive, destDir, nullptr, -1, progress, limits);
+                  const Limits &limits, Overwrite overwrite) {
+    return extractImpl(archive, destDir, nullptr, -1, progress, limits, overwrite);
 }
 
 Result extract(const QString &archive, const QString &entryPath, const QString &destDir) {
     const QSet<QString> want{entryPath};
-    return extractImpl(archive, destDir, &want, 1, {}, {});
+    return extractImpl(archive, destDir, &want, 1, {}, {}, Overwrite::Replace);
 }
 
 Result extractEntries(const QString &archive, const QStringList &entryPaths, const QString &destDir,
-                      const Progress &progress, const Limits &limits) {
+                      const Progress &progress, const Limits &limits, Overwrite overwrite) {
     if (entryPaths.isEmpty()) {
         Result r;
         r.ok = true;
         return r;
     }
     const QSet<QString> want(entryPaths.begin(), entryPaths.end());
-    return extractImpl(archive, destDir, &want, entryPaths.size(), progress, limits);
+    return extractImpl(archive, destDir, &want, entryPaths.size(), progress, limits, overwrite);
 }
 
 Result create(const QStringList &files, const QString &archivePath, const Progress &progress) {

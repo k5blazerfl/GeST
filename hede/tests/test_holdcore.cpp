@@ -142,6 +142,37 @@ private slots:
         QVERIFY(!helm::hold::decodeEntryName(QByteArrayLiteral("\xff")).contains(QChar(0xFFFD)));
     }
 
+    // A1: overwrite-conflict resolution — replace / skip / keep-both.
+    void overwritePolicies() {
+        QTemporaryDir tmp;
+        const QString root = tmp.path();
+        writeFile(root + "/a.txt", "new");
+        const QString zip = root + "/z.zip";
+        QVERIFY(helm::hold::create({root + "/a.txt"}, zip).ok);
+
+        // Replace overwrites the existing file.
+        QVERIFY(QDir(root).mkpath(QStringLiteral("r")));
+        writeFile(root + "/r/a.txt", "old");
+        QVERIFY(helm::hold::extractAll(zip, root + "/r", {}, {},
+                                       helm::hold::Overwrite::Replace).ok);
+        QCOMPARE(readFile(root + "/r/a.txt"), QByteArray("new"));
+
+        // Skip keeps the existing file.
+        QVERIFY(QDir(root).mkpath(QStringLiteral("s")));
+        writeFile(root + "/s/a.txt", "old");
+        QVERIFY(helm::hold::extractAll(zip, root + "/s", {}, {},
+                                       helm::hold::Overwrite::Skip).ok);
+        QCOMPARE(readFile(root + "/s/a.txt"), QByteArray("old"));
+
+        // KeepBoth writes the incoming entry beside the original.
+        QVERIFY(QDir(root).mkpath(QStringLiteral("k")));
+        writeFile(root + "/k/a.txt", "old");
+        QVERIFY(helm::hold::extractAll(zip, root + "/k", {}, {},
+                                       helm::hold::Overwrite::KeepBoth).ok);
+        QCOMPARE(readFile(root + "/k/a.txt"), QByteArray("old"));       // original kept
+        QCOMPARE(readFile(root + "/k/a (1).txt"), QByteArray("new"));   // new alongside
+    }
+
     // create → list → extract round-trip through libarchive (zip).
     void zipRoundTrip() {
         QTemporaryDir tmp;
