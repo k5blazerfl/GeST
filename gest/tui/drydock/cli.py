@@ -251,6 +251,28 @@ def cmd_run(args, env: DrydockEnv) -> int:
     return env.launch_fn(barrel, program)
 
 
+def cmd_open(args, env: DrydockEnv) -> int:
+    """Run a loose Windows .exe ad-hoc — no registration, no launcher. Used by a
+    file manager (SeFE) double-clicking an .exe. Resolves the barrel from
+    --barrel, else the only barrel, else errors (there is no default barrel)."""
+    barrel_id = args.barrel
+    if not barrel_id:
+        ids = barrels.list_barrels(env.store_base)
+        if len(ids) != 1:
+            found = ", ".join(ids) if ids else "none"
+            env.io.err(f"pass --barrel: found {len(ids)} barrels ({found})"
+                       + ("; create one first with `drydock create`" if not ids else ""))
+            return 2
+        barrel_id = ids[0]
+    barrel = _load(env, barrel_id)
+    if barrel is None:
+        return 1
+    exe = os.path.abspath(os.path.expanduser(args.exe))
+    program = Program(id=barrels.slug(os.path.basename(exe)),
+                      name=os.path.basename(exe), exe=exe)
+    return env.launch_fn(barrel, program)
+
+
 # ---- barrel maintenance verbs ------------------------------------------
 def cmd_winetricks(args, env: DrydockEnv) -> int:
     from gest.core.drydock import maintenance
@@ -614,6 +636,7 @@ def cmd_import_lutris(args, env: DrydockEnv) -> int:
 COMMANDS: dict[str, Callable[..., int]] = {
     "create": cmd_create, "list": cmd_list, "show": cmd_show, "rm": cmd_rm,
     "register": cmd_register, "scan": cmd_scan, "prereqs": cmd_prereqs, "run": cmd_run,
+    "open": cmd_open,
     "materialize": cmd_materialize, "plan": cmd_plan, "install": cmd_install,
     "install-recipe": cmd_install_recipe, "import-lutris": cmd_import_lutris,
     "lint": cmd_lint, "export-recipe": cmd_export_recipe,
@@ -655,6 +678,10 @@ def build_parser() -> argparse.ArgumentParser:
     run = sub.add_parser("run", help="launch a program")
     run.add_argument("barrel")
     run.add_argument("program")
+
+    opn = sub.add_parser("open", help="run a loose .exe ad-hoc (no launcher)")
+    opn.add_argument("exe")
+    opn.add_argument("--barrel", default="", help="barrel to run in (default: the only one)")
 
     mat = sub.add_parser("materialize", help="create a barrel from a helm.recipe")
     mat.add_argument("recipe", help="path to a helm.recipe YAML file")
