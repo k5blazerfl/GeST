@@ -93,6 +93,44 @@ private slots:
         QVERIFY(!QFileInfo(root + "/ex/evil").isSymLink());     // ...and never created
     }
 
+    // A1: the zip-bomb caps — extraction past a byte or entry limit is refused,
+    // and a generous cap extracts normally.
+    void extractionSizeCapRefuses() {
+        QTemporaryDir tmp;
+        const QString root = tmp.path();
+        writeFile(root + "/big.txt", QByteArray(4096, 'x'));
+        const QString zip = root + "/b.zip";
+        QVERIFY(helm::hold::create({root + "/big.txt"}, zip).ok);
+
+        helm::hold::Limits limits;
+        limits.maxTotalBytes = 1024; // a 4 KiB payload against a 1 KiB cap → refuse
+        const auto ex = helm::hold::extractAll(zip, root + "/ex", {}, limits);
+        QVERIFY(!ex.ok);
+        QVERIFY(ex.error.contains(QStringLiteral("limit")));
+
+        QVERIFY(helm::hold::extractAll(zip, root + "/ex2", {}, {}).ok); // default cap is generous
+        QCOMPARE(readFile(root + "/ex2/big.txt").size(), 4096);
+    }
+
+    void extractionEntryCapRefuses() {
+        QTemporaryDir tmp;
+        const QString root = tmp.path();
+        QStringList files;
+        for (int i = 0; i < 5; ++i) {
+            const QString f = root + QStringLiteral("/f%1.txt").arg(i);
+            writeFile(f, "x");
+            files << f;
+        }
+        const QString zip = root + "/e.zip";
+        QVERIFY(helm::hold::create(files, zip).ok);
+
+        helm::hold::Limits limits;
+        limits.maxEntries = 3; // 5 entries > 3 → refuse
+        const auto ex = helm::hold::extractAll(zip, root + "/ex", {}, limits);
+        QVERIFY(!ex.ok);
+        QVERIFY(ex.error.contains(QStringLiteral("entry")));
+    }
+
     // create → list → extract round-trip through libarchive (zip).
     void zipRoundTrip() {
         QTemporaryDir tmp;

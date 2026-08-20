@@ -72,8 +72,11 @@ bool entryIsDir(struct archive_entry *e, const QString &name) {
     return archive_entry_filetype(e) == AE_IFDIR || name.endsWith(QLatin1Char('/'));
 }
 
-// Stream the current entry's data into `target`.
-Result writeData(struct archive *a, const QString &target) {
+// Stream the current entry's data into `target`, accumulating the running
+// `written` total and refusing mid-stream if it blows past the size cap (so a
+// single giant entry is caught before it fills the disk, not after).
+Result writeData(struct archive *a, const QString &target, qint64 &written,
+                 const Limits &limits) {
     Result r;
     QDir().mkpath(QFileInfo(target).absolutePath());
     QFile f(target);
@@ -88,6 +91,12 @@ Result writeData(struct archive *a, const QString &target) {
     while ((rc = archive_read_data_block(a, &buff, &len, &offset)) == ARCHIVE_OK) {
         if (f.write(static_cast<const char *>(buff), static_cast<qint64>(len)) < 0) {
             r.error = QStringLiteral("short write to %1").arg(target);
+            return r;
+        }
+        written += static_cast<qint64>(len);
+        if (limits.maxTotalBytes > 0 && written > limits.maxTotalBytes) {
+            r.error = QStringLiteral("archive exceeds the %1-byte extraction limit")
+                          .arg(limits.maxTotalBytes);
             return r;
         }
     }
@@ -129,7 +138,7 @@ Result cancelledResult() {
 // every entry; otherwise an entry is taken if its name is in `want` or lies under
 // a requested directory. `progress` reports count-based advances and can cancel.
 Result extractImpl(const QString &archive, const QString &destDir, const QSet<QString> *want,
-                   qint64 total, const Progress &progress) {
+                   qint64 total, const Progress &progress, const Limits &limits) {
     Result r;
     Reader reader;
     if (!reader.open(archive)) {
@@ -141,10 +150,16 @@ Result extractImpl(const QString &archive, const QString &destDir, const QSet<QS
 
     QSet<QString> remaining = want ? *want : QSet<QString>();
     qint64 done = 0;
+    qint64 written = 0; // running uncompressed bytes, for the zip-bomb caps
+    int seen = 0;       // headers seen, for the entry-count cap
     struct archive_entry *entry = nullptr;
     while (archive_read_next_header(reader.a, &entry) == ARCHIVE_OK) {
         if (progress.cancelled && progress.cancelled())
             return cancelledResult();
+        if (limits.maxEntries > 0 && ++seen > limits.maxEntries) {
+            r.error = QStringLiteral("archive exceeds the %1-entry limit").arg(limits.maxEntries);
+            return r;
+        }
         const QString name = QString::fromUtf8(archive_entry_pathname(entry));
         if (want) {
             bool wanted = remaining.remove(name);
@@ -180,9 +195,19 @@ Result extractImpl(const QString &archive, const QString &destDir, const QSet<QS
         } else if (entryIsDir(entry, name)) {
             QDir().mkpath(target);
         } else {
-            const Result w = writeData(reader.a, target);
+            const Result w = writeData(reader.a, target, written, limits);
             if (!w.ok)
                 return w;
+        }
+        // Ratio guard (the compressed-vs-uncompressed zip bomb), checked only past a
+        // floor so ordinary small files never trip it.
+        if (limits.maxRatio > 0 && written > limits.ratioFloorBytes) {
+            const la_int64_t consumed = archive_filter_bytes(reader.a, -1);
+            if (consumed > 0 && written / static_cast<qint64>(consumed) > limits.maxRatio) {
+                r.error = QStringLiteral("archive expands beyond the %1:1 ratio limit")
+                              .arg(limits.maxRatio);
+                return r;
+            }
         }
         if (progress.step)
             progress.step(++done, total, name);
@@ -304,24 +329,25 @@ Listing list(const QString &archive) {
     return out;
 }
 
-Result extractAll(const QString &archive, const QString &destDir, const Progress &progress) {
-    return extractImpl(archive, destDir, nullptr, -1, progress);
+Result extractAll(const QString &archive, const QString &destDir, const Progress &progress,
+                  const Limits &limits) {
+    return extractImpl(archive, destDir, nullptr, -1, progress, limits);
 }
 
 Result extract(const QString &archive, const QString &entryPath, const QString &destDir) {
     const QSet<QString> want{entryPath};
-    return extractImpl(archive, destDir, &want, 1, {});
+    return extractImpl(archive, destDir, &want, 1, {}, {});
 }
 
 Result extractEntries(const QString &archive, const QStringList &entryPaths, const QString &destDir,
-                      const Progress &progress) {
+                      const Progress &progress, const Limits &limits) {
     if (entryPaths.isEmpty()) {
         Result r;
         r.ok = true;
         return r;
     }
     const QSet<QString> want(entryPaths.begin(), entryPaths.end());
-    return extractImpl(archive, destDir, &want, entryPaths.size(), progress);
+    return extractImpl(archive, destDir, &want, entryPaths.size(), progress, limits);
 }
 
 Result create(const QStringList &files, const QString &archivePath, const Progress &progress) {

@@ -57,6 +57,16 @@ struct Progress {
     std::function<bool()> cancelled;
 };
 
+// Extraction safety limits — the zip-bomb defense (A1, decision D). A run that
+// would exceed any cap is refused with Result{ok=false} (partial output may remain;
+// the op failed). Set a field to 0 (or negative) to disable that cap.
+struct Limits {
+    qint64 maxTotalBytes = 8LL * 1024 * 1024 * 1024; // 8 GiB uncompressed, total
+    int maxEntries = 200000;                         // entry-count cap
+    int maxRatio = 1000;                             // uncompressed:compressed ceiling
+    qint64 ratioFloorBytes = 32LL * 1024 * 1024;     // ...only checked past this output
+};
+
 // --- pure helpers (no libarchive; unit-tested) ---
 
 // True if `path` looks like a browsable archive by extension (zip/tar family,
@@ -83,9 +93,11 @@ Listing list(const QString &archive);
 
 // Extract every entry into `destDir` (created if needed). Entries whose paths
 // would escape `destDir` (safeJoin) or whose symlink target escapes it
-// (symlinkEscapes) are skipped and listed in `Result::skipped`. Reports count-based
-// progress with total=-1 (the entry count isn't known until the stream ends).
-Result extractAll(const QString &archive, const QString &destDir, const Progress &progress = {});
+// (symlinkEscapes) are skipped and listed in `Result::skipped`; an archive that
+// blows past `limits` (a zip bomb) is refused. Reports count-based progress with
+// total=-1 (the entry count isn't known until the stream ends).
+Result extractAll(const QString &archive, const QString &destDir,
+                  const Progress &progress = {}, const Limits &limits = {});
 
 // Extract the single entry `entryPath` (its parent dirs recreated) into
 // `destDir`. Errors if no such entry. (Single + fast — no progress hook.)
@@ -95,7 +107,8 @@ Result extract(const QString &archive, const QString &entryPath, const QString &
 // `destDir` in ONE pass over the archive — the multi-select extract. Progress is
 // reported against entryPaths.size().
 Result extractEntries(const QString &archive, const QStringList &entryPaths,
-                      const QString &destDir, const Progress &progress = {});
+                      const QString &destDir, const Progress &progress = {},
+                      const Limits &limits = {});
 
 // Create an archive at `archivePath` from host `files`, each stored by its base
 // name (directories added recursively). Format is inferred from the extension:
