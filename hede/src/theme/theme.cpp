@@ -2,12 +2,50 @@
 
 #include "world.h"
 
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QSettings>
 #include <QStandardPaths>
+#include <QtMath>
 
 namespace helm {
+
+// The default latitude for follow-the-sun when [appearance] latitude is unset —
+// a northern mid-latitude, a sane fallback with no location service.
+static constexpr double kDefaultLatitude = 40.0;
+
+bool isNightAt(const QDateTime &when, double latitudeDeg) {
+    // Sunrise/sunset via a coarse solar-position model: solar declination from the
+    // day-of-year, the sunrise hour-angle from declination × latitude, then the
+    // half-day length that straddles local solar noon. Good enough to flip the
+    // desktop light↔dark with the sun; not an almanac.
+    const int doy = when.date().dayOfYear();
+    const double lat = qDegreesToRadians(latitudeDeg);
+    const double decl = qDegreesToRadians(23.44) * std::sin(2.0 * M_PI * (doy - 81) / 365.0);
+    const double cosH = -std::tan(lat) * std::tan(decl);
+    if (cosH <= -1.0)
+        return false; // midnight sun — the sun never sets today
+    if (cosH >= 1.0)
+        return true; // polar night — the sun never rises today
+    const double halfDay = std::acos(cosH) * 12.0 / M_PI; // hours from noon to sunset
+    const QTime t = when.time();
+    const double h = t.hour() + t.minute() / 60.0 + t.second() / 3600.0;
+    return h < (12.0 - halfDay) || h >= (12.0 + halfDay);
+}
+
+bool isNightNow(double latitudeDeg) { return isNightAt(QDateTime::currentDateTime(), latitudeDeg); }
+
+bool resolveDark(const QString &mode, bool legacyDark, double latitudeDeg) {
+    const QString m = mode.trimmed().toLower();
+    if (m == QLatin1String("dark"))
+        return true;
+    if (m == QLatin1String("light"))
+        return false;
+    if (m == QLatin1String("auto"))
+        return isNightNow(latitudeDeg);
+    return legacyDark; // unset / unrecognised → the pre-`mode` boolean
+}
 
 QString effectiveGtkTheme(const ThemeSpec &s) {
     if (!s.gtkTheme.isEmpty())
@@ -247,10 +285,14 @@ QString grubThemeBody(const QString &accent) {
 ThemeSpec parseThemeArgs(const QStringList &args) {
     ThemeSpec s;
     for (const QString &a : args) {
-        if (a == QLatin1String("--dark"))
+        if (a == QLatin1String("--dark")) {
             s.dark = true;
-        else if (a == QLatin1String("--light"))
+            s.mode = QStringLiteral("dark");
+        } else if (a == QLatin1String("--light")) {
             s.dark = false;
+            s.mode = QStringLiteral("light");
+        } else if (a.startsWith(QLatin1String("--mode=")))
+            s.mode = a.section(QLatin1Char('='), 1).trimmed().toLower(); // dark|light|auto
         else if (a.startsWith(QLatin1String("--accent=")))
             s.accent = a.section(QLatin1Char('='), 1);
         else if (a.startsWith(QLatin1String("--gtk-theme=")))
@@ -269,8 +311,20 @@ static bool writeText(const QString &path, const QString &text) {
     return f.write(text.toUtf8()) >= 0;
 }
 
-QStringList applyTheme(const ThemeSpec &s, bool persistAppearance) {
+QStringList applyTheme(const ThemeSpec &sIn, bool persistAppearance) {
     const QString base = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation);
+
+    // Resolve the `mode` knob (dark/light/auto) into the concrete light/dark the
+    // GTK + labwc themes are generated against. `auto` uses the stored latitude
+    // (default mid-latitude); the running shell re-resolves it on the clock.
+    ThemeSpec s = sIn;
+    if (!s.mode.isEmpty()) {
+        const double lat = QSettings(base + QStringLiteral("/hede/hede.conf"), QSettings::IniFormat)
+                               .value(QStringLiteral("appearance/latitude"), kDefaultLatitude)
+                               .toDouble();
+        s.dark = resolveDark(s.mode, s.dark, lat);
+    }
+
     const QString gtk = gtkSettingsIni(s);
     QStringList written;
 
@@ -286,6 +340,11 @@ QStringList applyTheme(const ThemeSpec &s, bool persistAppearance) {
         const QString hede = base + QStringLiteral("/hede/hede.conf");
         QDir().mkpath(QFileInfo(hede).absolutePath());
         QSettings conf(hede, QSettings::IniFormat);
+        // `mode` is the source of truth; `dark` is kept in sync (as the resolved
+        // snapshot) for any pre-`mode` reader. A plain --accent call leaves the
+        // stored mode untouched.
+        if (!s.mode.isEmpty())
+            conf.setValue(QStringLiteral("appearance/mode"), s.mode);
         conf.setValue(QStringLiteral("appearance/dark"), s.dark);
         if (!s.accent.isEmpty())
             conf.setValue(QStringLiteral("appearance/accent"), s.accent);
@@ -384,7 +443,13 @@ QStringList applyThemeFromWorld() {
     QSettings conf(base + QStringLiteral("/hede/hede.conf"), QSettings::IniFormat);
 
     ThemeSpec s;
-    s.dark = conf.value(QStringLiteral("appearance/dark")).toBool();
+    // The `mode` knob (dark/light/auto) drives the labwc/GTK themes; fall back to
+    // the legacy `dark` bool when it's unset. `auto` resolves on the clock here.
+    s.mode = conf.value(QStringLiteral("appearance/mode")).toString();
+    const bool legacyDark = conf.value(QStringLiteral("appearance/dark")).toBool();
+    const double lat =
+        conf.value(QStringLiteral("appearance/latitude"), kDefaultLatitude).toDouble();
+    s.dark = resolveDark(s.mode, legacyDark, lat);
     s.gtkTheme = conf.value(QStringLiteral("appearance/gtk-theme")).toString();
     s.iconTheme = conf.value(QStringLiteral("appearance/icon-theme")).toString();
     // Accent precedence mirrors helm::effectiveAccent (see activeAccent).

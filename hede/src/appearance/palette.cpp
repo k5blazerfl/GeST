@@ -1,11 +1,13 @@
 #include "palette.h"
 
 #include "config.h"
+#include "theme.h"
 #include "world.h"
 
 #include <QApplication>
 #include <QFileInfo>
 #include <QFileSystemWatcher>
+#include <QTimer>
 
 namespace helm {
 
@@ -54,9 +56,20 @@ QColor effectiveAccent(const Config &cfg) {
     return harborAccent();
 }
 
+// The effective light/dark for the shell palette: the [appearance] `mode` knob
+// (dark/light/auto), falling back to the legacy `dark` bool. `auto` = follow-the-
+// sun, using [appearance] latitude (default mid-latitude). Mirrors the labwc/GTK
+// resolution in helm::applyThemeFromWorld so every surface agrees.
+static bool configDark(const Config &cfg) {
+    const bool legacy = cfg.string(QStringLiteral("appearance/dark")) == QLatin1String("true");
+    bool ok = false;
+    const double lat = cfg.string(QStringLiteral("appearance/latitude")).toDouble(&ok);
+    return resolveDark(cfg.string(QStringLiteral("appearance/mode")), legacy, ok ? lat : 40.0);
+}
+
 void applyAppearance() {
     const Config cfg;
-    const bool dark = cfg.string(QStringLiteral("appearance/dark")) == QLatin1String("true");
+    const bool dark = configDark(cfg);
     const QColor accent = effectiveAccent(cfg);
 
     if (auto *app = qobject_cast<QApplication *>(QApplication::instance())) {
@@ -85,6 +98,21 @@ void watchAppearance() {
     };
     QObject::connect(watcher, &QFileSystemWatcher::fileChanged, app, reapply);
     QObject::connect(watcher, &QFileSystemWatcher::directoryChanged, app, reapply);
+
+    // Follow-the-sun: in `mode = auto` the dark flag turns on the clock, not on a
+    // config write, so poll on a slow timer and re-apply only when the resolved
+    // value actually flips (sunrise/sunset). A cheap no-op for fixed dark/light.
+    auto *sun = new QTimer(app);
+    sun->setInterval(10 * 60 * 1000); // 10 min — fine granularity near twilight
+    QObject::connect(sun, &QTimer::timeout, app, [] {
+        static int last = -1;
+        const int dark = configDark(Config()) ? 1 : 0;
+        if (dark != last) {
+            last = dark;
+            applyAppearance();
+        }
+    });
+    sun->start();
 }
 
 } // namespace helm
