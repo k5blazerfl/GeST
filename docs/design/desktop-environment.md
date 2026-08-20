@@ -22,7 +22,7 @@ nautical, with two mythological keepers):
 | File manager | **Seahorse** (app: **SeFE**) | Explorer-like browser — native, see [sefe.md](sefe.md) |
 | Terminal | **Porthole** | the window you peer through |
 | Screenshot / magnifier | **Spyglass** | capture + zoom |
-| Archive manager | **Hold** | the ship's cargo hold |
+| Archive manager | **Hold** | the ship's cargo hold — native, tightly integrated into Seahorse ([hold.md](hold.md)) |
 | System monitor | **Crow's Nest** | the lookout / watch |
 | Text editor / notes | **Logbook** | the ship's log |
 | Document / PDF viewer | **Chart** | nautical charts |
@@ -123,7 +123,8 @@ cheap — it's a `DEPEND`, and the user compiles it anyway.
 | Login screen (greeter) | **Build** | `helm-greeter` — our own UI, a greetd client sharing HeDE's toolkit/theme (§10). |
 | Screen lock / idle | **Build** (thin) | `ext-session-lock-v1` surface + idle via compositor; **shares the greeter's UI** (§5). |
 | xdg-desktop-portal | **Adopt + config** | `xdg-desktop-portal-wlr` (screenshot/screencast) + a file-chooser portal. |
-| Terminal, text editor, image viewer, archiver | **Adopt** | LXQt/Qt apps or user choice; not our job. |
+| Terminal, text editor, image viewer | **Adopt** | LXQt/Qt apps or user choice; not our job. |
+| Archiver | **Build** | **Hold** — native, browses in place inside Seahorse; shared `hold-core` (libarchive). See [hold.md](hold.md). |
 
 The through-line: **build the shell and the GeST seam; adopt the rest.** This is
 exactly how LXQt stays lightweight and shippable, and LXQt is the closest
