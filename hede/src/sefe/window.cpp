@@ -261,6 +261,13 @@ SefeWindow::SefeWindow(const QString &startPath, QWidget *parent) : QMainWindow(
     setCentralWidget(split);
 
     statusBar();
+    // A read-only pill on the right of the status bar, shown only while browsing
+    // inside an archive (archives are read-only until the streaming manager lands —
+    // see docs/design/archive-support.md).
+    _readOnlyPill = new QLabel(QStringLiteral("🗜 Read-only"), this);
+    _readOnlyPill->setObjectName(QStringLiteral("HelmReadOnlyPill"));
+    _readOnlyPill->setVisible(false);
+    statusBar()->addPermanentWidget(_readOnlyPill);
     buildSceneChrome();
     // Open the requested folder/archive (command line / file association), else Home.
     navigateTo(startPath.isEmpty() ? initialDir() : QDir::cleanPath(startPath));
@@ -586,6 +593,8 @@ void SefeWindow::navigateTo(const QString &dir, bool record) {
         _titlebar->setTitle(helm::sefe::windowTitle(path));
     highlightPlace(path);
     statusBar()->showMessage(path);
+    if (_readOnlyPill)
+        _readOnlyPill->setVisible(_inArchive); // archive = read-only (for now)
 
     if (record) {
         while (_history.size() > _histIndex + 1)

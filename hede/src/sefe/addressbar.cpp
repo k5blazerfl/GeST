@@ -1,5 +1,6 @@
 #include "addressbar.h"
 
+#include "holdcore.h" // isArchive: mark the crumb where the filesystem enters an archive
 #include "sefe.h"
 
 #include <QEvent>
@@ -57,9 +58,16 @@ void AddressBar::rebuildCrumbs() {
             _crumbLayout->addWidget(sep);
         }
         auto *btn = new QToolButton(_crumbs);
-        btn->setText(crumbs[i].label);
-        btn->setAutoRaise(true);
         const QString target = crumbs[i].path;
+        // The crumb that IS an archive gets an archive chip (🗜 + a pill style) —
+        // it marks where the filesystem ends and browse-in-place begins.
+        if (helm::hold::isArchive(target)) {
+            btn->setObjectName(QStringLiteral("HelmCrumbArchive"));
+            btn->setText(QStringLiteral("🗜 %1").arg(crumbs[i].label));
+        } else {
+            btn->setText(crumbs[i].label);
+        }
+        btn->setAutoRaise(true);
         connect(btn, &QToolButton::clicked, this,
                 [this, target] { emit navigate(target); });
         _crumbLayout->addWidget(btn);

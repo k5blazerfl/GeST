@@ -2,9 +2,12 @@
 
 #include <QDir>
 #include <QFile>
+#include <QSignalSpy>
 #include <QTemporaryDir>
+#include <QThread>
 
 #include "holdcore.h"
+#include "job.h"
 
 class TestHoldCore : public QObject {
     Q_OBJECT
@@ -93,6 +96,114 @@ private slots:
         QVERIFY(!listed.ok);
         QVERIFY(!listed.error.isEmpty());
         QVERIFY(!helm::hold::list(tmp.path() + "/missing.zip").ok);
+    }
+
+    // A0: multi-select extract — a subset of entries in one pass; a requested
+    // directory pulls in its descendants, unrequested siblings are left out.
+    void extractEntriesSubset() {
+        QTemporaryDir tmp;
+        const QString root = tmp.path();
+        QVERIFY(QDir(root).mkpath(QStringLiteral("src/sub")));
+        writeFile(root + "/src/a.txt", "A");
+        writeFile(root + "/src/b.txt", "B");
+        writeFile(root + "/src/sub/c.txt", "C");
+        const QString zip = root + "/x.zip";
+        QVERIFY(helm::hold::create({root + "/src"}, zip).ok);
+
+        const auto r = helm::hold::extractEntries(
+            zip, {QStringLiteral("src/a.txt"), QStringLiteral("src/sub")}, root + "/ex");
+        QVERIFY2(r.ok, qPrintable(r.error));
+        QVERIFY(QFile::exists(root + "/ex/src/a.txt"));
+        QVERIFY(QFile::exists(root + "/ex/src/sub/c.txt")); // dir pulled its descendant
+        QVERIFY(!QFile::exists(root + "/ex/src/b.txt"));     // not requested
+    }
+
+    // A0: the synchronous Progress hook — step() reports per top-level entry, and
+    // cancel() stops create() early and removes the partial output.
+    void progressAndCancelSync() {
+        QTemporaryDir tmp;
+        const QString root = tmp.path();
+        QStringList files;
+        for (int i = 0; i < 5; ++i) {
+            const QString f = root + QStringLiteral("/f%1.txt").arg(i);
+            writeFile(f, QByteArray(64, 'x'));
+            files << f;
+        }
+        int steps = 0;
+        qint64 lastDone = 0, lastTotal = -2;
+        helm::hold::Progress p;
+        p.step = [&](qint64 d, qint64 t, const QString &) {
+            ++steps;
+            lastDone = d;
+            lastTotal = t;
+        };
+        QVERIFY(helm::hold::create(files, root + "/p.zip", p).ok);
+        QCOMPARE(steps, 5);
+        QCOMPARE(lastDone, qint64(5));
+        QCOMPARE(lastTotal, qint64(5));
+
+        // Cancel after two entries → cancelled, no partial archive left behind.
+        int seen = 0;
+        helm::hold::Progress cp;
+        cp.step = [&](qint64, qint64, const QString &) { ++seen; };
+        cp.cancelled = [&] { return seen >= 2; };
+        const QString cancelled = root + "/c.zip";
+        const auto cr = helm::hold::create(files, cancelled, cp);
+        QVERIFY(!cr.ok);
+        QCOMPARE(cr.error, QStringLiteral("cancelled"));
+        QVERIFY(!QFile::exists(cancelled));
+    }
+
+    // A0: hold::Job runs the op off-thread and emits progress() + finished().
+    void jobExtractAsync() {
+        QTemporaryDir tmp;
+        const QString root = tmp.path();
+        QVERIFY(QDir(root).mkpath(QStringLiteral("s")));
+        writeFile(root + "/s/a.txt", "A");
+        writeFile(root + "/s/b.txt", "B");
+        const QString zip = root + "/j.zip";
+        QVERIFY(helm::hold::create({root + "/s"}, zip).ok);
+
+        helm::hold::Job job(QStringLiteral("Extract"));
+        QSignalSpy prog(&job, &helm::hold::Job::progress);
+        QSignalSpy fin(&job, &helm::hold::Job::finished);
+        const QString dest = root + "/out";
+        job.run([zip, dest](const helm::hold::Progress &p) {
+            return helm::hold::extractAll(zip, dest, p);
+        });
+        QVERIFY(fin.wait(5000));
+        QCOMPARE(fin.count(), 1);
+        const auto res = qvariant_cast<helm::hold::Result>(fin.at(0).at(0));
+        QVERIFY2(res.ok, qPrintable(res.error));
+        QVERIFY(prog.count() >= 1);
+        QVERIFY(QFile::exists(dest + "/s/a.txt"));
+    }
+
+    // A0: cancel() stops a running Job and it finishes "cancelled".
+    void jobCancelStops() {
+        helm::hold::Job job(QStringLiteral("busy"));
+        QSignalSpy fin(&job, &helm::hold::Job::finished);
+        job.run([](const helm::hold::Progress &p) -> helm::hold::Result {
+            for (int i = 0; i < 100000; ++i) {
+                if (p.cancelled && p.cancelled()) {
+                    helm::hold::Result r;
+                    r.error = QStringLiteral("cancelled");
+                    return r;
+                }
+                if (p.step)
+                    p.step(i, -1, QStringLiteral("x"));
+                QThread::msleep(1);
+            }
+            helm::hold::Result r;
+            r.ok = true;
+            return r;
+        });
+        QTest::qWait(40);
+        job.cancel();
+        QVERIFY(fin.wait(5000));
+        const auto res = qvariant_cast<helm::hold::Result>(fin.at(0).at(0));
+        QVERIFY(!res.ok);
+        QCOMPARE(res.error, QStringLiteral("cancelled"));
     }
 
 private:

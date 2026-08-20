@@ -10,6 +10,7 @@
 class QAbstractItemView;
 class QAction;
 class QFileSystemModel;
+class QLabel;
 class QListView;
 class QListWidget;
 class QMenuBar;
@@ -124,6 +125,7 @@ private:
     HelmThrobber *_throbber = nullptr; // Netscape-style busy light (top-right)
     HelmTitleBar *_titlebar = nullptr; // client-side titlebar (frameless chrome)
     QMenuBar *_menuBar = nullptr;      // our menu bar (lives in the header widget)
+    QLabel *_readOnlyPill = nullptr;   // status-bar "🗜 Read-only" pill, shown in an archive
     QPixmap _scene;                    // the active world's wallpaper, painted as chrome
     QColor _accent;                    // effective accent (scene-less fallback fill)
     static constexpr int kResizeMargin = 7; // edge band that starts a system resize

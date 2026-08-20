@@ -3,6 +3,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QSet>
 
 #include <archive.h>
 #include <archive_entry.h>
@@ -81,8 +82,17 @@ Result writeData(struct archive *a, const QString &target) {
     return r;
 }
 
-// Extract all entries, or just the one named `only` (nullptr = all).
-Result extractImpl(const QString &archive, const QString &destDir, const QString *only) {
+Result cancelledResult() {
+    Result r;
+    r.error = QStringLiteral("cancelled");
+    return r; // ok stays false
+}
+
+// Extract entries from `archive` into `destDir`. `want` selects which: null =
+// every entry; otherwise an entry is taken if its name is in `want` or lies under
+// a requested directory. `progress` reports count-based advances and can cancel.
+Result extractImpl(const QString &archive, const QString &destDir, const QSet<QString> *want,
+                   qint64 total, const Progress &progress) {
     Result r;
     Reader reader;
     if (!reader.open(archive)) {
@@ -92,20 +102,31 @@ Result extractImpl(const QString &archive, const QString &destDir, const QString
     const QString base = QDir::cleanPath(destDir);
     QDir().mkpath(base);
 
+    QSet<QString> remaining = want ? *want : QSet<QString>();
+    qint64 done = 0;
     struct archive_entry *entry = nullptr;
-    bool found = false;
     while (archive_read_next_header(reader.a, &entry) == ARCHIVE_OK) {
+        if (progress.cancelled && progress.cancelled())
+            return cancelledResult();
         const QString name = QString::fromUtf8(archive_entry_pathname(entry));
-        if (only && name != *only) {
-            archive_read_data_skip(reader.a);
-            continue;
+        if (want) {
+            bool wanted = remaining.remove(name);
+            if (!wanted) // the entry IS a requested directory (maybe "dir/") or lies under one
+                for (const QString &w : *want)
+                    if (name == w || name == w + QLatin1Char('/') ||
+                        name.startsWith(w + QLatin1Char('/'))) {
+                        wanted = true;
+                        remaining.remove(w); // the request is satisfied by its dir/descendants
+                        break;
+                    }
+            if (!wanted) {
+                archive_read_data_skip(reader.a);
+                continue;
+            }
         }
-        found = true;
         const QString target = safeJoin(base, name);
         if (target.isEmpty()) { // Zip-Slip: skip an escaping path
             archive_read_data_skip(reader.a);
-            if (only)
-                break;
             continue;
         }
         if (entryIsDir(entry, name)) {
@@ -115,11 +136,11 @@ Result extractImpl(const QString &archive, const QString &destDir, const QString
             if (!w.ok)
                 return w;
         }
-        if (only)
-            break;
+        if (progress.step)
+            progress.step(++done, total, name);
     }
-    if (only && !found) {
-        r.error = QStringLiteral("no such entry: %1").arg(*only);
+    if (want && !remaining.isEmpty()) {
+        r.error = QStringLiteral("no such entry: %1").arg(*remaining.constBegin());
         return r;
     }
     r.ok = true;
@@ -229,15 +250,27 @@ Listing list(const QString &archive) {
     return out;
 }
 
-Result extractAll(const QString &archive, const QString &destDir) {
-    return extractImpl(archive, destDir, nullptr);
+Result extractAll(const QString &archive, const QString &destDir, const Progress &progress) {
+    return extractImpl(archive, destDir, nullptr, -1, progress);
 }
 
 Result extract(const QString &archive, const QString &entryPath, const QString &destDir) {
-    return extractImpl(archive, destDir, &entryPath);
+    const QSet<QString> want{entryPath};
+    return extractImpl(archive, destDir, &want, 1, {});
 }
 
-Result create(const QStringList &files, const QString &archivePath) {
+Result extractEntries(const QString &archive, const QStringList &entryPaths, const QString &destDir,
+                      const Progress &progress) {
+    if (entryPaths.isEmpty()) {
+        Result r;
+        r.ok = true;
+        return r;
+    }
+    const QSet<QString> want(entryPaths.begin(), entryPaths.end());
+    return extractImpl(archive, destDir, &want, entryPaths.size(), progress);
+}
+
+Result create(const QStringList &files, const QString &archivePath, const Progress &progress) {
     Result r;
     struct archive *a = archive_write_new();
     configureWriteFormat(a, archivePath.toLower());
@@ -246,13 +279,23 @@ Result create(const QStringList &files, const QString &archivePath) {
         archive_write_free(a);
         return r;
     }
+    qint64 done = 0;
     for (const QString &f : files) {
+        if (progress.cancelled && progress.cancelled()) {
+            archive_write_close(a);
+            archive_write_free(a);
+            QFile::remove(archivePath); // don't leave a half-written archive
+            return cancelledResult();
+        }
         const Result ar = addPath(a, f, QFileInfo(f).fileName());
         if (!ar.ok) {
             archive_write_close(a);
             archive_write_free(a);
+            QFile::remove(archivePath);
             return ar;
         }
+        if (progress.step)
+            progress.step(++done, files.size(), QFileInfo(f).fileName());
     }
     archive_write_close(a);
     archive_write_free(a);
