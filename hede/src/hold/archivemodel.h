@@ -9,7 +9,7 @@
 // *into* an archive with the same views it uses for the filesystem — the
 // browse-in-place experience (docs/design/hold.md, Hold H3). Core-only (no
 // QIcon), so it lives in sefe-lib and is unit-tested headlessly.
-namespace helm::sefe {
+namespace helm::hold {
 
 class ArchiveModel : public QAbstractItemModel {
     Q_OBJECT
@@ -55,4 +55,4 @@ private:
     Node *_root = nullptr;
 };
 
-} // namespace helm::sefe
+} // namespace helm::hold

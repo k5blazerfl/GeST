@@ -158,6 +158,7 @@ SefeWindow::SefeWindow(QWidget *parent) : QMainWindow(parent) {
     _extractToAct = op(QStringLiteral("Extract to…"), QKeySequence(), &SefeWindow::extractTo);
     _compressAct = op(QStringLiteral("Compress to .zip"), QKeySequence(),
                       &SefeWindow::compressSelection);
+    _holdAct = op(QStringLiteral("Open with Hold"), QKeySequence(), &SefeWindow::openInHold);
     auto *selectAllAct = op(QStringLiteral("Select all"), QKeySequence::SelectAll, nullptr);
     connect(selectAllAct, &QAction::triggered, this,
             [this] { if (auto *v = activeView()) v->selectAll(); });
@@ -294,8 +295,8 @@ void SefeWindow::navigateTo(const QString &dir, bool record) {
         }
     } else { // inside an archive
         if (!_archiveModel || _archiveModel->archivePath() != split.archive) {
-            ArchiveModel *old = _archiveModel;
-            _archiveModel = new ArchiveModel(split.archive);
+            helm::hold::ArchiveModel *old = _archiveModel;
+            _archiveModel = new helm::hold::ArchiveModel(split.archive);
             useModel(_archiveModel, _archiveModel->indexForInner(split.inner));
             delete old; // views no longer reference it
         } else {
@@ -643,6 +644,12 @@ void SefeWindow::extractTo() {
         [this](const QString &msg) { statusBar()->showMessage(msg); });
 }
 
+void SefeWindow::openInHold() {
+    const QStringList sel = selectedPaths();
+    if (!sel.isEmpty())
+        helm::launchDetached(QStringLiteral("hold"), {sel.first()});
+}
+
 void SefeWindow::compressSelection() {
     const QStringList sel = selectedPaths();
     if (sel.isEmpty())
@@ -681,6 +688,7 @@ void SefeWindow::showContextMenu(QAbstractItemView *view, const QPoint &pos) {
             if (helm::hold::isArchive(path)) {
                 menu.addAction(_extractHereAct);
                 menu.addAction(_extractToAct);
+                menu.addAction(_holdAct);
             }
         }
         if (isDir)

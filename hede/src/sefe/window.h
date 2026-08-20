@@ -16,10 +16,13 @@ class QStackedWidget;
 class QTemporaryDir;
 class QTreeView;
 
+namespace helm::hold {
+class ArchiveModel; // the archive tree model lives in the shared hold-core lib
+}
+
 namespace helm::sefe {
 
 class AddressBar;
-class ArchiveModel;
 class HelmThrobber;
 class ThumbnailIconProvider;
 
@@ -63,6 +66,7 @@ private:
     void extractHere();   // an archive → hold-core extract into the current dir
     void extractTo();     // an archive → hold-core extract into a chosen dir
     void compressSelection(); // selected paths → a new .zip via hold-core
+    void openInHold();    // an archive → the standalone Hold app
     void showContextMenu(QAbstractItemView *view, const QPoint &pos);
 
     QAbstractItemView *activeView() const;
@@ -77,7 +81,7 @@ private:
 
     QFileSystemModel *_model = nullptr;
     ThumbnailIconProvider *_iconProvider = nullptr; // owned; outlives the model
-    ArchiveModel *_archiveModel = nullptr;          // owned; the archive being browsed
+    helm::hold::ArchiveModel *_archiveModel = nullptr; // owned; the archive being browsed
     bool _inArchive = false;                        // views are showing an archive
     QTemporaryDir *_extractTemp = nullptr;          // scratch for open-an-entry
     QTreeView *_details = nullptr;
@@ -106,6 +110,7 @@ private:
     QAction *_extractHereAct = nullptr;
     QAction *_extractToAct = nullptr;
     QAction *_compressAct = nullptr;
+    QAction *_holdAct = nullptr;
 
     QString _current;
     QStringList _history;

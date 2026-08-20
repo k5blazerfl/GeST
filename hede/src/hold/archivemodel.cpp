@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <functional>
 
-namespace helm::sefe {
+namespace helm::hold {
 
 namespace {
 // A child of `parent` named `name`, or nullptr.
@@ -165,4 +165,4 @@ QVariant ArchiveModel::headerData(int section, Qt::Orientation orientation, int 
     return {};
 }
 
-} // namespace helm::sefe
+} // namespace helm::hold

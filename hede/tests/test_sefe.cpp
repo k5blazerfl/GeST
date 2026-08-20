@@ -183,9 +183,9 @@ private slots:
         const QString zip = root + "/out.zip";
         QVERIFY(helm::hold::create({root + "/src/a.txt", root + "/src/sub"}, zip).ok);
 
-        helm::sefe::ArchiveModel model(zip);
+        helm::hold::ArchiveModel model(zip);
         QVERIFY(model.ok());
-        QCOMPARE(model.columnCount({}), int(helm::sefe::ArchiveModel::ColumnCount));
+        QCOMPARE(model.columnCount({}), int(helm::hold::ArchiveModel::ColumnCount));
 
         // top level: "sub" (dir, sorted first) + "a.txt"
         QCOMPARE(model.rowCount({}), 2);
@@ -201,7 +201,7 @@ private slots:
         const QModelIndex b = model.index(0, 0, sub);
         QCOMPARE(model.innerPath(b), QStringLiteral("sub/b.txt"));
         QVERIFY(!model.isDir(b));
-        QCOMPARE(model.data(model.index(0, helm::sefe::ArchiveModel::Type, sub), Qt::DisplayRole)
+        QCOMPARE(model.data(model.index(0, helm::hold::ArchiveModel::Type, sub), Qt::DisplayRole)
                      .toString(),
                  QStringLiteral("File"));
 
