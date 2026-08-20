@@ -341,3 +341,38 @@ def test_import_export_round_trip(tmp_path):
     copy = store.load_profile("copy", g.env.store_base)
     assert (copy.host, copy.username, copy.domain, copy.quality) == \
            (original.host, original.username, original.domain, original.quality)
+
+
+def test_share_uses_the_given_folder(tmp_path):
+    g = _env(tmp_path)
+    run_cli(["add", "work", "--host", "pc"], env=g.env)
+    assert run_cli(["share", "/data/project"], env=g.env) == 0
+    assert len(g.launched) == 1
+    profile, share = g.launched[0]
+    assert share == "/data/project"
+    assert profile.drive_redirect is True  # forced on so /drive: is emitted
+
+
+def test_share_errors_without_a_profile(tmp_path):
+    g = _env(tmp_path)
+    assert run_cli(["share", "/data/project"], env=g.env) == 2
+    assert not g.launched
+    assert "--profile" in "\n".join(g.err)
+
+
+def test_share_ambiguous_profiles_need_explicit_choice(tmp_path):
+    g = _env(tmp_path)
+    run_cli(["add", "work", "--host", "pc1"], env=g.env)
+    run_cli(["add", "home", "--host", "pc2"], env=g.env)
+    assert run_cli(["share", "/data/project"], env=g.env) == 2  # ambiguous
+    assert run_cli(["share", "/data/project", "--profile", "home"], env=g.env) == 0
+    profile, _ = g.launched[0]
+    assert profile.host == "pc2"
+
+
+def test_share_dry_run_prints_drive(tmp_path):
+    g = _env(tmp_path)
+    run_cli(["add", "work", "--host", "pc"], env=g.env)
+    assert run_cli(["share", "/data/project", "--dry-run"], env=g.env) == 0
+    assert not g.launched  # dry run does not launch
+    assert "/drive:HeDE,/data/project" in "\n".join(g.out)

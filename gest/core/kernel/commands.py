@@ -15,6 +15,10 @@ _KVER_RE = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9._+-]*\Z")
 
 MAX_JOBS = 512
 MAKE_TARGETS = frozenset({"", "modules_install", "install"})
+# genkernel actions we build: the full "all" (kernel + initramfs) and the
+# "initramfs"-only rebuild used to re-bake a changed Plymouth theme without
+# recompiling the kernel.
+GENKERNEL_ACTIONS = frozenset({"all", "initramfs"})
 
 
 def _valid_path(path: str) -> bool:
@@ -28,10 +32,14 @@ def _require_jobs(jobs: int) -> int:
 
 
 def genkernel_argv(*, kernel_config: str = "", plymouth: bool = False,
-                   genkernel: str = "genkernel") -> list[str]:
-    """`genkernel [--kernel-config=<file>] [--plymouth …] all` — the automated
-    build path. ``plymouth`` bakes the HeDE splash (theme "hede", shipped by
-    gui-apps/hede) into the initramfs for a seamless boot."""
+                   action: str = "all", genkernel: str = "genkernel") -> list[str]:
+    """`genkernel [--kernel-config=<file>] [--plymouth …] <action>` — the
+    automated build path. ``plymouth`` bakes the HeDE splash (theme "hede",
+    shipped by gui-apps/hede) into the initramfs for a seamless boot. ``action``
+    is "all" (kernel + initramfs) or "initramfs" (re-bake the initramfs only —
+    used to pick up a re-tinted Plymouth theme without recompiling the kernel)."""
+    if action not in GENKERNEL_ACTIONS:
+        raise ValueError(f"unsupported genkernel action: {action!r}")
     argv = [genkernel]
     if kernel_config:
         if not _valid_path(kernel_config):
@@ -39,7 +47,7 @@ def genkernel_argv(*, kernel_config: str = "", plymouth: bool = False,
         argv.append(f"--kernel-config={kernel_config}")
     if plymouth:
         argv += ["--plymouth", "--plymouth-theme=hede"]
-    argv.append("all")
+    argv.append(action)
     return argv
 
 

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(hede VERSION 0.4.1 LANGUAGES C CXX)  # HeDE's own version line; the
+project(hede VERSION 0.5.0 LANGUAGES C CXX)  # HeDE's own version line; the
 # release source of truth — mirror-hede.py / amphi-hede.py stamp the HeDE repo
 # tag and the gui-apps/hede ebuild from this. Bump it when cutting a HeDE change.
 
@@ -30,6 +30,7 @@ add_subdirectory(src/menu)
 add_subdirectory(src/bg)
 add_subdirectory(src/notify)
 add_subdirectory(src/hold)
+add_subdirectory(src/sefe)
 add_subdirectory(tests)
 
 # --- data / session files ---------------------------------------------------
@@ -38,6 +39,11 @@ install(PROGRAMS src/session/helm-session
 install(FILES data/wayland-sessions/hede.desktop
               data/wayland-sessions/hede-effects.desktop
         DESTINATION ${CMAKE_INSTALL_PREFIX}/share/wayland-sessions)
+# Application launchers (the first per-app .desktop HeDE ships): helm-menu
+# discovers these via the XDG app dirs; sefe also registers as the folder
+# (inode/directory) handler.
+install(FILES data/applications/sefe.desktop
+        DESTINATION ${CMAKE_INSTALL_PREFIX}/share/applications)
 install(DIRECTORY data/labwc data/wayfire data/grub data/worlds
         DESTINATION ${CMAKE_INSTALL_PREFIX}/share/hede)
 # The Helm labwc titlebar theme lands in the XDG theme search path

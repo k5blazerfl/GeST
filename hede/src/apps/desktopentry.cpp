@@ -56,6 +56,8 @@ DesktopEntry parseDesktopEntry(const QString &text, const QString &id) {
     e.noDisplay = toBool(main.value(QStringLiteral("NoDisplay")));
     e.hidden = toBool(main.value(QStringLiteral("Hidden")));
     e.terminal = toBool(main.value(QStringLiteral("Terminal")));
+    e.mimeTypes = main.value(QStringLiteral("MimeType"))
+                      .split(QLatin1Char(';'), Qt::SkipEmptyParts);
 
     const QString actions = main.value(QStringLiteral("Actions"));
     for (const QString &aid : actions.split(QLatin1Char(';'), Qt::SkipEmptyParts)) {
@@ -116,6 +118,18 @@ QVector<DesktopEntry> filterEntries(const QVector<DesktopEntry> &entries, const 
             out.append(e);
     }
     std::sort(out.begin(), out.end(), byName);
+    return out;
+}
+
+QVector<DesktopEntry> handlersForMimeType(const QVector<DesktopEntry> &entries,
+                                          const QString &mimeType) {
+    QVector<DesktopEntry> out;
+    if (mimeType.isEmpty())
+        return out;
+    for (const DesktopEntry &e : entries) {
+        if (e.mimeTypes.contains(mimeType))
+            out.append(e);
+    }
     return out;
 }
 

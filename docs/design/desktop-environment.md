@@ -19,7 +19,7 @@ nautical, with two mythological keepers):
 | Desktop environment | **HeDE** (Helm) | the shell you steer from |
 | System settings / Control Center | **GeST** | reused wholesale (§9) |
 | Installer (live image) | **GeSI** | Gentoo System Installer (§11) |
-| File manager | **Seahorse** | Explorer-like browser |
+| File manager | **Seahorse** (app: **SeFE**) | Explorer-like browser — native, see [sefe.md](sefe.md) |
 | Terminal | **Porthole** | the window you peer through |
 | Screenshot / magnifier | **Spyglass** | capture + zoom |
 | Archive manager | **Hold** | the ship's cargo hold |
@@ -118,7 +118,7 @@ cheap — it's a `DEPEND`, and the user compiles it anyway.
 | Notification daemon | **Build** (thin) | `org.freedesktop.Notifications` → toasts. |
 | **System settings** | **Reuse GeST** | GeST Qt Control Center = the settings app (§9). |
 | Polkit auth agent | **Adopt** (or thin build) | `lxqt-policykit` works today; Qt reimpl later if desired. |
-| File manager | **Adopt** | `pcmanfm-qt` (LXQt) — Explorer-like already. Build later only if it becomes an identity piece. |
+| File manager | **Build** | **SeFE** (Seahorse File Explorer) — native Qt Widgets app; it became an identity piece (familiarity + interop surface). See [sefe.md](sefe.md). `pcmanfm-qt` is the fallback. |
 | Login daemon (PAM/seat/VT) | **Adopt** | `greetd` — tiny, UI-less; owns the root/PAM/session-launch plumbing (§10). |
 | Login screen (greeter) | **Build** | `helm-greeter` — our own UI, a greetd client sharing HeDE's toolkit/theme (§10). |
 | Screen lock / idle | **Build** (thin) | `ext-session-lock-v1` surface + idle via compositor; **shares the greeter's UI** (§5). |

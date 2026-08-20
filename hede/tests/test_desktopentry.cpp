@@ -24,6 +24,25 @@ private slots:
         QCOMPARE(e.id, QStringLiteral("editor"));
     }
 
+    void parsesMimeTypesAndFiltersHandlers() {
+        const QString viewer = QStringLiteral(
+            "[Desktop Entry]\nType=Application\nName=Image Viewer\nExec=view %U\n"
+            "MimeType=image/png;image/jpeg;\n");
+        const QString editor = QStringLiteral(
+            "[Desktop Entry]\nType=Application\nName=Editor\nExec=edit %U\n"
+            "MimeType=text/plain;\n");
+        const helm::DesktopEntry v = helm::parseDesktopEntry(viewer, QStringLiteral("view"));
+        QCOMPARE(v.mimeTypes, (QStringList{"image/png", "image/jpeg"})); // ; split, no empties
+
+        const QVector<helm::DesktopEntry> all{
+            v, helm::parseDesktopEntry(editor, QStringLiteral("edit"))};
+        const auto png = helm::handlersForMimeType(all, QStringLiteral("image/png"));
+        QCOMPARE(png.size(), 1);
+        QCOMPARE(png.first().name, QStringLiteral("Image Viewer"));
+        QVERIFY(helm::handlersForMimeType(all, QStringLiteral("application/pdf")).isEmpty());
+        QVERIFY(helm::handlersForMimeType(all, QString()).isEmpty()); // empty mime → none
+    }
+
     void parsesJumpListActions() {
         const QString text = QStringLiteral("[Desktop Entry]\n"
                                             "Type=Application\n"

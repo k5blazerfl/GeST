@@ -48,14 +48,20 @@ add_test(NAME media COMMAND test-media)
 
 qt_add_executable(test-theme test_theme.cpp)
 target_link_libraries(test-theme PRIVATE Qt6::Test helm-theme-lib)
-# The committed Harbor-default themerc must stay byte-identical to themercBody().
+# The committed Harbor-default assets must stay byte-identical to their generators.
 target_compile_definitions(test-theme PRIVATE
-    HELM_THEMERC_DEFAULT="${CMAKE_SOURCE_DIR}/data/themes/Helm/labwc/themerc")
+    HELM_THEMERC_DEFAULT="${CMAKE_SOURCE_DIR}/data/themes/Helm/labwc/themerc"
+    HELM_PLYMOUTH_DEFAULT="${CMAKE_SOURCE_DIR}/data/plymouth/hede/hede.script"
+    HELM_GRUB_DEFAULT="${CMAKE_SOURCE_DIR}/data/grub/hede/theme.txt")
 add_test(NAME theme COMMAND test-theme)
 
 qt_add_executable(test-world test_world.cpp)
 target_link_libraries(test-world PRIVATE Qt6::Test helm-theme-lib)
 add_test(NAME world COMMAND test-world)
+
+qt_add_executable(test-sefe test_sefe.cpp)
+target_link_libraries(test-sefe PRIVATE Qt6::Test sefe-lib)
+add_test(NAME sefe COMMAND test-sefe)
 
 qt_add_executable(test-nineslice test_nineslice.cpp)
 target_link_libraries(test-nineslice PRIVATE Qt6::Test Qt6::Gui helm-theme-lib)

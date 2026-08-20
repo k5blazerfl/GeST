@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Seahorse
+GenericName=File Explorer
+Comment=Browse your files
+Exec=sefe %U
+Icon=system-file-manager
+Terminal=false
+Categories=System;FileTools;FileManager;
+MimeType=inode/directory;
+StartupNotify=true

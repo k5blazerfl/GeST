@@ -24,6 +24,7 @@ struct DesktopEntry {
     bool noDisplay = false;
     bool hidden = false;
     bool terminal = false;
+    QStringList mimeTypes;          // MimeType= entries this app declares it opens
     QVector<DesktopAction> actions; // jump-list actions, in Actions= order
 };
 
@@ -40,6 +41,11 @@ QVector<DesktopEntry> scanDesktopEntries(const QStringList &dirs);
 
 // Case-insensitive filter over name/comment/exec, name-sorted. Empty query → all.
 QVector<DesktopEntry> filterEntries(const QVector<DesktopEntry> &entries, const QString &query);
+
+// The entries that declare they handle `mimeType` (exact MimeType= match),
+// preserving the input order. For a file manager's "Open with" recommendations.
+QVector<DesktopEntry> handlersForMimeType(const QVector<DesktopEntry> &entries,
+                                          const QString &mimeType);
 
 // Expand an Exec into an argv: strip field codes (%f %u %U %i …), %% → %, split.
 QStringList commandArgv(const QString &exec);
