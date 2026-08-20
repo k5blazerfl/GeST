@@ -76,7 +76,7 @@ QSet<QString> entriesOf(const QString &dir) {
 }
 } // namespace
 
-SefeWindow::SefeWindow(QWidget *parent) : QMainWindow(parent) {
+SefeWindow::SefeWindow(const QString &startPath, QWidget *parent) : QMainWindow(parent) {
     resize(960, 620);
     // The HeDE app-chrome contract: the shared shell stylesheet
     // (helm::styleSheet) tints #HelmAppWindow's menu bar, toolbar, address field,
@@ -177,7 +177,10 @@ SefeWindow::SefeWindow(QWidget *parent) : QMainWindow(parent) {
     _extractToAct = op(QStringLiteral("Extract to…"), QKeySequence(), &SefeWindow::extractTo);
     _compressAct = op(QStringLiteral("Compress to .zip"), QKeySequence(),
                       &SefeWindow::compressSelection);
-    _holdAct = op(QStringLiteral("Open with Hold"), QKeySequence(), &SefeWindow::openInHold);
+    _arcExtractSelAct = op(QStringLiteral("Extract Selected…"), QKeySequence(),
+                           &SefeWindow::extractSelectedEntries);
+    _arcExtractAllAct = op(QStringLiteral("Extract All…"), QKeySequence(),
+                           &SefeWindow::extractWholeArchive);
     _selectAllAct = op(QStringLiteral("Select all"), QKeySequence::SelectAll, nullptr);
     connect(_selectAllAct, &QAction::triggered, this,
             [this] { if (auto *v = activeView()) v->selectAll(); });
@@ -259,7 +262,8 @@ SefeWindow::SefeWindow(QWidget *parent) : QMainWindow(parent) {
 
     statusBar();
     buildSceneChrome();
-    navigateTo(initialDir());
+    // Open the requested folder/archive (command line / file association), else Home.
+    navigateTo(startPath.isEmpty() ? initialDir() : QDir::cleanPath(startPath));
 }
 
 SefeWindow::~SefeWindow() {
@@ -329,8 +333,6 @@ void SefeWindow::buildMenuBar() {
     QMenu *tools = mb->addMenu(QStringLiteral("&Tools"));
     tools->addAction(_drydockAct);
     tools->addAction(_shareAct);
-    tools->addSeparator();
-    tools->addAction(_holdAct);
 
     QMenu *help = mb->addMenu(QStringLiteral("&Help"));
     QAction *about = help->addAction(QStringLiteral("&About Seahorse"));
@@ -909,10 +911,69 @@ void SefeWindow::extractTo() {
         [this](const QString &msg) { statusBar()->showMessage(msg); });
 }
 
-void SefeWindow::openInHold() {
-    const QStringList sel = selectedPaths();
-    if (!sel.isEmpty())
-        helm::launchDetached(QStringLiteral("hold"), {sel.first()});
+// Rich archive ops, folded in from the former standalone Hold app: while browsing
+// inside an archive, extract entries straight to a chosen folder. hold-core runs
+// off the UI thread via runBusy so a big archive doesn't freeze the window.
+
+QStringList SefeWindow::selectedInnerEntries() const {
+    QStringList out;
+    if (!_inArchive || !_archiveModel)
+        return out;
+    QAbstractItemView *v = activeView();
+    if (!v || !v->selectionModel())
+        return out;
+    for (const QModelIndex &idx : v->selectionModel()->selectedIndexes()) {
+        if (idx.column() != 0)
+            continue;
+        const QString inner = _archiveModel->innerPath(idx);
+        if (!inner.isEmpty())
+            out << inner;
+    }
+    return out;
+}
+
+void SefeWindow::extractSelectedEntries() {
+    if (!_inArchive || !_archiveModel)
+        return;
+    const QStringList entries = selectedInnerEntries();
+    if (entries.isEmpty())
+        return;
+    const QString dest =
+        QFileDialog::getExistingDirectory(this, QStringLiteral("Extract selected to"), _current);
+    if (dest.isEmpty())
+        return;
+    const QString archive = _archiveModel->archivePath();
+    runBusy(
+        QStringLiteral("Extracting %1 item(s)…").arg(entries.size()),
+        [archive, entries, dest]() -> QString {
+            int ok = 0;
+            for (const QString &inner : entries)
+                if (helm::hold::extract(archive, inner, dest).ok)
+                    ++ok;
+            return QStringLiteral("Extracted %1 of %2 to %3")
+                .arg(ok)
+                .arg(entries.size())
+                .arg(dest);
+        },
+        [this](const QString &msg) { statusBar()->showMessage(msg); });
+}
+
+void SefeWindow::extractWholeArchive() {
+    if (!_inArchive || !_archiveModel)
+        return;
+    const QString archive = _archiveModel->archivePath();
+    const QString dest =
+        QFileDialog::getExistingDirectory(this, QStringLiteral("Extract all to"), _current);
+    if (dest.isEmpty())
+        return;
+    runBusy(
+        QStringLiteral("Extracting %1…").arg(QFileInfo(archive).fileName()),
+        [archive, dest]() -> QString {
+            const helm::hold::Result r = helm::hold::extractAll(archive, dest);
+            return r.ok ? QStringLiteral("Extracted to %1").arg(dest)
+                        : QStringLiteral("Extract failed: %1").arg(r.error);
+        },
+        [this](const QString &msg) { statusBar()->showMessage(msg); });
 }
 
 void SefeWindow::compressSelection() {
@@ -934,12 +995,15 @@ void SefeWindow::compressSelection() {
 void SefeWindow::showContextMenu(QAbstractItemView *view, const QPoint &pos) {
     const QModelIndex idx = view->indexAt(pos);
     QMenu menu(this);
-    if (_inArchive) { // read-only browsing: just Open the clicked entry
+    if (_inArchive) { // browse read-only, but extract entries out (folded-in Hold)
         if (idx.isValid()) {
             QAction *open = menu.addAction(QStringLiteral("Open"));
             connect(open, &QAction::triggered, this, [this, idx] { openIndex(idx); });
-            menu.exec(view->viewport()->mapToGlobal(pos));
+            menu.addSeparator();
+            menu.addAction(_arcExtractSelAct); // extract the selected entries
         }
+        menu.addAction(_arcExtractAllAct);     // extract the whole archive
+        menu.exec(view->viewport()->mapToGlobal(pos));
         return;
     }
     if (idx.isValid()) {
@@ -953,7 +1017,6 @@ void SefeWindow::showContextMenu(QAbstractItemView *view, const QPoint &pos) {
             if (helm::hold::isArchive(path)) {
                 menu.addAction(_extractHereAct);
                 menu.addAction(_extractToAct);
-                menu.addAction(_holdAct);
             }
         }
         if (isDir)

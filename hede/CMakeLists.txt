@@ -40,10 +40,9 @@ install(FILES data/wayland-sessions/hede.desktop
               data/wayland-sessions/hede-effects.desktop
         DESTINATION ${CMAKE_INSTALL_PREFIX}/share/wayland-sessions)
 # Application launchers (the first per-app .desktop HeDE ships): helm-menu
-# discovers these via the XDG app dirs; sefe also registers as the folder
-# (inode/directory) handler.
+# discovers these via the XDG app dirs; sefe registers as the folder
+# (inode/directory) AND archive handler — Hold folded into Seahorse, no separate app.
 install(FILES data/applications/sefe.desktop
-              data/applications/hold.desktop
         DESTINATION ${CMAKE_INSTALL_PREFIX}/share/applications)
 install(DIRECTORY data/labwc data/wayfire data/grub data/worlds
         DESTINATION ${CMAKE_INSTALL_PREFIX}/share/hede)
