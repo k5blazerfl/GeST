@@ -1,5 +1,7 @@
 #pragma once
 
+#include "holdcore.h" // helm::hold::Listing (the async-load constructor)
+
 #include <QAbstractItemModel>
 #include <QDateTime>
 #include <QList>
@@ -17,7 +19,12 @@ public:
     // Columns mirror QFileSystemModel's so the same views read naturally.
     enum Column { Name = 0, Size, Type, Modified, ColumnCount };
 
+    // Reads the archive's TOC synchronously (hold::list).
     explicit ArchiveModel(const QString &archivePath, QObject *parent = nullptr);
+    // Builds from a pre-fetched listing, so the slow hold::list() can run off the UI
+    // thread and only the fast tree-build happens here (navigateTo's async load, A0).
+    ArchiveModel(const QString &archivePath, const helm::hold::Listing &listing,
+                 QObject *parent = nullptr);
     ~ArchiveModel() override;
 
     QString archivePath() const { return _archivePath; }
@@ -48,7 +55,8 @@ private:
         Node *parent = nullptr;
         QList<Node *> children;
     };
-    Node *nodeFor(const QModelIndex &index) const; // index → Node* (root if invalid)
+    void buildTree(const helm::hold::Listing &listing); // shared by both constructors
+    Node *nodeFor(const QModelIndex &index) const;      // index → Node* (root if invalid)
 
     QString _archivePath;
     bool _ok = false;

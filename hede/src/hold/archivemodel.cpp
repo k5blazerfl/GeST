@@ -21,10 +21,16 @@ template <typename Node> Node *childNamed(Node *parent, const QString &name) {
 } // namespace
 
 ArchiveModel::ArchiveModel(const QString &archivePath, QObject *parent)
+    : ArchiveModel(archivePath, helm::hold::list(archivePath), parent) {}
+
+ArchiveModel::ArchiveModel(const QString &archivePath, const helm::hold::Listing &listing,
+                           QObject *parent)
     : QAbstractItemModel(parent), _archivePath(archivePath) {
     _root = new Node; // the invisible root; its children are the top-level entries
+    buildTree(listing);
+}
 
-    const helm::hold::Listing listing = helm::hold::list(archivePath);
+void ArchiveModel::buildTree(const helm::hold::Listing &listing) {
     _ok = listing.ok;
     for (const helm::hold::Entry &e : listing.entries) {
         const QStringList parts = e.path.split(QLatin1Char('/'), Qt::SkipEmptyParts);

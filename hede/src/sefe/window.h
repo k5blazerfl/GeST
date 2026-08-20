@@ -9,6 +9,7 @@
 
 #include <functional>
 
+class QAbstractItemModel;
 class QAbstractItemView;
 class QAction;
 class QFileSystemModel;
@@ -67,6 +68,8 @@ private:
 
     // navigation (slice 2)
     void navigateTo(const QString &dir, bool record = true);
+    void setViewModel(QAbstractItemModel *m, const QModelIndex &root); // swap+root both views
+    void finishNavigate(const QString &path, bool record); // address/title/history/pill
     void openIndex(const QModelIndex &index);
     void openArchiveEntry(const QString &inner); // extract-on-demand + open
     void goBack();
@@ -166,6 +169,7 @@ private:
     QAction *_menuBarAct = nullptr;     // View → Menu Bar (checkable, Ctrl+M)
 
     QString _current;
+    quint64 _navGen = 0; // bumped per navigateTo; async archive loads drop if superseded
     QStringList _history;
     int _histIndex = -1;
     QStringList _clip; // cut/copied paths

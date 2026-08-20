@@ -582,52 +582,22 @@ void SefeWindow::runJob(const QString &title,
 
 // --- navigation ---
 
-void SefeWindow::navigateTo(const QString &dir, bool record) {
-    const QString path = QDir::cleanPath(dir);
-    const ArchiveSplit split = splitArchivePath(path);
-
-    // Switch both views to `m` (only when it actually changes, to keep the
-    // details columns) then root them at `root`.
-    auto useModel = [this](QAbstractItemModel *m, const QModelIndex &root) {
-        if (_details->model() != m) {
-            _details->setModel(m);
-            _icons->setModel(m);
-            _details->setColumnWidth(0, 320);
-            _details->header()->setStretchLastSection(true);
-        }
-        _details->setRootIndex(root);
-        _icons->setRootIndex(root);
-    };
-
-    if (split.archive.isEmpty()) { // filesystem
-        _inArchive = false;
-        _model->setRootPath(path);
-        useModel(_model, _model->index(path));
-        if (_archiveModel) { // left the archive — drop its model
-            delete _archiveModel;
-            _archiveModel = nullptr;
-        }
-    } else { // inside an archive
-        if (!_archiveModel || _archiveModel->archivePath() != split.archive) {
-            // Loading a NEW archive reads its table of contents. It's synchronous
-            // (near-instant for a zip), so we don't off-thread it — but pulse the
-            // throbber so the load registers: begin/end here spins it one full loop
-            // (it idles on, and settles back to, tonight's moon) via runBusy's
-            // refcounted animator. Navigating within an already-open archive skips
-            // this — no re-read.
-            _throbber->begin(
-                QStringLiteral("Reading %1…").arg(QFileInfo(split.archive).fileName()));
-            helm::hold::ArchiveModel *old = _archiveModel;
-            _archiveModel = new helm::hold::ArchiveModel(split.archive);
-            useModel(_archiveModel, _archiveModel->indexForInner(split.inner));
-            delete old; // views no longer reference it
-            _throbber->end();
-        } else {
-            useModel(_archiveModel, _archiveModel->indexForInner(split.inner));
-        }
-        _inArchive = true;
+// Switch both views to `m` (only when it changes, to keep the details columns)
+// then root them at `root`.
+void SefeWindow::setViewModel(QAbstractItemModel *m, const QModelIndex &root) {
+    if (_details->model() != m) {
+        _details->setModel(m);
+        _icons->setModel(m);
+        _details->setColumnWidth(0, 320);
+        _details->header()->setStretchLastSection(true);
     }
+    _details->setRootIndex(root);
+    _icons->setRootIndex(root);
+}
 
+// The address/title/status/history bookkeeping shared by every navigation, once
+// the model is in place (synchronously, or after an async archive load).
+void SefeWindow::finishNavigate(const QString &path, bool record) {
     _current = path;
     _address->setPath(path);
     setWindowTitle(helm::sefe::windowTitle(path));
@@ -645,6 +615,65 @@ void SefeWindow::navigateTo(const QString &dir, bool record) {
         _histIndex = _history.size() - 1;
     }
     updateNavActions();
+}
+
+void SefeWindow::navigateTo(const QString &dir, bool record) {
+    const QString path = QDir::cleanPath(dir);
+    const ArchiveSplit split = splitArchivePath(path);
+    const quint64 gen = ++_navGen; // an in-flight archive load older than this is stale
+
+    if (split.archive.isEmpty()) { // filesystem — synchronous
+        _inArchive = false;
+        _model->setRootPath(path);
+        setViewModel(_model, _model->index(path));
+        if (_archiveModel) { // left the archive — drop its model
+            delete _archiveModel;
+            _archiveModel = nullptr;
+        }
+        finishNavigate(path, record);
+        return;
+    }
+    if (_archiveModel && _archiveModel->archivePath() == split.archive) {
+        // already inside this archive — just re-root, no re-read
+        _inArchive = true;
+        setViewModel(_archiveModel, _archiveModel->indexForInner(split.inner));
+        finishNavigate(path, record);
+        return;
+    }
+
+    // A NEW archive: read its table of contents OFF the UI thread (a big or
+    // network archive mustn't freeze the browse), then build the model + swap on
+    // return. The throbber spins meanwhile; a newer navigation supersedes this one
+    // via the generation guard.
+    _throbber->begin(QStringLiteral("Reading %1…").arg(QFileInfo(split.archive).fileName()));
+    auto *job = new helm::hold::Job(QStringLiteral("Reading"), this);
+    auto listing = std::make_shared<helm::hold::Listing>();
+    connect(job, &helm::hold::Job::finished, this,
+            [this, path, split, record, gen, job, listing](const helm::hold::Result &r) {
+                job->deleteLater();
+                _throbber->end();
+                if (gen != _navGen)
+                    return; // superseded by a newer navigation — drop this load
+                if (!r.ok) {
+                    statusBar()->showMessage(QStringLiteral("Cannot open %1: %2")
+                                                 .arg(QFileInfo(split.archive).fileName(), r.error));
+                    return;
+                }
+                helm::hold::ArchiveModel *old = _archiveModel;
+                _archiveModel = new helm::hold::ArchiveModel(split.archive, *listing);
+                _inArchive = true;
+                setViewModel(_archiveModel, _archiveModel->indexForInner(split.inner));
+                delete old; // views now reference the new model
+                finishNavigate(path, record);
+            });
+    job->run([split, listing](const helm::hold::Progress &) -> helm::hold::Result {
+        *listing = helm::hold::list(split.archive); // the slow read, off-thread
+        helm::hold::Result res;
+        res.ok = listing->ok;
+        if (!res.ok)
+            res.error = listing->error;
+        return res;
+    });
 }
 
 void SefeWindow::openIndex(const QModelIndex &index) {
