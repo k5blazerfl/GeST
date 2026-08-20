@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(hede VERSION 0.6.0 LANGUAGES C CXX)  # HeDE's own version line; the
+project(hede VERSION 0.7.0 LANGUAGES C CXX)  # HeDE's own version line; the
 # release source of truth — mirror-hede.py / amphi-hede.py stamp the HeDE repo
 # tag and the gui-apps/hede ebuild from this. Bump it when cutting a HeDE change.
 

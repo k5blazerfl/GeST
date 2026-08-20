@@ -182,6 +182,18 @@ QString styleSheet(bool dark, const QColor &accent) {
         "#HelmWinClose:hover { background: rgba(232,64,64,0.90); color: white; }\n")
         .arg(glyph);
 
+    // Archive affordances (Seahorse): the breadcrumb chip marking where the
+    // filesystem enters an archive, and the status-bar "🗜 Read-only" pill shown
+    // while browsing inside one. Both are accent-tinted so the archive boundary
+    // reads at a glance. See docs/design/archive-support.md.
+    qss += QStringLiteral(
+        "#HelmCrumbArchive { color: %1; background: %2; border: 1px solid %3;"
+        " border-radius: 5px; padding: 1px 7px; font-weight: 600; }\n"
+        "#HelmCrumbArchive:hover { background: %3; }\n"
+        "#HelmReadOnlyPill { color: %1; background: %2; border: 1px solid %3;"
+        " border-radius: 8px; padding: 1px 9px; margin-right: 4px; }\n")
+        .arg(glyph, accentFill, accentEdge);
+
     return qss;
 }
 

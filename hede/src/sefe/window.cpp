@@ -4,6 +4,7 @@
 #include "archivemodel.h" // hold: browse-in-place (Hold H3)
 #include "desktopentry.h" // helm-apps: scan + Exec argv (Open with)
 #include "holdcore.h"     // hold-core: archive extract/create (Hold H2)
+#include "job.h"          // hold::Job: cancellable, progress-reporting archive ops (A0)
 #include "config.h"       // helm::Config: throbber intensity knob
 #include "iconprovider.h"
 #include "launch.h"       // helm-common: launchDetached
@@ -18,7 +19,12 @@
 #include <QDialogButtonBox>
 #include <QAction>
 #include <QApplication>
+#include <QCheckBox>
 #include <QClipboard>
+#include <QComboBox>
+#include <QProcess>
+#include <QDrag>
+#include <QDropEvent>
 #include <QThread>
 #include <QSizePolicy>
 #include <utility>
@@ -34,7 +40,9 @@
 #include <QFrame>
 #include <QHeaderView>
 #include <QIcon>
+#include <QInputDialog>
 #include <QKeyEvent>
+#include <QLineEdit>
 #include <QKeySequence>
 #include <QLabel>
 #include <QLinearGradient>
@@ -42,6 +50,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QPaintEvent>
+#include <QProgressDialog>
 #include <QWindow>
 #include <QListView>
 #include <QListWidget>
@@ -49,6 +58,7 @@
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QPushButton>
 #include <QMimeData>
 #include <QMimeDatabase>
 #include <QModelIndex>
@@ -73,6 +83,33 @@ QSet<QString> entriesOf(const QString &dir) {
     const auto list = d.entryList(QDir::NoDotAndDotDot | QDir::AllEntries | QDir::Hidden
                                   | QDir::System);
     return QSet<QString>(list.begin(), list.end());
+}
+
+// A3c — archive passphrases in the Keychain via secret-tool (the Secret Service CLI),
+// the same path Gangway uses (gest/core/rdp/creds.py). All calls degrade gracefully
+// if no provider is installed. The attributes identify the archive by absolute path.
+QStringList keychainAttrs(const QString &archive) {
+    return {QStringLiteral("service"), QStringLiteral("hold-archive"), QStringLiteral("path"),
+            QFileInfo(archive).absoluteFilePath()};
+}
+QString keychainLookup(const QString &archive) {
+    QProcess p;
+    p.start(QStringLiteral("secret-tool"), QStringList{QStringLiteral("lookup")} << keychainAttrs(archive));
+    if (!p.waitForFinished(3000) || p.exitStatus() != QProcess::NormalExit || p.exitCode() != 0)
+        return QString(); // not found, or no Secret Service provider
+    return QString::fromUtf8(p.readAllStandardOutput()); // secret-tool prints the secret raw
+}
+bool keychainStore(const QString &archive, const QString &pass) {
+    QProcess p;
+    p.start(QStringLiteral("secret-tool"),
+            QStringList{QStringLiteral("store"),
+                        QStringLiteral("--label=Hold: %1").arg(QFileInfo(archive).fileName())}
+                << keychainAttrs(archive));
+    if (!p.waitForStarted(3000))
+        return false;
+    p.write(pass.toUtf8()); // secret-tool reads the secret from stdin
+    p.closeWriteChannel();
+    return p.waitForFinished(3000) && p.exitCode() == 0;
 }
 } // namespace
 
@@ -181,6 +218,7 @@ SefeWindow::SefeWindow(const QString &startPath, QWidget *parent) : QMainWindow(
                            &SefeWindow::extractSelectedEntries);
     _arcExtractAllAct = op(QStringLiteral("Extract All…"), QKeySequence(),
                            &SefeWindow::extractWholeArchive);
+    _testAct = op(QStringLiteral("Test archive"), QKeySequence(), &SefeWindow::testArchive);
     _selectAllAct = op(QStringLiteral("Select all"), QKeySequence::SelectAll, nullptr);
     connect(_selectAllAct, &QAction::triggered, this,
             [this] { if (auto *v = activeView()) v->selectAll(); });
@@ -197,6 +235,12 @@ SefeWindow::SefeWindow(const QString &startPath, QWidget *parent) : QMainWindow(
         connect(v, &QAbstractItemView::customContextMenuRequested, this,
                 [this, v](const QPoint &p) { showContextMenu(v, p); });
         v->installEventFilter(this); // Return opens the current item
+        // Archive drag-and-drop (A2): accept file drops on the viewport (add to the
+        // archive) and start a custom drag-out from it. We drive both from
+        // eventFilter, so the view's own DnD stays off.
+        v->setAcceptDrops(true);
+        v->viewport()->setAcceptDrops(true);
+        v->viewport()->installEventFilter(this);
     };
 
     _details = new QTreeView(this);
@@ -261,6 +305,13 @@ SefeWindow::SefeWindow(const QString &startPath, QWidget *parent) : QMainWindow(
     setCentralWidget(split);
 
     statusBar();
+    // A read-only pill on the right of the status bar, shown only while browsing
+    // inside an archive (archives are read-only until the streaming manager lands —
+    // see docs/design/archive-support.md).
+    _readOnlyPill = new QLabel(QStringLiteral("🗜 Read-only"), this);
+    _readOnlyPill->setObjectName(QStringLiteral("HelmReadOnlyPill"));
+    _readOnlyPill->setVisible(false);
+    statusBar()->addPermanentWidget(_readOnlyPill);
     buildSceneChrome();
     // Open the requested folder/archive (command line / file association), else Home.
     navigateTo(startPath.isEmpty() ? initialDir() : QDir::cleanPath(startPath));
@@ -531,54 +582,64 @@ void SefeWindow::runBusy(const QString &activity, Work work, Done done) {
     thread->start();
 }
 
+void SefeWindow::runJob(const QString &title,
+                        std::function<helm::hold::Result(const helm::hold::Progress &)> work,
+                        std::function<QString(const helm::hold::Result &)> summary) {
+    auto *job = new helm::hold::Job(title, this);
+    // The dialog appears only if the op outlives the delay, so quick archives never
+    // flash it; it drives cancel and shows the current entry.
+    auto *dlg = new QProgressDialog(title, QStringLiteral("Cancel"), 0, 0, this);
+    dlg->setWindowModality(Qt::WindowModal);
+    dlg->setMinimumDuration(600);
+    dlg->setAutoClose(false);
+    dlg->setAutoReset(false);
+    dlg->setValue(0);
+
+    connect(job, &helm::hold::Job::progress, dlg,
+            [dlg](qint64 done, qint64 total, const QString &name) {
+                if (total > 0) {
+                    if (dlg->maximum() != int(total))
+                        dlg->setMaximum(int(total));
+                    dlg->setValue(int(done));
+                } else if (dlg->maximum() != 0) {
+                    dlg->setRange(0, 0); // unknown total → indeterminate
+                }
+                dlg->setLabelText(name);
+            });
+    connect(dlg, &QProgressDialog::canceled, job, &helm::hold::Job::cancel);
+
+    _throbber->begin(title);
+    connect(job, &helm::hold::Job::finished, this,
+            [this, dlg, job, summary](const helm::hold::Result &r) {
+                _throbber->end();
+                dlg->reset();
+                dlg->deleteLater();
+                job->deleteLater();
+                const QString msg = summary(r);
+                if (!msg.isEmpty())
+                    statusBar()->showMessage(msg);
+            });
+    job->run(std::move(work));
+}
+
 // --- navigation ---
 
-void SefeWindow::navigateTo(const QString &dir, bool record) {
-    const QString path = QDir::cleanPath(dir);
-    const ArchiveSplit split = splitArchivePath(path);
-
-    // Switch both views to `m` (only when it actually changes, to keep the
-    // details columns) then root them at `root`.
-    auto useModel = [this](QAbstractItemModel *m, const QModelIndex &root) {
-        if (_details->model() != m) {
-            _details->setModel(m);
-            _icons->setModel(m);
-            _details->setColumnWidth(0, 320);
-            _details->header()->setStretchLastSection(true);
-        }
-        _details->setRootIndex(root);
-        _icons->setRootIndex(root);
-    };
-
-    if (split.archive.isEmpty()) { // filesystem
-        _inArchive = false;
-        _model->setRootPath(path);
-        useModel(_model, _model->index(path));
-        if (_archiveModel) { // left the archive — drop its model
-            delete _archiveModel;
-            _archiveModel = nullptr;
-        }
-    } else { // inside an archive
-        if (!_archiveModel || _archiveModel->archivePath() != split.archive) {
-            // Loading a NEW archive reads its table of contents. It's synchronous
-            // (near-instant for a zip), so we don't off-thread it — but pulse the
-            // throbber so the load registers: begin/end here spins it one full loop
-            // (it idles on, and settles back to, tonight's moon) via runBusy's
-            // refcounted animator. Navigating within an already-open archive skips
-            // this — no re-read.
-            _throbber->begin(
-                QStringLiteral("Reading %1…").arg(QFileInfo(split.archive).fileName()));
-            helm::hold::ArchiveModel *old = _archiveModel;
-            _archiveModel = new helm::hold::ArchiveModel(split.archive);
-            useModel(_archiveModel, _archiveModel->indexForInner(split.inner));
-            delete old; // views no longer reference it
-            _throbber->end();
-        } else {
-            useModel(_archiveModel, _archiveModel->indexForInner(split.inner));
-        }
-        _inArchive = true;
+// Switch both views to `m` (only when it changes, to keep the details columns)
+// then root them at `root`.
+void SefeWindow::setViewModel(QAbstractItemModel *m, const QModelIndex &root) {
+    if (_details->model() != m) {
+        _details->setModel(m);
+        _icons->setModel(m);
+        _details->setColumnWidth(0, 320);
+        _details->header()->setStretchLastSection(true);
     }
+    _details->setRootIndex(root);
+    _icons->setRootIndex(root);
+}
 
+// The address/title/status/history bookkeeping shared by every navigation, once
+// the model is in place (synchronously, or after an async archive load).
+void SefeWindow::finishNavigate(const QString &path, bool record) {
     _current = path;
     _address->setPath(path);
     setWindowTitle(helm::sefe::windowTitle(path));
@@ -586,6 +647,9 @@ void SefeWindow::navigateTo(const QString &dir, bool record) {
         _titlebar->setTitle(helm::sefe::windowTitle(path));
     highlightPlace(path);
     statusBar()->showMessage(path);
+    if (_readOnlyPill) // only genuinely read-only formats (RAR/CBR) — writable archives edit in place
+        _readOnlyPill->setVisible(_inArchive && _archiveModel &&
+                                  !helm::hold::isWritableArchive(_archiveModel->archivePath()));
 
     if (record) {
         while (_history.size() > _histIndex + 1)
@@ -594,6 +658,65 @@ void SefeWindow::navigateTo(const QString &dir, bool record) {
         _histIndex = _history.size() - 1;
     }
     updateNavActions();
+}
+
+void SefeWindow::navigateTo(const QString &dir, bool record, bool forceReload) {
+    const QString path = QDir::cleanPath(dir);
+    const ArchiveSplit split = splitArchivePath(path);
+    const quint64 gen = ++_navGen; // an in-flight archive load older than this is stale
+
+    if (split.archive.isEmpty()) { // filesystem — synchronous
+        _inArchive = false;
+        _model->setRootPath(path);
+        setViewModel(_model, _model->index(path));
+        if (_archiveModel) { // left the archive — drop its model
+            delete _archiveModel;
+            _archiveModel = nullptr;
+        }
+        finishNavigate(path, record);
+        return;
+    }
+    if (!forceReload && _archiveModel && _archiveModel->archivePath() == split.archive) {
+        // already inside this archive — just re-root, no re-read
+        _inArchive = true;
+        setViewModel(_archiveModel, _archiveModel->indexForInner(split.inner));
+        finishNavigate(path, record);
+        return;
+    }
+
+    // A NEW archive: read its table of contents OFF the UI thread (a big or
+    // network archive mustn't freeze the browse), then build the model + swap on
+    // return. The throbber spins meanwhile; a newer navigation supersedes this one
+    // via the generation guard.
+    _throbber->begin(QStringLiteral("Reading %1…").arg(QFileInfo(split.archive).fileName()));
+    auto *job = new helm::hold::Job(QStringLiteral("Reading"), this);
+    auto listing = std::make_shared<helm::hold::Listing>();
+    connect(job, &helm::hold::Job::finished, this,
+            [this, path, split, record, gen, job, listing](const helm::hold::Result &r) {
+                job->deleteLater();
+                _throbber->end();
+                if (gen != _navGen)
+                    return; // superseded by a newer navigation — drop this load
+                if (!r.ok) {
+                    statusBar()->showMessage(QStringLiteral("Cannot open %1: %2")
+                                                 .arg(QFileInfo(split.archive).fileName(), r.error));
+                    return;
+                }
+                helm::hold::ArchiveModel *old = _archiveModel;
+                _archiveModel = new helm::hold::ArchiveModel(split.archive, *listing);
+                _inArchive = true;
+                setViewModel(_archiveModel, _archiveModel->indexForInner(split.inner));
+                delete old; // views now reference the new model
+                finishNavigate(path, record);
+            });
+    job->run([split, listing](const helm::hold::Progress &) -> helm::hold::Result {
+        *listing = helm::hold::list(split.archive); // the slow read, off-thread
+        helm::hold::Result res;
+        res.ok = listing->ok;
+        if (!res.ok)
+            res.error = listing->error;
+        return res;
+    });
 }
 
 void SefeWindow::openIndex(const QModelIndex &index) {
@@ -627,12 +750,16 @@ void SefeWindow::openArchiveEntry(const QString &inner) {
         return;
     const QString archive = _archiveModel->archivePath();
     const QString tempDir = _extractTemp->path();
+    const auto pass = archivePassphrase(archive); // A3: prompt if the archive is encrypted
+    if (!pass)
+        return; // cancelled
+    const QString passv = *pass;
     // Extract the one entry on a worker thread (the throbber spins), then open
     // it once it lands.
     runBusy(
         QStringLiteral("Opening %1…").arg(QFileInfo(inner).fileName()),
-        [archive, inner, tempDir]() -> QString {
-            const helm::hold::Result r = helm::hold::extract(archive, inner, tempDir);
+        [archive, inner, tempDir, passv]() -> QString {
+            const helm::hold::Result r = helm::hold::extract(archive, inner, tempDir, passv);
             return r.ok ? QString() : r.error; // empty == success
         },
         [this, inner, tempDir](const QString &error) {
@@ -698,6 +825,27 @@ QStringList SefeWindow::selectedPaths() const {
 }
 
 void SefeWindow::renameSelected() {
+    if (_inArchive) { // A2: rename an entry inside the archive (rewrite)
+        const QStringList sel = selectedInnerEntries();
+        if (sel.size() != 1)
+            return; // one at a time
+        const QString from = sel.first();
+        const QString oldName = from.section(QLatin1Char('/'), -1);
+        bool ok = false;
+        const QString newName =
+            QInputDialog::getText(this, QStringLiteral("Rename"), QStringLiteral("New name:"),
+                                  QLineEdit::Normal, oldName, &ok)
+                .trimmed();
+        if (!ok || newName.isEmpty() || newName == oldName || newName.contains(QLatin1Char('/')))
+            return;
+        const QString parent =
+            from.contains(QLatin1Char('/')) ? from.section(QLatin1Char('/'), 0, -2) + QLatin1Char('/')
+                                            : QString();
+        helm::hold::Edits e;
+        e.rename.append({from, parent + newName});
+        mutateArchive(e, QStringLiteral("Renaming %1…").arg(oldName));
+        return;
+    }
     QAbstractItemView *v = activeView();
     const QModelIndex idx = v ? v->currentIndex() : QModelIndex();
     if (idx.isValid())
@@ -705,6 +853,22 @@ void SefeWindow::renameSelected() {
 }
 
 void SefeWindow::deleteSelected() {
+    if (_inArchive) { // A2: remove entries from the archive (rewrite) — no Trash inside
+        const QStringList inner = selectedInnerEntries();
+        if (inner.isEmpty())
+            return;
+        const auto btn = QMessageBox::question(
+            this, QStringLiteral("Delete from archive"),
+            QStringLiteral("Permanently remove %1 item(s) from the archive? "
+                           "This can't be undone.")
+                .arg(inner.size()));
+        if (btn != QMessageBox::Yes)
+            return;
+        helm::hold::Edits e;
+        e.remove = inner;
+        mutateArchive(e, QStringLiteral("Deleting %1 item(s)…").arg(inner.size()));
+        return;
+    }
     const QStringList paths = selectedPaths();
     if (paths.isEmpty())
         return;
@@ -735,8 +899,18 @@ void SefeWindow::copySelected(bool cut) {
 }
 
 void SefeWindow::paste() {
-    if (_clip.isEmpty() || _inArchive) // can't paste into a read-only archive view
+    if (_clip.isEmpty())
         return;
+    if (_inArchive) { // A2: add the clipboard's host files into the archive (rewrite)
+        const QString innerDir = splitArchivePath(_current).inner;
+        helm::hold::Edits e;
+        for (const QString &src : _clip) {
+            const QString base = QFileInfo(src).fileName();
+            e.add.append({src, innerDir.isEmpty() ? base : innerDir + QLatin1Char('/') + base});
+        }
+        mutateArchive(e, QStringLiteral("Adding %1 item(s)…").arg(_clip.size()));
+        return; // a filesystem "cut" isn't consumed — we copied INTO the archive
+    }
     const QStringList clip = _clip;
     const bool cut = _clipCut;
     const QString dest = _current;
@@ -777,6 +951,26 @@ void SefeWindow::paste() {
 }
 
 void SefeWindow::newFolder() {
+    if (_inArchive) { // A2: add an empty folder into the archive (rewrite)
+        bool ok = false;
+        const QString name =
+            QInputDialog::getText(this, QStringLiteral("New folder"),
+                                  QStringLiteral("Folder name:"), QLineEdit::Normal,
+                                  QStringLiteral("New folder"), &ok)
+                .trimmed();
+        if (!ok || name.isEmpty() || name.contains(QLatin1Char('/')))
+            return;
+        // hold::rewrite ingests a HOST path, so add an empty temp dir at the target
+        // inner path. The temp dir is held alive until the rewrite finishes.
+        auto tmp = std::make_shared<QTemporaryDir>();
+        if (!tmp->isValid())
+            return;
+        const QString innerDir = splitArchivePath(_current).inner;
+        helm::hold::Edits e;
+        e.add.append({tmp->path(), innerDir.isEmpty() ? name : innerDir + QLatin1Char('/') + name});
+        mutateArchive(e, QStringLiteral("Adding %1…").arg(name), tmp);
+        return;
+    }
     const QString name = newFolderName(entriesOf(_current));
     if (!QDir(_current).mkdir(name))
         return;
@@ -901,6 +1095,82 @@ void SefeWindow::copyPaths() {
 // H2: quick archive actions over hold-core. Synchronous for now — a progress /
 // off-thread pass is a later polish; large archives will block until then.
 
+// A failed archive Result → a status message; a cancel reads as such, not a failure.
+static QString archiveFailMsg(const QString &verb, const helm::hold::Result &r) {
+    return r.error == QLatin1String("cancelled")
+               ? QStringLiteral("%1 cancelled").arg(verb)
+               : QStringLiteral("%1 failed: %2").arg(verb, r.error);
+}
+
+std::optional<helm::hold::Overwrite>
+SefeWindow::resolveOverwrite(const QString &dest, const QStringList &relPaths) {
+    bool collision = false;
+    for (const QString &rel : relPaths) {
+        const QString target = helm::hold::safeJoin(dest, rel);
+        if (!target.isEmpty() && (QFileInfo::exists(target) || QFileInfo(target).isSymLink())) {
+            collision = true;
+            break;
+        }
+    }
+    if (!collision)
+        return helm::hold::Overwrite::Replace; // nothing there to overwrite — no prompt
+
+    QMessageBox box(this);
+    box.setIcon(QMessageBox::Question);
+    box.setWindowTitle(QStringLiteral("Files already exist"));
+    box.setText(QStringLiteral("Some items already exist in the destination."));
+    box.setInformativeText(
+        QStringLiteral("Replace them, keep both, or skip the ones that exist?"));
+    QPushButton *replace = box.addButton(QStringLiteral("Replace"), QMessageBox::AcceptRole);
+    QPushButton *both = box.addButton(QStringLiteral("Keep Both"), QMessageBox::ActionRole);
+    QPushButton *skip = box.addButton(QStringLiteral("Skip"), QMessageBox::ActionRole);
+    box.addButton(QMessageBox::Cancel);
+    box.setDefaultButton(both); // the least destructive choice
+    box.exec();
+
+    QAbstractButton *clicked = box.clickedButton();
+    if (clicked == replace)
+        return helm::hold::Overwrite::Replace;
+    if (clicked == both)
+        return helm::hold::Overwrite::KeepBoth;
+    if (clicked == skip)
+        return helm::hold::Overwrite::Skip;
+    return std::nullopt; // Cancel / closed
+}
+
+std::optional<QString> SefeWindow::archivePassphrase(const QString &archive) {
+    if (!helm::hold::isEncrypted(archive))
+        return QString(); // not encrypted — no passphrase needed
+
+    // A3c: a remembered passphrase (Keychain / Secret Service) skips the prompt.
+    const QString stored = keychainLookup(archive);
+    if (!stored.isEmpty())
+        return stored;
+
+    // Prompt, with a "remember" option that stores it in the Keychain.
+    QDialog dlg(this);
+    dlg.setWindowTitle(QStringLiteral("Encrypted archive"));
+    auto *form = new QFormLayout(&dlg);
+    auto *edit = new QLineEdit(&dlg);
+    edit->setEchoMode(QLineEdit::Password);
+    form->addRow(QStringLiteral("Passphrase for %1:").arg(QFileInfo(archive).fileName()), edit);
+    auto *remember = new QCheckBox(QStringLiteral("Remember in Keychain"), &dlg);
+    form->addRow(QString(), remember);
+    auto *buttons =
+        new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    form->addRow(buttons);
+    connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    edit->setFocus();
+    if (dlg.exec() != QDialog::Accepted)
+        return std::nullopt; // cancelled
+
+    const QString pass = edit->text();
+    if (remember->isChecked() && !pass.isEmpty())
+        keychainStore(archive, pass); // best-effort; no provider → silently skipped
+    return pass;
+}
+
 void SefeWindow::extractHere() {
     QStringList archives;
     for (const QString &p : selectedPaths())
@@ -909,22 +1179,45 @@ void SefeWindow::extractHere() {
     if (archives.isEmpty())
         return;
     const QString dest = _current;
-    runBusy(
-        archives.size() == 1
-            ? QStringLiteral("Extracting %1…").arg(QFileInfo(archives.first()).fileName())
-            : QStringLiteral("Extracting %1 archives…").arg(archives.size()),
-        [archives, dest]() -> QString {
-            int ok = 0;
-            for (const QString &archive : archives) {
-                const helm::hold::Result r = helm::hold::extractAll(archive, dest);
+
+    QStringList rels; // pre-scan every archive's entries for on-disk collisions
+    for (const QString &archive : archives)
+        for (const helm::hold::Entry &e : helm::hold::list(archive).entries)
+            rels << e.path;
+    const auto policy = resolveOverwrite(dest, rels);
+    if (!policy)
+        return; // cancelled
+    const helm::hold::Overwrite ow = *policy;
+
+    QStringList passes; // a passphrase per archive (prompt for the encrypted ones)
+    for (const QString &archive : archives) {
+        const auto pass = archivePassphrase(archive);
+        if (!pass)
+            return; // cancelled
+        passes << *pass;
+    }
+
+    const QString one = QFileInfo(archives.first()).fileName();
+    runJob(
+        archives.size() == 1 ? QStringLiteral("Extracting %1…").arg(one)
+                             : QStringLiteral("Extracting %1 archives…").arg(archives.size()),
+        [archives, passes, dest, ow](const helm::hold::Progress &p) -> helm::hold::Result {
+            for (int i = 0; i < archives.size(); ++i) {
+                const helm::hold::Result r =
+                    helm::hold::extractAll(archives[i], dest, p, {}, ow, passes[i]);
                 if (!r.ok)
-                    return QStringLiteral("Extract failed: %1").arg(r.error);
-                ++ok;
+                    return r;
             }
-            return ok == 1 ? QStringLiteral("Extracted %1").arg(QFileInfo(archives.first()).fileName())
-                           : QStringLiteral("Extracted %1 archives").arg(ok);
+            helm::hold::Result ok;
+            ok.ok = true;
+            return ok;
         },
-        [this](const QString &msg) { statusBar()->showMessage(msg); });
+        [archives, one](const helm::hold::Result &r) {
+            if (!r.ok)
+                return archiveFailMsg(QStringLiteral("Extract"), r);
+            return archives.size() == 1 ? QStringLiteral("Extracted %1").arg(one)
+                                        : QStringLiteral("Extracted %1 archives").arg(archives.size());
+        });
 }
 
 void SefeWindow::extractTo() {
@@ -937,19 +1230,33 @@ void SefeWindow::extractTo() {
     if (dest.isEmpty())
         return;
     const QString archive = *it;
-    runBusy(
+
+    QStringList rels;
+    for (const helm::hold::Entry &e : helm::hold::list(archive).entries)
+        rels << e.path;
+    const auto policy = resolveOverwrite(dest, rels);
+    if (!policy)
+        return; // cancelled
+    const helm::hold::Overwrite ow = *policy;
+    const auto pass = archivePassphrase(archive);
+    if (!pass)
+        return; // cancelled the passphrase prompt
+    const QString passv = *pass;
+
+    runJob(
         QStringLiteral("Extracting %1…").arg(QFileInfo(archive).fileName()),
-        [archive, dest]() -> QString {
-            const helm::hold::Result r = helm::hold::extractAll(archive, dest);
-            return r.ok ? QStringLiteral("Extracted to %1").arg(dest)
-                        : QStringLiteral("Extract failed: %1").arg(r.error);
+        [archive, dest, ow, passv](const helm::hold::Progress &p) {
+            return helm::hold::extractAll(archive, dest, p, {}, ow, passv);
         },
-        [this](const QString &msg) { statusBar()->showMessage(msg); });
+        [dest](const helm::hold::Result &r) {
+            return r.ok ? QStringLiteral("Extracted to %1").arg(dest)
+                        : archiveFailMsg(QStringLiteral("Extract"), r);
+        });
 }
 
 // Rich archive ops, folded in from the former standalone Hold app: while browsing
 // inside an archive, extract entries straight to a chosen folder. hold-core runs
-// off the UI thread via runBusy so a big archive doesn't freeze the window.
+// off the UI thread via runJob — a progress dialog with Cancel for the big ones.
 
 QStringList SefeWindow::selectedInnerEntries() const {
     QStringList out;
@@ -979,19 +1286,25 @@ void SefeWindow::extractSelectedEntries() {
     if (dest.isEmpty())
         return;
     const QString archive = _archiveModel->archivePath();
-    runBusy(
+
+    const auto policy = resolveOverwrite(dest, entries); // the selected paths ARE the targets
+    if (!policy)
+        return; // cancelled
+    const helm::hold::Overwrite ow = *policy;
+    const auto pass = archivePassphrase(archive);
+    if (!pass)
+        return; // cancelled the passphrase prompt
+    const QString passv = *pass;
+
+    runJob(
         QStringLiteral("Extracting %1 item(s)…").arg(entries.size()),
-        [archive, entries, dest]() -> QString {
-            int ok = 0;
-            for (const QString &inner : entries)
-                if (helm::hold::extract(archive, inner, dest).ok)
-                    ++ok;
-            return QStringLiteral("Extracted %1 of %2 to %3")
-                .arg(ok)
-                .arg(entries.size())
-                .arg(dest);
+        [archive, entries, dest, ow, passv](const helm::hold::Progress &p) {
+            return helm::hold::extractEntries(archive, entries, dest, p, {}, ow, passv); // one pass
         },
-        [this](const QString &msg) { statusBar()->showMessage(msg); });
+        [entries, dest](const helm::hold::Result &r) {
+            return r.ok ? QStringLiteral("Extracted %1 item(s) to %2").arg(entries.size()).arg(dest)
+                        : archiveFailMsg(QStringLiteral("Extract"), r);
+        });
 }
 
 void SefeWindow::extractWholeArchive() {
@@ -1002,43 +1315,171 @@ void SefeWindow::extractWholeArchive() {
         QFileDialog::getExistingDirectory(this, QStringLiteral("Extract all to"), _current);
     if (dest.isEmpty())
         return;
-    runBusy(
+
+    QStringList rels;
+    for (const helm::hold::Entry &e : helm::hold::list(archive).entries)
+        rels << e.path;
+    const auto policy = resolveOverwrite(dest, rels);
+    if (!policy)
+        return; // cancelled
+    const helm::hold::Overwrite ow = *policy;
+    const auto pass = archivePassphrase(archive);
+    if (!pass)
+        return; // cancelled the passphrase prompt
+    const QString passv = *pass;
+
+    runJob(
         QStringLiteral("Extracting %1…").arg(QFileInfo(archive).fileName()),
-        [archive, dest]() -> QString {
-            const helm::hold::Result r = helm::hold::extractAll(archive, dest);
-            return r.ok ? QStringLiteral("Extracted to %1").arg(dest)
-                        : QStringLiteral("Extract failed: %1").arg(r.error);
+        [archive, dest, ow, passv](const helm::hold::Progress &p) {
+            return helm::hold::extractAll(archive, dest, p, {}, ow, passv);
         },
-        [this](const QString &msg) { statusBar()->showMessage(msg); });
+        [dest](const helm::hold::Result &r) {
+            return r.ok ? QStringLiteral("Extracted to %1").arg(dest)
+                        : archiveFailMsg(QStringLiteral("Extract"), r);
+        });
+}
+
+void SefeWindow::mutateArchive(const helm::hold::Edits &edits, const QString &activity,
+                              std::shared_ptr<QTemporaryDir> keepalive) {
+    if (!_inArchive || !_archiveModel || edits.isEmpty())
+        return;
+    const QString archive = _archiveModel->archivePath();
+    if (!helm::hold::isWritableArchive(archive)) {
+        statusBar()->showMessage(QStringLiteral("This archive format is read-only"));
+        return;
+    }
+    const QString reloadPath = _current;
+    runJob(
+        activity,
+        [archive, edits, keepalive](const helm::hold::Progress &p) { // keepalive held until done
+            return helm::hold::rewrite(archive, edits, p);
+        },
+        [this, reloadPath, activity](const helm::hold::Result &r) -> QString {
+            if (r.ok) {
+                // The archive changed on disk — re-read it (forceReload swaps the
+                // model safely). navigateTo sets its own status.
+                navigateTo(reloadPath, /*record=*/false, /*forceReload=*/true);
+                return QString();
+            }
+            return archiveFailMsg(activity, r);
+        });
 }
 
 void SefeWindow::compressSelection() {
     const QStringList sel = selectedPaths();
     if (sel.isEmpty())
         return;
-    const QString name = compressTargetName(sel, entriesOf(_current));
+    // Base name (without extension) from the default .zip target.
+    QString base = compressTargetName(sel, {});
+    if (base.endsWith(QLatin1String(".zip"), Qt::CaseInsensitive))
+        base.chop(4);
+
+    // A4 compress dialog: format + optional password (encrypts zip/7z).
+    QDialog dlg(this);
+    dlg.setWindowTitle(QStringLiteral("Compress"));
+    auto *form = new QFormLayout(&dlg);
+    auto *fmt = new QComboBox(&dlg);
+    fmt->addItem(QStringLiteral("Zip (.zip)"), QStringLiteral(".zip"));
+    fmt->addItem(QStringLiteral("7-Zip (.7z)"), QStringLiteral(".7z"));
+    fmt->addItem(QStringLiteral("tar + gzip (.tar.gz)"), QStringLiteral(".tar.gz"));
+    fmt->addItem(QStringLiteral("tar + xz (.tar.xz)"), QStringLiteral(".tar.xz"));
+    fmt->addItem(QStringLiteral("tar + zstd (.tar.zst)"), QStringLiteral(".tar.zst"));
+    form->addRow(QStringLiteral("Format:"), fmt);
+    auto *pass = new QLineEdit(&dlg);
+    pass->setEchoMode(QLineEdit::Password);
+    pass->setPlaceholderText(QStringLiteral("optional — encrypts (zip / 7z)"));
+    form->addRow(QStringLiteral("Password:"), pass);
+    const auto encrypts = [](const QString &ext) {
+        return ext == QLatin1String(".zip") || ext == QLatin1String(".7z");
+    };
+    const auto syncPass = [&] { pass->setEnabled(encrypts(fmt->currentData().toString())); };
+    connect(fmt, &QComboBox::currentIndexChanged, &dlg, [&] { syncPass(); });
+    syncPass();
+    auto *buttons =
+        new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    form->addRow(buttons);
+    connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+
+    const QString ext = fmt->currentData().toString();
+    const QString passphrase = pass->isEnabled() ? pass->text() : QString();
+    // Disambiguate against the current folder so we don't clobber.
+    QString name = base + ext;
+    const QSet<QString> existing = entriesOf(_current);
+    for (int n = 2; existing.contains(name); ++n)
+        name = QStringLiteral("%1 (%2)%3").arg(base).arg(n).arg(ext);
     const QString dest = QDir(_current).filePath(name);
-    runBusy(
+    runJob(
         QStringLiteral("Compressing to %1…").arg(name),
-        [sel, dest, name]() -> QString {
-            const helm::hold::Result r = helm::hold::create(sel, dest);
-            return r.ok ? QStringLiteral("Created %1").arg(name)
-                        : QStringLiteral("Compress failed: %1").arg(r.error);
+        [sel, dest, passphrase](const helm::hold::Progress &p) {
+            return helm::hold::create(sel, dest, p, passphrase);
         },
-        [this](const QString &msg) { statusBar()->showMessage(msg); });
+        [name](const helm::hold::Result &r) {
+            return r.ok ? QStringLiteral("Created %1").arg(name)
+                        : archiveFailMsg(QStringLiteral("Compress"), r);
+        });
+}
+
+void SefeWindow::testArchive() {
+    QString archive;
+    if (_inArchive && _archiveModel)
+        archive = _archiveModel->archivePath();
+    else
+        for (const QString &p : selectedPaths())
+            if (helm::hold::isArchive(p)) {
+                archive = p;
+                break;
+            }
+    if (archive.isEmpty())
+        return;
+    const auto pass = archivePassphrase(archive);
+    if (!pass)
+        return;
+    const QString passv = *pass;
+    const QString nm = QFileInfo(archive).fileName();
+    runJob(
+        QStringLiteral("Testing %1…").arg(nm),
+        [archive, passv](const helm::hold::Progress &p) {
+            return helm::hold::test(archive, p, passv);
+        },
+        [this, nm](const helm::hold::Result &r) -> QString {
+            if (r.ok) {
+                QMessageBox::information(this, QStringLiteral("Test archive"),
+                                        QStringLiteral("%1 — OK, no errors found.").arg(nm));
+                return QStringLiteral("%1 verified").arg(nm);
+            }
+            return archiveFailMsg(QStringLiteral("Test"), r);
+        });
 }
 
 void SefeWindow::showContextMenu(QAbstractItemView *view, const QPoint &pos) {
     const QModelIndex idx = view->indexAt(pos);
     QMenu menu(this);
-    if (_inArchive) { // browse read-only, but extract entries out (folded-in Hold)
+    if (_inArchive) { // browse + (for writable formats) edit in place — A2
+        const bool writable =
+            _archiveModel && helm::hold::isWritableArchive(_archiveModel->archivePath());
         if (idx.isValid()) {
             QAction *open = menu.addAction(QStringLiteral("Open"));
             connect(open, &QAction::triggered, this, [this, idx] { openIndex(idx); });
             menu.addSeparator();
             menu.addAction(_arcExtractSelAct); // extract the selected entries
+            if (writable) {
+                menu.addSeparator();
+                menu.addAction(_renameAct);
+                menu.addAction(_deleteAct);
+            }
         }
-        menu.addAction(_arcExtractAllAct);     // extract the whole archive
+        if (writable) { // background: add into the archive here
+            menu.addSeparator();
+            menu.addAction(_newFolderAct);
+            if (!_clip.isEmpty())
+                menu.addAction(_pasteAct);
+        }
+        menu.addSeparator();
+        menu.addAction(_arcExtractAllAct); // extract the whole archive
+        menu.addAction(_testAct);          // verify integrity
         menu.exec(view->viewport()->mapToGlobal(pos));
         return;
     }
@@ -1053,6 +1494,7 @@ void SefeWindow::showContextMenu(QAbstractItemView *view, const QPoint &pos) {
             if (helm::hold::isArchive(path)) {
                 menu.addAction(_extractHereAct);
                 menu.addAction(_extractToAct);
+                menu.addAction(_testAct);
             }
         }
         if (isDir)
@@ -1085,7 +1527,90 @@ bool SefeWindow::eventFilter(QObject *watched, QEvent *event) {
             return true;
         }
     }
+
+    // Archive drag-and-drop (A2), driven from the view viewports.
+    const bool onViewport = _details && _icons && (watched == _details->viewport() ||
+                                                    watched == _icons->viewport());
+    if (onViewport && _inArchive) {
+        const bool writable =
+            _archiveModel && helm::hold::isWritableArchive(_archiveModel->archivePath());
+        switch (event->type()) {
+        case QEvent::MouseButtonPress: {
+            auto *me = static_cast<QMouseEvent *>(event);
+            if (me->button() == Qt::LeftButton)
+                _dragStartPos = me->position().toPoint();
+            break;
+        }
+        case QEvent::MouseMove: {
+            auto *me = static_cast<QMouseEvent *>(event);
+            if ((me->buttons() & Qt::LeftButton) && !_dragStartPos.isNull() &&
+                (me->position().toPoint() - _dragStartPos).manhattanLength() >=
+                    QApplication::startDragDistance() &&
+                !selectedInnerEntries().isEmpty()) {
+                _dragStartPos = QPoint();
+                startArchiveDrag(); // extract-to-temp + a file-URL drag (blocking)
+                return true;
+            }
+            break;
+        }
+        case QEvent::DragEnter:
+        case QEvent::DragMove: {
+            auto *de = static_cast<QDropEvent *>(event); // DragEnter/Move derive from it
+            if (writable && de->mimeData()->hasUrls()) {
+                de->acceptProposedAction();
+                return true;
+            }
+            break;
+        }
+        case QEvent::Drop: {
+            auto *de = static_cast<QDropEvent *>(event);
+            if (writable && de->mimeData()->hasUrls()) {
+                const QString innerDir = splitArchivePath(_current).inner;
+                helm::hold::Edits e;
+                for (const QUrl &u : de->mimeData()->urls()) {
+                    if (!u.isLocalFile())
+                        continue;
+                    const QString src = u.toLocalFile();
+                    const QString base = QFileInfo(src).fileName();
+                    e.add.append(
+                        {src, innerDir.isEmpty() ? base : innerDir + QLatin1Char('/') + base});
+                }
+                if (!e.add.isEmpty()) {
+                    de->acceptProposedAction();
+                    mutateArchive(e, QStringLiteral("Adding %1 item(s)…").arg(e.add.size()));
+                    return true;
+                }
+            }
+            break;
+        }
+        default:
+            break;
+        }
+    }
     return QMainWindow::eventFilter(watched, event);
+}
+
+void SefeWindow::startArchiveDrag() {
+    if (!_inArchive || !_archiveModel)
+        return;
+    const QStringList inner = selectedInnerEntries();
+    if (inner.isEmpty())
+        return;
+    auto tmp = std::make_unique<QTemporaryDir>();
+    if (!tmp->isValid())
+        return;
+    // Extract the dragged entries NOW — the drop target reads the files during the
+    // (blocking) drag. Synchronous: a drag needs its data immediately.
+    if (!helm::hold::extractEntries(_archiveModel->archivePath(), inner, tmp->path()).ok)
+        return;
+    QList<QUrl> urls;
+    for (const QString &e : inner)
+        urls << QUrl::fromLocalFile(QDir(tmp->path()).filePath(e));
+    auto *mime = new QMimeData;
+    mime->setUrls(urls);
+    QDrag drag(this);
+    drag.setMimeData(mime); // QDrag takes ownership
+    drag.exec(Qt::CopyAction); // blocks; the temp dir is read before it auto-removes here
 }
 
 } // namespace helm::sefe
