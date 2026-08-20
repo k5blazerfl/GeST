@@ -6,6 +6,17 @@ window. Locked from an iterated mockup pass (2026-08-20).
 
 The one-line vision: **the chrome is the world, the content is glass.**
 
+> **Status — SHIPPED.** All four phases landed on `main` on 2026-08-20:
+> A (menu bar, #179), B (light/dark + follow-the-sun `mode = dark|light|auto`,
+> #180), C (biome glass interior scoped to `#HelmAppWindow`, #181), and D (the
+> frameless painterly scene chrome + `HelmTitleBar`, #182). Two deviations from
+> the plan below, both intentional: the window **min/maximize/close controls
+> landed on the right** (Windows-familiar, per the HeDE familiarity north-star)
+> rather than the mockup's schematic left dots; and the interactive
+> move/resize uses Qt's standard Wayland `startSystemMove` / `startSystemResize`
+> path, still pending an on-device pass. Per-world scrim tuning, a day/night scene
+> pair, and a compact header for small windows remain the parked follow-ups.
+
 ## The locked composition
 
 The window is one continuous world scene forming a painterly **header** and
