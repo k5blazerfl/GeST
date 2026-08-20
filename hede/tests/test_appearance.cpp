@@ -145,6 +145,32 @@ private slots:
         // the accent spine down the left edge (Harbor teal)
         QVERIFY(qss.contains(QStringLiteral("border-left: 3px solid #3aa6c4")));
     }
+
+    // App chrome (SeFE) wears the world glass: menu bar, toolbar, address field,
+    // Places pane and status bar are tinted, scoped to #HelmAppWindow so the shell
+    // and plainer Qt apps are untouched. "The chrome is the world."
+    void appChromeGlass() {
+        const QString qss = helm::styleSheet(false, helm::harborAccent());
+        // Each chrome surface is scoped to the app object name.
+        for (const QString &sel : {QStringLiteral("#HelmAppWindow QMenuBar"),
+                                   QStringLiteral("#HelmAppWindow QToolBar"),
+                                   QStringLiteral("#HelmAppWindow QStatusBar"),
+                                   QStringLiteral("#HelmAddressBar"),
+                                   QStringLiteral("#HelmAppPlaces")})
+            QVERIFY2(qss.contains(sel), qPrintable(sel));
+        // The bars carry the world glass tint (same deep glass as #HelmBar, 82%).
+        const QColor g = helm::barTint(helm::harborAccent());
+        const QString bar =
+            QStringLiteral("rgba(%1,%2,%3,0.82)").arg(g.red()).arg(g.green()).arg(g.blue());
+        QVERIFY(qss.contains(QStringLiteral("#HelmAppWindow QMenuBar { background: %1").arg(bar)));
+        // The address field is a SOLID recessed well (opaque) — a translucent bg on
+        // the custom AddressBar widget would composite over white, so it must not be.
+        QVERIFY(qss.contains(
+            QStringLiteral("#HelmAddressBar { background: %1").arg(helm::barTint(helm::harborAccent()).darker(118).name())));
+        // Glyph text on the chrome is the light bar glyph colour.
+        QVERIFY(qss.contains(QStringLiteral("#HelmAppWindow QToolBar QToolButton { color: %1")
+                                 .arg(helm::barGlyphColor().name())));
+    }
 };
 
 QTEST_MAIN(TestAppearance)
