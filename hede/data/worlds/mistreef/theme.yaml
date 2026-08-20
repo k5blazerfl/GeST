@@ -1,0 +1,22 @@
+schema: helm.world/0.1
+id: mistreef
+name: Mistreef
+# soft, hazy ridges in atmospheric perspective over light water
+accent: '#2b8a8f'
+bar:
+  style: glass
+  tint: cool
+wallpaper_art:
+  image: wallpaper.png
+  fit: cover
+decoration_art:
+  source: frame.png
+  slice: 44
+  border:
+    top: 40
+    right: 8
+    bottom: 8
+    left: 8
+credit:
+  art: Generated locally — SDXL on AMD Radeon 8060S (gfx1151)
+  pipeline: 'hiedi Voyage: helm-titlebar-skins'

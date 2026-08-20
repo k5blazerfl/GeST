@@ -12,8 +12,19 @@ QColor harborAccent() {
     return QColor(QStringLiteral("#3aa6c4"));
 }
 
+QColor barTint(const QColor &accent) {
+    const QColor a = accent.isValid() ? accent : harborAccent();
+    int h = a.hsvHue();
+    if (h < 0)
+        h = harborAccent().hsvHue(); // achromatic accent → Harbor hue
+    // Deep + desaturated: the accent's hue at low value, high saturation. Tuned
+    // so Harbor teal reproduces the shipped navy-teal glass and a warm accent
+    // yields a warm glass. See tokens.surfaces.glass (world.bar_tint).
+    return QColor::fromHsv(h, 190, 46);
+}
+
 QString styleSheet(bool dark, const QColor &accent) {
-    Q_UNUSED(dark); // the bar tint is world-navy in every world; body mode is the palette's job
+    Q_UNUSED(dark); // body light/dark is the palette's job; the bar is always deep glass
     const QColor a = accent.isValid() ? accent : harborAccent();
     const auto rgba = [](const QColor &c, double alpha) {
         return QStringLiteral("rgba(%1,%2,%3,%4)")
@@ -21,6 +32,9 @@ QString styleSheet(bool dark, const QColor &accent) {
     };
     const QString accentFill = rgba(a, 0.34);   // tokens.accent.selection_fill (34%)
     const QString accentEdge = rgba(a, 0.55);   // tokens.accent.selection_border (55%)
+    const QColor glass = barTint(a);            // world-tinted deep glass
+    const QString barGlass = rgba(glass, 0.82); // bar opacity (no compositor blur yet)
+    const QString acrylicGlass = rgba(glass, 0.92); // pullouts + toasts: denser
     const QString glyph = barGlyphColor().name(); // light bar glyph colour (shared with icons)
 
     QString qss;
@@ -42,7 +56,7 @@ QString styleSheet(bool dark, const QColor &accent) {
     // blur protocol lands. Dark tint → light glyphs; hover reveals a glass chip;
     // the active window's tile carries the accent (radius = chip token, 5).
     qss += QStringLiteral(
-        "#HelmBar { background: rgba(11,38,46,0.82); border: none;"
+        "#HelmBar { background: %3; border: none;"
         " border-top: 1px solid rgba(255,255,255,0.28); }\n"
         "#HelmBar QLabel { color: %1; background: transparent; }\n"
         "#HelmBar QToolButton, #HelmBar QPushButton {"
@@ -55,7 +69,7 @@ QString styleSheet(bool dark, const QColor &accent) {
         " background: %2; }\n"
         // The ⎈ Start tile: a touch larger + roomier, still edgeless.
         "#HelmBar #HelmStart { font-size: 15px; font-weight: 600; padding: 0 10px; }\n")
-        .arg(glyph, accentFill);
+        .arg(glyph, accentFill, barGlass);
 
     // The acrylic pullout (#HelmPullout) — THE standard for surfaces that emerge
     // from the bar (launcher now, quick-settings/tray later): heavier tint than
@@ -63,7 +77,7 @@ QString styleSheet(bool dark, const QColor &accent) {
     // that tucks behind the bar. No blur on labwc → opaque enough to read; drop
     // toward the token .44 once a blur protocol lands.
     qss += QStringLiteral(
-        "#HelmPullout { background: rgba(11,38,46,0.92);"
+        "#HelmPullout { background: %4;"
         " border: 1px solid rgba(255,255,255,0.22); border-bottom: none;"
         " border-top-left-radius: 7px; border-top-right-radius: 7px;"
         " border-bottom-left-radius: 0; border-bottom-right-radius: 0; }\n"
@@ -83,18 +97,18 @@ QString styleSheet(bool dark, const QColor &accent) {
         " background: rgba(255,255,255,0.12); }\n"
         // The right rail: a hairline divider from the app list.
         "#HelmMenuRail { border-left: 1px solid rgba(255,255,255,0.14); }\n")
-        .arg(glyph, accentFill, accentEdge);
+        .arg(glyph, accentFill, accentEdge, acrylicGlass);
 
     // Acrylic toast cards (#HelmToast) — bottom-right notifications. Same acrylic
     // material as the pullout but a free-floating card: full silver border + all
     // corners rounded, with an accent spine down the left edge as the urgency cue.
     qss += QStringLiteral(
-        "#HelmToast { background: rgba(11,38,46,0.92);"
+        "#HelmToast { background: %3;"
         " border: 1px solid rgba(255,255,255,0.22); border-left: 3px solid %2;"
         " border-radius: 7px; }\n"
         "#HelmToast QLabel { color: %1; background: transparent; }\n"
         "#HelmToast #HelmToastTitle { color: %1; font-weight: 700; }\n")
-        .arg(glyph, a.name());
+        .arg(glyph, a.name(), acrylicGlass);
 
     return qss;
 }

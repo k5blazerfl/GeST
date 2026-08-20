@@ -3,7 +3,7 @@ qt_add_library(helm-bg-lib STATIC
     backgroundwidget.cpp
 )
 target_include_directories(helm-bg-lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(helm-bg-lib PUBLIC Qt6::Widgets helm-common)
+target_link_libraries(helm-bg-lib PUBLIC Qt6::Widgets helm-common helm-theme-lib)
 
 qt_add_executable(helm-bg main.cpp)
 target_link_libraries(helm-bg PRIVATE

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gest"
-version = "0.53.2"
+version = "0.56.0"
 description = "GeST — Gentoo System Tool: a modular, YaST-style system administration tool for Gentoo"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -54,6 +54,11 @@ gest-core = "gest.coreservice.service:main"
 
 [tool.setuptools.packages.find]
 include = ["gest*"]
+
+[tool.setuptools.package-data]
+# The curated per-arch kernel config GeSI stages into the target for genkernel
+# (gest.core.kernel.config). distutils-r1_src_install ships this into the package.
+"gest.core.kernel" = ["config-*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

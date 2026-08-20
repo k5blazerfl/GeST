@@ -33,6 +33,7 @@ from gest.core import rootpath
 from gest.core.bootloader import m1n1
 from gest.core.bootloader.install import install_steps
 from gest.core.chroot.prepare import prepare_chroot
+from gest.core.disk import fstab as disk_fstab
 from gest.core.disk import mount as disk_mount
 from gest.core.disk import provision
 from gest.core.disk import reader as disk_reader
@@ -41,11 +42,12 @@ from gest.core.exec.runner import OnProgress
 from gest.core.exec.steps import Step, run_steps
 from gest.core.firewall import nft as fw_nft
 from gest.core.firewall.model import FirewallPolicy
-from gest.core.install import desktop
+from gest.core.install import desktop, gpu
 from gest.core.install.context import InstallContext
 from gest.core.install.plan import InstallPlan, Phase
 from gest.core.install.step import ArgvStep, FuncStep, InstallStep
 from gest.core.install.write import write_under_root
+from gest.core.kernel import config as kconfig
 from gest.core.kernel.build import build_steps
 from gest.core.network import hosts as net_hosts
 from gest.core.network import netifrc
@@ -209,7 +211,17 @@ class WriteFstab(FuncStep):
         _emit(on_progress, f"wrote {path}")
 
     async def is_satisfied(self, ctx: InstallContext) -> bool:
-        return os.path.exists(rootpath.resolve(ctx.root, "/etc/fstab"))
+        # The stage3 ALWAYS ships a template /etc/fstab (every entry commented out),
+        # so a bare os.path.exists() wrongly marks this done and SKIPS it — leaving
+        # the template with no root entry. systemd-remount-fs then never remounts /
+        # read-write, so /etc/machine-id can't be written and systemd-logind's state
+        # dir can't be created → no seat → a black desktop. Only satisfied once a
+        # *valid generated* fstab (at least one real entry) is on disk.
+        path = rootpath.resolve(ctx.root, "/etc/fstab")
+        if not os.path.exists(path):
+            return False
+        with open(path) as fh:
+            return disk_fstab.valid_generated_fstab(fh.read())
 
 
 class WriteMakeConf(FuncStep):
@@ -228,6 +240,11 @@ class WriteMakeConf(FuncStep):
             text = ""
         jobs = ctx.plan.kernel.jobs if ctx.plan.kernel.jobs > 0 else 1
         rendered = shell.render(text, "MAKEOPTS", f"-j{jobs}")
+        # VIDEO_CARDS must be set before @world so mesa/xorg build with the right
+        # driver USE; the driver packages themselves come later (InstallGpuDrivers).
+        cards = gpu.video_cards_value(ctx.plan.gpu)
+        if cards:
+            rendered = shell.render(rendered, "VIDEO_CARDS", cards)
         path = write_under_root(ctx.root, "/etc/portage/make.conf", rendered)
         _emit(on_progress, f"wrote {path}")
 
@@ -565,13 +582,50 @@ class InstallKernelSources(ArgvStep):
     key = "install_kernel_sources"
 
     def build(self, ctx: InstallContext) -> list[Step]:
-        return [
+        steps = [
             Step("emerge gentoo-sources", _emerge_argv(ctx.plan, "sys-kernel/gentoo-sources")),
-            Step("select /usr/src/linux", set_argv("kernel", 1)),
         ]
+        if ctx.plan.kernel.method == "genkernel":
+            # A fresh stage3/@world has no genkernel; the build step needs it in the
+            # target. USE=-firmware skips the (masked, license-gated) linux-firmware
+            # dep — the initramfs needs no firmware to reach the root fs; hardware
+            # firmware lives on the installed root, loaded after the pivot.
+            steps.append(Step("emerge genkernel", _emerge_argv(
+                ctx.plan, "sys-kernel/genkernel", env={"USE": "-firmware"})))
+        steps.append(Step("select /usr/src/linux", set_argv("kernel", 1)))
+        return steps
 
     async def is_satisfied(self, ctx: InstallContext) -> bool:
         return ctx.state.done(self.key)
+
+
+class StageKernelConfig(FuncStep):
+    """Write the curated per-arch kernel config into the target for genkernel.
+
+    Runs host-side (writes into the target root) before ``BuildKernel``. A no-op
+    unless ``plan.kernel.kernel_config`` is set (genkernel method + a config is
+    bundled for the arch — see ``gest.core.kernel.config``); genkernel's default
+    config lacks virtio etc., so a VM install couldn't otherwise find its root.
+    """
+
+    label = "Stage the kernel config"
+    phase = Phase.KERNEL_BOOT
+    target_aware = True          # writes into the target root from the live host
+    key = "stage_kernel_config"
+
+    async def run(self, ctx: InstallContext, on_progress: OnProgress | None = None) -> None:
+        cfg = ctx.plan.kernel.kernel_config
+        if not cfg:
+            return
+        data = kconfig.bundled_config(ctx.plan.arch)
+        if data is None:            # assemble only sets cfg when one exists; belt-and-suspenders
+            return
+        path = write_under_root(ctx.root, cfg, data.decode("utf-8"))
+        _emit(on_progress, f"staged the {ctx.plan.arch} kernel config → {path}")
+        ctx.state.mark(self)
+
+    async def is_satisfied(self, ctx: InstallContext) -> bool:
+        return not ctx.plan.kernel.kernel_config or ctx.state.done(self.key)
 
 
 class BuildKernel(ArgvStep):
@@ -589,6 +643,68 @@ class BuildKernel(ArgvStep):
         return ctx.state.done(self.key)
 
 
+class InstallGpuDrivers(FuncStep):
+    """Install firmware (always) + the NVIDIA proprietary driver (when requested).
+
+    A fresh stage3 ships no ``sys-kernel/linux-firmware``, so hardware needing
+    firmware (NVIDIA GSP, most Wi-Fi) has none on the installed system. This step
+    always installs it. When ``plan.gpu.nvidia_proprietary`` is set it also accepts
+    ``NVIDIA-r2``, emerges ``x11-drivers/nvidia-drivers`` (its out-of-tree module
+    builds against the just-built kernel), rebuilds ``@module-rebuild``, and drops a
+    modprobe.d file enabling ``nvidia_drm`` KMS + blacklisting nouveau — what a
+    Wayland/HeDE desktop needs on a modern GeForce card. Runs after ``BuildKernel``
+    (so the module has a kernel) and before ``InstallBootloader``.
+
+    Config writes (``package.license``, ``modprobe.d``) go through the host-side
+    root seam; the emerges run in the target's chroot.
+    """
+
+    label = "Install GPU drivers & firmware"
+    phase = Phase.KERNEL_BOOT
+    target_aware = True          # writes package.license + modprobe.d under the root
+    key = "install_gpu_drivers"
+
+    async def run(self, ctx: InstallContext, on_progress: OnProgress | None = None) -> None:
+        spec = ctx.plan.gpu
+        # Accept the licenses the driver/firmware atoms need BEFORE emerging them,
+        # else the emerge is license-masked (linux-fw-redistributable / NVIDIA-r2).
+        lic = write_under_root(ctx.root, gpu.PACKAGE_LICENSE, gpu.package_license(spec))
+        _emit(on_progress, f"wrote {lic}")
+        # USE flags (e.g. nvidia-drivers[kernel-open]) must be set before the emerge.
+        use = gpu.package_use(spec)
+        if use:
+            up = write_under_root(ctx.root, gpu.PACKAGE_USE, use)
+            _emit(on_progress, f"wrote {up} (nvidia-drivers[kernel-open])")
+        steps = [Step(f"emerge {atom}", _emerge_argv(ctx.plan, atom))
+                 for atom in gpu.driver_atoms(spec)]
+        if spec.nvidia_proprietary:
+            # NOT --noreplace: rebuild the module against the freshly built kernel.
+            steps.append(Step("rebuild external kernel modules",
+                              ["emerge", "--color", "n", "@module-rebuild"]))
+        await run_steps(steps, ctx.target, on_progress=on_progress)
+        if spec.nvidia_proprietary:
+            path = write_under_root(ctx.root, gpu.MODPROBE_CONF, gpu.modprobe_conf())
+            _emit(on_progress, f"wrote {path} (nvidia_drm KMS + nouveau blacklist)")
+        # Also put the blacklist + modeset on the kernel cmdline: genkernel built the
+        # initramfs before this step, so a modprobe.d file alone can't stop nouveau
+        # binding during early boot. Merged into /etc/default/grub now, before
+        # InstallBootloader runs grub-mkconfig. (No-op for non-NVIDIA GPUs.)
+        if gpu.kernel_cmdline(spec):
+            grub_path = "/etc/default/grub"
+            existing = ""
+            try:
+                with open(rootpath.resolve(ctx.root, grub_path), encoding="utf-8") as fh:
+                    existing = fh.read()
+            except OSError:
+                pass
+            gp = write_under_root(ctx.root, grub_path, gpu.apply_gpu_cmdline(existing, spec))
+            _emit(on_progress, f"wrote {gp} (nouveau blacklist + nvidia_drm.modeset cmdline)")
+        ctx.state.mark(self)
+
+    async def is_satisfied(self, ctx: InstallContext) -> bool:
+        return ctx.state.done(self.key)
+
+
 class InstallBootloader(ArgvStep):
     """Install GRUB + regenerate its config inside the target (``install_steps``)."""
 
@@ -599,7 +715,15 @@ class InstallBootloader(ArgvStep):
     key = "install_bootloader"
 
     def build(self, ctx: InstallContext) -> list[Step]:
-        return install_steps(ctx.plan.bootloader, arch=ctx.plan.arch)
+        # A fresh stage3/@world ships no bootloader, so grub-install/grub-mkconfig
+        # would fail (exit 127). Emerge GRUB (+ efibootmgr for the UEFI NVRAM entry)
+        # first, building the platform grub-install needs (efi-64 / pc).
+        uefi = ctx.plan.bootloader.firmware == "uefi"
+        atoms = ["sys-boot/grub"] + (["sys-boot/efibootmgr"] if uefi else [])
+        steps = [Step("emerge the bootloader", _emerge_argv(
+            ctx.plan, *atoms, env={"GRUB_PLATFORMS": "efi-64" if uefi else "pc"}))]
+        steps.extend(install_steps(ctx.plan.bootloader, arch=ctx.plan.arch))
+        return steps
 
     async def is_satisfied(self, ctx: InstallContext) -> bool:
         return ctx.state.done(self.key)
@@ -681,6 +805,16 @@ class CreateUser(ArgvStep):
         if user.wheel:
             steps.append(Step(f"add {user.name} to wheel",
                               gpasswd_argv("wheel", user.name, add=True)))
+        if ctx.plan.desktop:
+            # A desktop autologin user needs GPU/input/audio access. systemd-logind
+            # grants it to the active session via seat ACLs, but the conventional
+            # groups are belt-and-suspenders (and needed if a compositor probes them
+            # directly). Best-effort per group so one the profile didn't create can't
+            # fail the install.
+            steps.append(Step(f"add {user.name} to the desktop device groups", [
+                "sh", "-c",
+                'for g in video input audio render; do getent group "$g" '
+                f'>/dev/null && gpasswd -a {user.name} "$g"; done']))
         return steps
 
     async def is_satisfied(self, ctx: InstallContext) -> bool:
@@ -781,13 +915,18 @@ class ChrootCmdStep(ArgvStep):
         return ctx.state.done(self.key)
 
 
-def _emerge_argv(plan: InstallPlan, atom: str) -> list[str]:
-    """`emerge` an atom in-chroot: --noreplace so an already-present package is a
-    quick no-op; --getbinpkg when the plan prefers binaries."""
+def _emerge_argv(plan: InstallPlan, *atoms: str,
+                 env: dict[str, str] | None = None) -> list[str]:
+    """`emerge` one or more atoms in-chroot: --noreplace so an already-present
+    package is a quick no-op; --getbinpkg when the plan prefers binaries. ``env``
+    prepends ``env KEY=VALUE …`` (e.g. USE / GRUB_PLATFORMS for a single emerge)."""
     argv = ["emerge", "--color", "n", "--noreplace"]
     if plan.binary_pref:
         argv.insert(1, "--getbinpkg")
-    return [*argv, atom]
+    argv = [*argv, *atoms]
+    if env:
+        argv = ["env", *(f"{k}={v}" for k, v in env.items()), *argv]
+    return argv
 
 
 # Sensible install-time defaults for the opt-in day-2 modules.
@@ -896,7 +1035,9 @@ def build_registry(plan: InstallPlan, *, root_secret: Secret | None = None) -> l
         SetHostname(),
         SetConsole(),
         InstallKernelSources(),
+        StageKernelConfig(),
         BuildKernel(),
+        InstallGpuDrivers(),        # firmware always; NVIDIA proprietary when requested
         InstallBootloader(),
         InstallBootStub(),          # arm64/Asahi only; no-op on x86
         _root_password_step(root_secret),
@@ -940,6 +1081,7 @@ def build_minimal_registry(
         SetProfile(),
         EmergeWorld(),
         InstallKernelSources(),
+        StageKernelConfig(),
         BuildKernel(),
         InstallBootloader(),
         InstallBootStub(),          # arm64/Asahi only; no-op on x86 — boot-critical there

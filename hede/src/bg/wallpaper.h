@@ -25,8 +25,12 @@ struct Wallpaper {
     Fit fit = Fit::Fill;
 };
 
-// Read [wallpaper] mode/color/image/fit from config (defaults: the HeDE abyss
-// navy, no image).
+// Read [wallpaper] mode/color/image/fit from config. The default mode is
+// "world": the active biome (hede.conf [world] id, default "harbor") supplies
+// the scene, so a fresh system comes up on its world wallpaper rather than the
+// flat navy. mode=image uses wallpaper/image; mode=color is the base only.
+// The abyss navy (#0a1633) is the base colour and the fallback if the image is
+// missing.
 Wallpaper loadWallpaper(const Config &cfg);
 
 } // namespace helm

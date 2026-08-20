@@ -18,7 +18,9 @@ from dataclasses import dataclass, field
 from gest.core.bootloader.install import InstallConfig
 from gest.core.disk import mount as disk_mount
 from gest.core.disk import provision
-from gest.core.install.plan import InstallPlan, NetworkSpec, UserSpec
+from gest.core.hwflags import detect as hwdetect
+from gest.core.install.plan import GpuSpec, InstallPlan, NetworkSpec, UserSpec
+from gest.core.kernel import config as kconfig
 from gest.core.kernel.build import BuildConfig
 from gest.core.network import netifrc, resolv
 from gest.core.stage3 import index
@@ -86,6 +88,17 @@ class InstallSelections:
     # offline (quickpkg the live env + seed the Amphitheater overlay); turn off for
     # a base-Gentoo install. See docs/design/desktop-provisioning.md.
     install_desktop: bool = True
+    # GPU: VIDEO_CARDS tokens for the target + whether to install the NVIDIA
+    # proprietary stack. Empty/False = firmware only (safe). The UI populates these
+    # from `resolve_gpu()` (lspci auto-detect); left unset, an install just skips the
+    # driver. `nvidia_proprietary` implies a `nvidia` VIDEO_CARDS token (added in
+    # assembly), so a detected GeForce card gets a working Wayland/HeDE desktop.
+    video_cards: tuple[str, ...] = ()
+    nvidia_proprietary: bool = False
+    kernel_open: bool = False           # nvidia-drivers[kernel-open] (Turing+/Ada)
+    gpu_auto: bool = True               # auto-detect the GPU (lspci) at install time;
+    # False = the user overrode it in the UI, so video_cards/nvidia_proprietary are
+    # taken as-is (including an explicit "none" = empty). Not a plan field (UI-only).
     # Seamless graphical boot (GRUB Harbor theme + Plymouth splash in the initramfs).
     # Its plymouth/theme deps come from the desktop, so it only takes EFFECT when
     # install_desktop is also on (see assemble_plan) — the desktop gate is what keeps
@@ -134,6 +147,42 @@ def _build_user(sel: InstallSelections) -> UserSpec | None:
         shell=sel.user_shell,
         wheel=sel.user_wheel,
     )
+
+
+def _build_gpu(sel: InstallSelections) -> GpuSpec:
+    """The target's GPU setup from the selections (pure).
+
+    ``nvidia_proprietary`` implies a ``nvidia`` VIDEO_CARDS token, so requesting the
+    proprietary stack alone is enough — assembly adds the token if the caller didn't.
+    """
+    cards = tuple(sel.video_cards)
+    if sel.nvidia_proprietary and "nvidia" not in cards:
+        cards = (*cards, "nvidia")
+    return GpuSpec(video_cards=cards, nvidia_proprietary=sel.nvidia_proprietary,
+                   kernel_open=sel.kernel_open and sel.nvidia_proprietary)
+
+
+def resolve_gpu(runner: hwdetect.Runner | None = None) -> GpuSpec:
+    """Auto-detect the GPU from ``lspci`` (I/O — the GPU peer of ``resolve_stage3``).
+
+    Returns a :class:`GpuSpec` with the detected VIDEO_CARDS tokens, opting into the
+    NVIDIA proprietary stack when an NVIDIA card is present (nouveau can't drive a
+    modern GeForce under Wayland/HeDE), and into the OPEN kernel modules when the
+    card is Turing-or-newer (NVIDIA-recommended, and it sidesteps closed-module IBT
+    issues). The UI calls this to populate the selections before assembly; empty on a
+    host with no detectable GPU (or no ``lspci``).
+    """
+    run = runner or hwdetect._default_runner
+    try:
+        rc, out = run(["lspci"])
+    except FileNotFoundError:
+        return GpuSpec()
+    if rc != 0:
+        return GpuSpec()
+    cards = hwdetect.parse_video_cards(out)
+    nvidia = "nvidia" in cards
+    return GpuSpec(video_cards=tuple(cards), nvidia_proprietary=nvidia,
+                   kernel_open=nvidia and hwdetect.nvidia_open_recommended(out))
 
 
 def _build_network(sel: InstallSelections) -> NetworkSpec:
@@ -222,7 +271,14 @@ def assemble_plan(sel: InstallSelections, stage3: Stage3Selection) -> InstallPla
         # provides plymouth + the HeDE theme the genkernel/GRUB steps need.
         kernel=BuildConfig(
             method=sel.kernel_method, jobs=sel.kernel_jobs,
-            initramfs=sel.kernel_initramfs, plymouth=use_seamless),
+            initramfs=sel.kernel_initramfs, plymouth=use_seamless,
+            # genkernel's default config lacks virtio etc., so a VM install can't
+            # find its root disk. Point it at the curated per-arch config the
+            # installer ships (staged into the target by StageKernelConfig) when
+            # one exists for this arch; else fall back to genkernel's default.
+            kernel_config=(kconfig.TARGET_KERNEL_CONFIG
+                           if sel.kernel_method == "genkernel"
+                           and kconfig.bundled_config(arch) is not None else "")),
         bootloader=InstallConfig(
             firmware=sel.firmware, efi_directory=sel.efi_directory, disk=sel.boot_disk,
             # The bootloader step runs chrooted into the target (native paths),
@@ -230,6 +286,7 @@ def assemble_plan(sel: InstallSelections, stage3: Stage3Selection) -> InstallPla
             # is the seam. (plymouth is baked into the initramfs by BuildKernel above.)
             seamless=use_seamless),
         desktop=sel.install_desktop,
+        gpu=_build_gpu(sel),
         profile=profile,
         arch=arch,
         hostname=sel.hostname,

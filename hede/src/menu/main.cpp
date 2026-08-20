@@ -17,6 +17,7 @@ int main(int argc, char **argv) {
     app.setApplicationName(QStringLiteral("helm-menu"));
     app.setDesktopFileName(QStringLiteral("helm-menu"));
     helm::applyAppearance();
+    helm::watchAppearance(); // re-tint live on a world/accent switch
 
     const helm::Config cfg;
 
