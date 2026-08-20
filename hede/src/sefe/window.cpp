@@ -69,6 +69,12 @@ QSet<QString> entriesOf(const QString &dir) {
 
 SefeWindow::SefeWindow(QWidget *parent) : QMainWindow(parent) {
     resize(960, 620);
+    // The HeDE app-chrome contract: the shared shell stylesheet
+    // (helm::styleSheet) tints #HelmAppWindow's menu bar, toolbar, address field,
+    // Places pane and status bar with the world glass — "the chrome is the world"
+    // — while the content body keeps the light/dark palette. SeFE is the template
+    // for any future xdg-toplevel HeDE app. See docs/design/seahorse-appearance.md.
+    setObjectName(QStringLiteral("HelmAppWindow"));
 
     // Read/write now (slice 3). Edits happen only via our actions — the views
     // use no edit triggers, so clicks/keys never start an inline rename by
@@ -98,6 +104,8 @@ SefeWindow::SefeWindow(QWidget *parent) : QMainWindow(parent) {
     bar->addSeparator();
 
     _address = new AddressBar(this);
+    _address->setObjectName(QStringLiteral("HelmAddressBar"));
+    _address->setAttribute(Qt::WA_StyledBackground, true); // let QSS paint the field
     connect(_address, &AddressBar::navigate, this,
             [this](const QString &dir) { navigateTo(dir); });
     bar->addWidget(_address);
@@ -222,6 +230,7 @@ SefeWindow::SefeWindow(QWidget *parent) : QMainWindow(parent) {
 
     // --- places pane ---
     _places = new QListWidget(this);
+    _places->setObjectName(QStringLiteral("HelmAppPlaces")); // world-glass nav pane
     _places->setMaximumWidth(200);
     _places->setFrameShape(QFrame::NoFrame);
     for (const Place &p : places()) {
