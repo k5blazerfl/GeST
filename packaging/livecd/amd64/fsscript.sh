@@ -27,6 +27,12 @@ systemctl enable dhcpcd.service  || true   # wired networking for stage3 / emerg
 systemctl enable greetd.service
 systemctl set-default graphical.target
 
+# Headless boot-smoke beacon (root overlay: /etc/systemd/system/gest-boot-beacon
+# .service). Fires once graphical.target is reached and prints a token to the
+# serial port so packaging/livecd/boot-smoke.sh can assert the image boots
+# unattended. Serial-only → harmless (silent no-op) on real hardware.
+systemctl enable gest-boot-beacon.service || true
+
 # Seamless boot: make the HeDE ship's-helm splash the default for the post-pivot
 # systemd phase (genkernel already baked it into the initramfs via gk_mainargs).
 # The greetd drop-in (root overlay, greetd.service.d/plymouth.conf) retains the

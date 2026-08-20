@@ -148,8 +148,15 @@ case "${arch}" in
         ;;
 esac
 
+# Capture catalyst's output so the post-build assertion can confirm the image
+# installed the versions the overlay offers — from source, not a stale binpkg
+# (the silent-fallback bug that once stranded hede at 0.3.0). `set -o pipefail`
+# (set at the top) keeps catalyst's exit status through the tee.
+build_log="${outdir}/catalyst-${arch}-${TIMESTAMP}.log"
+: > "${build_log}"
+
 echo "== livecd-stage1 =="
-catalyst -f "${outdir}/livecd-stage1.spec"
+catalyst -f "${outdir}/livecd-stage1.spec" 2>&1 | tee -a "${build_log}"
 # Stage the real binpkg fixups into the root overlay now that stage1 has filled the
 # pkgcache, so stage2 lays them into the image. amd64 desktop image only.
 if [ "${arch}" = "amd64" ] && [ -d "${specdir}/overlay" ]; then
@@ -157,7 +164,15 @@ if [ "${arch}" = "amd64" ] && [ -d "${specdir}/overlay" ]; then
     stage_binpkg_fixups
 fi
 echo "== livecd-stage2 =="
-catalyst -f "${outdir}/livecd-stage2.spec"
+catalyst -f "${outdir}/livecd-stage2.spec" 2>&1 | tee -a "${build_log}"
+
+# Gate: the image must have installed app-admin/gest (and gui-apps/hede on amd64)
+# at the version the overlay offers, built from source. Fails the build on drift
+# or a silent binpkg fallback. SKIP_VERSION_ASSERT=1 bypasses (not recommended).
+if [ "${SKIP_VERSION_ASSERT:-0}" != 1 ]; then
+    echo "== asserting installed versions =="
+    "${here}/assert-iso-versions.sh" "${build_log}"
+fi
 
 # Theme the ISO's GRUB menu (the Harbor look — pairs with the Plymouth splash).
 # catalyst writes a plain grub.cfg onto the ISO filesystem, which the build can't
