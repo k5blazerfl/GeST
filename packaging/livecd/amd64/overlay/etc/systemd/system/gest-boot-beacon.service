@@ -1,0 +1,16 @@
+[Unit]
+# Headless boot-smoke beacon. Announces a completed boot-to-greeter over the
+# serial port so an unattended QEMU smoke test (packaging/livecd/boot-smoke.sh)
+# can assert the live image actually boots. It is SERIAL-ONLY by design: on real
+# hardware without a serial port the write is a silent no-op, so it never marks
+# the boot failed and never touches the on-screen (tty0) Plymouth/HeDE splash.
+Description=GeST headless boot-smoke beacon
+After=greetd.service
+Wants=greetd.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'echo "GEST_BOOT_OK gest-installer graphical.target reached" > /dev/ttyS0 2>/dev/null || true'
+
+[Install]
+WantedBy=graphical.target
