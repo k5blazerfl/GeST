@@ -20,6 +20,8 @@
 #include <QAction>
 #include <QApplication>
 #include <QClipboard>
+#include <QDrag>
+#include <QDropEvent>
 #include <QThread>
 #include <QSizePolicy>
 #include <utility>
@@ -201,6 +203,12 @@ SefeWindow::SefeWindow(const QString &startPath, QWidget *parent) : QMainWindow(
         connect(v, &QAbstractItemView::customContextMenuRequested, this,
                 [this, v](const QPoint &p) { showContextMenu(v, p); });
         v->installEventFilter(this); // Return opens the current item
+        // Archive drag-and-drop (A2): accept file drops on the viewport (add to the
+        // archive) and start a custom drag-out from it. We drive both from
+        // eventFilter, so the view's own DnD stays off.
+        v->setAcceptDrops(true);
+        v->viewport()->setAcceptDrops(true);
+        v->viewport()->installEventFilter(this);
     };
 
     _details = new QTreeView(this);
@@ -1353,7 +1361,90 @@ bool SefeWindow::eventFilter(QObject *watched, QEvent *event) {
             return true;
         }
     }
+
+    // Archive drag-and-drop (A2), driven from the view viewports.
+    const bool onViewport = _details && _icons && (watched == _details->viewport() ||
+                                                    watched == _icons->viewport());
+    if (onViewport && _inArchive) {
+        const bool writable =
+            _archiveModel && helm::hold::isWritableArchive(_archiveModel->archivePath());
+        switch (event->type()) {
+        case QEvent::MouseButtonPress: {
+            auto *me = static_cast<QMouseEvent *>(event);
+            if (me->button() == Qt::LeftButton)
+                _dragStartPos = me->position().toPoint();
+            break;
+        }
+        case QEvent::MouseMove: {
+            auto *me = static_cast<QMouseEvent *>(event);
+            if ((me->buttons() & Qt::LeftButton) && !_dragStartPos.isNull() &&
+                (me->position().toPoint() - _dragStartPos).manhattanLength() >=
+                    QApplication::startDragDistance() &&
+                !selectedInnerEntries().isEmpty()) {
+                _dragStartPos = QPoint();
+                startArchiveDrag(); // extract-to-temp + a file-URL drag (blocking)
+                return true;
+            }
+            break;
+        }
+        case QEvent::DragEnter:
+        case QEvent::DragMove: {
+            auto *de = static_cast<QDropEvent *>(event); // DragEnter/Move derive from it
+            if (writable && de->mimeData()->hasUrls()) {
+                de->acceptProposedAction();
+                return true;
+            }
+            break;
+        }
+        case QEvent::Drop: {
+            auto *de = static_cast<QDropEvent *>(event);
+            if (writable && de->mimeData()->hasUrls()) {
+                const QString innerDir = splitArchivePath(_current).inner;
+                helm::hold::Edits e;
+                for (const QUrl &u : de->mimeData()->urls()) {
+                    if (!u.isLocalFile())
+                        continue;
+                    const QString src = u.toLocalFile();
+                    const QString base = QFileInfo(src).fileName();
+                    e.add.append(
+                        {src, innerDir.isEmpty() ? base : innerDir + QLatin1Char('/') + base});
+                }
+                if (!e.add.isEmpty()) {
+                    de->acceptProposedAction();
+                    mutateArchive(e, QStringLiteral("Adding %1 item(s)…").arg(e.add.size()));
+                    return true;
+                }
+            }
+            break;
+        }
+        default:
+            break;
+        }
+    }
     return QMainWindow::eventFilter(watched, event);
+}
+
+void SefeWindow::startArchiveDrag() {
+    if (!_inArchive || !_archiveModel)
+        return;
+    const QStringList inner = selectedInnerEntries();
+    if (inner.isEmpty())
+        return;
+    auto tmp = std::make_unique<QTemporaryDir>();
+    if (!tmp->isValid())
+        return;
+    // Extract the dragged entries NOW — the drop target reads the files during the
+    // (blocking) drag. Synchronous: a drag needs its data immediately.
+    if (!helm::hold::extractEntries(_archiveModel->archivePath(), inner, tmp->path()).ok)
+        return;
+    QList<QUrl> urls;
+    for (const QString &e : inner)
+        urls << QUrl::fromLocalFile(QDir(tmp->path()).filePath(e));
+    auto *mime = new QMimeData;
+    mime->setUrls(urls);
+    QDrag drag(this);
+    drag.setMimeData(mime); // QDrag takes ownership
+    drag.exec(Qt::CopyAction); // blocks; the temp dir is read before it auto-removes here
 }
 
 } // namespace helm::sefe

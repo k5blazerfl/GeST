@@ -5,6 +5,7 @@
 #include <QColor>
 #include <QMainWindow>
 #include <QPixmap>
+#include <QPoint>
 #include <QStringList>
 
 #include <functional>
@@ -116,6 +117,10 @@ private:
     QAbstractItemView *activeView() const;
     QStringList selectedPaths() const;
     QStringList selectedInnerEntries() const; // selected entries when browsing an archive
+    // A2 drag-and-drop for archives: drag entries OUT (extract to the drop target via
+    // a temp dir + file-URL QDrag) and drop files IN (add to the archive). Handled in
+    // eventFilter on the view viewports.
+    void startArchiveDrag();
 
     // Run `work` off the UI thread while the Helm throbber spins, then deliver
     // its result to `done` back on the UI thread. Keeps hold-core archive work
@@ -184,6 +189,7 @@ private:
     QAction *_menuBarAct = nullptr;     // View → Menu Bar (checkable, Ctrl+M)
 
     QString _current;
+    QPoint _dragStartPos; // press point, to detect a drag-out gesture in an archive
     quint64 _navGen = 0; // bumped per navigateTo; async archive loads drop if superseded
     QStringList _history;
     int _histIndex = -1;
