@@ -1,18 +1,24 @@
 #include "window.h"
 
 #include "addressbar.h"
+#include "archivemodel.h" // hold: browse-in-place (Hold H3)
 #include "desktopentry.h" // helm-apps: scan + Exec argv (Open with)
 #include "holdcore.h"     // hold-core: archive extract/create (Hold H2)
+#include "config.h"       // helm::Config: throbber intensity knob
 #include "iconprovider.h"
 #include "launch.h"       // helm-common: launchDetached
 #include "ops.h"
 #include "sefe.h"
+#include "throbber.h"     // HelmThrobber: the Netscape-style busy light
 
 #include <QAbstractItemView>
 #include <QDialogButtonBox>
 #include <QAction>
 #include <QApplication>
 #include <QClipboard>
+#include <QThread>
+#include <QSizePolicy>
+#include <utility>
 #include <QDateTime>
 #include <QDesktopServices>
 #include <QDialog>
@@ -40,6 +46,7 @@
 #include <QSplitter>
 #include <QStackedWidget>
 #include <QStatusBar>
+#include <QTemporaryDir>
 #include <QToolBar>
 #include <QTreeView>
 #include <QUrl>
@@ -99,6 +106,20 @@ SefeWindow::SefeWindow(QWidget *parent) : QMainWindow(parent) {
     auto *viewAct = bar->addAction(QIcon::fromTheme(QStringLiteral("view-list-details")),
                                    QStringLiteral("Toggle view"));
 
+    // --- the Helm throbber, pinned top-right (Netscape's spot) ---
+    auto *spacer = new QWidget(this);
+    spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    bar->addWidget(spacer);
+    _throbber = new HelmThrobber(this);
+    if (helm::Config().string(QStringLiteral("seahorse/throbber"),
+                              QStringLiteral("calm")).compare(
+            QStringLiteral("lively"), Qt::CaseInsensitive) == 0)
+        _throbber->setIntensity(HelmThrobber::Intensity::Lively);
+    // Clicking the throbber sails Home — like Netscape's throbber → home page.
+    connect(_throbber, &HelmThrobber::clicked, this,
+            [this] { navigateTo(QDir::homePath()); });
+    bar->addWidget(_throbber);
+
     // --- operation actions (shortcuts live window-wide; reused in menus) ---
     auto op = [this](const QString &text, const QKeySequence &keys, void (SefeWindow::*slot)()) {
         auto *a = new QAction(text, this);
@@ -137,6 +158,7 @@ SefeWindow::SefeWindow(QWidget *parent) : QMainWindow(parent) {
     _extractToAct = op(QStringLiteral("Extract to…"), QKeySequence(), &SefeWindow::extractTo);
     _compressAct = op(QStringLiteral("Compress to .zip"), QKeySequence(),
                       &SefeWindow::compressSelection);
+    _holdAct = op(QStringLiteral("Open with Hold"), QKeySequence(), &SefeWindow::openInHold);
     auto *selectAllAct = op(QStringLiteral("Select all"), QKeySequence::SelectAll, nullptr);
     connect(selectAllAct, &QAction::triggered, this,
             [this] { if (auto *v = activeView()) v->selectAll(); });
@@ -220,18 +242,70 @@ SefeWindow::SefeWindow(QWidget *parent) : QMainWindow(parent) {
 SefeWindow::~SefeWindow() {
     _model->setIconProvider(nullptr); // stop the model using it before we free it
     delete _iconProvider;
+    delete _archiveModel;
+    delete _extractTemp;
+}
+
+template <class Work, class Done>
+void SefeWindow::runBusy(const QString &activity, Work work, Done done) {
+    _throbber->begin(activity);
+    auto *thread = QThread::create(
+        [this, work = std::move(work), done = std::move(done)]() mutable {
+            auto payload = work(); // hold-core runs here, off the UI thread
+            // Deliver the result on the UI thread. If the window is gone by now,
+            // Qt drops this queued call (receiver destroyed) — no dangling use.
+            QMetaObject::invokeMethod(
+                this,
+                [this, payload = std::move(payload), done = std::move(done)]() mutable {
+                    done(payload);
+                    _throbber->end();
+                },
+                Qt::QueuedConnection);
+        });
+    connect(thread, &QThread::finished, thread, &QThread::deleteLater);
+    thread->start();
 }
 
 // --- navigation ---
 
 void SefeWindow::navigateTo(const QString &dir, bool record) {
     const QString path = QDir::cleanPath(dir);
-    _current = path;
-    _model->setRootPath(path);
-    const QModelIndex root = _model->index(path);
-    _details->setRootIndex(root);
-    _icons->setRootIndex(root);
+    const ArchiveSplit split = splitArchivePath(path);
 
+    // Switch both views to `m` (only when it actually changes, to keep the
+    // details columns) then root them at `root`.
+    auto useModel = [this](QAbstractItemModel *m, const QModelIndex &root) {
+        if (_details->model() != m) {
+            _details->setModel(m);
+            _icons->setModel(m);
+            _details->setColumnWidth(0, 320);
+            _details->header()->setStretchLastSection(true);
+        }
+        _details->setRootIndex(root);
+        _icons->setRootIndex(root);
+    };
+
+    if (split.archive.isEmpty()) { // filesystem
+        _inArchive = false;
+        _model->setRootPath(path);
+        useModel(_model, _model->index(path));
+        if (_archiveModel) { // left the archive — drop its model
+            delete _archiveModel;
+            _archiveModel = nullptr;
+        }
+    } else { // inside an archive
+        if (!_archiveModel || _archiveModel->archivePath() != split.archive) {
+            helm::hold::ArchiveModel *old = _archiveModel;
+            _archiveModel = new helm::hold::ArchiveModel(split.archive);
+            useModel(_archiveModel, _archiveModel->indexForInner(split.inner));
+            delete old; // views no longer reference it
+        } else {
+            useModel(_archiveModel, _archiveModel->indexForInner(split.inner));
+        }
+        _inArchive = true;
+    }
+
+    _current = path;
     _address->setPath(path);
     setWindowTitle(helm::sefe::windowTitle(path));
     highlightPlace(path);
@@ -249,13 +323,49 @@ void SefeWindow::navigateTo(const QString &dir, bool record) {
 void SefeWindow::openIndex(const QModelIndex &index) {
     if (!index.isValid())
         return;
+    if (_inArchive && _archiveModel) { // inside an archive
+        const QString inner = _archiveModel->innerPath(index);
+        if (_archiveModel->isDir(index))
+            navigateTo(_archiveModel->archivePath() + QLatin1Char('/') + inner);
+        else
+            openArchiveEntry(inner);
+        return;
+    }
     const QString path = _model->filePath(index);
     if (_model->isDir(index))
         navigateTo(path);
     else if (isWindowsExecutable(path))
         helm::launchDetached(QStringLiteral("drydock"), {QStringLiteral("open"), path});
+    else if (helm::hold::isArchive(path))
+        navigateTo(path); // walk into the archive (browse-in-place)
     else
         QDesktopServices::openUrl(QUrl::fromLocalFile(path));
+}
+
+void SefeWindow::openArchiveEntry(const QString &inner) {
+    if (!_archiveModel)
+        return;
+    if (!_extractTemp)
+        _extractTemp = new QTemporaryDir; // session-lifetime scratch for opened entries
+    if (!_extractTemp->isValid())
+        return;
+    const QString archive = _archiveModel->archivePath();
+    const QString tempDir = _extractTemp->path();
+    // Extract the one entry on a worker thread (the throbber spins), then open
+    // it once it lands.
+    runBusy(
+        QStringLiteral("Opening %1…").arg(QFileInfo(inner).fileName()),
+        [archive, inner, tempDir]() -> QString {
+            const helm::hold::Result r = helm::hold::extract(archive, inner, tempDir);
+            return r.ok ? QString() : r.error; // empty == success
+        },
+        [this, inner, tempDir](const QString &error) {
+            if (error.isEmpty())
+                QDesktopServices::openUrl(
+                    QUrl::fromLocalFile(QDir(tempDir).filePath(inner)));
+            else
+                statusBar()->showMessage(QStringLiteral("Open failed: %1").arg(error));
+        });
 }
 
 void SefeWindow::goBack() {
@@ -298,6 +408,8 @@ QAbstractItemView *SefeWindow::activeView() const {
 
 QStringList SefeWindow::selectedPaths() const {
     QStringList out;
+    if (_inArchive)
+        return out; // archive browsing is read-only — filesystem ops don't apply
     QAbstractItemView *v = activeView();
     if (!v || !v->selectionModel())
         return out;
@@ -487,15 +599,29 @@ void SefeWindow::copyPaths() {
 // off-thread pass is a later polish; large archives will block until then.
 
 void SefeWindow::extractHere() {
-    for (const QString &archive : selectedPaths()) {
-        if (!helm::hold::isArchive(archive))
-            continue;
-        const helm::hold::Result r = helm::hold::extractAll(archive, _current);
-        statusBar()->showMessage(r.ok ? QStringLiteral("Extracted %1").arg(QFileInfo(archive).fileName())
-                                      : QStringLiteral("Extract failed: %1").arg(r.error));
-        if (!r.ok)
-            return;
-    }
+    QStringList archives;
+    for (const QString &p : selectedPaths())
+        if (helm::hold::isArchive(p))
+            archives << p;
+    if (archives.isEmpty())
+        return;
+    const QString dest = _current;
+    runBusy(
+        archives.size() == 1
+            ? QStringLiteral("Extracting %1…").arg(QFileInfo(archives.first()).fileName())
+            : QStringLiteral("Extracting %1 archives…").arg(archives.size()),
+        [archives, dest]() -> QString {
+            int ok = 0;
+            for (const QString &archive : archives) {
+                const helm::hold::Result r = helm::hold::extractAll(archive, dest);
+                if (!r.ok)
+                    return QStringLiteral("Extract failed: %1").arg(r.error);
+                ++ok;
+            }
+            return ok == 1 ? QStringLiteral("Extracted %1").arg(QFileInfo(archives.first()).fileName())
+                           : QStringLiteral("Extracted %1 archives").arg(ok);
+        },
+        [this](const QString &msg) { statusBar()->showMessage(msg); });
 }
 
 void SefeWindow::extractTo() {
@@ -507,9 +633,21 @@ void SefeWindow::extractTo() {
         QFileDialog::getExistingDirectory(this, QStringLiteral("Extract to"), _current);
     if (dest.isEmpty())
         return;
-    const helm::hold::Result r = helm::hold::extractAll(*it, dest);
-    statusBar()->showMessage(r.ok ? QStringLiteral("Extracted to %1").arg(dest)
-                                  : QStringLiteral("Extract failed: %1").arg(r.error));
+    const QString archive = *it;
+    runBusy(
+        QStringLiteral("Extracting %1…").arg(QFileInfo(archive).fileName()),
+        [archive, dest]() -> QString {
+            const helm::hold::Result r = helm::hold::extractAll(archive, dest);
+            return r.ok ? QStringLiteral("Extracted to %1").arg(dest)
+                        : QStringLiteral("Extract failed: %1").arg(r.error);
+        },
+        [this](const QString &msg) { statusBar()->showMessage(msg); });
+}
+
+void SefeWindow::openInHold() {
+    const QStringList sel = selectedPaths();
+    if (!sel.isEmpty())
+        helm::launchDetached(QStringLiteral("hold"), {sel.first()});
 }
 
 void SefeWindow::compressSelection() {
@@ -518,14 +656,27 @@ void SefeWindow::compressSelection() {
         return;
     const QString name = compressTargetName(sel, entriesOf(_current));
     const QString dest = QDir(_current).filePath(name);
-    const helm::hold::Result r = helm::hold::create(sel, dest);
-    statusBar()->showMessage(r.ok ? QStringLiteral("Created %1").arg(name)
-                                  : QStringLiteral("Compress failed: %1").arg(r.error));
+    runBusy(
+        QStringLiteral("Compressing to %1…").arg(name),
+        [sel, dest, name]() -> QString {
+            const helm::hold::Result r = helm::hold::create(sel, dest);
+            return r.ok ? QStringLiteral("Created %1").arg(name)
+                        : QStringLiteral("Compress failed: %1").arg(r.error);
+        },
+        [this](const QString &msg) { statusBar()->showMessage(msg); });
 }
 
 void SefeWindow::showContextMenu(QAbstractItemView *view, const QPoint &pos) {
     const QModelIndex idx = view->indexAt(pos);
     QMenu menu(this);
+    if (_inArchive) { // read-only browsing: just Open the clicked entry
+        if (idx.isValid()) {
+            QAction *open = menu.addAction(QStringLiteral("Open"));
+            connect(open, &QAction::triggered, this, [this, idx] { openIndex(idx); });
+            menu.exec(view->viewport()->mapToGlobal(pos));
+        }
+        return;
+    }
     if (idx.isValid()) {
         const bool isDir = _model->isDir(idx);
         const QString path = _model->filePath(idx);
@@ -537,6 +688,7 @@ void SefeWindow::showContextMenu(QAbstractItemView *view, const QPoint &pos) {
             if (helm::hold::isArchive(path)) {
                 menu.addAction(_extractHereAct);
                 menu.addAction(_extractToAct);
+                menu.addAction(_holdAct);
             }
         }
         if (isDir)

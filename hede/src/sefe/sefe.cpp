@@ -1,5 +1,7 @@
 #include "sefe.h"
 
+#include "holdcore.h"
+
 #include <QDir>
 #include <QFileInfo>
 #include <QStandardPaths>
@@ -102,6 +104,17 @@ bool isWindowsExecutable(const QString &path) {
     static const QStringList exts = {QStringLiteral("exe"), QStringLiteral("msi"),
                                      QStringLiteral("lnk"), QStringLiteral("bat")};
     return exts.contains(QFileInfo(path).suffix().toLower());
+}
+
+ArchiveSplit splitArchivePath(const QString &path) {
+    const QStringList segs = QDir::cleanPath(path).split(QLatin1Char('/'), Qt::SkipEmptyParts);
+    QString acc;
+    for (int i = 0; i < segs.size(); ++i) {
+        acc += QLatin1Char('/') + segs[i];
+        if (helm::hold::isArchive(acc) && QFileInfo(acc).isFile())
+            return {acc, segs.mid(i + 1).join(QLatin1Char('/'))};
+    }
+    return {};
 }
 
 } // namespace helm::sefe

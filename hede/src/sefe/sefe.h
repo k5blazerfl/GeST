@@ -51,4 +51,17 @@ QString normalizePath(const QString &input, const QString &base = QString());
 // rather than a native handler.
 bool isWindowsExecutable(const QString &path);
 
+// A path split into an archive file + a subpath inside it. `archive` empty means
+// `path` is an ordinary filesystem path.
+struct ArchiveSplit {
+    QString archive; // the archive file's path on disk ("" if none)
+    QString inner;   // the subpath inside it ("" = the archive root)
+};
+
+// Split `path` at the first component that is an existing archive file, so
+// "/home/u/photos.zip/vacation" → {"/home/u/photos.zip", "vacation"}. Returns an
+// empty `archive` for a plain filesystem path. This is what tells the window it
+// has crossed into an archive (browse-in-place).
+ArchiveSplit splitArchivePath(const QString &path);
+
 } // namespace helm::sefe
