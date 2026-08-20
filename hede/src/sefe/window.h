@@ -1,5 +1,7 @@
 #pragma once
 
+#include "holdcore.h" // helm::hold::Result / Progress for runJob
+
 #include <QColor>
 #include <QMainWindow>
 #include <QPixmap>
@@ -111,6 +113,14 @@ private:
     // for real. Defined in window.cpp (only instantiated there).
     template <class Work, class Done>
     void runBusy(const QString &activity, Work work, Done done);
+
+    // Run a hold-core op as a hold::Job: an in-window progress dialog (appears only
+    // if the op runs past a short delay) with a Cancel button, the throbber, and a
+    // status summary. The bar is determinate when the op reports a total, else
+    // indeterminate. See docs/design/archive-support.md (A0).
+    void runJob(const QString &title,
+                std::function<helm::hold::Result(const helm::hold::Progress &)> work,
+                std::function<QString(const helm::hold::Result &)> summary);
 
     QFileSystemModel *_model = nullptr;
     ThumbnailIconProvider *_iconProvider = nullptr; // owned; outlives the model

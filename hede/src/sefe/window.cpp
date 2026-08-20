@@ -4,6 +4,7 @@
 #include "archivemodel.h" // hold: browse-in-place (Hold H3)
 #include "desktopentry.h" // helm-apps: scan + Exec argv (Open with)
 #include "holdcore.h"     // hold-core: archive extract/create (Hold H2)
+#include "job.h"          // hold::Job: cancellable, progress-reporting archive ops (A0)
 #include "config.h"       // helm::Config: throbber intensity knob
 #include "iconprovider.h"
 #include "launch.h"       // helm-common: launchDetached
@@ -42,6 +43,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QPaintEvent>
+#include <QProgressDialog>
 #include <QWindow>
 #include <QListView>
 #include <QListWidget>
@@ -538,6 +540,46 @@ void SefeWindow::runBusy(const QString &activity, Work work, Done done) {
     thread->start();
 }
 
+void SefeWindow::runJob(const QString &title,
+                        std::function<helm::hold::Result(const helm::hold::Progress &)> work,
+                        std::function<QString(const helm::hold::Result &)> summary) {
+    auto *job = new helm::hold::Job(title, this);
+    // The dialog appears only if the op outlives the delay, so quick archives never
+    // flash it; it drives cancel and shows the current entry.
+    auto *dlg = new QProgressDialog(title, QStringLiteral("Cancel"), 0, 0, this);
+    dlg->setWindowModality(Qt::WindowModal);
+    dlg->setMinimumDuration(600);
+    dlg->setAutoClose(false);
+    dlg->setAutoReset(false);
+    dlg->setValue(0);
+
+    connect(job, &helm::hold::Job::progress, dlg,
+            [dlg](qint64 done, qint64 total, const QString &name) {
+                if (total > 0) {
+                    if (dlg->maximum() != int(total))
+                        dlg->setMaximum(int(total));
+                    dlg->setValue(int(done));
+                } else if (dlg->maximum() != 0) {
+                    dlg->setRange(0, 0); // unknown total → indeterminate
+                }
+                dlg->setLabelText(name);
+            });
+    connect(dlg, &QProgressDialog::canceled, job, &helm::hold::Job::cancel);
+
+    _throbber->begin(title);
+    connect(job, &helm::hold::Job::finished, this,
+            [this, dlg, job, summary](const helm::hold::Result &r) {
+                _throbber->end();
+                dlg->reset();
+                dlg->deleteLater();
+                job->deleteLater();
+                const QString msg = summary(r);
+                if (!msg.isEmpty())
+                    statusBar()->showMessage(msg);
+            });
+    job->run(std::move(work));
+}
+
 // --- navigation ---
 
 void SefeWindow::navigateTo(const QString &dir, bool record) {
@@ -910,6 +952,13 @@ void SefeWindow::copyPaths() {
 // H2: quick archive actions over hold-core. Synchronous for now — a progress /
 // off-thread pass is a later polish; large archives will block until then.
 
+// A failed archive Result → a status message; a cancel reads as such, not a failure.
+static QString archiveFailMsg(const QString &verb, const helm::hold::Result &r) {
+    return r.error == QLatin1String("cancelled")
+               ? QStringLiteral("%1 cancelled").arg(verb)
+               : QStringLiteral("%1 failed: %2").arg(verb, r.error);
+}
+
 void SefeWindow::extractHere() {
     QStringList archives;
     for (const QString &p : selectedPaths())
@@ -918,22 +967,26 @@ void SefeWindow::extractHere() {
     if (archives.isEmpty())
         return;
     const QString dest = _current;
-    runBusy(
-        archives.size() == 1
-            ? QStringLiteral("Extracting %1…").arg(QFileInfo(archives.first()).fileName())
-            : QStringLiteral("Extracting %1 archives…").arg(archives.size()),
-        [archives, dest]() -> QString {
-            int ok = 0;
+    const QString one = QFileInfo(archives.first()).fileName();
+    runJob(
+        archives.size() == 1 ? QStringLiteral("Extracting %1…").arg(one)
+                             : QStringLiteral("Extracting %1 archives…").arg(archives.size()),
+        [archives, dest](const helm::hold::Progress &p) -> helm::hold::Result {
             for (const QString &archive : archives) {
-                const helm::hold::Result r = helm::hold::extractAll(archive, dest);
+                const helm::hold::Result r = helm::hold::extractAll(archive, dest, p);
                 if (!r.ok)
-                    return QStringLiteral("Extract failed: %1").arg(r.error);
-                ++ok;
+                    return r;
             }
-            return ok == 1 ? QStringLiteral("Extracted %1").arg(QFileInfo(archives.first()).fileName())
-                           : QStringLiteral("Extracted %1 archives").arg(ok);
+            helm::hold::Result ok;
+            ok.ok = true;
+            return ok;
         },
-        [this](const QString &msg) { statusBar()->showMessage(msg); });
+        [archives, one](const helm::hold::Result &r) {
+            if (!r.ok)
+                return archiveFailMsg(QStringLiteral("Extract"), r);
+            return archives.size() == 1 ? QStringLiteral("Extracted %1").arg(one)
+                                        : QStringLiteral("Extracted %1 archives").arg(archives.size());
+        });
 }
 
 void SefeWindow::extractTo() {
@@ -946,19 +999,20 @@ void SefeWindow::extractTo() {
     if (dest.isEmpty())
         return;
     const QString archive = *it;
-    runBusy(
+    runJob(
         QStringLiteral("Extracting %1…").arg(QFileInfo(archive).fileName()),
-        [archive, dest]() -> QString {
-            const helm::hold::Result r = helm::hold::extractAll(archive, dest);
-            return r.ok ? QStringLiteral("Extracted to %1").arg(dest)
-                        : QStringLiteral("Extract failed: %1").arg(r.error);
+        [archive, dest](const helm::hold::Progress &p) {
+            return helm::hold::extractAll(archive, dest, p);
         },
-        [this](const QString &msg) { statusBar()->showMessage(msg); });
+        [dest](const helm::hold::Result &r) {
+            return r.ok ? QStringLiteral("Extracted to %1").arg(dest)
+                        : archiveFailMsg(QStringLiteral("Extract"), r);
+        });
 }
 
 // Rich archive ops, folded in from the former standalone Hold app: while browsing
 // inside an archive, extract entries straight to a chosen folder. hold-core runs
-// off the UI thread via runBusy so a big archive doesn't freeze the window.
+// off the UI thread via runJob — a progress dialog with Cancel for the big ones.
 
 QStringList SefeWindow::selectedInnerEntries() const {
     QStringList out;
@@ -988,19 +1042,15 @@ void SefeWindow::extractSelectedEntries() {
     if (dest.isEmpty())
         return;
     const QString archive = _archiveModel->archivePath();
-    runBusy(
+    runJob(
         QStringLiteral("Extracting %1 item(s)…").arg(entries.size()),
-        [archive, entries, dest]() -> QString {
-            int ok = 0;
-            for (const QString &inner : entries)
-                if (helm::hold::extract(archive, inner, dest).ok)
-                    ++ok;
-            return QStringLiteral("Extracted %1 of %2 to %3")
-                .arg(ok)
-                .arg(entries.size())
-                .arg(dest);
+        [archive, entries, dest](const helm::hold::Progress &p) {
+            return helm::hold::extractEntries(archive, entries, dest, p); // one pass
         },
-        [this](const QString &msg) { statusBar()->showMessage(msg); });
+        [entries, dest](const helm::hold::Result &r) {
+            return r.ok ? QStringLiteral("Extracted %1 item(s) to %2").arg(entries.size()).arg(dest)
+                        : archiveFailMsg(QStringLiteral("Extract"), r);
+        });
 }
 
 void SefeWindow::extractWholeArchive() {
@@ -1011,14 +1061,15 @@ void SefeWindow::extractWholeArchive() {
         QFileDialog::getExistingDirectory(this, QStringLiteral("Extract all to"), _current);
     if (dest.isEmpty())
         return;
-    runBusy(
+    runJob(
         QStringLiteral("Extracting %1…").arg(QFileInfo(archive).fileName()),
-        [archive, dest]() -> QString {
-            const helm::hold::Result r = helm::hold::extractAll(archive, dest);
-            return r.ok ? QStringLiteral("Extracted to %1").arg(dest)
-                        : QStringLiteral("Extract failed: %1").arg(r.error);
+        [archive, dest](const helm::hold::Progress &p) {
+            return helm::hold::extractAll(archive, dest, p);
         },
-        [this](const QString &msg) { statusBar()->showMessage(msg); });
+        [dest](const helm::hold::Result &r) {
+            return r.ok ? QStringLiteral("Extracted to %1").arg(dest)
+                        : archiveFailMsg(QStringLiteral("Extract"), r);
+        });
 }
 
 void SefeWindow::compressSelection() {
@@ -1027,14 +1078,13 @@ void SefeWindow::compressSelection() {
         return;
     const QString name = compressTargetName(sel, entriesOf(_current));
     const QString dest = QDir(_current).filePath(name);
-    runBusy(
+    runJob(
         QStringLiteral("Compressing to %1…").arg(name),
-        [sel, dest, name]() -> QString {
-            const helm::hold::Result r = helm::hold::create(sel, dest);
+        [sel, dest](const helm::hold::Progress &p) { return helm::hold::create(sel, dest, p); },
+        [name](const helm::hold::Result &r) {
             return r.ok ? QStringLiteral("Created %1").arg(name)
-                        : QStringLiteral("Compress failed: %1").arg(r.error);
-        },
-        [this](const QString &msg) { statusBar()->showMessage(msg); });
+                        : archiveFailMsg(QStringLiteral("Compress"), r);
+        });
 }
 
 void SefeWindow::showContextMenu(QAbstractItemView *view, const QPoint &pos) {
