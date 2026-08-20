@@ -19,7 +19,9 @@
 #include <QDialogButtonBox>
 #include <QAction>
 #include <QApplication>
+#include <QCheckBox>
 #include <QClipboard>
+#include <QProcess>
 #include <QDrag>
 #include <QDropEvent>
 #include <QThread>
@@ -80,6 +82,33 @@ QSet<QString> entriesOf(const QString &dir) {
     const auto list = d.entryList(QDir::NoDotAndDotDot | QDir::AllEntries | QDir::Hidden
                                   | QDir::System);
     return QSet<QString>(list.begin(), list.end());
+}
+
+// A3c — archive passphrases in the Keychain via secret-tool (the Secret Service CLI),
+// the same path Gangway uses (gest/core/rdp/creds.py). All calls degrade gracefully
+// if no provider is installed. The attributes identify the archive by absolute path.
+QStringList keychainAttrs(const QString &archive) {
+    return {QStringLiteral("service"), QStringLiteral("hold-archive"), QStringLiteral("path"),
+            QFileInfo(archive).absoluteFilePath()};
+}
+QString keychainLookup(const QString &archive) {
+    QProcess p;
+    p.start(QStringLiteral("secret-tool"), QStringList{QStringLiteral("lookup")} << keychainAttrs(archive));
+    if (!p.waitForFinished(3000) || p.exitStatus() != QProcess::NormalExit || p.exitCode() != 0)
+        return QString(); // not found, or no Secret Service provider
+    return QString::fromUtf8(p.readAllStandardOutput()); // secret-tool prints the secret raw
+}
+bool keychainStore(const QString &archive, const QString &pass) {
+    QProcess p;
+    p.start(QStringLiteral("secret-tool"),
+            QStringList{QStringLiteral("store"),
+                        QStringLiteral("--label=Hold: %1").arg(QFileInfo(archive).fileName())}
+                << keychainAttrs(archive));
+    if (!p.waitForStarted(3000))
+        return false;
+    p.write(pass.toUtf8()); // secret-tool reads the secret from stdin
+    p.closeWriteChannel();
+    return p.waitForFinished(3000) && p.exitCode() == 0;
 }
 } // namespace
 
@@ -1110,15 +1139,33 @@ SefeWindow::resolveOverwrite(const QString &dest, const QStringList &relPaths) {
 std::optional<QString> SefeWindow::archivePassphrase(const QString &archive) {
     if (!helm::hold::isEncrypted(archive))
         return QString(); // not encrypted — no passphrase needed
-    // A3c (future): consult the Keychain here first, and offer "remember". For now,
-    // prompt each time.
-    bool ok = false;
-    const QString pass = QInputDialog::getText(
-        this, QStringLiteral("Encrypted archive"),
-        QStringLiteral("Passphrase for %1:").arg(QFileInfo(archive).fileName()),
-        QLineEdit::Password, QString(), &ok);
-    if (!ok)
+
+    // A3c: a remembered passphrase (Keychain / Secret Service) skips the prompt.
+    const QString stored = keychainLookup(archive);
+    if (!stored.isEmpty())
+        return stored;
+
+    // Prompt, with a "remember" option that stores it in the Keychain.
+    QDialog dlg(this);
+    dlg.setWindowTitle(QStringLiteral("Encrypted archive"));
+    auto *form = new QFormLayout(&dlg);
+    auto *edit = new QLineEdit(&dlg);
+    edit->setEchoMode(QLineEdit::Password);
+    form->addRow(QStringLiteral("Passphrase for %1:").arg(QFileInfo(archive).fileName()), edit);
+    auto *remember = new QCheckBox(QStringLiteral("Remember in Keychain"), &dlg);
+    form->addRow(QString(), remember);
+    auto *buttons =
+        new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    form->addRow(buttons);
+    connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    edit->setFocus();
+    if (dlg.exec() != QDialog::Accepted)
         return std::nullopt; // cancelled
+
+    const QString pass = edit->text();
+    if (remember->isChecked() && !pass.isEmpty())
+        keychainStore(archive, pass); // best-effort; no provider → silently skipped
     return pass;
 }
 
