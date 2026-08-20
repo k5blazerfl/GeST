@@ -5,6 +5,9 @@
 #include <QFileInfo>
 #include <QSet>
 
+#include <filesystem>
+#include <system_error>
+
 #include <archive.h>
 #include <archive_entry.h>
 
@@ -33,6 +36,20 @@ QString safeJoin(const QString &destDir, const QString &entryPath) {
     if (joined == base || joined.startsWith(base + QLatin1Char('/')))
         return joined;
     return QString(); // escapes the destination — reject
+}
+
+bool symlinkEscapes(const QString &destDir, const QString &entryPath,
+                    const QString &linkTarget) {
+    if (linkTarget.isEmpty())
+        return false; // nothing to point at — nothing to escape
+    if (QDir::isAbsolutePath(linkTarget))
+        return true; // an absolute target always leaves the sandbox
+    const QString base = QDir::cleanPath(destDir);
+    // The link lives at base/entryPath; a relative target resolves against its dir.
+    const QString linkDir =
+        QDir::cleanPath(base + QLatin1Char('/') + entryPath + QLatin1String("/.."));
+    const QString resolved = QDir::cleanPath(linkDir + QLatin1Char('/') + linkTarget);
+    return !(resolved == base || resolved.startsWith(base + QLatin1Char('/')));
 }
 
 // --- libarchive plumbing ---
@@ -82,6 +99,26 @@ Result writeData(struct archive *a, const QString &target) {
     return r;
 }
 
+// Create a symlink at `target` pointing to `linkTarget` (caller has already checked
+// the target stays inside the destination via symlinkEscapes). Replaces an existing
+// node at `target` — a full overwrite policy lands in A1d.
+Result writeSymlink(const QString &linkTarget, const QString &target) {
+    Result r;
+    QDir().mkpath(QFileInfo(target).absolutePath());
+    const std::filesystem::path at(target.toLocal8Bit().toStdString());
+    std::error_code ec;
+    std::filesystem::remove(at, ec);
+    ec.clear();
+    std::filesystem::create_symlink(
+        std::filesystem::path(linkTarget.toLocal8Bit().toStdString()), at, ec);
+    if (ec) {
+        r.error = QStringLiteral("cannot create symlink %1").arg(target);
+        return r;
+    }
+    r.ok = true;
+    return r;
+}
+
 Result cancelledResult() {
     Result r;
     r.error = QStringLiteral("cancelled");
@@ -125,11 +162,22 @@ Result extractImpl(const QString &archive, const QString &destDir, const QSet<QS
             }
         }
         const QString target = safeJoin(base, name);
-        if (target.isEmpty()) { // Zip-Slip: skip an escaping path
+        if (target.isEmpty()) { // Zip-Slip: the entry's own path escapes the destination
             archive_read_data_skip(reader.a);
+            r.skipped << name;
             continue;
         }
-        if (entryIsDir(entry, name)) {
+        if (archive_entry_filetype(entry) == AE_IFLNK) {
+            const QString linkTarget = QString::fromUtf8(archive_entry_symlink(entry));
+            if (symlinkEscapes(base, name, linkTarget)) { // symlink-escape: refuse it
+                archive_read_data_skip(reader.a);
+                r.skipped << name;
+                continue;
+            }
+            const Result w = writeSymlink(linkTarget, target);
+            if (!w.ok)
+                return w;
+        } else if (entryIsDir(entry, name)) {
             QDir().mkpath(target);
         } else {
             const Result w = writeData(reader.a, target);
@@ -237,6 +285,12 @@ Listing list(const QString &archive) {
         e.path = name;
         e.size = archive_entry_size(entry);
         e.isDir = entryIsDir(entry, name);
+        if (archive_entry_filetype(entry) == AE_IFLNK) {
+            e.type = EntryType::Symlink;
+            e.linkTarget = QString::fromUtf8(archive_entry_symlink(entry));
+        } else {
+            e.type = e.isDir ? EntryType::Directory : EntryType::File;
+        }
         if (archive_entry_mtime_is_set(entry))
             e.mtime = QDateTime::fromSecsSinceEpoch(archive_entry_mtime(entry));
         out.entries.append(e);

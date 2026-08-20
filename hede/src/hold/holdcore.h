@@ -14,11 +14,17 @@
 // safeJoin) are unit-tested without touching libarchive.
 namespace helm::hold {
 
+// What kind of node an entry is. (Regular files, directories, and symlinks; other
+// libarchive types — devices/fifos — are surfaced as File and not extracted.)
+enum class EntryType { File, Directory, Symlink };
+
 // One member of an archive.
 struct Entry {
     QString path;    // path within the archive, '/'-separated (e.g. "sub/a.txt")
     qint64 size = 0; // uncompressed size in bytes (0 for directories)
-    bool isDir = false;
+    bool isDir = false;                    // == (type == EntryType::Directory)
+    EntryType type = EntryType::File;
+    QString linkTarget;                    // symlink target (empty unless type == Symlink)
     QDateTime mtime; // invalid if the archive records none
 };
 
@@ -33,6 +39,10 @@ struct Listing {
 struct Result {
     bool ok = false;
     QString error;
+    // Entries the safety pass refused (Zip-Slip name escape, or an unsafe symlink
+    // whose target leaves the destination). Extraction of the rest still succeeds
+    // (`ok == true`); the UI can report "N entries skipped for safety".
+    QStringList skipped;
 };
 
 // A progress/cancel hook for the long-running ops (A0, docs/design/archive-support.md).
@@ -58,14 +68,23 @@ bool isArchive(const QString &path);
 // absolute or "../"-laden entry paths are re-rooted or rejected.
 QString safeJoin(const QString &destDir, const QString &entryPath);
 
+// True if a symlink placed at `entryPath` (an archive-relative path under
+// `destDir`) pointing to `linkTarget` would resolve OUTSIDE `destDir`. An absolute
+// target always escapes; a relative one is resolved against the symlink's own
+// directory. Escaping symlinks are refused at extract time (the symlink-escape
+// guard, complementing safeJoin which only guards the entry's own name).
+bool symlinkEscapes(const QString &destDir, const QString &entryPath,
+                    const QString &linkTarget);
+
 // --- libarchive-backed engine ---
 
 // List an archive's entries (directories and files).
 Listing list(const QString &archive);
 
 // Extract every entry into `destDir` (created if needed). Entries whose paths
-// would escape `destDir` are skipped (safeJoin). Reports count-based progress with
-// total=-1 (the entry count isn't known until the stream ends).
+// would escape `destDir` (safeJoin) or whose symlink target escapes it
+// (symlinkEscapes) are skipped and listed in `Result::skipped`. Reports count-based
+// progress with total=-1 (the entry count isn't known until the stream ends).
 Result extractAll(const QString &archive, const QString &destDir, const Progress &progress = {});
 
 // Extract the single entry `entryPath` (its parent dirs recreated) into

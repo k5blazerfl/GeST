@@ -2,9 +2,14 @@
 
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
+#include <QProcess>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QThread>
+
+#include <filesystem>
+#include <system_error>
 
 #include "holdcore.h"
 #include "job.h"
@@ -32,6 +37,60 @@ private slots:
         // an absolute entry path is re-rooted under base, never honoured as-is
         QCOMPARE(helm::hold::safeJoin(base, QStringLiteral("/etc/passwd")),
                  QStringLiteral("/tmp/out/etc/passwd"));
+    }
+
+    // A1: the symlink-escape guard (pure decision logic, like safeJoin).
+    void symlinkEscapeGuard() {
+        const QString base = QStringLiteral("/tmp/out");
+        // an absolute target always leaves the sandbox
+        QVERIFY(helm::hold::symlinkEscapes(base, QStringLiteral("link"),
+                                           QStringLiteral("/etc/passwd")));
+        // a relative target that climbs out escapes
+        QVERIFY(helm::hold::symlinkEscapes(base, QStringLiteral("sub/link"),
+                                           QStringLiteral("../../etc")));
+        // contained relative targets are fine
+        QVERIFY(!helm::hold::symlinkEscapes(base, QStringLiteral("link"),
+                                            QStringLiteral("a.txt")));
+        QVERIFY(!helm::hold::symlinkEscapes(base, QStringLiteral("sub/link"),
+                                            QStringLiteral("../a.txt"))); // → /tmp/out/a.txt
+        // a target resolving exactly to the base is contained, not an escape
+        QVERIFY(!helm::hold::symlinkEscapes(base, QStringLiteral("sub/link"),
+                                            QStringLiteral("..")));
+        // an empty target points nowhere — nothing to escape
+        QVERIFY(!helm::hold::symlinkEscapes(base, QStringLiteral("link"), QString()));
+    }
+
+    // A1: on extract, an escaping symlink is refused (and reported), a contained one
+    // is kept, and extraction of the rest still succeeds.
+    void symlinkEscapeGuardOnExtract() {
+        QTemporaryDir tmp;
+        const QString root = tmp.path();
+        QVERIFY(QDir(root).mkpath(QStringLiteral("src")));
+        writeFile(root + "/src/a.txt", "hi");
+
+        namespace fs = std::filesystem;
+        std::error_code ec;
+        fs::create_symlink("/etc/passwd", fs::path((root + "/src/evil").toStdString()), ec);
+        fs::create_symlink("a.txt", fs::path((root + "/src/ok").toStdString()), ec);
+        QVERIFY2(!ec, "could not create the test symlinks");
+
+        // Pack with system tar (it preserves symlinks); hold::create can't yet.
+        QProcess tar;
+        tar.setWorkingDirectory(root + "/src");
+        tar.start(QStringLiteral("tar"),
+                  {QStringLiteral("cf"), root + "/s.tar", QStringLiteral("a.txt"),
+                   QStringLiteral("evil"), QStringLiteral("ok")});
+        if (!tar.waitForStarted(2000))
+            QSKIP("tar not available to build the symlink fixture");
+        QVERIFY(tar.waitForFinished(5000));
+        QCOMPARE(tar.exitCode(), 0);
+
+        const auto ex = helm::hold::extractAll(root + "/s.tar", root + "/ex");
+        QVERIFY2(ex.ok, qPrintable(ex.error));                  // the rest still extracts
+        QCOMPARE(readFile(root + "/ex/a.txt"), QByteArray("hi"));
+        QVERIFY(QFileInfo(root + "/ex/ok").isSymLink());        // safe symlink kept
+        QVERIFY(ex.skipped.contains(QStringLiteral("evil")));   // escaping one reported
+        QVERIFY(!QFileInfo(root + "/ex/evil").isSymLink());     // ...and never created
     }
 
     // create → list → extract round-trip through libarchive (zip).
