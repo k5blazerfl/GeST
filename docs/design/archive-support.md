@@ -99,16 +99,20 @@ filters, a broadened `isArchive`, and a `test()` (read-through, no extraction).
 
 Ordered so the plumbing de-risks the rest and trust lands before power.
 
-### A0 · Job plumbing & async load
+### A0 · Job plumbing & async load — ✅ shipped
 `hold::Job` (worker thread, progress, cancel); the TOC read goes **async** so huge /
 network archives don't freeze the browse; an in-window progress panel + cancel in
 Seahorse. **Explicitly leaves the desktop job-notification integration to its own
 design** (decision C) — `Job` is the seam.
 
-### A1 · Safety pass (decision D)
+### A1 · Safety pass (decision D) — ✅ shipped
 Symlink/absolute-path guards, decompression-ratio + entry-count caps,
 filename-encoding decode, overwrite-conflict resolution (replace / skip / keep-both).
 Low-glamour, high-trust; belongs before we start *writing* into archives.
+Delivered as: symlink-escape guard + skipped-entry reporting; zip-bomb `Limits`
+(size / entry-count / ratio); UTF-8-else-CP437 filename decode; an `Overwrite`
+policy in hold-core with a Seahorse pre-scan-and-prompt. All guard logic is pure
+and unit-tested (`test-holdcore`).
 
 ### A2 · The streaming manager (decision A — the headline)
 `hold::rewrite` + Seahorse in-archive mutation: **delete, rename, new folder, add
