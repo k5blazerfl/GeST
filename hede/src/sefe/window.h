@@ -40,7 +40,9 @@ class ThumbnailIconProvider;
 class SefeWindow : public QMainWindow {
     Q_OBJECT
 public:
-    explicit SefeWindow(QWidget *parent = nullptr);
+    // `startPath` is an initial folder or archive to open (from the command line
+    // / a file association); empty opens Home. Archives open browsed-in-place.
+    explicit SefeWindow(const QString &startPath = QString(), QWidget *parent = nullptr);
     ~SefeWindow() override;
 
 protected:
@@ -85,7 +87,11 @@ private:
     void extractHere();   // an archive → hold-core extract into the current dir
     void extractTo();     // an archive → hold-core extract into a chosen dir
     void compressSelection(); // selected paths → a new .zip via hold-core
-    void openInHold();    // an archive → the standalone Hold app
+    // Rich archive ops, folded in from the former standalone Hold app: while
+    // browsing inside an archive, extract the selected entries — or the whole
+    // archive — to a chosen folder via hold-core. See docs/design/hold.md (H4).
+    void extractSelectedEntries(); // selected inner entries → a chosen folder
+    void extractWholeArchive();    // the whole current archive → a chosen folder
     void showContextMenu(QAbstractItemView *view, const QPoint &pos);
 
     // Menu bar (on by default; the whole File/Edit/View/Go/Tools/Help surface is
@@ -96,6 +102,7 @@ private:
 
     QAbstractItemView *activeView() const;
     QStringList selectedPaths() const;
+    QStringList selectedInnerEntries() const; // selected entries when browsing an archive
 
     // Run `work` off the UI thread while the Helm throbber spins, then deliver
     // its result to `done` back on the UI thread. Keeps hold-core archive work
@@ -140,7 +147,8 @@ private:
     QAction *_extractHereAct = nullptr;
     QAction *_extractToAct = nullptr;
     QAction *_compressAct = nullptr;
-    QAction *_holdAct = nullptr;
+    QAction *_arcExtractSelAct = nullptr; // in-archive: Extract Selected…
+    QAction *_arcExtractAllAct = nullptr; // in-archive: Extract All…
     QAction *_viewToggleAct = nullptr; // Details ⇄ Icons (also the toolbar button)
     QAction *_selectAllAct = nullptr;
     QAction *_menuBarAct = nullptr;     // View → Menu Bar (checkable, Ctrl+M)
