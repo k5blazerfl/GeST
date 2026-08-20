@@ -485,6 +485,51 @@ private slots:
         QVERIFY(!helm::hold::isEncrypted(plain));
     }
 
+    // A4: the zstd write filter round-trips (broadened create formats).
+    void zstdRoundTrip() {
+        QTemporaryDir tmp;
+        const QString root = tmp.path();
+        writeFile(root + "/note.txt", "zstd me");
+        const QString zst = root + "/out.tar.zst";
+        if (!helm::hold::create({root + "/note.txt"}, zst).ok)
+            QSKIP("this libarchive build can't write zstd");
+        QVERIFY(helm::hold::list(zst).ok);
+        QVERIFY(helm::hold::extractAll(zst, root + "/ex").ok);
+        QCOMPARE(readFile(root + "/ex/note.txt"), QByteArray("zstd me"));
+    }
+
+    // A4: isArchive now covers more browsable formats; isWritableArchive excludes
+    // the read-only ones.
+    void isArchiveBroadened() {
+        QVERIFY(helm::hold::isArchive(QStringLiteral("/x/a.tar.zst")));
+        QVERIFY(helm::hold::isArchive(QStringLiteral("/x/a.cpio")));
+        QVERIFY(helm::hold::isArchive(QStringLiteral("/x/disk.iso")));
+        QVERIFY(helm::hold::isWritableArchive(QStringLiteral("/x/a.tar.zst")));
+        QVERIFY(!helm::hold::isWritableArchive(QStringLiteral("/x/disk.iso"))); // read-only
+    }
+
+    // A4: test() verifies data integrity — a clean archive passes, a corrupted one
+    // fails. tar.gz wraps everything in one gzip stream, so a middle-byte flip
+    // reliably breaks inflate / the gzip CRC.
+    void testVerifiesIntegrity() {
+        QTemporaryDir tmp;
+        const QString root = tmp.path();
+        writeFile(root + "/a.txt", QByteArray(2000, 'x'));
+        const QString tgz = root + "/v.tar.gz";
+        QVERIFY(helm::hold::create({root + "/a.txt"}, tgz).ok);
+        QVERIFY2(helm::hold::test(tgz).ok, "a clean archive verifies");
+
+        QFile f(tgz);
+        QVERIFY(f.open(QIODevice::ReadWrite));
+        QByteArray data = f.readAll();
+        const int at = data.size() / 2;
+        data[at] = char(data[at] ^ 0xFF);
+        f.seek(0);
+        f.write(data);
+        f.close();
+        QVERIFY(!helm::hold::test(tgz).ok); // corruption detected
+    }
+
 private:
     static void writeFile(const QString &path, const QByteArray &data) {
         QFile f(path);

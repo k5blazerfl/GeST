@@ -21,6 +21,7 @@
 #include <QApplication>
 #include <QCheckBox>
 #include <QClipboard>
+#include <QComboBox>
 #include <QProcess>
 #include <QDrag>
 #include <QDropEvent>
@@ -217,6 +218,7 @@ SefeWindow::SefeWindow(const QString &startPath, QWidget *parent) : QMainWindow(
                            &SefeWindow::extractSelectedEntries);
     _arcExtractAllAct = op(QStringLiteral("Extract All…"), QKeySequence(),
                            &SefeWindow::extractWholeArchive);
+    _testAct = op(QStringLiteral("Test archive"), QKeySequence(), &SefeWindow::testArchive);
     _selectAllAct = op(QStringLiteral("Select all"), QKeySequence::SelectAll, nullptr);
     connect(_selectAllAct, &QAction::triggered, this,
             [this] { if (auto *v = activeView()) v->selectAll(); });
@@ -1367,14 +1369,88 @@ void SefeWindow::compressSelection() {
     const QStringList sel = selectedPaths();
     if (sel.isEmpty())
         return;
-    const QString name = compressTargetName(sel, entriesOf(_current));
+    // Base name (without extension) from the default .zip target.
+    QString base = compressTargetName(sel, {});
+    if (base.endsWith(QLatin1String(".zip"), Qt::CaseInsensitive))
+        base.chop(4);
+
+    // A4 compress dialog: format + optional password (encrypts zip/7z).
+    QDialog dlg(this);
+    dlg.setWindowTitle(QStringLiteral("Compress"));
+    auto *form = new QFormLayout(&dlg);
+    auto *fmt = new QComboBox(&dlg);
+    fmt->addItem(QStringLiteral("Zip (.zip)"), QStringLiteral(".zip"));
+    fmt->addItem(QStringLiteral("7-Zip (.7z)"), QStringLiteral(".7z"));
+    fmt->addItem(QStringLiteral("tar + gzip (.tar.gz)"), QStringLiteral(".tar.gz"));
+    fmt->addItem(QStringLiteral("tar + xz (.tar.xz)"), QStringLiteral(".tar.xz"));
+    fmt->addItem(QStringLiteral("tar + zstd (.tar.zst)"), QStringLiteral(".tar.zst"));
+    form->addRow(QStringLiteral("Format:"), fmt);
+    auto *pass = new QLineEdit(&dlg);
+    pass->setEchoMode(QLineEdit::Password);
+    pass->setPlaceholderText(QStringLiteral("optional — encrypts (zip / 7z)"));
+    form->addRow(QStringLiteral("Password:"), pass);
+    const auto encrypts = [](const QString &ext) {
+        return ext == QLatin1String(".zip") || ext == QLatin1String(".7z");
+    };
+    const auto syncPass = [&] { pass->setEnabled(encrypts(fmt->currentData().toString())); };
+    connect(fmt, &QComboBox::currentIndexChanged, &dlg, [&] { syncPass(); });
+    syncPass();
+    auto *buttons =
+        new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    form->addRow(buttons);
+    connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+
+    const QString ext = fmt->currentData().toString();
+    const QString passphrase = pass->isEnabled() ? pass->text() : QString();
+    // Disambiguate against the current folder so we don't clobber.
+    QString name = base + ext;
+    const QSet<QString> existing = entriesOf(_current);
+    for (int n = 2; existing.contains(name); ++n)
+        name = QStringLiteral("%1 (%2)%3").arg(base).arg(n).arg(ext);
     const QString dest = QDir(_current).filePath(name);
     runJob(
         QStringLiteral("Compressing to %1…").arg(name),
-        [sel, dest](const helm::hold::Progress &p) { return helm::hold::create(sel, dest, p); },
+        [sel, dest, passphrase](const helm::hold::Progress &p) {
+            return helm::hold::create(sel, dest, p, passphrase);
+        },
         [name](const helm::hold::Result &r) {
             return r.ok ? QStringLiteral("Created %1").arg(name)
                         : archiveFailMsg(QStringLiteral("Compress"), r);
+        });
+}
+
+void SefeWindow::testArchive() {
+    QString archive;
+    if (_inArchive && _archiveModel)
+        archive = _archiveModel->archivePath();
+    else
+        for (const QString &p : selectedPaths())
+            if (helm::hold::isArchive(p)) {
+                archive = p;
+                break;
+            }
+    if (archive.isEmpty())
+        return;
+    const auto pass = archivePassphrase(archive);
+    if (!pass)
+        return;
+    const QString passv = *pass;
+    const QString nm = QFileInfo(archive).fileName();
+    runJob(
+        QStringLiteral("Testing %1…").arg(nm),
+        [archive, passv](const helm::hold::Progress &p) {
+            return helm::hold::test(archive, p, passv);
+        },
+        [this, nm](const helm::hold::Result &r) -> QString {
+            if (r.ok) {
+                QMessageBox::information(this, QStringLiteral("Test archive"),
+                                        QStringLiteral("%1 — OK, no errors found.").arg(nm));
+                return QStringLiteral("%1 verified").arg(nm);
+            }
+            return archiveFailMsg(QStringLiteral("Test"), r);
         });
 }
 
@@ -1403,6 +1479,7 @@ void SefeWindow::showContextMenu(QAbstractItemView *view, const QPoint &pos) {
         }
         menu.addSeparator();
         menu.addAction(_arcExtractAllAct); // extract the whole archive
+        menu.addAction(_testAct);          // verify integrity
         menu.exec(view->viewport()->mapToGlobal(pos));
         return;
     }
@@ -1417,6 +1494,7 @@ void SefeWindow::showContextMenu(QAbstractItemView *view, const QPoint &pos) {
             if (helm::hold::isArchive(path)) {
                 menu.addAction(_extractHereAct);
                 menu.addAction(_extractToAct);
+                menu.addAction(_testAct);
             }
         }
         if (isDir)

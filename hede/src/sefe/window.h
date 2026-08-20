@@ -95,7 +95,8 @@ private:
     void copyPaths();     // selected paths → clipboard as text
     void extractHere();   // an archive → hold-core extract into the current dir
     void extractTo();     // an archive → hold-core extract into a chosen dir
-    void compressSelection(); // selected paths → a new .zip via hold-core
+    void compressSelection(); // selected paths → a new archive (format/password dialog)
+    void testArchive();       // A4: verify an archive's integrity (hold::test)
     // Rich archive ops, folded in from the former standalone Hold app: while
     // browsing inside an archive, extract the selected entries — or the whole
     // archive — to a chosen folder via hold-core. See docs/design/hold.md (H4).
@@ -188,6 +189,7 @@ private:
     QAction *_compressAct = nullptr;
     QAction *_arcExtractSelAct = nullptr; // in-archive: Extract Selected…
     QAction *_arcExtractAllAct = nullptr; // in-archive: Extract All…
+    QAction *_testAct = nullptr;          // Test archive (integrity verify)
     QAction *_viewToggleAct = nullptr; // Details ⇄ Icons (also the toolbar button)
     QAction *_selectAllAct = nullptr;
     QAction *_menuBarAct = nullptr;     // View → Menu Bar (checkable, Ctrl+M)

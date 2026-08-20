@@ -137,6 +137,11 @@ Listing list(const QString &archive);
 // opens and checks the header. False for a plain or unreadable archive.
 bool isEncrypted(const QString &archive);
 
+// Verify integrity: read every entry's data through (checking CRCs / decompression)
+// WITHOUT extracting. ok=false + the offending entry on the first corruption; an
+// encrypted archive needs a passphrase (else Result::needsPassphrase). A4.
+Result test(const QString &archive, const Progress &progress = {}, const QString &passphrase = {});
+
 // Apply `edits` to `archive` in place (decision A — the streaming mutation engine):
 // stream every source entry through a fresh writer of the SAME format + filters
 // (dropping removes, applying renames), append the adds, then atomically swap the

@@ -18,10 +18,12 @@ namespace helm::hold {
 
 bool isArchive(const QString &path) {
     static const QStringList suffixes = {
-        QStringLiteral(".tar.gz"),  QStringLiteral(".tar.bz2"), QStringLiteral(".tar.xz"),
-        QStringLiteral(".zip"),     QStringLiteral(".tar"),     QStringLiteral(".tgz"),
-        QStringLiteral(".tbz2"),    QStringLiteral(".txz"),     QStringLiteral(".7z"),
-        QStringLiteral(".rar"),     QStringLiteral(".cbz"),     QStringLiteral(".cbr"),
+        QStringLiteral(".tar.gz"),  QStringLiteral(".tar.bz2"),  QStringLiteral(".tar.xz"),
+        QStringLiteral(".tar.zst"), QStringLiteral(".tar.lz4"),  QStringLiteral(".zip"),
+        QStringLiteral(".tar"),     QStringLiteral(".tgz"),      QStringLiteral(".tbz2"),
+        QStringLiteral(".txz"),     QStringLiteral(".tzst"),     QStringLiteral(".7z"),
+        QStringLiteral(".rar"),     QStringLiteral(".cbz"),      QStringLiteral(".cbr"),
+        QStringLiteral(".cpio"),    QStringLiteral(".iso"),      QStringLiteral(".xar"),
     };
     const QString lower = path.toLower();
     for (const QString &s : suffixes) {
@@ -68,7 +70,9 @@ bool isWritableArchive(const QString &path) {
     if (!isArchive(path))
         return false;
     const QString lower = path.toLower();
-    return !(lower.endsWith(QLatin1String(".rar")) || lower.endsWith(QLatin1String(".cbr")));
+    // RAR/CBR: libarchive can't write them. ISO/XAR: read-only here too.
+    return !(lower.endsWith(QLatin1String(".rar")) || lower.endsWith(QLatin1String(".cbr")) ||
+             lower.endsWith(QLatin1String(".iso")) || lower.endsWith(QLatin1String(".xar")));
 }
 
 QString safeJoin(const QString &destDir, const QString &entryPath) {
@@ -341,6 +345,10 @@ void configureWriteFormat(struct archive *a, const QString &lower) {
         archive_write_add_filter_bzip2(a);
     else if (lower.endsWith(QLatin1String(".xz")) || lower.endsWith(QLatin1String(".txz")))
         archive_write_add_filter_xz(a);
+    else if (lower.endsWith(QLatin1String(".zst")) || lower.endsWith(QLatin1String(".tzst")))
+        archive_write_add_filter_zstd(a);
+    else if (lower.endsWith(QLatin1String(".lz4")))
+        archive_write_add_filter_lz4(a);
 }
 
 // Add one host path (file or dir) to the write handle under `archiveName`.
@@ -505,6 +513,53 @@ bool isEncrypted(const QString &archive) {
     struct archive_entry *e = nullptr;
     archive_read_next_header(reader.a, &e);
     return reader.encryptedEntries() > 0;
+}
+
+Result test(const QString &archive, const Progress &progress, const QString &passphrase) {
+    Result r;
+    Reader reader;
+    if (!reader.open(archive, passphrase)) {
+        r.error = reader.error();
+        return r;
+    }
+    qint64 done = 0;
+    bool sawEncrypted = false;
+    struct archive_entry *entry = nullptr;
+    int rc;
+    while ((rc = archive_read_next_header(reader.a, &entry)) == ARCHIVE_OK) {
+        if (progress.cancelled && progress.cancelled())
+            return cancelledResult();
+        const QString name = decodeEntryName(archive_entry_pathname(entry));
+        if (archive_entry_is_encrypted(entry)) {
+            sawEncrypted = true;
+            if (passphrase.isEmpty()) {
+                r.needsPassphrase = true;
+                r.error = QStringLiteral("passphrase required");
+                return r;
+            }
+        }
+        // Read the data through — this is what actually verifies CRC / decompression.
+        const void *buff = nullptr;
+        size_t len = 0;
+        la_int64_t off = 0;
+        int d;
+        while ((d = archive_read_data_block(reader.a, &buff, &len, &off)) == ARCHIVE_OK) {
+        }
+        if (d != ARCHIVE_EOF) {
+            if (sawEncrypted)
+                r.needsPassphrase = true;
+            r.error = QStringLiteral("corrupt entry: %1").arg(name);
+            return r;
+        }
+        if (progress.step)
+            progress.step(++done, -1, name);
+    }
+    if (rc != ARCHIVE_EOF) {
+        r.error = reader.error();
+        return r;
+    }
+    r.ok = true;
+    return r;
 }
 
 Result extractAll(const QString &archive, const QString &destDir, const Progress &progress,
