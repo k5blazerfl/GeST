@@ -51,6 +51,7 @@
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QPushButton>
 #include <QMimeData>
 #include <QMimeDatabase>
 #include <QModelIndex>
@@ -988,6 +989,42 @@ static QString archiveFailMsg(const QString &verb, const helm::hold::Result &r) 
                : QStringLiteral("%1 failed: %2").arg(verb, r.error);
 }
 
+std::optional<helm::hold::Overwrite>
+SefeWindow::resolveOverwrite(const QString &dest, const QStringList &relPaths) {
+    bool collision = false;
+    for (const QString &rel : relPaths) {
+        const QString target = helm::hold::safeJoin(dest, rel);
+        if (!target.isEmpty() && (QFileInfo::exists(target) || QFileInfo(target).isSymLink())) {
+            collision = true;
+            break;
+        }
+    }
+    if (!collision)
+        return helm::hold::Overwrite::Replace; // nothing there to overwrite — no prompt
+
+    QMessageBox box(this);
+    box.setIcon(QMessageBox::Question);
+    box.setWindowTitle(QStringLiteral("Files already exist"));
+    box.setText(QStringLiteral("Some items already exist in the destination."));
+    box.setInformativeText(
+        QStringLiteral("Replace them, keep both, or skip the ones that exist?"));
+    QPushButton *replace = box.addButton(QStringLiteral("Replace"), QMessageBox::AcceptRole);
+    QPushButton *both = box.addButton(QStringLiteral("Keep Both"), QMessageBox::ActionRole);
+    QPushButton *skip = box.addButton(QStringLiteral("Skip"), QMessageBox::ActionRole);
+    box.addButton(QMessageBox::Cancel);
+    box.setDefaultButton(both); // the least destructive choice
+    box.exec();
+
+    QAbstractButton *clicked = box.clickedButton();
+    if (clicked == replace)
+        return helm::hold::Overwrite::Replace;
+    if (clicked == both)
+        return helm::hold::Overwrite::KeepBoth;
+    if (clicked == skip)
+        return helm::hold::Overwrite::Skip;
+    return std::nullopt; // Cancel / closed
+}
+
 void SefeWindow::extractHere() {
     QStringList archives;
     for (const QString &p : selectedPaths())
@@ -996,13 +1033,23 @@ void SefeWindow::extractHere() {
     if (archives.isEmpty())
         return;
     const QString dest = _current;
+
+    QStringList rels; // pre-scan every archive's entries for on-disk collisions
+    for (const QString &archive : archives)
+        for (const helm::hold::Entry &e : helm::hold::list(archive).entries)
+            rels << e.path;
+    const auto policy = resolveOverwrite(dest, rels);
+    if (!policy)
+        return; // cancelled
+    const helm::hold::Overwrite ow = *policy;
+
     const QString one = QFileInfo(archives.first()).fileName();
     runJob(
         archives.size() == 1 ? QStringLiteral("Extracting %1…").arg(one)
                              : QStringLiteral("Extracting %1 archives…").arg(archives.size()),
-        [archives, dest](const helm::hold::Progress &p) -> helm::hold::Result {
+        [archives, dest, ow](const helm::hold::Progress &p) -> helm::hold::Result {
             for (const QString &archive : archives) {
-                const helm::hold::Result r = helm::hold::extractAll(archive, dest, p);
+                const helm::hold::Result r = helm::hold::extractAll(archive, dest, p, {}, ow);
                 if (!r.ok)
                     return r;
             }
@@ -1028,10 +1075,19 @@ void SefeWindow::extractTo() {
     if (dest.isEmpty())
         return;
     const QString archive = *it;
+
+    QStringList rels;
+    for (const helm::hold::Entry &e : helm::hold::list(archive).entries)
+        rels << e.path;
+    const auto policy = resolveOverwrite(dest, rels);
+    if (!policy)
+        return; // cancelled
+    const helm::hold::Overwrite ow = *policy;
+
     runJob(
         QStringLiteral("Extracting %1…").arg(QFileInfo(archive).fileName()),
-        [archive, dest](const helm::hold::Progress &p) {
-            return helm::hold::extractAll(archive, dest, p);
+        [archive, dest, ow](const helm::hold::Progress &p) {
+            return helm::hold::extractAll(archive, dest, p, {}, ow);
         },
         [dest](const helm::hold::Result &r) {
             return r.ok ? QStringLiteral("Extracted to %1").arg(dest)
@@ -1071,10 +1127,16 @@ void SefeWindow::extractSelectedEntries() {
     if (dest.isEmpty())
         return;
     const QString archive = _archiveModel->archivePath();
+
+    const auto policy = resolveOverwrite(dest, entries); // the selected paths ARE the targets
+    if (!policy)
+        return; // cancelled
+    const helm::hold::Overwrite ow = *policy;
+
     runJob(
         QStringLiteral("Extracting %1 item(s)…").arg(entries.size()),
-        [archive, entries, dest](const helm::hold::Progress &p) {
-            return helm::hold::extractEntries(archive, entries, dest, p); // one pass
+        [archive, entries, dest, ow](const helm::hold::Progress &p) {
+            return helm::hold::extractEntries(archive, entries, dest, p, {}, ow); // one pass
         },
         [entries, dest](const helm::hold::Result &r) {
             return r.ok ? QStringLiteral("Extracted %1 item(s) to %2").arg(entries.size()).arg(dest)
@@ -1090,10 +1152,19 @@ void SefeWindow::extractWholeArchive() {
         QFileDialog::getExistingDirectory(this, QStringLiteral("Extract all to"), _current);
     if (dest.isEmpty())
         return;
+
+    QStringList rels;
+    for (const helm::hold::Entry &e : helm::hold::list(archive).entries)
+        rels << e.path;
+    const auto policy = resolveOverwrite(dest, rels);
+    if (!policy)
+        return; // cancelled
+    const helm::hold::Overwrite ow = *policy;
+
     runJob(
         QStringLiteral("Extracting %1…").arg(QFileInfo(archive).fileName()),
-        [archive, dest](const helm::hold::Progress &p) {
-            return helm::hold::extractAll(archive, dest, p);
+        [archive, dest, ow](const helm::hold::Progress &p) {
+            return helm::hold::extractAll(archive, dest, p, {}, ow);
         },
         [dest](const helm::hold::Result &r) {
             return r.ok ? QStringLiteral("Extracted to %1").arg(dest)

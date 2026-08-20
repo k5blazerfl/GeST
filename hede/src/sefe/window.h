@@ -8,6 +8,7 @@
 #include <QStringList>
 
 #include <functional>
+#include <optional>
 
 class QAbstractItemModel;
 class QAbstractItemView;
@@ -124,6 +125,14 @@ private:
     void runJob(const QString &title,
                 std::function<helm::hold::Result(const helm::hold::Progress &)> work,
                 std::function<QString(const helm::hold::Result &)> summary);
+
+    // Pre-scan the extract destination for entries that already exist and, if any
+    // do, prompt once for the overwrite policy (Replace / Keep Both / Skip). Returns
+    // the chosen policy, or nullopt if the user cancels. No collision → Replace (a
+    // no-op — nothing to overwrite), no prompt. See docs/design/archive-support.md
+    // (A1, decision D). `relPaths` are archive-relative entry paths.
+    std::optional<helm::hold::Overwrite> resolveOverwrite(const QString &dest,
+                                                          const QStringList &relPaths);
 
     QFileSystemModel *_model = nullptr;
     ThumbnailIconProvider *_iconProvider = nullptr; // owned; outlives the model
