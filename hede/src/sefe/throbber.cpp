@@ -6,9 +6,9 @@
 
 namespace helm::sefe {
 namespace {
-constexpr int kCalmMs = 110;       // moon speed — calm
-constexpr int kLivelyMs = 78;      // moon speed — lively
-constexpr int kMinVisibleMs = 700; // animate at least this long, even for instant work
+constexpr int kCalmMs = 165;       // moon speed — calm (~5s per moon cycle)
+constexpr int kLivelyMs = 115;     // moon speed — lively
+constexpr int kMinVisibleMs = 750; // animate at least this long, even for instant work
 } // namespace
 
 HelmThrobber::HelmThrobber(QWidget *parent) : QWidget(parent) {
