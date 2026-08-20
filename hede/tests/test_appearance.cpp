@@ -171,6 +171,21 @@ private slots:
         QVERIFY(qss.contains(QStringLiteral("#HelmAppWindow QToolBar QToolButton { color: %1")
                                  .arg(helm::barGlyphColor().name())));
     }
+
+    // Scene mode (Phase D): a helmScene=true app (SeFE's frameless chrome) makes
+    // the chrome transparent so the painted world scene shows, keeps an opaque body
+    // panel, and styles the client titlebar + window controls.
+    void sceneChrome() {
+        const QString qss = helm::styleSheet(false, helm::harborAccent());
+        // The property-scoped override that turns the chrome transparent over scene.
+        QVERIFY(qss.contains(QStringLiteral("#HelmAppWindow[helmScene=\"true\"] QMenuBar")));
+        QVERIFY(qss.contains(QStringLiteral("#HelmHeader { background: transparent; }")));
+        // The content body stays an opaque, mode-following panel.
+        QVERIFY(qss.contains(QStringLiteral("#HelmAppBody { background: palette(window); }")));
+        // Client titlebar: light title, and a close button that reddens on hover.
+        QVERIFY(qss.contains(QStringLiteral("#HelmTitleText { color: %1").arg(helm::barGlyphColor().name())));
+        QVERIFY(qss.contains(QStringLiteral("#HelmWinClose:hover")));
+    }
 };
 
 QTEST_MAIN(TestAppearance)

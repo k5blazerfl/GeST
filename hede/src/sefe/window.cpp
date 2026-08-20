@@ -8,8 +8,11 @@
 #include "iconprovider.h"
 #include "launch.h"       // helm-common: launchDetached
 #include "ops.h"
+#include "palette.h"      // helm::effectiveAccent (scene-less fallback fill)
 #include "sefe.h"
 #include "throbber.h"     // HelmThrobber: the Netscape-style busy light
+#include "titlebar.h"     // HelmTitleBar: the client-side titlebar (frameless chrome)
+#include "world.h"        // helm::loadWorld: the active biome's wallpaper scene
 
 #include <QAbstractItemView>
 #include <QDialogButtonBox>
@@ -34,6 +37,12 @@
 #include <QKeyEvent>
 #include <QKeySequence>
 #include <QLabel>
+#include <QLinearGradient>
+#include <QMouseEvent>
+#include <QPainter>
+#include <QPainterPath>
+#include <QPaintEvent>
+#include <QWindow>
 #include <QListView>
 #include <QListWidget>
 #include <QLocale>
@@ -249,6 +258,7 @@ SefeWindow::SefeWindow(QWidget *parent) : QMainWindow(parent) {
     setCentralWidget(split);
 
     statusBar();
+    buildSceneChrome();
     navigateTo(initialDir());
 }
 
@@ -264,7 +274,10 @@ SefeWindow::~SefeWindow() {
 // the same action (shortcuts stay in sync). Only two actions are menu-only: the
 // Menu Bar toggle and About.
 void SefeWindow::buildMenuBar() {
-    QMenuBar *mb = menuBar();
+    // Our own menu bar (not QMainWindow::menuBar()): buildSceneChrome() stacks it
+    // under the client titlebar inside the header widget via setMenuWidget().
+    _menuBar = new QMenuBar(this);
+    QMenuBar *mb = _menuBar;
 
     QMenu *file = mb->addMenu(QStringLiteral("&File"));
     file->addAction(_newFolderAct);
@@ -333,6 +346,169 @@ void SefeWindow::showAbout() {
                        "Drydock / Gangway / Hold interop."));
 }
 
+// --- frameless scene chrome (Phase D) ---
+// "The chrome is the world, the content is glass." SeFE paints the active biome's
+// wallpaper across the whole window and floats an opaque body panel inset within,
+// so the scene forms one continuous painterly header + footer + side trim. Being
+// frameless, it also draws its own titlebar and drives move/resize.
+
+void SefeWindow::buildSceneChrome() {
+    setWindowFlag(Qt::FramelessWindowHint, true);
+    setAttribute(Qt::WA_TranslucentBackground, true);
+    setProperty("helmScene", true); // opt into the scene-mode QSS overrides
+
+    // Header: the client titlebar stacked above the menu bar, installed as the
+    // main window's menu widget so the real QMenuBar keeps working.
+    _titlebar = new HelmTitleBar(this);
+    _titlebar->setTitle(QStringLiteral("Seahorse"));
+    auto *header = new QWidget(this);
+    header->setObjectName(QStringLiteral("HelmHeader"));
+    auto *hv = new QVBoxLayout(header);
+    hv->setContentsMargins(0, 0, 0, 0);
+    hv->setSpacing(0);
+    hv->addWidget(_titlebar);
+    if (_menuBar)
+        hv->addWidget(_menuBar);
+    setMenuWidget(header);
+
+    // Inset the body so the scene shows as a thin trim down the sides and along the
+    // bottom; the body itself (#HelmAppBody) is an opaque panel that keeps the
+    // light/dark content readable over any scene.
+    if (QWidget *body = centralWidget()) {
+        body->setObjectName(QStringLiteral("HelmAppBody"));
+        body->setAttribute(Qt::WA_StyledBackground, true);
+        auto *inset = new QWidget(this);
+        inset->setObjectName(QStringLiteral("HelmAppBodyInset"));
+        auto *iv = new QVBoxLayout(inset);
+        iv->setContentsMargins(kResizeMargin, 3, kResizeMargin, kResizeMargin);
+        iv->addWidget(body);
+        setCentralWidget(inset); // reparents `body` into the inset container
+    }
+
+    setMouseTracking(true); // so the resize cursor updates as it crosses the trim
+    loadScene();
+}
+
+void SefeWindow::loadScene() {
+    const helm::Config cfg;
+    _accent = helm::effectiveAccent(cfg);
+    const helm::World world =
+        helm::loadWorld(cfg.string(QStringLiteral("world/id"), QStringLiteral("harbor")));
+    const QString path = world.wallpaperPath();
+    QPixmap scene;
+    if (!path.isEmpty())
+        scene.load(path);
+    _scene = scene;
+    update();
+}
+
+int SefeWindow::headerHeight() const {
+    // The top scene band: everything above the inset body (titlebar+menu+toolbar).
+    if (const QWidget *c = centralWidget())
+        return c->mapTo(this, QPoint(0, 0)).y();
+    return 100;
+}
+
+int SefeWindow::footerHeight() const {
+    // The bottom scene band: the status bar area below the inset body.
+    if (const QWidget *c = centralWidget()) {
+        const int bodyBottom = c->mapTo(this, QPoint(0, c->height())).y();
+        return qMax(0, height() - bodyBottom);
+    }
+    return 28;
+}
+
+Qt::Edges SefeWindow::resizeEdgeAt(const QPoint &pos) const {
+    Qt::Edges edges;
+    if (pos.x() <= kResizeMargin)
+        edges |= Qt::LeftEdge;
+    else if (pos.x() >= width() - kResizeMargin)
+        edges |= Qt::RightEdge;
+    if (pos.y() <= kResizeMargin)
+        edges |= Qt::TopEdge;
+    else if (pos.y() >= height() - kResizeMargin)
+        edges |= Qt::BottomEdge;
+    return edges;
+}
+
+void SefeWindow::paintEvent(QPaintEvent *event) {
+    QMainWindow::paintEvent(event);
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.setRenderHint(QPainter::SmoothPixmapTransform);
+
+    const QRectF r = rect();
+    constexpr qreal radius = 8.0;
+    QPainterPath clip;
+    clip.addRoundedRect(r, radius, radius);
+    p.setClipPath(clip);
+
+    // The world scene, cover-scaled and centred behind the whole window.
+    if (!_scene.isNull()) {
+        const QSize target = _scene.size().scaled(size(), Qt::KeepAspectRatioByExpanding);
+        const QPixmap scaled =
+            _scene.scaled(target, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+        p.drawPixmap(QPoint((width() - scaled.width()) / 2, (height() - scaled.height()) / 2),
+                     scaled);
+    } else {
+        p.fillRect(r, _accent.isValid() ? _accent : helm::barTint(helm::harborAccent()));
+    }
+
+    // Legibility scrims: darken the scene under the header and footer so the light
+    // chrome glyphs stay readable over any world.
+    const int hh = headerHeight();
+    if (hh > 0) {
+        QLinearGradient top(0, 0, 0, hh);
+        top.setColorAt(0.0, QColor(0, 0, 0, 155));
+        top.setColorAt(1.0, QColor(0, 0, 0, 0));
+        p.fillRect(QRectF(0, 0, width(), hh), top);
+    }
+    const int fh = footerHeight();
+    if (fh > 0) {
+        QLinearGradient bot(0, height() - fh, 0, height());
+        bot.setColorAt(0.0, QColor(0, 0, 0, 0));
+        bot.setColorAt(1.0, QColor(0, 0, 0, 140));
+        p.fillRect(QRectF(0, height() - fh, width(), fh), bot);
+    }
+
+    // A hairline edge to define the rounded window against the desktop.
+    p.setClipping(false);
+    p.setBrush(Qt::NoBrush);
+    p.setPen(QPen(QColor(255, 255, 255, 46), 1.0));
+    p.drawRoundedRect(r.adjusted(0.5, 0.5, -0.5, -0.5), radius, radius);
+}
+
+void SefeWindow::mousePressEvent(QMouseEvent *event) {
+    // A press on the scene trim starts an interactive resize (frameless windows
+    // have no server-side resize border); the titlebar handles move.
+    if (event->button() == Qt::LeftButton) {
+        const Qt::Edges edges = resizeEdgeAt(event->pos());
+        if (edges) {
+            if (QWindow *handle = windowHandle()) {
+                handle->startSystemResize(edges);
+                return;
+            }
+        }
+    }
+    QMainWindow::mousePressEvent(event);
+}
+
+void SefeWindow::mouseMoveEvent(QMouseEvent *event) {
+    const Qt::Edges e = resizeEdgeAt(event->pos());
+    Qt::CursorShape shape = Qt::ArrowCursor;
+    if (((e & Qt::TopEdge) && (e & Qt::LeftEdge)) || ((e & Qt::BottomEdge) && (e & Qt::RightEdge)))
+        shape = Qt::SizeFDiagCursor;
+    else if (((e & Qt::TopEdge) && (e & Qt::RightEdge)) ||
+             ((e & Qt::BottomEdge) && (e & Qt::LeftEdge)))
+        shape = Qt::SizeBDiagCursor;
+    else if (e & (Qt::LeftEdge | Qt::RightEdge))
+        shape = Qt::SizeHorCursor;
+    else if (e & (Qt::TopEdge | Qt::BottomEdge))
+        shape = Qt::SizeVerCursor;
+    setCursor(shape);
+    QMainWindow::mouseMoveEvent(event);
+}
+
 template <class Work, class Done>
 void SefeWindow::runBusy(const QString &activity, Work work, Done done) {
     _throbber->begin(activity);
@@ -395,6 +571,8 @@ void SefeWindow::navigateTo(const QString &dir, bool record) {
     _current = path;
     _address->setPath(path);
     setWindowTitle(helm::sefe::windowTitle(path));
+    if (_titlebar) // frameless: mirror the title into the client titlebar
+        _titlebar->setTitle(helm::sefe::windowTitle(path));
     highlightPlace(path);
     statusBar()->showMessage(path);
 
