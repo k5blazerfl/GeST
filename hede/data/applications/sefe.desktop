@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Seahorse
+GenericName=File Explorer
+Comment=Browse your files and archives
+Exec=sefe %U
+Icon=system-file-manager
+Terminal=false
+Categories=System;FileTools;FileManager;Archiving;
+MimeType=inode/directory;application/zip;application/x-tar;application/gzip;application/x-7z-compressed;application/vnd.rar;application/x-bzip2;application/x-xz;
+StartupNotify=true

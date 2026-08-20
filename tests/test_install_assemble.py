@@ -124,7 +124,26 @@ def test_assemble_carries_kernel_and_bootloader_choices():
                         firmware="bios", boot_disk="sda")
     plan = assemble_plan(sel, _S3)
     assert (plan.kernel.method, plan.kernel.jobs, plan.kernel.initramfs) == ("genkernel", 4, False)
-    assert plan.bootloader.firmware == "bios" and plan.bootloader.disk == "sda"
+    # BIOS grub-install needs the /dev node; the bare selection is normalised.
+    assert plan.bootloader.firmware == "bios" and plan.bootloader.disk == "/dev/sda"
+
+
+def test_assemble_bios_builds_bootable_layout_and_grub_install():
+    # A BIOS install lays out a GPT with a BIOS-boot partition (EF02) and no ESP,
+    # and the bootloader step's grub-install accepts the normalised /dev target —
+    # the two things that previously made a BIOS install unbootable.
+    plan = assemble_plan(_ok_selection(firmware="bios", swap_size="4G"), _S3)
+    guids = [p.type_guid for p in plan.disk.partitions]
+    assert "EF02" in guids and "EF00" not in guids          # BIOS-boot present, no ESP
+    # install_steps builds a real `grub-install ... /dev/sda` without raising.
+    argv = install_steps(plan.bootloader, arch=plan.arch)[0].argv
+    assert argv[0] == "grub-install" and "--target=i386-pc" in argv and argv[-1] == "/dev/sda"
+
+
+def test_assemble_bios_defaults_boot_disk_to_install_disk():
+    # No separate BIOS target chosen: grub-install targets the install disk.
+    plan = assemble_plan(_ok_selection(firmware="bios"), _S3)   # boot_disk left blank
+    assert plan.bootloader.disk == "/dev/sda"
 
 
 def test_assemble_rejects_missing_disk_password_and_bad_firmware():

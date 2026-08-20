@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import configparser
 import os
+import re
 import subprocess
 from dataclasses import dataclass
 
@@ -97,3 +98,68 @@ def read_appearance(path: str) -> tuple[bool, str]:
     dark = cp.getboolean("appearance", "dark", fallback=False)
     accent = cp.get("appearance", "accent", fallback="")
     return (dark, accent)
+
+
+# --- boot-splash sync (the session trigger for SyncBootTheme) ---
+
+def read_boot_sync(path: str) -> bool:
+    """Whether the boot splash should track the biome (hede.conf [boot]
+    sync_with_biome). Default True — opt-out, not opt-in."""
+    cp = configparser.ConfigParser()
+    try:
+        cp.read(path)
+    except (OSError, configparser.Error):
+        return True
+    return cp.getboolean("boot", "sync_with_biome", fallback=True)
+
+
+def set_boot_sync_text(existing: str, on: bool) -> str:
+    """Return ``existing`` hede.conf text with ``[boot] sync_with_biome`` set to
+    ``on``, inserting the key/section if absent and leaving the rest byte-for-byte
+    (a surgical edit rather than a configparser rewrite, to stay clear of
+    helm-theme's QSettings-written format)."""
+    newline = f"sync_with_biome={'true' if on else 'false'}"
+    lines = existing.splitlines()
+
+    boot_start = next((i for i, r in enumerate(lines) if r.strip() == "[boot]"), None)
+    if boot_start is None:  # no [boot] section → append one
+        out = list(lines)
+        if out and out[-1].strip():
+            out.append("")
+        out += ["[boot]", newline]
+        return "\n".join(out) + "\n"
+
+    boot_end = next((j for j in range(boot_start + 1, len(lines))
+                     if lines[j].strip().startswith("[") and lines[j].strip().endswith("]")),
+                    len(lines))
+    for k in range(boot_start + 1, boot_end):  # replace an existing key in place
+        if re.match(r"\s*sync_with_biome\s*=", lines[k]):
+            return "\n".join([*lines[:k], newline, *lines[k + 1:]]) + "\n"
+    # section present but key absent → insert right after the header
+    return "\n".join([*lines[:boot_start + 1], newline, *lines[boot_start + 1:]]) + "\n"
+
+
+def write_boot_sync(path: str, on: bool) -> None:
+    """Persist the [boot] sync_with_biome toggle to hede.conf at ``path``."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            existing = f.read()
+    except OSError:
+        existing = ""
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(set_boot_sync_text(existing, on))
+
+
+def boot_sync_target(path: str) -> tuple[str, str]:
+    """The (accent, world) to hand SyncBootTheme: the explicit [appearance]
+    accent (may be "" → the backend derives it from the world) and the active
+    [world] id (default "harbor")."""
+    cp = configparser.ConfigParser()
+    try:
+        cp.read(path)
+    except (OSError, configparser.Error):
+        return ("", "harbor")
+    accent = cp.get("appearance", "accent", fallback="")
+    world = cp.get("world", "id", fallback="harbor")
+    return (accent, world)

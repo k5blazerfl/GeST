@@ -1,0 +1,737 @@
+#include "holdcore.h"
+
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QSet>
+#include <QStringDecoder>
+
+#include <filesystem>
+#include <system_error>
+
+#include <archive.h>
+#include <archive_entry.h>
+
+namespace helm::hold {
+
+// --- pure helpers ---
+
+bool isArchive(const QString &path) {
+    static const QStringList suffixes = {
+        QStringLiteral(".tar.gz"),  QStringLiteral(".tar.bz2"),  QStringLiteral(".tar.xz"),
+        QStringLiteral(".tar.zst"), QStringLiteral(".tar.lz4"),  QStringLiteral(".zip"),
+        QStringLiteral(".tar"),     QStringLiteral(".tgz"),      QStringLiteral(".tbz2"),
+        QStringLiteral(".txz"),     QStringLiteral(".tzst"),     QStringLiteral(".7z"),
+        QStringLiteral(".rar"),     QStringLiteral(".cbz"),      QStringLiteral(".cbr"),
+        QStringLiteral(".cpio"),    QStringLiteral(".iso"),      QStringLiteral(".xar"),
+    };
+    const QString lower = path.toLower();
+    for (const QString &s : suffixes) {
+        if (lower.endsWith(s))
+            return true;
+    }
+    return false;
+}
+
+namespace {
+// CP437 high half (0x80..0xFF) → Unicode. The historical IBM-PC / zip code page;
+// the low half (0x00..0x7F) is ASCII and passes through unchanged.
+const char16_t kCp437High[128] = {
+    0x00C7, 0x00FC, 0x00E9, 0x00E2, 0x00E4, 0x00E0, 0x00E5, 0x00E7, 0x00EA, 0x00EB,
+    0x00E8, 0x00EF, 0x00EE, 0x00EC, 0x00C4, 0x00C5, 0x00C9, 0x00E6, 0x00C6, 0x00F4,
+    0x00F6, 0x00F2, 0x00FB, 0x00F9, 0x00FF, 0x00D6, 0x00DC, 0x00A2, 0x00A3, 0x00A5,
+    0x20A7, 0x0192, 0x00E1, 0x00ED, 0x00F3, 0x00FA, 0x00F1, 0x00D1, 0x00AA, 0x00BA,
+    0x00BF, 0x2310, 0x00AC, 0x00BD, 0x00BC, 0x00A1, 0x00AB, 0x00BB, 0x2591, 0x2592,
+    0x2593, 0x2502, 0x2524, 0x2561, 0x2562, 0x2556, 0x2555, 0x2563, 0x2551, 0x2557,
+    0x255D, 0x255C, 0x255B, 0x2510, 0x2514, 0x2534, 0x252C, 0x251C, 0x2500, 0x253C,
+    0x255E, 0x255F, 0x255A, 0x2554, 0x2569, 0x2566, 0x2560, 0x2550, 0x256C, 0x2567,
+    0x2568, 0x2564, 0x2565, 0x2559, 0x2558, 0x2552, 0x2553, 0x256B, 0x256A, 0x2518,
+    0x250C, 0x2588, 0x2584, 0x258C, 0x2590, 0x2580, 0x03B1, 0x00DF, 0x0393, 0x03C0,
+    0x03A3, 0x03C3, 0x00B5, 0x03C4, 0x03A6, 0x0398, 0x03A9, 0x03B4, 0x221E, 0x03C6,
+    0x03B5, 0x2229, 0x2261, 0x00B1, 0x2265, 0x2264, 0x2320, 0x2321, 0x00F7, 0x2248,
+    0x00B0, 0x2219, 0x00B7, 0x221A, 0x207F, 0x00B2, 0x25A0, 0x00A0,
+};
+} // namespace
+
+QString decodeEntryName(const QByteArray &rawName) {
+    QStringDecoder utf8(QStringConverter::Utf8);
+    const QString asUtf8 = utf8.decode(rawName);
+    if (!utf8.hasError())
+        return asUtf8;
+    // Not valid UTF-8 — fall back to CP437 so the name stays legible.
+    QString out;
+    out.reserve(rawName.size());
+    for (unsigned char c : rawName)
+        out += (c < 0x80) ? QChar(c) : QChar(kCp437High[c - 0x80]);
+    return out;
+}
+
+bool isWritableArchive(const QString &path) {
+    if (!isArchive(path))
+        return false;
+    const QString lower = path.toLower();
+    // RAR/CBR: libarchive can't write them. ISO/XAR: read-only here too.
+    return !(lower.endsWith(QLatin1String(".rar")) || lower.endsWith(QLatin1String(".cbr")) ||
+             lower.endsWith(QLatin1String(".iso")) || lower.endsWith(QLatin1String(".xar")));
+}
+
+QString safeJoin(const QString &destDir, const QString &entryPath) {
+    const QString base = QDir::cleanPath(destDir);
+    const QString joined = QDir::cleanPath(base + QLatin1Char('/') + entryPath);
+    if (joined == base || joined.startsWith(base + QLatin1Char('/')))
+        return joined;
+    return QString(); // escapes the destination — reject
+}
+
+bool symlinkEscapes(const QString &destDir, const QString &entryPath,
+                    const QString &linkTarget) {
+    if (linkTarget.isEmpty())
+        return false; // nothing to point at — nothing to escape
+    if (QDir::isAbsolutePath(linkTarget))
+        return true; // an absolute target always leaves the sandbox
+    const QString base = QDir::cleanPath(destDir);
+    // The link lives at base/entryPath; a relative target resolves against its dir.
+    const QString linkDir =
+        QDir::cleanPath(base + QLatin1Char('/') + entryPath + QLatin1String("/.."));
+    const QString resolved = QDir::cleanPath(linkDir + QLatin1Char('/') + linkTarget);
+    return !(resolved == base || resolved.startsWith(base + QLatin1Char('/')));
+}
+
+// --- libarchive plumbing ---
+
+namespace {
+
+// RAII for a read handle.
+struct Reader {
+    struct archive *a = archive_read_new();
+    ~Reader() { archive_read_free(a); }
+    bool open(const QString &path, const QString &passphrase = QString()) {
+        archive_read_support_filter_all(a);
+        archive_read_support_format_all(a);
+        if (!passphrase.isEmpty())
+            archive_read_add_passphrase(a, passphrase.toUtf8().constData()); // decrypt entries
+        return archive_read_open_filename(a, path.toLocal8Bit().constData(), 10240) == ARCHIVE_OK;
+    }
+    // >0 if the archive has encrypted entries, 0 if none, <0 if unknown/unsupported.
+    int encryptedEntries() const { return archive_read_has_encrypted_entries(a); }
+    QString error() const { return QString::fromUtf8(archive_error_string(a)); }
+};
+
+bool entryIsDir(struct archive_entry *e, const QString &name) {
+    return archive_entry_filetype(e) == AE_IFDIR || name.endsWith(QLatin1Char('/'));
+}
+
+// Stream the current entry's data into `target`, accumulating the running
+// `written` total and refusing mid-stream if it blows past the size cap (so a
+// single giant entry is caught before it fills the disk, not after).
+Result writeData(struct archive *a, const QString &target, qint64 &written,
+                 const Limits &limits) {
+    Result r;
+    QDir().mkpath(QFileInfo(target).absolutePath());
+    QFile f(target);
+    if (!f.open(QIODevice::WriteOnly)) {
+        r.error = QStringLiteral("cannot write %1").arg(target);
+        return r;
+    }
+    const void *buff = nullptr;
+    size_t len = 0;
+    la_int64_t offset = 0;
+    int rc;
+    while ((rc = archive_read_data_block(a, &buff, &len, &offset)) == ARCHIVE_OK) {
+        if (f.write(static_cast<const char *>(buff), static_cast<qint64>(len)) < 0) {
+            r.error = QStringLiteral("short write to %1").arg(target);
+            return r;
+        }
+        written += static_cast<qint64>(len);
+        if (limits.maxTotalBytes > 0 && written > limits.maxTotalBytes) {
+            r.error = QStringLiteral("archive exceeds the %1-byte extraction limit")
+                          .arg(limits.maxTotalBytes);
+            return r;
+        }
+    }
+    if (rc != ARCHIVE_EOF) {
+        r.error = QStringLiteral("read error in %1").arg(QFileInfo(target).fileName());
+        return r;
+    }
+    r.ok = true;
+    return r;
+}
+
+// Create a symlink at `target` pointing to `linkTarget` (caller has already checked
+// the target stays inside the destination via symlinkEscapes). Replaces an existing
+// node at `target` — a full overwrite policy lands in A1d.
+Result writeSymlink(const QString &linkTarget, const QString &target) {
+    Result r;
+    QDir().mkpath(QFileInfo(target).absolutePath());
+    const std::filesystem::path at(target.toLocal8Bit().toStdString());
+    std::error_code ec;
+    std::filesystem::remove(at, ec);
+    ec.clear();
+    std::filesystem::create_symlink(
+        std::filesystem::path(linkTarget.toLocal8Bit().toStdString()), at, ec);
+    if (ec) {
+        r.error = QStringLiteral("cannot create symlink %1").arg(target);
+        return r;
+    }
+    r.ok = true;
+    return r;
+}
+
+// A free "name (1).ext" beside `path`, for the keep-both overwrite policy.
+QString uniqueName(const QString &path) {
+    const QFileInfo fi(path);
+    const QString dir = fi.absolutePath();
+    const QString base = fi.completeBaseName();
+    const QString suffix = fi.suffix();
+    for (int i = 1; i < 10000; ++i) {
+        const QString cand = suffix.isEmpty()
+            ? QStringLiteral("%1/%2 (%3)").arg(dir, fi.fileName(), QString::number(i))
+            : QStringLiteral("%1/%2 (%3).%4").arg(dir, base, QString::number(i), suffix);
+        if (!QFileInfo::exists(cand) && !QFileInfo(cand).isSymLink())
+            return cand;
+    }
+    return path; // give up (astronomically unlikely) and let Replace win
+}
+
+// Resolve the on-disk target for `target` under the overwrite `policy`. Returns the
+// path to write, or "" to skip this entry (no collision → `target` unchanged).
+QString resolveOverwrite(const QString &target, Overwrite policy) {
+    const QFileInfo fi(target);
+    if (!fi.exists() && !fi.isSymLink())
+        return target; // nothing there — no conflict
+    switch (policy) {
+    case Overwrite::Skip:
+        return QString();
+    case Overwrite::KeepBoth:
+        return uniqueName(target);
+    case Overwrite::Replace:
+        break;
+    }
+    return target;
+}
+
+Result cancelledResult() {
+    Result r;
+    r.error = QStringLiteral("cancelled");
+    return r; // ok stays false
+}
+
+// Extract entries from `archive` into `destDir`. `want` selects which: null =
+// every entry; otherwise an entry is taken if its name is in `want` or lies under
+// a requested directory. `progress` reports count-based advances and can cancel.
+Result extractImpl(const QString &archive, const QString &destDir, const QSet<QString> *want,
+                   qint64 total, const Progress &progress, const Limits &limits,
+                   Overwrite overwrite, const QString &passphrase) {
+    Result r;
+    Reader reader;
+    if (!reader.open(archive, passphrase)) {
+        r.error = reader.error();
+        return r;
+    }
+    // Encrypted-archive tracking (A3): checked per entry in the loop (the encryption
+    // flag isn't reliably known until a header is read). A wrong/missing passphrase
+    // surfaces via Result::needsPassphrase so Seahorse can prompt and retry.
+    bool sawEncrypted = false;
+    const QString base = QDir::cleanPath(destDir);
+    QDir().mkpath(base);
+
+    QSet<QString> remaining = want ? *want : QSet<QString>();
+    qint64 done = 0;
+    qint64 written = 0; // running uncompressed bytes, for the zip-bomb caps
+    int seen = 0;       // headers seen, for the entry-count cap
+    struct archive_entry *entry = nullptr;
+    while (archive_read_next_header(reader.a, &entry) == ARCHIVE_OK) {
+        if (progress.cancelled && progress.cancelled())
+            return cancelledResult();
+        if (limits.maxEntries > 0 && ++seen > limits.maxEntries) {
+            r.error = QStringLiteral("archive exceeds the %1-entry limit").arg(limits.maxEntries);
+            return r;
+        }
+        if (archive_entry_is_encrypted(entry)) { // A3: this entry's data is encrypted
+            sawEncrypted = true;
+            if (passphrase.isEmpty()) {
+                r.needsPassphrase = true;
+                r.error = QStringLiteral("passphrase required");
+                return r;
+            }
+        }
+        const QString name = decodeEntryName(archive_entry_pathname(entry));
+        if (want) {
+            bool wanted = remaining.remove(name);
+            if (!wanted) // the entry IS a requested directory (maybe "dir/") or lies under one
+                for (const QString &w : *want)
+                    if (name == w || name == w + QLatin1Char('/') ||
+                        name.startsWith(w + QLatin1Char('/'))) {
+                        wanted = true;
+                        remaining.remove(w); // the request is satisfied by its dir/descendants
+                        break;
+                    }
+            if (!wanted) {
+                archive_read_data_skip(reader.a);
+                continue;
+            }
+        }
+        const QString target = safeJoin(base, name);
+        if (target.isEmpty()) { // Zip-Slip: the entry's own path escapes the destination
+            archive_read_data_skip(reader.a);
+            r.skipped << name;
+            continue;
+        }
+        if (archive_entry_filetype(entry) == AE_IFLNK) {
+            const QString linkTarget = QString::fromUtf8(archive_entry_symlink(entry));
+            if (symlinkEscapes(base, name, linkTarget)) { // symlink-escape: refuse it
+                archive_read_data_skip(reader.a);
+                r.skipped << name;
+                continue;
+            }
+            const QString dest = resolveOverwrite(target, overwrite);
+            if (dest.isEmpty()) { // Skip policy, existing target
+                archive_read_data_skip(reader.a);
+                continue;
+            }
+            const Result w = writeSymlink(linkTarget, dest);
+            if (!w.ok)
+                return w;
+        } else if (entryIsDir(entry, name)) {
+            QDir().mkpath(target); // dirs merge; overwrite policy is a file concern
+        } else {
+            const QString dest = resolveOverwrite(target, overwrite);
+            if (dest.isEmpty()) { // Skip policy, existing target
+                archive_read_data_skip(reader.a);
+                continue;
+            }
+            Result w = writeData(reader.a, dest, written, limits);
+            if (!w.ok) {
+                if (sawEncrypted) // a read failure on encrypted data = wrong passphrase
+                    w.needsPassphrase = true;
+                return w;
+            }
+        }
+        // Ratio guard (the compressed-vs-uncompressed zip bomb), checked only past a
+        // floor so ordinary small files never trip it.
+        if (limits.maxRatio > 0 && written > limits.ratioFloorBytes) {
+            const la_int64_t consumed = archive_filter_bytes(reader.a, -1);
+            if (consumed > 0 && written / static_cast<qint64>(consumed) > limits.maxRatio) {
+                r.error = QStringLiteral("archive expands beyond the %1:1 ratio limit")
+                              .arg(limits.maxRatio);
+                return r;
+            }
+        }
+        if (progress.step)
+            progress.step(++done, total, name);
+    }
+    if (want && !remaining.isEmpty()) {
+        r.error = QStringLiteral("no such entry: %1").arg(*remaining.constBegin());
+        return r;
+    }
+    r.ok = true;
+    return r;
+}
+
+// Pick the write format/filter for an output path's extension.
+void configureWriteFormat(struct archive *a, const QString &lower) {
+    if (lower.endsWith(QLatin1String(".zip")) || lower.endsWith(QLatin1String(".cbz"))) {
+        archive_write_set_format_zip(a);
+        return;
+    }
+    if (lower.endsWith(QLatin1String(".7z"))) {
+        archive_write_set_format_7zip(a);
+        return;
+    }
+    archive_write_set_format_pax_restricted(a); // a portable tar
+    if (lower.endsWith(QLatin1String(".gz")) || lower.endsWith(QLatin1String(".tgz")))
+        archive_write_add_filter_gzip(a);
+    else if (lower.endsWith(QLatin1String(".bz2")) || lower.endsWith(QLatin1String(".tbz2")))
+        archive_write_add_filter_bzip2(a);
+    else if (lower.endsWith(QLatin1String(".xz")) || lower.endsWith(QLatin1String(".txz")))
+        archive_write_add_filter_xz(a);
+    else if (lower.endsWith(QLatin1String(".zst")) || lower.endsWith(QLatin1String(".tzst")))
+        archive_write_add_filter_zstd(a);
+    else if (lower.endsWith(QLatin1String(".lz4")))
+        archive_write_add_filter_lz4(a);
+}
+
+// Add one host path (file or dir) to the write handle under `archiveName`.
+Result addPath(struct archive *a, const QString &fsPath, const QString &archiveName) {
+    Result r;
+    const QFileInfo info(fsPath);
+
+    // Symlinks are stored as symlinks (not followed) — checked before isDir(), since
+    // isDir() follows the link: a symlink-to-dir would otherwise be recursed into
+    // (data blow-up, cyclic-link loops). read_symlink keeps the raw target verbatim.
+    if (info.isSymLink()) {
+        std::error_code ec;
+        const std::filesystem::path tgt = std::filesystem::read_symlink(
+            std::filesystem::path(fsPath.toLocal8Bit().toStdString()), ec);
+        if (ec) {
+            r.error = QStringLiteral("cannot read symlink %1").arg(fsPath);
+            return r;
+        }
+        struct archive_entry *e = archive_entry_new();
+        archive_entry_set_pathname(e, archiveName.toLocal8Bit().constData());
+        archive_entry_set_filetype(e, AE_IFLNK);
+        archive_entry_set_symlink(e, tgt.c_str());
+        archive_entry_set_perm(e, 0777);
+        if (info.lastModified().isValid())
+            archive_entry_set_mtime(e, info.lastModified().toSecsSinceEpoch(), 0);
+        const int rc = archive_write_header(a, e);
+        archive_entry_free(e);
+        if (rc != ARCHIVE_OK) {
+            r.error = QString::fromUtf8(archive_error_string(a));
+            return r;
+        }
+        r.ok = true;
+        return r; // a symlink carries no data body
+    }
+
+    if (info.isDir()) {
+        struct archive_entry *e = archive_entry_new();
+        archive_entry_set_pathname(e, (archiveName + QLatin1Char('/')).toLocal8Bit().constData());
+        archive_entry_set_filetype(e, AE_IFDIR);
+        archive_entry_set_perm(e, 0755);
+        const int rc = archive_write_header(a, e);
+        archive_entry_free(e);
+        if (rc != ARCHIVE_OK) {
+            r.error = QString::fromUtf8(archive_error_string(a));
+            return r;
+        }
+        const QDir dir(fsPath);
+        for (const QString &child :
+             dir.entryList(QDir::NoDotAndDotDot | QDir::AllEntries | QDir::Hidden | QDir::System)) {
+            const Result cr = addPath(a, dir.filePath(child), archiveName + QLatin1Char('/') + child);
+            if (!cr.ok)
+                return cr;
+        }
+        r.ok = true;
+        return r;
+    }
+
+    QFile f(fsPath);
+    if (!f.open(QIODevice::ReadOnly)) {
+        r.error = QStringLiteral("cannot read %1").arg(fsPath);
+        return r;
+    }
+    const QByteArray bytes = f.readAll();
+    struct archive_entry *e = archive_entry_new();
+    archive_entry_set_pathname(e, archiveName.toLocal8Bit().constData());
+    archive_entry_set_size(e, bytes.size());
+    archive_entry_set_filetype(e, AE_IFREG);
+    archive_entry_set_perm(e, 0644);
+    if (info.lastModified().isValid())
+        archive_entry_set_mtime(e, info.lastModified().toSecsSinceEpoch(), 0);
+    int rc = archive_write_header(a, e);
+    archive_entry_free(e);
+    if (rc != ARCHIVE_OK) {
+        r.error = QString::fromUtf8(archive_error_string(a));
+        return r;
+    }
+    if (!bytes.isEmpty() && archive_write_data(a, bytes.constData(), bytes.size()) < 0) {
+        r.error = QString::fromUtf8(archive_error_string(a));
+        return r;
+    }
+    r.ok = true;
+    return r;
+}
+
+// The entry's name after `edits`, or "" if it should be dropped. Removes win over
+// renames; a directory path affects its whole subtree (prefix match).
+QString applyEdits(const QString &name, const Edits &edits) {
+    for (const QString &rm : edits.remove)
+        if (name == rm || name.startsWith(rm + QLatin1Char('/')))
+            return QString(); // removed (subtree for a directory)
+    for (const Edits::Rename &rn : edits.rename) {
+        if (name == rn.from)
+            return rn.to;
+        if (name.startsWith(rn.from + QLatin1Char('/')))
+            return rn.to + name.mid(rn.from.size()); // prefix rename (subtree)
+    }
+    return name;
+}
+
+// Stream the current read entry's data blocks into the writer.
+Result copyEntryData(struct archive *r, struct archive *w) {
+    Result out;
+    const void *buff = nullptr;
+    size_t len = 0;
+    la_int64_t offset = 0;
+    int rc;
+    while ((rc = archive_read_data_block(r, &buff, &len, &offset)) == ARCHIVE_OK) {
+        if (archive_write_data(w, buff, len) < 0) {
+            out.error = QString::fromUtf8(archive_error_string(w));
+            return out;
+        }
+    }
+    if (rc != ARCHIVE_EOF) {
+        out.error = QString::fromUtf8(archive_error_string(r));
+        return out;
+    }
+    out.ok = true;
+    return out;
+}
+
+} // namespace
+
+Listing list(const QString &archive) {
+    Listing out;
+    Reader reader;
+    if (!reader.open(archive)) {
+        out.error = reader.error();
+        return out;
+    }
+    struct archive_entry *entry = nullptr;
+    int rc;
+    while ((rc = archive_read_next_header(reader.a, &entry)) == ARCHIVE_OK) {
+        const QString name = decodeEntryName(archive_entry_pathname(entry));
+        Entry e;
+        e.path = name;
+        e.size = archive_entry_size(entry);
+        e.isDir = entryIsDir(entry, name);
+        if (archive_entry_filetype(entry) == AE_IFLNK) {
+            e.type = EntryType::Symlink;
+            e.linkTarget = QString::fromUtf8(archive_entry_symlink(entry));
+        } else {
+            e.type = e.isDir ? EntryType::Directory : EntryType::File;
+        }
+        if (archive_entry_mtime_is_set(entry))
+            e.mtime = QDateTime::fromSecsSinceEpoch(archive_entry_mtime(entry));
+        out.entries.append(e);
+        archive_read_data_skip(reader.a);
+    }
+    if (rc != ARCHIVE_EOF) {
+        out.error = reader.error();
+        return out;
+    }
+    out.ok = true;
+    return out;
+}
+
+bool isEncrypted(const QString &archive) {
+    Reader reader;
+    if (!reader.open(archive))
+        return false;
+    // Force the format to be probed so encryptedEntries() has an answer.
+    struct archive_entry *e = nullptr;
+    archive_read_next_header(reader.a, &e);
+    return reader.encryptedEntries() > 0;
+}
+
+Result test(const QString &archive, const Progress &progress, const QString &passphrase) {
+    Result r;
+    Reader reader;
+    if (!reader.open(archive, passphrase)) {
+        r.error = reader.error();
+        return r;
+    }
+    qint64 done = 0;
+    bool sawEncrypted = false;
+    struct archive_entry *entry = nullptr;
+    int rc;
+    while ((rc = archive_read_next_header(reader.a, &entry)) == ARCHIVE_OK) {
+        if (progress.cancelled && progress.cancelled())
+            return cancelledResult();
+        const QString name = decodeEntryName(archive_entry_pathname(entry));
+        if (archive_entry_is_encrypted(entry)) {
+            sawEncrypted = true;
+            if (passphrase.isEmpty()) {
+                r.needsPassphrase = true;
+                r.error = QStringLiteral("passphrase required");
+                return r;
+            }
+        }
+        // Read the data through — this is what actually verifies CRC / decompression.
+        const void *buff = nullptr;
+        size_t len = 0;
+        la_int64_t off = 0;
+        int d;
+        while ((d = archive_read_data_block(reader.a, &buff, &len, &off)) == ARCHIVE_OK) {
+        }
+        if (d != ARCHIVE_EOF) {
+            if (sawEncrypted)
+                r.needsPassphrase = true;
+            r.error = QStringLiteral("corrupt entry: %1").arg(name);
+            return r;
+        }
+        if (progress.step)
+            progress.step(++done, -1, name);
+    }
+    if (rc != ARCHIVE_EOF) {
+        r.error = reader.error();
+        return r;
+    }
+    r.ok = true;
+    return r;
+}
+
+Result extractAll(const QString &archive, const QString &destDir, const Progress &progress,
+                  const Limits &limits, Overwrite overwrite, const QString &passphrase) {
+    return extractImpl(archive, destDir, nullptr, -1, progress, limits, overwrite, passphrase);
+}
+
+Result extract(const QString &archive, const QString &entryPath, const QString &destDir,
+               const QString &passphrase) {
+    const QSet<QString> want{entryPath};
+    return extractImpl(archive, destDir, &want, 1, {}, {}, Overwrite::Replace, passphrase);
+}
+
+Result extractEntries(const QString &archive, const QStringList &entryPaths, const QString &destDir,
+                      const Progress &progress, const Limits &limits, Overwrite overwrite,
+                      const QString &passphrase) {
+    if (entryPaths.isEmpty()) {
+        Result r;
+        r.ok = true;
+        return r;
+    }
+    const QSet<QString> want(entryPaths.begin(), entryPaths.end());
+    return extractImpl(archive, destDir, &want, entryPaths.size(), progress, limits, overwrite,
+                       passphrase);
+}
+
+Result create(const QStringList &files, const QString &archivePath, const Progress &progress,
+              const QString &passphrase) {
+    Result r;
+    struct archive *a = archive_write_new();
+    const QString lower = archivePath.toLower();
+    configureWriteFormat(a, lower);
+    if (!passphrase.isEmpty()) { // A3: encrypt the output
+        archive_write_set_passphrase(a, passphrase.toUtf8().constData());
+        // zip needs an explicit strong cipher; other formats use their own on the passphrase.
+        if (lower.endsWith(QLatin1String(".zip")) || lower.endsWith(QLatin1String(".cbz")))
+            archive_write_set_options(a, "zip:encryption=aes256");
+    }
+    if (archive_write_open_filename(a, archivePath.toLocal8Bit().constData()) != ARCHIVE_OK) {
+        r.error = QString::fromUtf8(archive_error_string(a));
+        archive_write_free(a);
+        return r;
+    }
+    qint64 done = 0;
+    for (const QString &f : files) {
+        if (progress.cancelled && progress.cancelled()) {
+            archive_write_close(a);
+            archive_write_free(a);
+            QFile::remove(archivePath); // don't leave a half-written archive
+            return cancelledResult();
+        }
+        const Result ar = addPath(a, f, QFileInfo(f).fileName());
+        if (!ar.ok) {
+            archive_write_close(a);
+            archive_write_free(a);
+            QFile::remove(archivePath);
+            return ar;
+        }
+        if (progress.step)
+            progress.step(++done, files.size(), QFileInfo(f).fileName());
+    }
+    archive_write_close(a);
+    archive_write_free(a);
+    r.ok = true;
+    return r;
+}
+
+Result rewrite(const QString &archive, const Edits &edits, const Progress &progress) {
+    Result r;
+    if (edits.isEmpty()) { // nothing to do — don't churn the file
+        r.ok = true;
+        return r;
+    }
+    Reader reader;
+    if (!reader.open(archive)) {
+        r.error = reader.error();
+        return r;
+    }
+
+    const QString tmp = archive + QStringLiteral(".holdtmp");
+    QFile::remove(tmp); // clear any stale temp
+
+    struct archive *w = archive_write_new();
+    bool writerOpen = false;
+    // Any failure below discards the temp and leaves the original untouched.
+    auto fail = [&](const QString &err) -> Result {
+        if (writerOpen)
+            archive_write_close(w);
+        archive_write_free(w);
+        QFile::remove(tmp);
+        Result res;
+        res.error = err;
+        return res;
+    };
+
+    // Open the writer cloning the source's format + filters. Deferred until we've
+    // read the first header (that's when the format is known); an empty source
+    // falls back to the extension.
+    bool writerReady = false;
+    auto openWriterFrom = [&](bool haveEntry) -> bool {
+        if (haveEntry) {
+            if (archive_write_set_format(w, archive_format(reader.a)) != ARCHIVE_OK)
+                return false; // a read-only format (e.g. RAR) — can't rebuild it
+            for (int i = 0; i < archive_filter_count(reader.a); ++i) {
+                const int fc = archive_filter_code(reader.a, i);
+                if (fc != ARCHIVE_FILTER_NONE)
+                    archive_write_add_filter(w, fc);
+            }
+        } else {
+            configureWriteFormat(w, archive.toLower()); // empty archive → guess by extension
+        }
+        if (archive_write_open_filename(w, tmp.toLocal8Bit().constData()) != ARCHIVE_OK)
+            return false;
+        writerOpen = true;
+        writerReady = true;
+        return true;
+    };
+
+    qint64 done = 0;
+    struct archive_entry *entry = nullptr;
+    int rc;
+    while ((rc = archive_read_next_header(reader.a, &entry)) == ARCHIVE_OK) {
+        if (progress.cancelled && progress.cancelled())
+            return fail(QStringLiteral("cancelled"));
+        if (!writerReady && !openWriterFrom(/*haveEntry=*/true))
+            return fail(QStringLiteral("this archive's format can't be modified"));
+
+        const QString name = decodeEntryName(archive_entry_pathname(entry));
+        const QString newName = applyEdits(name, edits);
+        if (newName.isEmpty()) { // removed
+            archive_read_data_skip(reader.a);
+            continue;
+        }
+        if (newName != name)
+            archive_entry_set_pathname(entry, newName.toLocal8Bit().constData());
+        if (archive_write_header(w, entry) != ARCHIVE_OK)
+            return fail(QString::fromUtf8(archive_error_string(w)));
+        const Result cp = copyEntryData(reader.a, w);
+        if (!cp.ok)
+            return fail(cp.error);
+        if (progress.step)
+            progress.step(++done, -1, newName);
+    }
+    if (rc != ARCHIVE_EOF)
+        return fail(reader.error());
+    if (!writerReady && !openWriterFrom(/*haveEntry=*/false)) // empty source archive
+        return fail(QStringLiteral("cannot rebuild this archive"));
+
+    for (const Edits::Add &add : edits.add) {
+        if (progress.cancelled && progress.cancelled())
+            return fail(QStringLiteral("cancelled"));
+        const Result ar = addPath(w, add.fsPath, add.innerPath);
+        if (!ar.ok)
+            return fail(ar.error);
+        if (progress.step)
+            progress.step(++done, -1, add.innerPath);
+    }
+
+    archive_write_close(w);
+    archive_write_free(w);
+
+    // Atomic swap: same-directory rename replaces the original in one step.
+    std::error_code ec;
+    std::filesystem::rename(std::filesystem::path(tmp.toLocal8Bit().toStdString()),
+                            std::filesystem::path(archive.toLocal8Bit().toStdString()), ec);
+    if (ec) {
+        QFile::remove(tmp);
+        r.error = QStringLiteral("cannot replace %1").arg(QFileInfo(archive).fileName());
+        return r;
+    }
+    r.ok = true;
+    return r;
+}
+
+} // namespace helm::hold

@@ -23,6 +23,13 @@ QString World::framePath() const {
     return QFileInfo::exists(p) ? p : QString();
 }
 
+QString World::bootPath() const {
+    if (baseDir.isEmpty())
+        return QString();
+    const QString p = QDir(baseDir).filePath(QStringLiteral("boot.png"));
+    return QFileInfo::exists(p) ? p : QString();
+}
+
 namespace {
 
 // Strip one layer of matching surrounding quotes (values like '#3aa6c4').

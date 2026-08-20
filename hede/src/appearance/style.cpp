@@ -35,6 +35,11 @@ QString styleSheet(bool dark, const QColor &accent) {
     const QColor glass = barTint(a);            // world-tinted deep glass
     const QString barGlass = rgba(glass, 0.82); // bar opacity (no compositor blur yet)
     const QString acrylicGlass = rgba(glass, 0.92); // pullouts + toasts: denser
+    // A solid recessed on-hue well for the address field. It must be opaque: the
+    // address bar is a custom QWidget (WA_StyledBackground), and a translucent QSS
+    // background on one composites over an opaque base rather than the glass —
+    // native widgets (toolbar/Places) don't have that quirk, so they use rgba.
+    const QString fieldGlass = barTint(a).darker(118).name();
     const QString glyph = barGlyphColor().name(); // light bar glyph colour (shared with icons)
 
     QString qss;
@@ -109,6 +114,85 @@ QString styleSheet(bool dark, const QColor &accent) {
         "#HelmToast QLabel { color: %1; background: transparent; }\n"
         "#HelmToast #HelmToastTitle { color: %1; font-weight: 700; }\n")
         .arg(glyph, a.name(), acrylicGlass);
+
+    // HeDE application chrome (#HelmAppWindow). An xdg-toplevel app — SeFE is the
+    // template — wears the same world glass as the shell bar on its menu bar,
+    // toolbar and status bar: "the chrome is the world", while the content body
+    // keeps the light/dark palette. Scoped to the app object name so it never
+    // touches the shell's own #HelmBar surfaces or a plainer Qt app.
+    qss += QStringLiteral(
+        "#HelmAppWindow QMenuBar { background: %3; color: %1; border: none; }\n"
+        "#HelmAppWindow QMenuBar::item { background: transparent; padding: 4px 10px;"
+        " border-radius: 5px; }\n"
+        "#HelmAppWindow QMenuBar::item:selected, #HelmAppWindow QMenuBar::item:pressed {"
+        " background: %2; color: %1; }\n"
+        "#HelmAppWindow QToolBar { background: %3; border: none; spacing: 2px;"
+        " padding: 3px 4px; }\n"
+        "#HelmAppWindow QToolBar QToolButton { color: %1; background: transparent;"
+        " border: none; border-radius: 5px; padding: 3px 6px; }\n"
+        "#HelmAppWindow QToolBar QToolButton:hover { background: rgba(255,255,255,0.14); }\n"
+        "#HelmAppWindow QToolBar QToolButton:pressed,"
+        " #HelmAppWindow QToolBar QToolButton:checked { background: %2; }\n"
+        "#HelmAppWindow QToolBar QLabel { color: %1; background: transparent; }\n"
+        "#HelmAppWindow QStatusBar { background: %3; color: %1; }\n"
+        "#HelmAppWindow QStatusBar QLabel { color: %1; }\n"
+        "#HelmAppWindow QStatusBar::item { border: none; }\n")
+        .arg(glyph, accentFill, barGlass);
+
+    // The address field reads as a recessed on-hue well on the glass; the
+    // breadcrumb buttons (and the › separators) are edgeless light glyphs, edit
+    // mode a transparent field. The Places pane is its own column of world glass.
+    qss += QStringLiteral(
+        "#HelmAddressBar { background: %4;"
+        " border: 1px solid rgba(255,255,255,0.14); border-radius: 5px; }\n"
+        "#HelmAddressBar QStackedWidget, #HelmAddressBar QWidget { background: transparent; }\n"
+        "#HelmAddressBar QToolButton { color: %1; background: transparent; border: none;"
+        " border-radius: 4px; padding: 2px 6px; }\n"
+        "#HelmAddressBar QToolButton:hover { background: rgba(255,255,255,0.12); }\n"
+        "#HelmAddressBar QLabel { color: %1; background: transparent; }\n"
+        "#HelmAddressBar QLineEdit { background: transparent; color: %1; border: none; }\n"
+        "#HelmAddressBar QLineEdit:focus { border: none; }\n"
+        "#HelmAppPlaces { background: %3; border: none; color: %1; }\n"
+        "#HelmAppPlaces::item { color: %1; border-radius: 5px; padding: 5px 8px; }\n"
+        "#HelmAppPlaces::item:hover { background: rgba(255,255,255,0.10); }\n"
+        "#HelmAppPlaces::item:selected { background: %2; color: %1; }\n")
+        .arg(glyph, accentFill, acrylicGlass, fieldGlass);
+
+    // Scene mode (Phase D): when the app paints the world scene itself (property
+    // helmScene=true, e.g. SeFE's frameless chrome), the chrome bars go fully
+    // transparent so the scene shows through — a paintEvent scrim keeps the glyphs
+    // legible — while the body stays an opaque light/dark panel. The bare-glass
+    // chrome above is the fallback for a plain (server-decorated) app.
+    qss += QStringLiteral(
+        "#HelmAppWindow[helmScene=\"true\"] QMenuBar,"
+        " #HelmAppWindow[helmScene=\"true\"] QToolBar,"
+        " #HelmAppWindow[helmScene=\"true\"] QStatusBar,"
+        " #HelmHeader { background: transparent; }\n"
+        "#HelmAppBody { background: palette(window); }\n"      // opaque content panel
+        "#HelmAppBodyInset { background: transparent; }\n"      // scene trim shows through
+        // The client titlebar: light title + edgeless window controls; close goes
+        // red on hover (Windows-familiar).
+        "#HelmTitleBar { background: transparent; }\n"
+        "#HelmTitleText { color: %1; font-weight: 600; padding-left: 2px; }\n"
+        "#HelmTitleBar QToolButton { color: %1; background: transparent; border: none;"
+        " border-radius: 4px; font-size: 14px; }\n"
+        "#HelmTitleBar QToolButton:hover { background: rgba(255,255,255,0.16); }\n"
+        "#HelmWinClose { color: %1; background: transparent; border: none;"
+        " border-radius: 4px; font-size: 14px; }\n"
+        "#HelmWinClose:hover { background: rgba(232,64,64,0.90); color: white; }\n")
+        .arg(glyph);
+
+    // Archive affordances (Seahorse): the breadcrumb chip marking where the
+    // filesystem enters an archive, and the status-bar "🗜 Read-only" pill shown
+    // while browsing inside one. Both are accent-tinted so the archive boundary
+    // reads at a glance. See docs/design/archive-support.md.
+    qss += QStringLiteral(
+        "#HelmCrumbArchive { color: %1; background: %2; border: 1px solid %3;"
+        " border-radius: 5px; padding: 1px 7px; font-weight: 600; }\n"
+        "#HelmCrumbArchive:hover { background: %3; }\n"
+        "#HelmReadOnlyPill { color: %1; background: %2; border: 1px solid %3;"
+        " border-radius: 8px; padding: 1px 9px; margin-right: 4px; }\n")
+        .arg(glyph, accentFill, accentEdge);
 
     return qss;
 }
