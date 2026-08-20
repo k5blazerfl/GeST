@@ -8,6 +8,15 @@ SeFE gains archive browsing *via the shared Hold engine* · Depends on:
 [desktop-environment.md](desktop-environment.md),
 [hede-familiarity.md](hede-familiarity.md)*
 
+> **Status update (2026-08-20): SHIPPED — then H4 folded into Seahorse.** All four
+> phases (H1 `hold-core` → H2 quick actions → H3 browse-in-place → H4) shipped, and
+> H4 (the standalone `hold` app) was then **folded into Seahorse** (#184): there is
+> **no separate Hold binary**. Its rich ops — Extract Selected / Extract All from
+> inside a browsed archive — live in SeFE, and Seahorse is now HeDE's archive file
+> handler. The "Hold-the-app" / "Open with Hold" / app-boundary sections below are
+> the original plan-of-record; read them as history. Archive support continues in
+> [archive-support.md](archive-support.md) (Seahorse → a full in-place manager).
+
 > **Hold** is HeDE's archiver, but its centre of gravity is *inside Seahorse*:
 > an archive is a **browsable folder** (Windows "compressed folder" familiarity),
 > backed by a shared engine both apps speak. Hold-the-app owns the heavy path
