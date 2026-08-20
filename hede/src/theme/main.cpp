@@ -9,6 +9,9 @@
 // helm-theme: apply a HeDE appearance choice to GTK + the shell palette + the
 // labwc titlebar skin.
 //   helm-theme --dark --accent=#33d6c8 [--gtk-theme=Adwaita-dark] [--icon-theme=Papirus]
+//   helm-theme --mode=dark|light|auto  (light/dark; auto = follow-the-sun, from
+//                               [appearance] latitude — no network. --dark/--light
+//                               are shorthands for --mode=dark/light.)
 //   helm-theme --from-world     (seed from the active biome; run at session start)
 //   helm-theme --list-worlds    (installed worlds, tab-sep: id name accent wallpaper)
 //   helm-theme --world=<id>     (switch to a world; a running shell re-themes live)

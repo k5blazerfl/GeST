@@ -3,12 +3,15 @@
 #include <QString>
 #include <QStringList>
 
+class QDateTime;
+
 namespace helm {
 
 // A desktop appearance choice. The gated Appearance module will build one of
 // these; helm-theme (and this lib) turn it into on-disk config.
 struct ThemeSpec {
     bool dark = false;
+    QString mode;      // "dark"/"light"/"auto"; empty → the legacy `dark` bool
     QString gtkTheme;  // e.g. "Adwaita-dark"; empty → derived from `dark`
     QString iconTheme; // e.g. "Papirus"; empty → left unset
     QString accent;    // "#RRGGBB"; stored for the shell's own palette
@@ -17,7 +20,22 @@ struct ThemeSpec {
 // --- pure generators (unit-tested) ---
 QString effectiveGtkTheme(const ThemeSpec &s);     // gtkTheme or Adwaita[-dark]
 QString gtkSettingsIni(const ThemeSpec &s);        // a GTK settings.ini body
-ThemeSpec parseThemeArgs(const QStringList &args); // --dark/--light/--accent=…
+ThemeSpec parseThemeArgs(const QStringList &args); // --dark/--light/--mode=/--accent=…
+
+// --- light/dark resolution (the [appearance] `mode` knob; unit-tested) ---
+// Resolve an [appearance] mode string into the concrete light/dark decision that
+// the palette and the labwc/GTK generators consume:
+//   "dark"  → true, "light" → false, "auto" → follow-the-sun (isNightNow),
+//   anything else (unset/legacy) → `legacyDark` (the old [appearance] dark bool).
+// `latitudeDeg` is used only by "auto".
+bool resolveDark(const QString &mode, bool legacyDark, double latitudeDeg);
+
+// Follow-the-sun: is it night at `latitudeDeg` right now (isNightNow) or at a
+// given instant (isNightAt)? A coarse solar-position calc — sunrise/sunset from
+// the day-of-year + latitude vs. the local clock. No network, no location
+// service; pairs with the moon throbber. isNightAt is the testable core.
+bool isNightAt(const QDateTime &when, double latitudeDeg);
+bool isNightNow(double latitudeDeg);
 
 // A labwc (openbox-3) themerc body for the "Helm" theme: the focused titlebar
 // is tinted with the accent (falling back to the Harbor default so the bar is

@@ -1,11 +1,13 @@
 #include <QtTest>
 
+#include <QDateTime>
 #include <QDir>
 #include <QSettings>
 #include <QTemporaryDir>
 
 #include "config.h"
 #include "palette.h"
+#include "theme.h"
 
 // Write a minimal world with the given accent under <worldsDir>/<id>/theme.yaml.
 static void writeWorld(const QString &worldsDir, const QString &id, const QString &accent) {
@@ -137,6 +139,41 @@ private slots:
         QVERIFY(qss.contains(QStringLiteral("#HelmPullout")));
         QVERIFY(qss.contains(QStringLiteral("border-bottom: none")));        // flat bottom
         QVERIFY(qss.contains(QStringLiteral("border-top-left-radius: 7px"))); // top corners only
+    }
+
+    // [appearance] mode = dark|light|auto → the concrete light/dark decision.
+    void modeResolution() {
+        QCOMPARE(helm::resolveDark(QStringLiteral("dark"), false, 40.0), true);
+        QCOMPARE(helm::resolveDark(QStringLiteral("light"), true, 40.0), false);
+        QCOMPARE(helm::resolveDark(QStringLiteral("DARK"), false, 40.0), true);      // case-fold
+        QCOMPARE(helm::resolveDark(QStringLiteral("  light "), true, 40.0), false);  // trimmed
+        // unset / unrecognised → the legacy `dark` bool (back-compat)
+        QCOMPARE(helm::resolveDark(QString(), true, 40.0), true);
+        QCOMPARE(helm::resolveDark(QString(), false, 40.0), false);
+        QCOMPARE(helm::resolveDark(QStringLiteral("bogus"), true, 40.0), true);
+        // `auto` is purely the clock — it ignores the legacy bool
+        const bool night = helm::isNightNow(40.0);
+        QCOMPARE(helm::resolveDark(QStringLiteral("auto"), false, 40.0), night);
+        QCOMPARE(helm::resolveDark(QStringLiteral("auto"), true, 40.0), night);
+    }
+
+    // Follow-the-sun: sunrise/sunset from date + latitude vs. the clock, no network.
+    void followTheSun() {
+        // Mid-latitude (no polar day/night): noon is day and midnight is night the
+        // year round; a long summer evening is still day while midwinter is dark.
+        const QList<QDate> dates = {QDate(2026, 3, 21), QDate(2026, 6, 21),
+                                    QDate(2026, 9, 21), QDate(2026, 12, 21)};
+        for (const QDate &d : dates) {
+            QVERIFY(!helm::isNightAt(QDateTime(d, QTime(12, 0)), 40.0)); // noon = day
+            QVERIFY(helm::isNightAt(QDateTime(d, QTime(0, 0)), 40.0));   // midnight = night
+        }
+        // 18:30 is daylight at midsummer but night at midwinter (40°N).
+        QVERIFY(!helm::isNightAt(QDateTime(QDate(2026, 6, 21), QTime(18, 30)), 40.0));
+        QVERIFY(helm::isNightAt(QDateTime(QDate(2026, 12, 21), QTime(18, 30)), 40.0));
+        // Polar night: 80°N at the December solstice is dark even at noon.
+        QVERIFY(helm::isNightAt(QDateTime(QDate(2026, 12, 21), QTime(12, 0)), 80.0));
+        // Midnight sun: 80°N at the June solstice is lit even at midnight.
+        QVERIFY(!helm::isNightAt(QDateTime(QDate(2026, 6, 21), QTime(0, 0)), 80.0));
     }
 
     void acrylicToast() {
