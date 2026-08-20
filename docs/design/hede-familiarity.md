@@ -68,3 +68,14 @@ Identity and capability, never placement of the everyday controls:
 
 The test for any proposed deviation: *does it move a control the user's hand
 already knows, or does it add something new next to it?* Move → no. Add → yes.
+
+## Reference — the Windows-classic touchstone
+
+For the *exact* feel of Windows-classic — the Start menu layout, the file-manager
+chrome (up-button, status bar with selected count/size + free space) — we treat
+**[Open-Shell](https://github.com/Open-Shell/Open-Shell-Menu)** (MIT; the
+community continuation of Classic Shell) as the living behavioural spec. It maps
+onto **`helm-menu`** (the Start menu) and **SeFE**'s Explorer chrome
+([sefe.md](sefe.md)). It is a **reference, not a dependency**: Windows-only C++
+(Win32/COM), so we port concepts into Qt, not code — and we mine its **defaults**,
+not its huge toggle surface, because here familiarity *is* the default.
