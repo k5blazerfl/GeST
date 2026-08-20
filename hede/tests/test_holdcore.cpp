@@ -3,7 +3,6 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QProcess>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QThread>
@@ -60,8 +59,39 @@ private slots:
         QVERIFY(!helm::hold::symlinkEscapes(base, QStringLiteral("link"), QString()));
     }
 
+    // A1: hold::create preserves symlinks (stores them, doesn't follow them) —
+    // list surfaces the target and extract recreates a real link, not a copied file.
+    void createPreservesSymlinks() {
+        QTemporaryDir tmp;
+        const QString root = tmp.path();
+        QVERIFY(QDir(root).mkpath(QStringLiteral("src")));
+        writeFile(root + "/src/real.txt", "data");
+        std::error_code ec;
+        std::filesystem::create_symlink(
+            "real.txt", std::filesystem::path((root + "/src/link").toStdString()), ec);
+        QVERIFY2(!ec, "could not create the test symlink");
+
+        const QString tar = root + "/s.tar";
+        QVERIFY(helm::hold::create({root + "/src/real.txt", root + "/src/link"}, tar).ok);
+
+        const auto listed = helm::hold::list(tar);
+        QVERIFY(listed.ok);
+        bool sawLink = false;
+        for (const auto &e : listed.entries)
+            if (e.path == QLatin1String("link")) {
+                sawLink = true;
+                QCOMPARE(e.type, helm::hold::EntryType::Symlink);
+                QCOMPARE(e.linkTarget, QStringLiteral("real.txt")); // raw target preserved
+            }
+        QVERIFY(sawLink);
+
+        QVERIFY(helm::hold::extractAll(tar, root + "/ex").ok);
+        QVERIFY(QFileInfo(root + "/ex/link").isSymLink()); // a real link, not "data"
+    }
+
     // A1: on extract, an escaping symlink is refused (and reported), a contained one
-    // is kept, and extraction of the rest still succeeds.
+    // is kept, and extraction of the rest still succeeds. Self-contained now that
+    // hold::create preserves symlinks — no external tar needed.
     void symlinkEscapeGuardOnExtract() {
         QTemporaryDir tmp;
         const QString root = tmp.path();
@@ -74,18 +104,11 @@ private slots:
         fs::create_symlink("a.txt", fs::path((root + "/src/ok").toStdString()), ec);
         QVERIFY2(!ec, "could not create the test symlinks");
 
-        // Pack with system tar (it preserves symlinks); hold::create can't yet.
-        QProcess tar;
-        tar.setWorkingDirectory(root + "/src");
-        tar.start(QStringLiteral("tar"),
-                  {QStringLiteral("cf"), root + "/s.tar", QStringLiteral("a.txt"),
-                   QStringLiteral("evil"), QStringLiteral("ok")});
-        if (!tar.waitForStarted(2000))
-            QSKIP("tar not available to build the symlink fixture");
-        QVERIFY(tar.waitForFinished(5000));
-        QCOMPARE(tar.exitCode(), 0);
+        const QString tar = root + "/s.tar";
+        QVERIFY(helm::hold::create(
+                    {root + "/src/a.txt", root + "/src/evil", root + "/src/ok"}, tar).ok);
 
-        const auto ex = helm::hold::extractAll(root + "/s.tar", root + "/ex");
+        const auto ex = helm::hold::extractAll(tar, root + "/ex");
         QVERIFY2(ex.ok, qPrintable(ex.error));                  // the rest still extracts
         QCOMPARE(readFile(root + "/ex/a.txt"), QByteArray("hi"));
         QVERIFY(QFileInfo(root + "/ex/ok").isSymLink());        // safe symlink kept

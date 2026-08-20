@@ -322,6 +322,34 @@ Result addPath(struct archive *a, const QString &fsPath, const QString &archiveN
     Result r;
     const QFileInfo info(fsPath);
 
+    // Symlinks are stored as symlinks (not followed) — checked before isDir(), since
+    // isDir() follows the link: a symlink-to-dir would otherwise be recursed into
+    // (data blow-up, cyclic-link loops). read_symlink keeps the raw target verbatim.
+    if (info.isSymLink()) {
+        std::error_code ec;
+        const std::filesystem::path tgt = std::filesystem::read_symlink(
+            std::filesystem::path(fsPath.toLocal8Bit().toStdString()), ec);
+        if (ec) {
+            r.error = QStringLiteral("cannot read symlink %1").arg(fsPath);
+            return r;
+        }
+        struct archive_entry *e = archive_entry_new();
+        archive_entry_set_pathname(e, archiveName.toLocal8Bit().constData());
+        archive_entry_set_filetype(e, AE_IFLNK);
+        archive_entry_set_symlink(e, tgt.c_str());
+        archive_entry_set_perm(e, 0777);
+        if (info.lastModified().isValid())
+            archive_entry_set_mtime(e, info.lastModified().toSecsSinceEpoch(), 0);
+        const int rc = archive_write_header(a, e);
+        archive_entry_free(e);
+        if (rc != ARCHIVE_OK) {
+            r.error = QString::fromUtf8(archive_error_string(a));
+            return r;
+        }
+        r.ok = true;
+        return r; // a symlink carries no data body
+    }
+
     if (info.isDir()) {
         struct archive_entry *e = archive_entry_new();
         archive_entry_set_pathname(e, (archiveName + QLatin1Char('/')).toLocal8Bit().constData());
