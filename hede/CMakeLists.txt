@@ -9,6 +9,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets Test WaylandClient WaylandClientPrivate DBus)
 find_package(LayerShellQt REQUIRED)
+find_package(LibArchive REQUIRED) # hold-core's archive engine
 
 qt_standard_project_setup()
 enable_testing()
@@ -28,6 +29,7 @@ add_subdirectory(src/panel)
 add_subdirectory(src/menu)
 add_subdirectory(src/bg)
 add_subdirectory(src/notify)
+add_subdirectory(src/hold)
 add_subdirectory(src/sefe)
 add_subdirectory(tests)
 

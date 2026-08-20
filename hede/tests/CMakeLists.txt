@@ -83,3 +83,7 @@ set_tests_properties(smoke-headless PROPERTIES
     LABELS integration
     SKIP_RETURN_CODE 77
     TIMEOUT 60)
+
+qt_add_executable(test-holdcore test_holdcore.cpp)
+target_link_libraries(test-holdcore PRIVATE Qt6::Test hold-core)
+add_test(NAME holdcore COMMAND test-holdcore)
