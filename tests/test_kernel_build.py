@@ -33,6 +33,14 @@ def test_genkernel_argv_plymouth_bakes_hede_splash():
         "--plymouth", "--plymouth-theme=hede", "all"]
 
 
+def test_genkernel_argv_initramfs_action():
+    # The re-tint path rebuilds only the initramfs (no kernel recompile).
+    assert commands.genkernel_argv(plymouth=True, action="initramfs") == [
+        "genkernel", "--plymouth", "--plymouth-theme=hede", "initramfs"]
+    with pytest.raises(ValueError):
+        commands.genkernel_argv(action="oldconfig")
+
+
 def test_dracut_argv():
     assert commands.dracut_argv() == ["dracut", "--force"]
     assert commands.dracut_argv("6.6.30-gentoo") == ["dracut", "--force", "--kver", "6.6.30-gentoo"]

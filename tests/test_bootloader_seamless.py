@@ -59,3 +59,40 @@ def test_stage_theme_steps_root_prefix():
     steps = seamless.stage_theme_steps(root="/mnt/gentoo")
     cp = next(s for s in steps if s.argv[0] == "cp")
     assert "/mnt/gentoo/boot/grub/themes/hede" in cp.argv
+
+
+def test_boot_theme_installs_pairs():
+    pairs = seamless.boot_theme_installs(staging="/run/x")
+    srcs = [s for s, _ in pairs]
+    dsts = [d for _, d in pairs]
+    assert "/run/x/plymouth/hede/hede.script" in srcs
+    assert "/run/x/grub/hede/theme.txt" in srcs
+    # Plymouth's script goes into its theme dir (baked into the initramfs);
+    # GRUB's theme.txt overwrites the copy in /boot (read directly at boot).
+    assert seamless.PLYMOUTH_SCRIPT_DST in dsts
+    assert seamless.GRUB_THEME_TXT_DST in dsts
+    assert seamless.GRUB_THEME_TXT_DST == seamless.THEME_TXT
+
+
+def test_boot_theme_installs_root_prefix():
+    pairs = seamless.boot_theme_installs(staging="/run/x", root="/mnt/gentoo")
+    dsts = [d for _, d in pairs]
+    assert f"/mnt/gentoo{seamless.PLYMOUTH_SCRIPT_DST}" in dsts
+    assert "/mnt/gentoo/boot/grub/themes/hede/theme.txt" in dsts
+
+
+def test_boot_scene_install_pair():
+    src, dst = seamless.boot_scene_install(staging="/run/x")
+    assert src == "/run/x/plymouth/hede/background.png"
+    assert dst == seamless.PLYMOUTH_BG_DST
+    assert dst.endswith("/plymouth/themes/hede/background.png")
+    # root prefix seam
+    _, dst2 = seamless.boot_scene_install(staging="/run/x", root="/mnt/gentoo")
+    assert dst2 == f"/mnt/gentoo{seamless.PLYMOUTH_BG_DST}"
+
+
+def test_initramfs_regen_step_is_genkernel_initramfs_plymouth():
+    step = seamless.initramfs_regen_step()
+    assert step.argv[0] == "genkernel"
+    assert "--plymouth" in step.argv
+    assert step.argv[-1] == "initramfs"  # initramfs-only, no kernel recompile

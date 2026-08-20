@@ -15,6 +15,7 @@ from __future__ import annotations
 import re
 
 from gest.core.exec.steps import Step
+from gest.core.kernel.commands import genkernel_argv
 
 # Quiet-splash args appended to the default kernel cmdline (mirrors the live CD's
 # livecd/bootargs).
@@ -86,6 +87,48 @@ def stage_theme_steps(*, root: str = "") -> list[Step]:
         Step("stage the HeDE GRUB theme", ["cp", "-rT", f"{root}{THEME_SRC}", dst]),
         Step("select the Plymouth splash", ["plymouth-set-default-theme", PLYMOUTH_THEME]),
     ]
+
+
+# --- biome re-tint (slice 1b) --------------------------------------------------
+# Re-tinting overwrites the two boot-theme files a prior ConfigureSeamlessBoot
+# already installed, from files helm-theme emits (--emit-boot-theme) for the
+# active world's accent. GRUB reads theme.txt straight from /boot, so its re-tint
+# lands on the next boot with no rebuild; Plymouth's script is baked into the
+# initramfs, so it only takes effect after an initramfs rebuild.
+PLYMOUTH_SCRIPT_DST = "/usr/share/plymouth/themes/hede/hede.script"
+GRUB_THEME_TXT_DST = THEME_TXT  # /boot/grub/themes/hede/theme.txt
+# The per-biome splash scene (slice 2). helm-theme copies the active world's
+# boot.png here; overwriting it is what makes the splash *art* track the biome
+# (the chrome above tracks the accent). Baked into the initramfs like the script.
+PLYMOUTH_BG_DST = "/usr/share/plymouth/themes/hede/background.png"
+
+
+def boot_theme_installs(*, staging: str, root: str = "") -> list[tuple[str, str]]:
+    """``(src, dst)`` pairs to atomic-copy when re-tinting the installed boot
+    theme from files emitted into ``staging`` (as ``plymouth/hede/hede.script``
+    and ``grub/hede/theme.txt``). ``root`` prefixes the on-disk destinations for
+    an install-root seam. The backend atomic-writes each dst (temp + rename)."""
+    return [
+        (f"{staging}/plymouth/hede/hede.script", f"{root}{PLYMOUTH_SCRIPT_DST}"),
+        (f"{staging}/grub/hede/theme.txt", f"{root}{GRUB_THEME_TXT_DST}"),
+    ]
+
+
+def boot_scene_install(*, staging: str, root: str = "") -> tuple[str, str]:
+    """The ``(src, dst)`` for the per-biome splash scene. Best-effort: the src is
+    present only when the active world ships a boot.png, so the backend installs
+    it only if emitted — a world without one keeps the default Harbor scene."""
+    return (f"{staging}/plymouth/hede/background.png", f"{root}{PLYMOUTH_BG_DST}")
+
+
+def initramfs_regen_step() -> Step:
+    """Rebuild the initramfs so Plymouth picks up the re-tinted ``hede.script``.
+    ``genkernel --plymouth initramfs`` re-bakes only the initramfs (no kernel
+    recompile) with the current default HeDE splash — the fast twin of the
+    install-time ``genkernel --plymouth all``. genkernel writes the image itself,
+    keeping the prior kernel's entry available if a boot regresses."""
+    return Step("rebuild the initramfs (Plymouth splash)",
+                genkernel_argv(plymouth=True, action="initramfs"))
 
 
 def seamless_steps(*, root: str = "") -> list[Step]:

@@ -25,6 +25,52 @@ ThemeSpec parseThemeArgs(const QStringList &args); // --dark/--light/--accent=�
 // the same luminance rule as the shell palette (see helm::contrastText).
 QString themercBody(const ThemeSpec &s);
 
+// --- boot-splash generators (the seamless-boot chain) ---
+// The Harbor default accent, shared by the fallbacks below and themercBody.
+QString defaultAccent(); // "#3aa6c4"
+
+// A Plymouth script-theme body (hede.script): the Harbor scene under a thin
+// progress tracker whose bar — and the pre-image fallback fill — track the
+// accent (empty → Harbor default). The scene image is unchanged here; only the
+// palette tracks the world (per-world scene art is a later slice).
+QString plymouthScriptBody(const QString &accent);
+
+// A GRUB theme body (theme.txt): the boot menu laid over background.png, with
+// the letterbox (desktop-color) and the highlighted entry (selected_item_color)
+// tinted to the accent (empty → Harbor default). Menu/label text stays a fixed
+// legible neutral.
+QString grubThemeBody(const QString &accent);
+
+// Write the generated boot theme (hede.script + GRUB theme.txt) under ``dir``,
+// as ``<dir>/plymouth/hede/hede.script`` and ``<dir>/grub/hede/theme.txt``.
+// Returns the files written (empty on failure). The privileged installer emits
+// to a root-owned dir with an explicit accent (--emit-boot-theme); the session
+// stages under $XDG_DATA_HOME (stageBootTheme).
+QStringList writeBootTheme(const QString &dir, const QString &accent);
+
+// Stage the boot theme for the privileged installer to pick up: writeBootTheme
+// under $XDG_DATA_HOME/hede/boot/ (user-writable). A root step (GeST's
+// SyncBootTheme) installs these into /usr/share + /boot and rebuilds the
+// initramfs — the boot splash can't repaint live like the desktop, so it's
+// staged here and applied out of band. Returns the files written.
+QStringList stageBootTheme(const QString &accent);
+
+// The accent the shell/boot resolve for the active session: the explicit
+// [appearance] accent if set, else the active world's accent (hede.conf
+// [world] id, default "harbor"), else the Harbor default. Mirrors the shell's
+// helm::effectiveAccent and applyThemeFromWorld's precedence.
+QString activeAccent();
+
+// The active world id (hede.conf [world] id, default "harbor") — the biome the
+// boot splash scene tracks; pairs with activeAccent for the chrome.
+QString activeWorldId();
+
+// Copy world ``worldId``'s boot scene (World::bootPath) into ``dir`` as
+// ``plymouth/hede/background.png``, so the splash art tracks the biome. Returns
+// the written path, or empty if the world has no boot.png (the installed default
+// is then left in place). Used by --emit-boot-theme.
+QString emitBootScene(const QString &dir, const QString &worldId);
+
 // Write the theme: GTK 3/4 settings.ini + (when persistAppearance) the
 // [appearance] block in hede.conf (under $XDG_CONFIG_HOME) + the Helm labwc
 // themerc (under $XDG_DATA_HOME). Returns the files written (empty on failure).

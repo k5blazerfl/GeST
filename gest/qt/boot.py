@@ -30,3 +30,19 @@ def regenerate_grub() -> tuple[bool, str]:
             await backend.close()
 
     return run_backend(run)
+
+
+def sync_boot_theme(accent: str, world: str) -> tuple[bool, str]:
+    """Re-tint the installed boot theme to ``accent`` and swap the splash scene to
+    ``world`` (see SyncBootTheme), then rebuild the initramfs. Blocking (the
+    rebuild runs genkernel) — call it off the UI thread."""
+    async def run():
+        from gest.core.bootloader.backend_client import BootloaderBackend
+
+        backend = await BootloaderBackend().connect()
+        try:
+            return await backend.sync_boot_theme(accent, world)
+        finally:
+            await backend.close()
+
+    return run_backend(run)
