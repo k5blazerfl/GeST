@@ -560,10 +560,19 @@ void SefeWindow::navigateTo(const QString &dir, bool record) {
         }
     } else { // inside an archive
         if (!_archiveModel || _archiveModel->archivePath() != split.archive) {
+            // Loading a NEW archive reads its table of contents. It's synchronous
+            // (near-instant for a zip), so we don't off-thread it — but pulse the
+            // throbber so the load registers: begin/end here spins it one full loop
+            // (it idles on, and settles back to, tonight's moon) via runBusy's
+            // refcounted animator. Navigating within an already-open archive skips
+            // this — no re-read.
+            _throbber->begin(
+                QStringLiteral("Reading %1…").arg(QFileInfo(split.archive).fileName()));
             helm::hold::ArchiveModel *old = _archiveModel;
             _archiveModel = new helm::hold::ArchiveModel(split.archive);
             useModel(_archiveModel, _archiveModel->indexForInner(split.inner));
             delete old; // views no longer reference it
+            _throbber->end();
         } else {
             useModel(_archiveModel, _archiveModel->indexForInner(split.inner));
         }
