@@ -1,6 +1,8 @@
 #pragma once
 
+#include <QColor>
 #include <QMainWindow>
+#include <QPixmap>
 #include <QStringList>
 
 #include <functional>
@@ -10,7 +12,10 @@ class QAction;
 class QFileSystemModel;
 class QListView;
 class QListWidget;
+class QMenuBar;
 class QModelIndex;
+class QMouseEvent;
+class QPaintEvent;
 class QPoint;
 class QStackedWidget;
 class QTemporaryDir;
@@ -24,6 +29,7 @@ namespace helm::sefe {
 
 class AddressBar;
 class HelmThrobber;
+class HelmTitleBar;
 class ThumbnailIconProvider;
 
 // The SeFE main window. Slice 3 "Operations": read/write now — the full
@@ -39,8 +45,21 @@ public:
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
+    // Frameless scene chrome (Phase D): paint the world scene + legibility scrims
+    // behind the transparent chrome, and drive interactive move/resize since a
+    // frameless toplevel has no server-side titlebar or resize border.
+    void paintEvent(QPaintEvent *event) override;
+    void mousePressEvent(QMouseEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
 
 private:
+    // --- scene chrome (Phase D) ---
+    void buildSceneChrome();          // frameless flags, titlebar, scene, insets
+    void loadScene();                 // (re)load the active world's wallpaper
+    Qt::Edges resizeEdgeAt(const QPoint &pos) const; // which border the cursor is on
+    int headerHeight() const;         // top scrim band (titlebar+menu+toolbar)
+    int footerHeight() const;         // bottom scrim band (status bar)
+
     // navigation (slice 2)
     void navigateTo(const QString &dir, bool record = true);
     void openIndex(const QModelIndex &index);
@@ -96,6 +115,11 @@ private:
     QStackedWidget *_viewStack = nullptr;
     AddressBar *_address = nullptr;
     HelmThrobber *_throbber = nullptr; // Netscape-style busy light (top-right)
+    HelmTitleBar *_titlebar = nullptr; // client-side titlebar (frameless chrome)
+    QMenuBar *_menuBar = nullptr;      // our menu bar (lives in the header widget)
+    QPixmap _scene;                    // the active world's wallpaper, painted as chrome
+    QColor _accent;                    // effective accent (scene-less fallback fill)
+    static constexpr int kResizeMargin = 7; // edge band that starts a system resize
 
     QAction *_backAct = nullptr;
     QAction *_fwdAct = nullptr;
