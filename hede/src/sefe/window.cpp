@@ -39,6 +39,7 @@
 #include <QIcon>
 #include <QInputDialog>
 #include <QKeyEvent>
+#include <QLineEdit>
 #include <QKeySequence>
 #include <QLabel>
 #include <QLinearGradient>
@@ -718,12 +719,16 @@ void SefeWindow::openArchiveEntry(const QString &inner) {
         return;
     const QString archive = _archiveModel->archivePath();
     const QString tempDir = _extractTemp->path();
+    const auto pass = archivePassphrase(archive); // A3: prompt if the archive is encrypted
+    if (!pass)
+        return; // cancelled
+    const QString passv = *pass;
     // Extract the one entry on a worker thread (the throbber spins), then open
     // it once it lands.
     runBusy(
         QStringLiteral("Opening %1…").arg(QFileInfo(inner).fileName()),
-        [archive, inner, tempDir]() -> QString {
-            const helm::hold::Result r = helm::hold::extract(archive, inner, tempDir);
+        [archive, inner, tempDir, passv]() -> QString {
+            const helm::hold::Result r = helm::hold::extract(archive, inner, tempDir, passv);
             return r.ok ? QString() : r.error; // empty == success
         },
         [this, inner, tempDir](const QString &error) {
@@ -1102,6 +1107,21 @@ SefeWindow::resolveOverwrite(const QString &dest, const QStringList &relPaths) {
     return std::nullopt; // Cancel / closed
 }
 
+std::optional<QString> SefeWindow::archivePassphrase(const QString &archive) {
+    if (!helm::hold::isEncrypted(archive))
+        return QString(); // not encrypted — no passphrase needed
+    // A3c (future): consult the Keychain here first, and offer "remember". For now,
+    // prompt each time.
+    bool ok = false;
+    const QString pass = QInputDialog::getText(
+        this, QStringLiteral("Encrypted archive"),
+        QStringLiteral("Passphrase for %1:").arg(QFileInfo(archive).fileName()),
+        QLineEdit::Password, QString(), &ok);
+    if (!ok)
+        return std::nullopt; // cancelled
+    return pass;
+}
+
 void SefeWindow::extractHere() {
     QStringList archives;
     for (const QString &p : selectedPaths())
@@ -1120,13 +1140,22 @@ void SefeWindow::extractHere() {
         return; // cancelled
     const helm::hold::Overwrite ow = *policy;
 
+    QStringList passes; // a passphrase per archive (prompt for the encrypted ones)
+    for (const QString &archive : archives) {
+        const auto pass = archivePassphrase(archive);
+        if (!pass)
+            return; // cancelled
+        passes << *pass;
+    }
+
     const QString one = QFileInfo(archives.first()).fileName();
     runJob(
         archives.size() == 1 ? QStringLiteral("Extracting %1…").arg(one)
                              : QStringLiteral("Extracting %1 archives…").arg(archives.size()),
-        [archives, dest, ow](const helm::hold::Progress &p) -> helm::hold::Result {
-            for (const QString &archive : archives) {
-                const helm::hold::Result r = helm::hold::extractAll(archive, dest, p, {}, ow);
+        [archives, passes, dest, ow](const helm::hold::Progress &p) -> helm::hold::Result {
+            for (int i = 0; i < archives.size(); ++i) {
+                const helm::hold::Result r =
+                    helm::hold::extractAll(archives[i], dest, p, {}, ow, passes[i]);
                 if (!r.ok)
                     return r;
             }
@@ -1160,11 +1189,15 @@ void SefeWindow::extractTo() {
     if (!policy)
         return; // cancelled
     const helm::hold::Overwrite ow = *policy;
+    const auto pass = archivePassphrase(archive);
+    if (!pass)
+        return; // cancelled the passphrase prompt
+    const QString passv = *pass;
 
     runJob(
         QStringLiteral("Extracting %1…").arg(QFileInfo(archive).fileName()),
-        [archive, dest, ow](const helm::hold::Progress &p) {
-            return helm::hold::extractAll(archive, dest, p, {}, ow);
+        [archive, dest, ow, passv](const helm::hold::Progress &p) {
+            return helm::hold::extractAll(archive, dest, p, {}, ow, passv);
         },
         [dest](const helm::hold::Result &r) {
             return r.ok ? QStringLiteral("Extracted to %1").arg(dest)
@@ -1209,11 +1242,15 @@ void SefeWindow::extractSelectedEntries() {
     if (!policy)
         return; // cancelled
     const helm::hold::Overwrite ow = *policy;
+    const auto pass = archivePassphrase(archive);
+    if (!pass)
+        return; // cancelled the passphrase prompt
+    const QString passv = *pass;
 
     runJob(
         QStringLiteral("Extracting %1 item(s)…").arg(entries.size()),
-        [archive, entries, dest, ow](const helm::hold::Progress &p) {
-            return helm::hold::extractEntries(archive, entries, dest, p, {}, ow); // one pass
+        [archive, entries, dest, ow, passv](const helm::hold::Progress &p) {
+            return helm::hold::extractEntries(archive, entries, dest, p, {}, ow, passv); // one pass
         },
         [entries, dest](const helm::hold::Result &r) {
             return r.ok ? QStringLiteral("Extracted %1 item(s) to %2").arg(entries.size()).arg(dest)
@@ -1237,11 +1274,15 @@ void SefeWindow::extractWholeArchive() {
     if (!policy)
         return; // cancelled
     const helm::hold::Overwrite ow = *policy;
+    const auto pass = archivePassphrase(archive);
+    if (!pass)
+        return; // cancelled the passphrase prompt
+    const QString passv = *pass;
 
     runJob(
         QStringLiteral("Extracting %1…").arg(QFileInfo(archive).fileName()),
-        [archive, dest, ow](const helm::hold::Progress &p) {
-            return helm::hold::extractAll(archive, dest, p, {}, ow);
+        [archive, dest, ow, passv](const helm::hold::Progress &p) {
+            return helm::hold::extractAll(archive, dest, p, {}, ow, passv);
         },
         [dest](const helm::hold::Result &r) {
             return r.ok ? QStringLiteral("Extracted to %1").arg(dest)

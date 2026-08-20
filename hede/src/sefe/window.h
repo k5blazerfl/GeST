@@ -101,6 +101,10 @@ private:
     // archive — to a chosen folder via hold-core. See docs/design/hold.md (H4).
     void extractSelectedEntries(); // selected inner entries → a chosen folder
     void extractWholeArchive();    // the whole current archive → a chosen folder
+    // A3: the passphrase to use for `archive` — empty if it isn't encrypted, the
+    // user's entry (prompted) if it is, or nullopt if they cancelled. The Keychain
+    // ("remember") plugs in here.
+    std::optional<QString> archivePassphrase(const QString &archive);
     // A2: mutate the browsed archive in place via hold::rewrite (off-thread) then
     // reload it. The in-archive delete / rename / new folder / paste route here.
     // `keepalive` (e.g. new-folder's temp dir) is held until the rewrite finishes.
