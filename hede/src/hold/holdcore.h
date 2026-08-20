@@ -73,6 +73,11 @@ struct Limits {
 // 7z, rar, cbz/cbr). What Seahorse's openIndex tests to decide "walk into it".
 bool isArchive(const QString &path);
 
+// Decode an archive entry's raw name bytes to a QString: UTF-8 when the bytes are
+// valid UTF-8, otherwise CP437 (the historical zip code page) so legacy DOS/zip
+// names stay readable instead of collapsing to U+FFFD replacement characters.
+QString decodeEntryName(const QByteArray &rawName);
+
 // Resolve an archive entry to an absolute path under `destDir`, or "" if it
 // would escape it — the Zip-Slip guard. `destDir` is treated as the boundary;
 // absolute or "../"-laden entry paths are re-rooted or rejected.

@@ -131,6 +131,17 @@ private slots:
         QVERIFY(ex.error.contains(QStringLiteral("entry")));
     }
 
+    // A1: legacy (non-UTF-8) filenames decode via CP437 instead of becoming mojibake.
+    void decodesLegacyFilenames() {
+        const QString cafe = QString::fromUtf8("caf\xC3\xA9"); // "café"
+        // valid UTF-8 is preserved as-is
+        QCOMPARE(helm::hold::decodeEntryName(QByteArrayLiteral("caf\xC3\xA9")), cafe);
+        // a CP437 name (é == 0x82, not valid UTF-8) is recovered, not mangled
+        QCOMPARE(helm::hold::decodeEntryName(QByteArrayLiteral("caf\x82")), cafe);
+        // no U+FFFD replacement characters leak out for lone high bytes
+        QVERIFY(!helm::hold::decodeEntryName(QByteArrayLiteral("\xff")).contains(QChar(0xFFFD)));
+    }
+
     // create → list → extract round-trip through libarchive (zip).
     void zipRoundTrip() {
         QTemporaryDir tmp;
