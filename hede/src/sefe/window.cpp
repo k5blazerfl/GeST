@@ -35,6 +35,7 @@
 #include <QFrame>
 #include <QHeaderView>
 #include <QIcon>
+#include <QInputDialog>
 #include <QKeyEvent>
 #include <QKeySequence>
 #include <QLabel>
@@ -606,8 +607,9 @@ void SefeWindow::finishNavigate(const QString &path, bool record) {
         _titlebar->setTitle(helm::sefe::windowTitle(path));
     highlightPlace(path);
     statusBar()->showMessage(path);
-    if (_readOnlyPill)
-        _readOnlyPill->setVisible(_inArchive); // archive = read-only (for now)
+    if (_readOnlyPill) // only genuinely read-only formats (RAR/CBR) — writable archives edit in place
+        _readOnlyPill->setVisible(_inArchive && _archiveModel &&
+                                  !helm::hold::isWritableArchive(_archiveModel->archivePath()));
 
     if (record) {
         while (_history.size() > _histIndex + 1)
@@ -618,7 +620,7 @@ void SefeWindow::finishNavigate(const QString &path, bool record) {
     updateNavActions();
 }
 
-void SefeWindow::navigateTo(const QString &dir, bool record) {
+void SefeWindow::navigateTo(const QString &dir, bool record, bool forceReload) {
     const QString path = QDir::cleanPath(dir);
     const ArchiveSplit split = splitArchivePath(path);
     const quint64 gen = ++_navGen; // an in-flight archive load older than this is stale
@@ -634,7 +636,7 @@ void SefeWindow::navigateTo(const QString &dir, bool record) {
         finishNavigate(path, record);
         return;
     }
-    if (_archiveModel && _archiveModel->archivePath() == split.archive) {
+    if (!forceReload && _archiveModel && _archiveModel->archivePath() == split.archive) {
         // already inside this archive — just re-root, no re-read
         _inArchive = true;
         setViewModel(_archiveModel, _archiveModel->indexForInner(split.inner));
@@ -779,6 +781,27 @@ QStringList SefeWindow::selectedPaths() const {
 }
 
 void SefeWindow::renameSelected() {
+    if (_inArchive) { // A2: rename an entry inside the archive (rewrite)
+        const QStringList sel = selectedInnerEntries();
+        if (sel.size() != 1)
+            return; // one at a time
+        const QString from = sel.first();
+        const QString oldName = from.section(QLatin1Char('/'), -1);
+        bool ok = false;
+        const QString newName =
+            QInputDialog::getText(this, QStringLiteral("Rename"), QStringLiteral("New name:"),
+                                  QLineEdit::Normal, oldName, &ok)
+                .trimmed();
+        if (!ok || newName.isEmpty() || newName == oldName || newName.contains(QLatin1Char('/')))
+            return;
+        const QString parent =
+            from.contains(QLatin1Char('/')) ? from.section(QLatin1Char('/'), 0, -2) + QLatin1Char('/')
+                                            : QString();
+        helm::hold::Edits e;
+        e.rename.append({from, parent + newName});
+        mutateArchive(e, QStringLiteral("Renaming %1…").arg(oldName));
+        return;
+    }
     QAbstractItemView *v = activeView();
     const QModelIndex idx = v ? v->currentIndex() : QModelIndex();
     if (idx.isValid())
@@ -786,6 +809,22 @@ void SefeWindow::renameSelected() {
 }
 
 void SefeWindow::deleteSelected() {
+    if (_inArchive) { // A2: remove entries from the archive (rewrite) — no Trash inside
+        const QStringList inner = selectedInnerEntries();
+        if (inner.isEmpty())
+            return;
+        const auto btn = QMessageBox::question(
+            this, QStringLiteral("Delete from archive"),
+            QStringLiteral("Permanently remove %1 item(s) from the archive? "
+                           "This can't be undone.")
+                .arg(inner.size()));
+        if (btn != QMessageBox::Yes)
+            return;
+        helm::hold::Edits e;
+        e.remove = inner;
+        mutateArchive(e, QStringLiteral("Deleting %1 item(s)…").arg(inner.size()));
+        return;
+    }
     const QStringList paths = selectedPaths();
     if (paths.isEmpty())
         return;
@@ -816,8 +855,18 @@ void SefeWindow::copySelected(bool cut) {
 }
 
 void SefeWindow::paste() {
-    if (_clip.isEmpty() || _inArchive) // can't paste into a read-only archive view
+    if (_clip.isEmpty())
         return;
+    if (_inArchive) { // A2: add the clipboard's host files into the archive (rewrite)
+        const QString innerDir = splitArchivePath(_current).inner;
+        helm::hold::Edits e;
+        for (const QString &src : _clip) {
+            const QString base = QFileInfo(src).fileName();
+            e.add.append({src, innerDir.isEmpty() ? base : innerDir + QLatin1Char('/') + base});
+        }
+        mutateArchive(e, QStringLiteral("Adding %1 item(s)…").arg(_clip.size()));
+        return; // a filesystem "cut" isn't consumed — we copied INTO the archive
+    }
     const QStringList clip = _clip;
     const bool cut = _clipCut;
     const QString dest = _current;
@@ -858,6 +907,26 @@ void SefeWindow::paste() {
 }
 
 void SefeWindow::newFolder() {
+    if (_inArchive) { // A2: add an empty folder into the archive (rewrite)
+        bool ok = false;
+        const QString name =
+            QInputDialog::getText(this, QStringLiteral("New folder"),
+                                  QStringLiteral("Folder name:"), QLineEdit::Normal,
+                                  QStringLiteral("New folder"), &ok)
+                .trimmed();
+        if (!ok || name.isEmpty() || name.contains(QLatin1Char('/')))
+            return;
+        // hold::rewrite ingests a HOST path, so add an empty temp dir at the target
+        // inner path. The temp dir is held alive until the rewrite finishes.
+        auto tmp = std::make_shared<QTemporaryDir>();
+        if (!tmp->isValid())
+            return;
+        const QString innerDir = splitArchivePath(_current).inner;
+        helm::hold::Edits e;
+        e.add.append({tmp->path(), innerDir.isEmpty() ? name : innerDir + QLatin1Char('/') + name});
+        mutateArchive(e, QStringLiteral("Adding %1…").arg(name), tmp);
+        return;
+    }
     const QString name = newFolderName(entriesOf(_current));
     if (!QDir(_current).mkdir(name))
         return;
@@ -1172,6 +1241,32 @@ void SefeWindow::extractWholeArchive() {
         });
 }
 
+void SefeWindow::mutateArchive(const helm::hold::Edits &edits, const QString &activity,
+                              std::shared_ptr<QTemporaryDir> keepalive) {
+    if (!_inArchive || !_archiveModel || edits.isEmpty())
+        return;
+    const QString archive = _archiveModel->archivePath();
+    if (!helm::hold::isWritableArchive(archive)) {
+        statusBar()->showMessage(QStringLiteral("This archive format is read-only"));
+        return;
+    }
+    const QString reloadPath = _current;
+    runJob(
+        activity,
+        [archive, edits, keepalive](const helm::hold::Progress &p) { // keepalive held until done
+            return helm::hold::rewrite(archive, edits, p);
+        },
+        [this, reloadPath, activity](const helm::hold::Result &r) -> QString {
+            if (r.ok) {
+                // The archive changed on disk — re-read it (forceReload swaps the
+                // model safely). navigateTo sets its own status.
+                navigateTo(reloadPath, /*record=*/false, /*forceReload=*/true);
+                return QString();
+            }
+            return archiveFailMsg(activity, r);
+        });
+}
+
 void SefeWindow::compressSelection() {
     const QStringList sel = selectedPaths();
     if (sel.isEmpty())
@@ -1190,14 +1285,28 @@ void SefeWindow::compressSelection() {
 void SefeWindow::showContextMenu(QAbstractItemView *view, const QPoint &pos) {
     const QModelIndex idx = view->indexAt(pos);
     QMenu menu(this);
-    if (_inArchive) { // browse read-only, but extract entries out (folded-in Hold)
+    if (_inArchive) { // browse + (for writable formats) edit in place — A2
+        const bool writable =
+            _archiveModel && helm::hold::isWritableArchive(_archiveModel->archivePath());
         if (idx.isValid()) {
             QAction *open = menu.addAction(QStringLiteral("Open"));
             connect(open, &QAction::triggered, this, [this, idx] { openIndex(idx); });
             menu.addSeparator();
             menu.addAction(_arcExtractSelAct); // extract the selected entries
+            if (writable) {
+                menu.addSeparator();
+                menu.addAction(_renameAct);
+                menu.addAction(_deleteAct);
+            }
         }
-        menu.addAction(_arcExtractAllAct);     // extract the whole archive
+        if (writable) { // background: add into the archive here
+            menu.addSeparator();
+            menu.addAction(_newFolderAct);
+            if (!_clip.isEmpty())
+                menu.addAction(_pasteAct);
+        }
+        menu.addSeparator();
+        menu.addAction(_arcExtractAllAct); // extract the whole archive
         menu.exec(view->viewport()->mapToGlobal(pos));
         return;
     }

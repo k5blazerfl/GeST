@@ -8,6 +8,7 @@
 #include <QStringList>
 
 #include <functional>
+#include <memory>
 #include <optional>
 
 class QAbstractItemModel;
@@ -68,7 +69,7 @@ private:
     int footerHeight() const;         // bottom scrim band (status bar)
 
     // navigation (slice 2)
-    void navigateTo(const QString &dir, bool record = true);
+    void navigateTo(const QString &dir, bool record = true, bool forceReload = false);
     void setViewModel(QAbstractItemModel *m, const QModelIndex &root); // swap+root both views
     void finishNavigate(const QString &path, bool record); // address/title/history/pill
     void openIndex(const QModelIndex &index);
@@ -99,6 +100,11 @@ private:
     // archive — to a chosen folder via hold-core. See docs/design/hold.md (H4).
     void extractSelectedEntries(); // selected inner entries → a chosen folder
     void extractWholeArchive();    // the whole current archive → a chosen folder
+    // A2: mutate the browsed archive in place via hold::rewrite (off-thread) then
+    // reload it. The in-archive delete / rename / new folder / paste route here.
+    // `keepalive` (e.g. new-folder's temp dir) is held until the rewrite finishes.
+    void mutateArchive(const helm::hold::Edits &edits, const QString &activity,
+                       std::shared_ptr<QTemporaryDir> keepalive = {});
     void showContextMenu(QAbstractItemView *view, const QPoint &pos);
 
     // Menu bar (on by default; the whole File/Edit/View/Go/Tools/Help surface is

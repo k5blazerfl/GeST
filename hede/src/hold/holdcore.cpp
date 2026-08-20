@@ -64,6 +64,13 @@ QString decodeEntryName(const QByteArray &rawName) {
     return out;
 }
 
+bool isWritableArchive(const QString &path) {
+    if (!isArchive(path))
+        return false;
+    const QString lower = path.toLower();
+    return !(lower.endsWith(QLatin1String(".rar")) || lower.endsWith(QLatin1String(".cbr")));
+}
+
 QString safeJoin(const QString &destDir, const QString &entryPath) {
     const QString base = QDir::cleanPath(destDir);
     const QString joined = QDir::cleanPath(base + QLatin1Char('/') + entryPath);

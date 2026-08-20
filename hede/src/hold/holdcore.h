@@ -79,6 +79,11 @@ enum class Overwrite { Replace, Skip, KeepBoth };
 // 7z, rar, cbz/cbr). What Seahorse's openIndex tests to decide "walk into it".
 bool isArchive(const QString &path);
 
+// True if hold-core can REBUILD this format (rewrite/create) — the whole isArchive
+// set except what libarchive reads but can't write (RAR/CBR). Seahorse gates
+// in-archive editing on this: a rar browses read-only, a zip is mutable.
+bool isWritableArchive(const QString &path);
+
 // Decode an archive entry's raw name bytes to a QString: UTF-8 when the bytes are
 // valid UTF-8, otherwise CP437 (the historical zip code page) so legacy DOS/zip
 // names stay readable instead of collapsing to U+FFFD replacement characters.
