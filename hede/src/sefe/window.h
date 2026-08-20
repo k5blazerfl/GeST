@@ -54,6 +54,9 @@ private:
     void runInDrydock();  // .exe/.msi/.lnk → drydock open
     void shareFolder();   // a folder → gangway share (RDP drive)
     void copyPaths();     // selected paths → clipboard as text
+    void extractHere();   // an archive → hold-core extract into the current dir
+    void extractTo();     // an archive → hold-core extract into a chosen dir
+    void compressSelection(); // selected paths → a new .zip via hold-core
     void showContextMenu(QAbstractItemView *view, const QPoint &pos);
 
     QAbstractItemView *activeView() const;
@@ -83,6 +86,9 @@ private:
     QAction *_drydockAct = nullptr;
     QAction *_shareAct = nullptr;
     QAction *_copyPathAct = nullptr;
+    QAction *_extractHereAct = nullptr;
+    QAction *_extractToAct = nullptr;
+    QAction *_compressAct = nullptr;
 
     QString _current;
     QStringList _history;

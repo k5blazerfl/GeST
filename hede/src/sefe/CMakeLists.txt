@@ -11,5 +11,6 @@ target_link_libraries(sefe PRIVATE
     helm-appearance
     helm-apps    # desktopentry: scan + Exec argv for "Open with"
     helm-common
+    hold-core    # archive engine: Extract / Compress (Hold H2)
 )
 install(TARGETS sefe RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
