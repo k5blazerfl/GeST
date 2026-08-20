@@ -696,8 +696,21 @@ void SefeWindow::renameSelected() {
 }
 
 void SefeWindow::deleteSelected() {
-    for (const QString &p : selectedPaths())
-        QFile::moveToTrash(p); // Del → Trash (reversible), Windows-style
+    const QStringList paths = selectedPaths();
+    if (paths.isEmpty())
+        return;
+    // Off the UI thread (throbber spins): trashing a big tree — or anything on a
+    // slow/network mount — mustn't freeze the window. Del → Trash, Windows-style.
+    runBusy(
+        QStringLiteral("Deleting %1 item(s)…").arg(paths.size()),
+        [paths]() -> QString {
+            int ok = 0;
+            for (const QString &p : paths)
+                if (QFile::moveToTrash(p))
+                    ++ok;
+            return QStringLiteral("Moved %1 item(s) to Trash").arg(ok);
+        },
+        [this](const QString &msg) { statusBar()->showMessage(msg); });
 }
 
 void SefeWindow::copySelected(bool cut) {
@@ -713,31 +726,45 @@ void SefeWindow::copySelected(bool cut) {
 }
 
 void SefeWindow::paste() {
-    if (_clip.isEmpty())
+    if (_clip.isEmpty() || _inArchive) // can't paste into a read-only archive view
         return;
-    const QDir dest(_current);
-    QSet<QString> existing = entriesOf(_current);
-    for (const QString &src : _clip) {
-        const QString base = QFileInfo(src).fileName();
-        if (_clipCut && QFileInfo(src).absolutePath() == _current)
-            continue; // cut + paste into the same folder is a no-op
-        // Disambiguate on any name collision. A copy into the source's own folder
-        // collides because the source itself is already in `existing` → "x - Copy".
-        QString name = base;
-        if (existing.contains(name))
-            name = copyName(base, existing);
-        existing.insert(name);
-        const QString target = dest.filePath(name);
-        if (_clipCut)
-            moveItem(src, target);
-        else
-            copyRecursively(src, target);
-    }
-    if (_clipCut) {
-        _clip.clear();
-        _clipCut = false;
-        _pasteAct->setEnabled(false);
-    }
+    const QStringList clip = _clip;
+    const bool cut = _clipCut;
+    const QString dest = _current;
+    // Copy/move runs off the UI thread (throbber spins): a large tree — or a
+    // slow/network target — would otherwise freeze the window.
+    runBusy(
+        cut ? QStringLiteral("Moving %1 item(s)…").arg(clip.size())
+            : QStringLiteral("Copying %1 item(s)…").arg(clip.size()),
+        [clip, cut, dest]() -> QString {
+            const QDir destDir(dest);
+            QSet<QString> existing = entriesOf(dest);
+            int ok = 0;
+            for (const QString &src : clip) {
+                const QString base = QFileInfo(src).fileName();
+                if (cut && QFileInfo(src).absolutePath() == dest)
+                    continue; // cut + paste into the same folder is a no-op
+                // Disambiguate on any name collision. A copy into the source's own
+                // folder collides (the source is already in `existing`) → "x - Copy".
+                QString name = base;
+                if (existing.contains(name))
+                    name = copyName(base, existing);
+                existing.insert(name);
+                const QString target = destDir.filePath(name);
+                if (cut ? moveItem(src, target) : copyRecursively(src, target))
+                    ++ok;
+            }
+            return (cut ? QStringLiteral("Moved %1 item(s)") : QStringLiteral("Copied %1 item(s)"))
+                .arg(ok);
+        },
+        [this, cut](const QString &msg) {
+            statusBar()->showMessage(msg);
+            if (cut) { // a move consumes the clipboard
+                _clip.clear();
+                _clipCut = false;
+                _pasteAct->setEnabled(false);
+            }
+        });
 }
 
 void SefeWindow::newFolder() {
