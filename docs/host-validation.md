@@ -223,6 +223,12 @@ drydock export-recipe notepad-test -o /tmp/out.recipe   # barrel -> recipe (roun
       not the old `manual: Proton install not yet planned`. `install --run`
       against a Proton barrel then drives umu for real. *(The argv/env are
       CI-tested; the live umu forwarding of built-ins is what this step confirms.)*
+- [ ] **Registry / execute / eject steps** now plan to real commands (were
+      `manual`): `regedit`→`wine reg add …`, `regdelete`→`wine reg delete …`,
+      `execute`→`wine <exe>` (or a native command), `eject_disc`→`eject` — visible
+      in `drydock plan`. A Lutris import that used `set_regedit` /
+      `delete_registry_key` / `execute` / `eject_disc` now materializes with **0
+      manual steps** for those.
 
 ---
 

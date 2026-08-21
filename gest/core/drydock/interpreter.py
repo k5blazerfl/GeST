@@ -12,10 +12,12 @@ variables (``$GAMEDIR``, ``$WINEPREFIX``, ``$CACHE``) and file-id references are
 resolved against a :class:`PlanContext`.
 
 Scope: the command steps are planned for both **wine** barrels (``wine`` +
-``winetricks`` + ``wineserver``) and **Proton** barrels, where they route through
-``umu-run`` (Proton's universal launcher — it bundles DXVK/VKD3D + protonfixes and
-creates the prefix). Filesystem steps are runner-agnostic. Only genuinely
-un-runnable directives stay ``manual``.
+``winetricks`` + ``wineserver`` + ``reg``) and **Proton** barrels, where they
+route through ``umu-run`` (Proton's universal launcher — it bundles DXVK/VKD3D +
+protonfixes and creates the prefix). Registry steps (``regedit``/``regdelete``)
+become ``wine reg add``/``reg delete``; ``execute`` runs a Windows exe through the
+runner or a native command directly; ``eject_disc`` runs ``eject``. Filesystem
+steps are runner-agnostic. Only genuinely un-runnable directives stay ``manual``.
 """
 
 from __future__ import annotations
@@ -116,6 +118,63 @@ def _verbs(params: dict) -> list[str]:
     return str(raw).split()
 
 
+def _args_list(params: dict, variables: dict) -> list[str]:
+    """A step's ``args`` as a resolved list — a YAML list stays a list, a string
+    is whitespace-split (Lutris writes either)."""
+    raw = params.get("args")
+    if isinstance(raw, (list, tuple)):
+        return [_subst(str(a), variables) for a in raw]
+    return _s(params, "args", variables).split() if raw else []
+
+
+# A Windows executable `execute` should run through the runner; anything else is a
+# native host command (Lutris' `execute` covers both).
+_WIN_EXE_SUFFIXES = (".exe", ".bat", ".cmd")
+
+
+def _reg_add_argv(params: dict, variables: dict) -> list[str]:
+    """``reg add`` argv for a ``set_regedit`` step (Lutris: ``path`` = the key,
+    ``key`` = the value name, ``value`` = data, ``type`` = REG_SZ/DWORD/…)."""
+    path = _s(params, "path", variables) or _s(params, "key_path", variables)
+    argv = ["reg", "add", path]
+    value_name = _s(params, "key", variables)
+    argv += ["/v", value_name] if value_name else ["/ve"]  # /ve = the default value
+    argv += ["/t", _s(params, "type", variables) or "REG_SZ"]
+    argv += ["/d", _s(params, "value", variables), "/f"]
+    return argv
+
+
+def _reg_delete_argv(params: dict, variables: dict) -> list[str]:
+    """``reg delete`` argv for a ``delete_registry_key`` step (Lutris: ``key`` = the
+    registry key to remove). An explicit ``value``/``value_name`` deletes just that
+    value rather than the whole key."""
+    key = _s(params, "key", variables) or _s(params, "path", variables)
+    argv = ["reg", "delete", key]
+    value_name = _s(params, "value_name", variables) or _s(params, "value", variables)
+    if value_name:
+        argv += ["/v", value_name]
+    argv.append("/f")
+    return argv
+
+
+def _plan_execute(params: dict, context: PlanContext, variables: dict,
+                  file_vars: dict) -> PlannedOp:
+    """A Lutris ``execute`` step: run a program. A Windows executable goes through
+    the runner (``wine``/``umu-run``); a native command runs directly."""
+    target = (file_vars.get(str(params.get("file", "")))
+              or _s(params, "file", variables) or _s(params, "command", variables)
+              or _s(params, "exe", variables))
+    args = _args_list(params, variables)
+    if target.lower().endswith(_WIN_EXE_SUFFIXES):
+        if context.runner == RUNNER_PROTON:
+            return PlannedOp(OP_COMMAND, f"umu-run {target} {' '.join(args)}".strip(),
+                             argv=[UMU_RUN, target, *args], env=_umu_env(context))
+        return PlannedOp(OP_COMMAND, f"wine {target} {' '.join(args)}".strip(),
+                         argv=["wine", target, *args], env=_wine_env(context))
+    return PlannedOp(OP_COMMAND, f"execute {target} {' '.join(args)}".strip(),
+                     argv=[target, *args], detail={"native": True})
+
+
 def _plan_step(step: R.RecipeStep, context: PlanContext,
                variables: dict, file_vars: dict) -> PlannedOp:
     action, params = step.action, step.params
@@ -139,9 +198,16 @@ def _plan_step(step: R.RecipeStep, context: PlanContext,
         return PlannedOp(OP_WRITE, f"write {fmt} {path}",
                          detail={"path": path, "format": fmt, "params": dict(params)})
 
+    # --- runner-agnostic command ops ---
+    if action == R.ACTION_EJECT_DISC:
+        return PlannedOp(OP_COMMAND, "eject the installation disc", argv=["eject"])
+    if action == R.ACTION_EXECUTE:
+        return _plan_execute(params, context, variables, file_vars)
+
     # --- command ops: wine directly, Proton via umu-run ---
     if action in (R.ACTION_CREATE_PREFIX, R.ACTION_WINEEXEC, R.ACTION_WINETRICKS,
-                  R.ACTION_REGEDIT_FILE, R.ACTION_WINEKILL):
+                  R.ACTION_REGEDIT_FILE, R.ACTION_REGEDIT, R.ACTION_REGDELETE,
+                  R.ACTION_WINEKILL):
         if context.runner == RUNNER_PROTON:
             return _plan_proton_command(action, params, context, variables)
         return _plan_wine_command(action, params, context, variables)
@@ -163,15 +229,19 @@ def _plan_wine_command(action: str, params: dict, context: PlanContext,
                          argv=["winetricks", "-q", *verbs], env=env)
     if action == R.ACTION_WINEEXEC:
         exe = _s(params, "executable", variables) or _s(params, "exe", variables)
-        args = [_subst(str(a), variables) for a in params.get("args", [])] \
-            if isinstance(params.get("args"), (list, tuple)) \
-            else (_s(params, "args", variables).split() if params.get("args") else [])
+        args = _args_list(params, variables)
         return PlannedOp(OP_COMMAND, f"wine {exe} {' '.join(args)}".strip(),
                          argv=["wine", exe, *args], env=env)
     if action == R.ACTION_REGEDIT_FILE:
         reg = _s(params, "file", variables) or _s(params, "path", variables)
         return PlannedOp(OP_COMMAND, f"wine regedit {reg}",
                          argv=["wine", "regedit", reg], env=env)
+    if action == R.ACTION_REGEDIT:
+        argv = _reg_add_argv(params, variables)
+        return PlannedOp(OP_COMMAND, f"wine {' '.join(argv)}", argv=["wine", *argv], env=env)
+    if action == R.ACTION_REGDELETE:
+        argv = _reg_delete_argv(params, variables)
+        return PlannedOp(OP_COMMAND, f"wine {' '.join(argv)}", argv=["wine", *argv], env=env)
     # ACTION_WINEKILL
     return PlannedOp(OP_COMMAND, "kill the prefix's wine processes",
                      argv=["wineserver", "-k"], env=env)
@@ -202,15 +272,19 @@ def _plan_proton_command(action: str, params: dict, context: PlanContext,
                          argv=[UMU_RUN, "winetricks", "-q", *verbs], env=env)
     if action == R.ACTION_WINEEXEC:
         exe = _s(params, "executable", variables) or _s(params, "exe", variables)
-        args = [_subst(str(a), variables) for a in params.get("args", [])] \
-            if isinstance(params.get("args"), (list, tuple)) \
-            else (_s(params, "args", variables).split() if params.get("args") else [])
+        args = _args_list(params, variables)
         return PlannedOp(OP_COMMAND, f"umu-run {exe} {' '.join(args)}".strip(),
                          argv=[UMU_RUN, exe, *args], env=env)
     if action == R.ACTION_REGEDIT_FILE:
         reg = _s(params, "file", variables) or _s(params, "path", variables)
         return PlannedOp(OP_COMMAND, f"umu regedit {reg}",
                          argv=[UMU_RUN, "regedit", reg], env=env)
+    if action == R.ACTION_REGEDIT:
+        argv = _reg_add_argv(params, variables)
+        return PlannedOp(OP_COMMAND, f"umu {' '.join(argv)}", argv=[UMU_RUN, *argv], env=env)
+    if action == R.ACTION_REGDELETE:
+        argv = _reg_delete_argv(params, variables)
+        return PlannedOp(OP_COMMAND, f"umu {' '.join(argv)}", argv=[UMU_RUN, *argv], env=env)
     # ACTION_WINEKILL
     return PlannedOp(OP_COMMAND, "kill the Proton prefix's wine processes",
                      argv=[UMU_RUN, "wineserver", "-k"], env=env)
