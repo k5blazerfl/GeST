@@ -1,8 +1,11 @@
 """Data type for a system service (frontend-agnostic).
 
-systemd on this system (systemctl / journalctl). A Service carries its runtime
+One shape spans both init systems. Under systemd a Service carries its runtime
 ``ActiveState`` (active / inactive / failed / activating / …) and its install
 state from ``systemctl is-enabled`` (enabled / disabled / static / masked / …).
+The OpenRC reader normalizes onto the same vocabulary (started→active,
+stopped→inactive, crashed→failed; enabled_state is enabled/disabled) and fills
+``runlevels`` with the runlevels the service is added to — empty under systemd.
 """
 
 from __future__ import annotations
@@ -20,6 +23,7 @@ class Service:
     sub_state: str = ""                # SubState: running/exited/dead/failed/…
     enabled_state: str = "disabled"    # systemctl is-enabled: enabled/disabled/static/masked/…
     description: str = ""
+    runlevels: list[str] = field(default_factory=list)  # OpenRC only; [] under systemd
 
     @property
     def enabled(self) -> bool:
@@ -53,6 +57,7 @@ class ServiceDetail:
     sub_state: str = ""
     enabled_state: str = "disabled"
     load_state: str = ""                                  # loaded / not-found / masked
+    runlevels: list[str] = field(default_factory=list)   # OpenRC only; [] under systemd
 
     @property
     def running(self) -> bool:

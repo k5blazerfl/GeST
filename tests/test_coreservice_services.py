@@ -14,8 +14,9 @@ def test_service_to_dict_shape_and_enabled_running():
     assert d["name"] == "sshd.service" and d["status"] == "active"
     assert d["enabled_state"] == "enabled" and d["sub_state"] == "running"
     assert d["enabled"] is True and d["running"] is True and d["masked"] is False
+    assert d["runlevels"] == []
     assert set(d) == {"name", "status", "sub_state", "enabled_state",
-                      "enabled", "running", "masked", "description"}
+                      "enabled", "running", "masked", "description", "runlevels"}
 
 
 def test_service_to_dict_inactive_and_not_enabled():
