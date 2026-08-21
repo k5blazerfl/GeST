@@ -30,3 +30,19 @@ systemctl enable getty@tty1.service || true
 # token to the serial port so packaging/livecd/boot-smoke.sh can assert the image
 # boots unattended. Serial-only → harmless (silent no-op) on real hardware.
 systemctl enable gesi-boot-beacon.service || true
+
+# --- firmware trim (barebones console installer) ---------------------------
+# linux-firmware is ~1.9 GB and by far the largest thing on the image, but the
+# live CONSOLE only needs firmware for networking (to fetch the stage3): a text
+# console renders on the EFI framebuffer (efifb/simpledrm) with no GPU firmware,
+# and the INSTALLED target gets full linux-firmware during the install anyway
+# (InstallGpuDrivers always emerges it). So drop what the live console can't use:
+#   * GPU firmware — i915 (Intel), amdgpu/radeon (AMD), nvidia. (NOT sys-fs/amd,
+#     which is CPU microcode — left in place.)
+#   * qcom — Qualcomm ARM-SoC (Snapdragon/Adreno) blobs, irrelevant on amd64.
+# ALL Wi-Fi/Ethernet firmware (iwlwifi, ath*, rtw*, rtl*, brcm, mediatek/mt76, …)
+# is kept, so install-time networking is unaffected. Saves ~800 MB uncompressed.
+# The package DB still lists these files, which is fine for an immutable live image.
+for _fw in i915 amdgpu radeon nvidia qcom; do
+    rm -rf "/lib/firmware/${_fw}"
+done

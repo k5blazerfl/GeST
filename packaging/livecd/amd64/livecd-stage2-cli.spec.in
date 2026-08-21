@@ -38,9 +38,15 @@ livecd/bootargs: loglevel=4
 # image: a squashfs root packed into a hybrid, UEFI-capable ISO.
 livecd/type: generic-livecd
 livecd/fstype: squashfs
-# gensquashfs opts: 1 MiB blocks + xz level 9 — the barebones image is already
-# small, but the tighter squashfs keeps it tiny and the ISO well under any limit.
-livecd/fsops: -b 1048576 -X level=9
+# gensquashfs opts: 1 MiB blocks + xz level 1. Unlike the desktop ISO (which uses
+# slow xz level 9 to squeeze under GitHub's 2 GiB release-asset limit), this is a
+# local dev-iteration image that isn't uploaded — so it trades a little size for
+# much faster packing on each rebuild. We stay on xz (not zstd) because
+# squashfs-tools-ng is commonly built without zstd support (gensquashfs then only
+# offers gzip/lzma/xz), so xz is the portable choice that works on any builder;
+# level 1 is dramatically faster than level 9 and barely larger here, since the
+# bulk of the image is the (incompressible) firmware blobs.
+livecd/fsops: -b 1048576 -X level=1
 livecd/iso: gesi-cli-amd64-${TIMESTAMP}.iso
 livecd/volid: GESI_CLI
 livecd/motd: ${MOTD}

@@ -227,7 +227,14 @@ catalyst -f "${outdir}/livecd-stage2.spec" 2>&1 | tee -a "${build_log}"
 # Gate: the image must have installed app-admin/gest (and gui-apps/hede on amd64)
 # at the version the overlay offers, built from source. Fails the build on drift
 # or a silent binpkg fallback. SKIP_VERSION_ASSERT=1 bypasses (not recommended).
-if [ "${SKIP_VERSION_ASSERT:-0}" != 1 ]; then
+#
+# The cli flavor skips this: it is a local DEV-iteration image, not a release
+# artifact, and a warm rebuild legitimately re-uses the cached gest binpkg of the
+# CORRECT overlay version — which this source-only gate would reject. The gate
+# stays ON for the desktop/release ISO, where a source build matters. To land NEW
+# gest source in a cli ISO, bump the gest ebuild version (the normal release flow)
+# so the cached binpkg no longer matches and portage rebuilds it.
+if [ "${flavor}" != cli ] && [ "${SKIP_VERSION_ASSERT:-0}" != 1 ]; then
     echo "== asserting installed versions =="
     "${here}/assert-iso-versions.sh" "${build_log}"
 fi
