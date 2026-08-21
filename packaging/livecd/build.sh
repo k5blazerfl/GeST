@@ -2,7 +2,15 @@
 # Render the catalyst specs from config.env + the templates, then build the GeST
 # installer live image.
 #
-#   packaging/livecd/build.sh amd64
+#   packaging/livecd/build.sh amd64 [desktop|cli]
+#
+# Two amd64 flavors:
+#   * desktop (default) — the full HeDE live image: boots into the Helm Desktop
+#     Environment, install GeST from there. Big; slow to rebuild.
+#   * cli — the barebones GeSI CLI installer: a small console-only ISO that boots
+#     straight into GeST's guided "Install Gentoo" TUI (YaST-style). No desktop,
+#     no display server, no Plymouth — fast to build, for iterating a real-metal
+#     install without rebuilding the whole desktop stack every change.
 #
 # Prerequisites on the build host (a Gentoo box):
 #   * dev-util/catalyst installed and configured (/etc/catalyst/catalyst.conf)
@@ -14,11 +22,36 @@
 set -euo pipefail
 
 arch="${1:-amd64}"
+flavor="${2:-desktop}"
 here="$(cd "$(dirname "$0")" && pwd)"
 specdir="${here}/${arch}"
 outdir="${here}/build"
 
 [ -d "${specdir}" ] || { echo "no specs for arch '${arch}'" >&2; exit 1; }
+
+case "${flavor}" in
+    desktop)
+        stage1_in="livecd-stage1.spec.in"
+        stage2_in="livecd-stage2.spec.in"
+        packages_file="gest.packages"
+        fsscript_file="fsscript.sh"
+        overlay_dir="overlay"
+        motd_file="motd"
+        iso_stem="gest-installer-${arch}"
+        ;;
+    cli)
+        stage1_in="livecd-stage1-cli.spec.in"
+        stage2_in="livecd-stage2-cli.spec.in"
+        packages_file="gest-cli.packages"
+        fsscript_file="fsscript-cli.sh"
+        overlay_dir="overlay-cli"
+        motd_file="motd-cli"
+        iso_stem="gesi-cli-${arch}"
+        ;;
+    *)
+        echo "unknown flavor '${flavor}' (want: desktop | cli)" >&2; exit 1 ;;
+esac
+[ -f "${specdir}/${stage1_in}" ] || { echo "no ${stage1_in} for arch '${arch}'" >&2; exit 1; }
 [ -f "${here}/config.env" ] || { echo "missing ${here}/config.env" >&2; exit 1; }
 
 # shellcheck source=/dev/null
@@ -38,11 +71,16 @@ esac
 export PROFILE SNAPSHOT STAGE3 GEST_OVERLAY TIMESTAMP
 export ASAHI_OVERLAY="${ASAHI_OVERLAY:-}"
 # The Amphitheater overlay, where gui-apps/hede (the amd64 desktop) lives. Only
-# the amd64 specs reference it; harmless (empty) on arm64.
-export HEDE_OVERLAY="${HEDE_OVERLAY:-}"
+# the amd64 DESKTOP specs reference it; the cli flavor has no desktop, so force it
+# empty there — that also makes assert-iso-versions.sh skip its hede check.
+if [ "${flavor}" = cli ]; then
+    export HEDE_OVERLAY=""
+else
+    export HEDE_OVERLAY="${HEDE_OVERLAY:-}"
+fi
 export PORTAGE_CONFDIR="${here}/portage-conf"
-export MOTD="${specdir}/motd"
-export FSSCRIPT="${specdir}/fsscript.sh"
+export MOTD="${specdir}/${motd_file}"
+export FSSCRIPT="${specdir}/${fsscript_file}"
 # Files copied verbatim into the image root (e.g. /etc/greetd/config.toml, which
 # autologins into HeDE). Optional — only wired if the arch ships an overlay/ dir.
 # For amd64 we point catalyst at a build-time STAGING copy of the overlay so the
@@ -50,10 +88,13 @@ export FSSCRIPT="${specdir}/fsscript.sh"
 # image-mutating packages — see stage_binpkg_fixups + gest/core/install/desktop.py)
 # after stage1 fills catalyst's pkgcache, without dirtying the tracked overlay/.
 staging_overlay="${outdir}/root-overlay"
-if [ "${arch}" = "amd64" ] && [ -d "${specdir}/overlay" ]; then
+if [ "${arch}" = "amd64" ] && [ "${flavor}" = desktop ] && [ -d "${specdir}/${overlay_dir}" ]; then
+    # desktop only: stage the quickpkg-fixup binpkgs into a copy of the overlay.
     export ROOT_OVERLAY="${staging_overlay}"
 else
-    export ROOT_OVERLAY="${specdir}/overlay"
+    # cli (and non-amd64): the tracked overlay is used verbatim — no image-mutating
+    # desktop packages, so no binpkg fixups to stage.
+    export ROOT_OVERLAY="${specdir}/${overlay_dir}"
 fi
 # Kernel .config genkernel builds from (CD-boot filesystems compiled in). Only
 # referenced by the amd64 stage2 spec.
@@ -116,12 +157,12 @@ stage_binpkg_fixups() {
 
 # stage1: render the template, then append the package list (tab-indented atoms,
 # comments/blank lines stripped) under the `livecd/packages:` line.
-envsubst < "${specdir}/livecd-stage1.spec.in" > "${outdir}/livecd-stage1.spec"
-grep -vE '^\s*(#|$)' "${specdir}/gest.packages" | sed 's/^/\t/' \
+envsubst < "${specdir}/${stage1_in}" > "${outdir}/livecd-stage1.spec"
+grep -vE '^\s*(#|$)' "${specdir}/${packages_file}" | sed 's/^/\t/' \
     >> "${outdir}/livecd-stage1.spec"
 
 # stage2: just the substitution.
-envsubst < "${specdir}/livecd-stage2.spec.in" > "${outdir}/livecd-stage2.spec"
+envsubst < "${specdir}/${stage2_in}" > "${outdir}/livecd-stage2.spec"
 
 echo "rendered:"
 echo "  ${outdir}/livecd-stage1.spec"
@@ -159,7 +200,7 @@ echo "== livecd-stage1 =="
 catalyst -f "${outdir}/livecd-stage1.spec" 2>&1 | tee -a "${build_log}"
 # Stage the real binpkg fixups into the root overlay now that stage1 has filled the
 # pkgcache, so stage2 lays them into the image. amd64 desktop image only.
-if [ "${arch}" = "amd64" ] && [ -d "${specdir}/overlay" ]; then
+if [ "${arch}" = "amd64" ] && [ "${flavor}" = desktop ] && [ -d "${specdir}/overlay" ]; then
     echo "== staging quickpkg-fixup binpkgs =="
     stage_binpkg_fixups
 fi
@@ -176,12 +217,14 @@ fi
 
 # Theme the ISO's GRUB menu (the Harbor look — pairs with the Plymouth splash).
 # catalyst writes a plain grub.cfg onto the ISO filesystem, which the build can't
-# reach otherwise, so this is a post-build inject. Best-effort: a plain menu still
-# boots. STOREDIR defaults to catalyst's default; override if catalyst.conf moved it.
-iso="${STOREDIR:-/var/tmp/catalyst}/builds/default/gest-installer-amd64-${TIMESTAMP}.iso"
-if [ -f "${iso}" ]; then
+# reach otherwise, so this is a post-build inject. Desktop flavor only: the
+# barebones CLI installer keeps a plain, fast GRUB menu (no splash to pair with).
+# Best-effort: a plain menu still boots. STOREDIR defaults to catalyst's default;
+# override if catalyst.conf moved it.
+iso="${STOREDIR:-/var/tmp/catalyst}/builds/default/${iso_stem}-${TIMESTAMP}.iso"
+if [ "${flavor}" = desktop ] && [ -f "${iso}" ]; then
     "${here}/grub-theme-inject.sh" "${iso}" \
         || echo "!! GRUB theme inject failed — the ISO still boots with a plain menu."
 fi
 
-echo "done — the ISO is under catalyst's builds/ (livecd/iso: gest-installer-amd64-${TIMESTAMP}.iso)."
+echo "done — the ISO is under catalyst's builds/ (livecd/iso: ${iso_stem}-${TIMESTAMP}.iso)."

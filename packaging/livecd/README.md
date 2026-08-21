@@ -1,14 +1,24 @@
 # A GeST installer live image
 
 GeST's north star is to facilitate a full Gentoo install. The natural delivery is
-a **bootable live image that boots straight into a desktop** — a Gentoo
-environment plus `app-admin/gest` and the tools its install path drives. The
-amd64 image comes up in **HeDE** (the Helm Desktop Environment), whose Control
-Center *is* GeST's Qt frontend; the user installs Gentoo from GeST (its TUI or
-the graphical Control Center, both present). The arm64 image is still a
-console-only `gest` installer (see the Apple-Silicon gap below).
+a **bootable live image** — a Gentoo environment plus `app-admin/gest` and the
+tools its install path drives.
 
-Two targets boot very differently:
+The amd64 build comes in **two flavors** (`build.sh amd64 <flavor>`):
+
+| Flavor | What it is | Size / speed | Use it for |
+|---|---|---|---|
+| **`cli`** | **Barebones GeSI CLI installer** — a console-only ISO that boots straight into GeST's guided *"Install Gentoo"* TUI (YaST-style). No desktop, no display server, no Plymouth. | small; **fast to rebuild** | getting a system onto real metal, iterating the installer, install-path work |
+| **`desktop`** (default) | The full **HeDE** live image — boots into the Helm Desktop Environment (whose Control Center *is* GeST's Qt frontend); install Gentoo from the TUI or the graphical Control Center. | large; slow to rebuild | showing off / using HeDE live, desktop work |
+
+The `cli` flavor exists so a small change doesn't cost a whole HeDE ISO build: it
+drops the entire desktop stack (`gui-apps/hede` → labwc/foot/wireplumber/…, plus
+greetd/plymouth/seatd/the symbol font), leaving just GeST and the install tooling.
+Both flavors install the *same* Gentoo — the `desktop` install option in GeST's
+installer adds HeDE to the target regardless of which ISO you booted. The arm64
+image is a console-only `gest` installer (see the Apple-Silicon gap below).
+
+Targets boot very differently:
 
 | Target | Medium | Boots how | Status |
 |---|---|---|---|
@@ -19,11 +29,13 @@ Two targets boot very differently:
 
 ```
 config.env                    # host/time-specific values you fill (snapshot, stage3 seed, overlays)
-build.sh                      # render the specs from config.env + build with catalyst (arch arg)
-spin-up.sh                    # amd64 turnkey: overlay + snapshot + stage3 + build + QEMU boot
+build.sh                      # render the specs from config.env + build with catalyst (arch + flavor args)
+spin-up.sh                    # amd64 turnkey: overlay + snapshot + stage3 + build + QEMU boot (--image desktop|cli)
 qemu-test.sh                  # boot a built ISO in QEMU (BIOS or UEFI) with a scratch disk
 run-on-asahi.sh               # install + run GeST inside an installed Asahi Gentoo (M1/M2)
-amd64/…                       # amd64 spec templates, gest.packages, fsscript, motd
+amd64/…                       # amd64 spec templates + package/fsscript/overlay for BOTH flavors:
+                              #   desktop: livecd-stage{1,2}.spec.in, gest.packages, fsscript.sh, overlay/, motd
+                              #   cli:     livecd-stage{1,2}-cli.spec.in, gest-cli.packages, fsscript-cli.sh, overlay-cli/, motd-cli
 arm64/…                       # arm64 (Apple Silicon / Asahi) equivalents — scaffold
 portage-conf/                 # ~amd64 keyword for the gest ebuild
 ```
@@ -34,16 +46,29 @@ On a Gentoo host with catalyst + qemu installed, from an up-to-date checkout:
 
 ```sh
 sudo emerge -av dev-util/catalyst app-emulation/qemu sys-firmware/edk2-ovmf
-sudo packaging/livecd/spin-up.sh            # add --uefi to boot via OVMF
+
+# Barebones GeSI CLI installer (small, fast — recommended for getting onto metal):
+sudo packaging/livecd/spin-up.sh --image cli     # add --uefi to boot via OVMF
+
+# Full HeDE desktop live image (default; needs the Amphitheater overlay registered):
+sudo packaging/livecd/spin-up.sh                 # == --image desktop
 ```
 
 `spin-up.sh` does everything: syncs this checkout's overlay into
 `/var/db/repos/gest` (so the image carries the **latest GeST**), ensures a portage
 snapshot, downloads the latest `stage3-amd64-systemd` seed, writes `config.env`,
-builds the ISO, and boots it in QEMU. `--no-boot` builds only;
+builds the ISO, and boots it in QEMU. `--image cli` builds the barebones console
+installer (self-contained — the GeST overlay is all it needs); the default
+`--image desktop` builds the HeDE image (which additionally needs `gui-apps/hede`
+resolvable via the Amphitheater overlay). `--no-boot` builds only;
 `--snapshot <id>` overrides the snapshot (catalyst's snapshot naming varies by
 version — pass this if the auto value fails). The manual flow below is what it
 wraps.
+
+To build without the turnkey wrapper: `packaging/livecd/build.sh amd64 cli`
+(or `desktop`) renders the flavor's spec templates and runs catalyst; the ISO
+lands under catalyst's `builds/` as `gesi-cli-amd64-<stamp>.iso` (or
+`gest-installer-amd64-<stamp>.iso`).
 
 ## amd64 — build a live ISO with catalyst
 

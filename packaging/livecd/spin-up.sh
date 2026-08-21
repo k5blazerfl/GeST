@@ -3,7 +3,17 @@
 # GeST and boot it in QEMU for testing.
 #
 #   sudo packaging/livecd/spin-up.sh [--uefi] [--no-boot] [--snapshot ID]
-#                                    [--flavor systemd] [--storedir DIR]
+#                                    [--image desktop|cli] [--flavor systemd]
+#                                    [--storedir DIR]
+#
+# --image picks WHICH ISO to build:
+#   desktop (default) — the full HeDE live image (needs the Amphitheater overlay
+#                       registered for gui-apps/hede).
+#   cli               — the barebones GeSI CLI installer: a small console ISO that
+#                       boots straight into GeST's guided installer. Needs ONLY the
+#                       GeST overlay (which this script syncs), so it is fully
+#                       self-contained — nothing else to register.
+# (--flavor is the stage3 SEED flavor — systemd — not the image kind.)
 #
 # It automates the catalyst inputs that build.sh otherwise assumes:
 #   1. syncs this checkout's GeST overlay into /var/db/repos/gest (→ latest GeST)
@@ -22,6 +32,7 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 repo_root="$(cd "${here}/../.." && pwd)"
 arch="amd64"
+image="desktop"    # which ISO to build: desktop (HeDE) | cli (barebones installer)
 flavor="systemd"   # HeDE is systemd-only; the live image seeds + boots systemd
 mirror="https://distfiles.gentoo.org"
 overlay_dst="/var/db/repos/gest"
@@ -35,6 +46,7 @@ while [ $# -gt 0 ]; do
         --uefi) firmware="uefi"; shift ;;
         --no-boot) boot=0; shift ;;
         --snapshot) snapshot="$2"; shift 2 ;;
+        --image) image="$2"; shift 2 ;;
         --flavor) flavor="$2"; shift 2 ;;
         --storedir) storedir="$2"; shift 2 ;;
         -h|--help) grep -E '^#( |$)' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -44,6 +56,12 @@ done
 
 say() { printf '\n\033[1;35m== %s\033[0m\n' "$*"; }
 die() { echo "spin-up: $*" >&2; exit 1; }
+
+case "${image}" in
+    desktop) iso_stem="gest-installer-${arch}" ;;
+    cli)     iso_stem="gesi-cli-${arch}" ;;
+    *)       die "unknown --image '${image}' (want: desktop | cli)" ;;
+esac
 
 # --- preflight --------------------------------------------------------------
 [ "$(id -u)" -eq 0 ] || die "run as root (catalyst writes to storedir and /var/db/repos)."
@@ -129,11 +147,11 @@ TIMESTAMP=""
 CONFIG
 
 # --- 5. build ---------------------------------------------------------------
-say "Building the ISO (catalyst) — this takes a while"
-"${here}/build.sh" "${arch}"
+say "Building the ${image} ISO (catalyst) — this takes a while"
+"${here}/build.sh" "${arch}" "${image}"
 
 # --- 6. boot ----------------------------------------------------------------
-iso="$(ls -t "${storedir}/builds"/*/gest-installer-${arch}-*.iso 2>/dev/null | head -1 || true)"
+iso="$(ls -t "${storedir}/builds"/*/${iso_stem}-*.iso 2>/dev/null | head -1 || true)"
 [ -n "${iso}" ] || die "build finished but no ISO found under ${storedir}/builds/"
 say "Built: ${iso}"
 if [ "${boot}" = 1 ]; then
