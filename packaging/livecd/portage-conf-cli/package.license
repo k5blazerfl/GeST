@@ -1,0 +1,4 @@
+# genkernel[firmware] pulls sys-kernel/linux-firmware, whose license
+# (linux-fw-redistributable) is outside the default @FREE — accept it so the
+# live image ships firmware (wifi/GPU) for real hardware.
+sys-kernel/linux-firmware linux-fw-redistributable

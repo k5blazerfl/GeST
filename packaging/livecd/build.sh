@@ -67,6 +67,19 @@ case "${SNAPSHOT}${STAGE3}" in
     *CHANGE-ME*) echo "!! fill SNAPSHOT and STAGE3 in ${here}/config.env first." >&2; exit 2 ;;
 esac
 
+# The cli flavor builds the LIVE IMAGE against the *base* systemd profile, not the
+# desktop one in config.env: a console installer needs no X/Wayland/mesa USE, and
+# the desktop profile drags mesa/opengl/libX* into the closure (bigger + slower to
+# build) for nothing. Derive it by dropping the `desktop/` segment, so it tracks
+# whatever release the desktop profile targets. This is the profile the LIVE MEDIUM
+# is built with only — the profile GeST sets on the INSTALLED target is chosen
+# separately by the installer (assemble.profile_name), so this doesn't change what
+# a user ends up installing.
+if [ "${flavor}" = cli ]; then
+    PROFILE="${PROFILE/desktop\//}"
+    echo "cli flavor: building the live image against base profile '${PROFILE}'"
+fi
+
 # Paths the templates reference (ASAHI_OVERLAY is arm64-only; harmless on amd64).
 export PROFILE SNAPSHOT STAGE3 GEST_OVERLAY TIMESTAMP
 export ASAHI_OVERLAY="${ASAHI_OVERLAY:-}"
@@ -78,7 +91,11 @@ if [ "${flavor}" = cli ]; then
 else
     export HEDE_OVERLAY="${HEDE_OVERLAY:-}"
 fi
-export PORTAGE_CONFDIR="${here}/portage-conf"
+if [ "${flavor}" = cli ]; then
+    export PORTAGE_CONFDIR="${here}/portage-conf-cli"   # no qt/desktop USE + base-profile fixups
+else
+    export PORTAGE_CONFDIR="${here}/portage-conf"
+fi
 export MOTD="${specdir}/${motd_file}"
 export FSSCRIPT="${specdir}/${fsscript_file}"
 # Files copied verbatim into the image root (e.g. /etc/greetd/config.toml, which
