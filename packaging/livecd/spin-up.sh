@@ -111,6 +111,18 @@ REPO
     echo "  registered /etc/portage/repos.conf/amphitheater.conf"
 fi
 
+# --- 1c. purge image-mutating binpkgs (gest, hede) --------------------------
+# catalyst's pkgcache keeps binpkgs from prior builds and --usepkg prefers them.
+# For the packages that DEFINE the image (built from our overlays) that is wrong
+# on two counts: a stale binpkg silently substitutes an old version, and
+# assert-iso-versions requires these built *from source*. Purge them so every
+# build compiles gest + hede fresh from the just-synced overlays. Dep binpkgs are
+# kept (they only speed the build; their versions don't gate the image).
+say "Purging image-mutating binpkgs (gest, hede) from the pkgcache"
+rm -rf "${storedir}"/packages/*/*/app-admin/gest \
+       "${storedir}"/packages/*/*/gui-apps/hede 2>/dev/null || true
+echo "  gest + hede will be rebuilt from source"
+
 # --- 2. snapshot ------------------------------------------------------------
 # Precedence: --snapshot > existing non-placeholder config.env > auto.
 cfg="${here}/config.env"
