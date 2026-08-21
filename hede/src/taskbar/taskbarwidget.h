@@ -3,6 +3,7 @@
 #include <QVector>
 #include <QWidget>
 
+#include "identitymap.h"
 #include "toplevelmodel.h"
 
 class QHBoxLayout;
@@ -26,6 +27,7 @@ class TaskbarWidget : public QWidget {
     ForeignToplevelManager *m_manager;
     QVector<Toplevel> m_items;
     QHBoxLayout *m_layout;
+    IdentityResolver m_identity;
 };
 
 } // namespace helm

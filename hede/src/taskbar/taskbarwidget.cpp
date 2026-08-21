@@ -3,6 +3,7 @@
 #include "foreigntoplevel.h"
 
 #include <QHBoxLayout>
+#include <QIcon>
 #include <QMouseEvent>
 #include <QToolButton>
 
@@ -59,12 +60,29 @@ void TaskbarWidget::rebuild() {
         delete item;
     }
 
+    // Re-read the (small) Customs identity map so launchers registered since the
+    // last event are picked up; resolve() memoizes the .desktop lookups.
+    m_identity.reload();
+
     for (const Toplevel &t : std::as_const(m_items)) {
         auto *btn = new TaskButton(this);
-        btn->setText(displayLabel(t));
         btn->setCheckable(true);
         btn->setChecked(t.activated && !t.minimized);
-        btn->setToolButtonStyle(Qt::ToolButtonTextOnly);
+
+        // A foreign window whose app_id maps to a synthesized .desktop (Gangway
+        // RDP, Drydock/Wine) gets that launcher's real icon+name; anything else
+        // keeps the text-only label.
+        const WindowIdentity id = m_identity.resolve(t.appId);
+        if (id.found) {
+            btn->setText(id.name.isEmpty() ? displayLabel(t) : id.name);
+            if (!id.iconName.isEmpty())
+                btn->setIcon(QIcon::fromTheme(id.iconName));
+            btn->setToolButtonStyle(btn->icon().isNull() ? Qt::ToolButtonTextOnly
+                                                          : Qt::ToolButtonTextBesideIcon);
+        } else {
+            btn->setText(displayLabel(t));
+            btn->setToolButtonStyle(Qt::ToolButtonTextOnly);
+        }
         if (!t.title.isEmpty())
             btn->setToolTip(t.title);
 

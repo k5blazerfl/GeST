@@ -30,6 +30,10 @@ qt_add_executable(test-toplevelmodel test_toplevelmodel.cpp)
 target_link_libraries(test-toplevelmodel PRIVATE Qt6::Test helm-taskbar)
 add_test(NAME toplevelmodel COMMAND test-toplevelmodel)
 
+qt_add_executable(test-identitymap test_identitymap.cpp)
+target_link_libraries(test-identitymap PRIVATE Qt6::Test helm-taskbar)
+add_test(NAME identitymap COMMAND test-identitymap)
+
 qt_add_executable(test-wallpaper test_wallpaper.cpp)
 target_link_libraries(test-wallpaper PRIVATE Qt6::Test Qt6::Gui helm-bg-lib)
 add_test(NAME wallpaper COMMAND test-wallpaper)
