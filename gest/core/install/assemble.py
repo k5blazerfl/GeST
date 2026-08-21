@@ -96,6 +96,8 @@ class InstallSelections:
     video_cards: tuple[str, ...] = ()
     nvidia_proprietary: bool = False
     kernel_open: bool = False           # nvidia-drivers[kernel-open] (Turing+/Ada)
+    nvidia_slot: str = ""               # legacy nvidia-drivers SLOT (0/470, 0/390);
+    # empty = current slot. Set by resolve_gpu() for a detected Kepler/Fermi card.
     gpu_auto: bool = True               # auto-detect the GPU (lspci) at install time;
     # False = the user overrode it in the UI, so video_cards/nvidia_proprietary are
     # taken as-is (including an explicit "none" = empty). Not a plan field (UI-only).
@@ -158,8 +160,10 @@ def _build_gpu(sel: InstallSelections) -> GpuSpec:
     cards = tuple(sel.video_cards)
     if sel.nvidia_proprietary and "nvidia" not in cards:
         cards = (*cards, "nvidia")
+    slot = sel.nvidia_slot if sel.nvidia_proprietary else ""
     return GpuSpec(video_cards=cards, nvidia_proprietary=sel.nvidia_proprietary,
-                   kernel_open=sel.kernel_open and sel.nvidia_proprietary)
+                   kernel_open=sel.kernel_open and sel.nvidia_proprietary and not slot,
+                   nvidia_slot=slot)
 
 
 def resolve_gpu(runner: hwdetect.Runner | None = None) -> GpuSpec:
@@ -180,9 +184,30 @@ def resolve_gpu(runner: hwdetect.Runner | None = None) -> GpuSpec:
     if rc != 0:
         return GpuSpec()
     cards = hwdetect.parse_video_cards(out)
-    nvidia = "nvidia" in cards
-    return GpuSpec(video_cards=tuple(cards), nvidia_proprietary=nvidia,
-                   kernel_open=nvidia and hwdetect.nvidia_open_recommended(out))
+
+    # AMD: swap the default amdgpu tokens for the radeon backends on a pre-GCN card.
+    if "amdgpu" in cards and hwdetect.amd_legacy_radeon(out):
+        cards = [c for c in cards if c not in ("amdgpu", "radeonsi")]
+        for tok in hwdetect._AMD_LEGACY_TOKENS:
+            if tok not in cards:
+                cards.append(tok)
+
+    # NVIDIA: pick the proprietary driver branch by GPU architecture.
+    branch = hwdetect.nvidia_driver_branch(out)
+    if branch == "nouveau":
+        # Tesla-and-older: no supported proprietary driver → nouveau (open, in-tree).
+        cards = [c for c in cards if c != "nvidia"]
+        if "nouveau" not in cards:
+            cards.append("nouveau")
+        return GpuSpec(video_cards=tuple(cards))
+    if branch in ("legacy-470", "legacy-390"):
+        return GpuSpec(video_cards=tuple(cards), nvidia_proprietary=True,
+                       nvidia_slot=hwdetect.NVIDIA_SLOTS[branch])
+    if branch == "current":
+        return GpuSpec(video_cards=tuple(cards), nvidia_proprietary=True,
+                       kernel_open=hwdetect.nvidia_open_recommended(out))
+    # No NVIDIA GPU: AMD/Intel/none — firmware + VIDEO_CARDS only.
+    return GpuSpec(video_cards=tuple(cards))
 
 
 def _build_network(sel: InstallSelections) -> NetworkSpec:

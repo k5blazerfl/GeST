@@ -24,6 +24,9 @@ PACKAGE_LICENSE = "/etc/portage/package.license/gest-gpu"
 MODPROBE_CONF = "/etc/modprobe.d/gest-gpu.conf"
 #: package.use fragment GeST owns for GPU atoms (e.g. nvidia-drivers[kernel-open]).
 PACKAGE_USE = "/etc/portage/package.use/gest-gpu"
+#: package.unmask fragment GeST owns — unmasks a legacy nvidia-drivers SLOT (0/470,
+#: 0/390) which the Gentoo profile masks by default.
+PACKAGE_UNMASK = "/etc/portage/package.unmask/gest-gpu"
 
 #: linux-firmware carries NVIDIA GSP blobs + most Wi-Fi/other firmware; a fresh
 #: stage3 ships none, so we always install it.
@@ -37,15 +40,33 @@ def video_cards_value(gpu: GpuSpec) -> str:
     return " ".join(gpu.video_cards)
 
 
+def nvidia_atom(gpu: GpuSpec) -> str:
+    """The nvidia-drivers atom to emerge — slotted for a legacy branch (e.g.
+    ``x11-drivers/nvidia-drivers:0/470`` for Kepler), bare for the current slot."""
+    return f"{NVIDIA_ATOM}:{gpu.nvidia_slot}" if gpu.nvidia_slot else NVIDIA_ATOM
+
+
 def driver_atoms(gpu: GpuSpec) -> list[str]:
     """Packages to emerge into the target: firmware always, ``nvidia-drivers`` when
-    the proprietary stack is requested. AMD/Intel need no extra package here — their
-    kernel drivers are in-tree and mesa comes with @world/the desktop, keyed on the
-    ``VIDEO_CARDS`` this plan writes to make.conf."""
+    the proprietary stack is requested (slotted for a legacy Kepler/Fermi card).
+    AMD/Intel need no extra package here — their kernel drivers are in-tree and mesa
+    comes with @world/the desktop, keyed on the ``VIDEO_CARDS`` this plan writes to
+    make.conf."""
     atoms = [FIRMWARE_ATOM]
     if gpu.nvidia_proprietary:
-        atoms.append(NVIDIA_ATOM)
+        atoms.append(nvidia_atom(gpu))
     return atoms
+
+
+def package_unmask(gpu: GpuSpec) -> str:
+    """The ``package.unmask`` body needed to install a legacy NVIDIA branch, or
+    ``""`` when none is. Gentoo's profile masks the legacy nvidia-drivers SLOTs
+    (0/470 Kepler, 0/390 Fermi); without unmasking the chosen slot the emerge is
+    mask-blocked. No-op for the current slot (unmasked) and for AMD/Intel/nouveau."""
+    if gpu.nvidia_proprietary and gpu.nvidia_slot:
+        return ("# Legacy NVIDIA driver slot — managed by GeST\n"
+                f"{NVIDIA_ATOM}:{gpu.nvidia_slot}\n")
+    return ""
 
 
 def package_use(gpu: GpuSpec) -> str:

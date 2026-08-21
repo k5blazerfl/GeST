@@ -647,6 +647,8 @@ class InstallRunScreen(Screen):
                 detected = await self.app.run_blocking(assemble.resolve_gpu)
                 self._sel.video_cards = detected.video_cards
                 self._sel.nvidia_proprietary = detected.nvidia_proprietary
+                self._sel.kernel_open = detected.kernel_open
+                self._sel.nvidia_slot = detected.nvidia_slot
             plan = assemble.assemble_plan(self._sel, stage3)
         except Exception as exc:
             self._finish(False, f"Could not prepare the install: {exc}")

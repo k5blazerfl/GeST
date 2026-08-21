@@ -284,3 +284,86 @@ def test_install_gpu_drivers_no_package_use_without_kernel_open(tmp_path):
     root, _, _, _ = _run_gpu_step(
         tmp_path, GpuSpec(video_cards=("nvidia",), nvidia_proprietary=True))
     assert not os.path.exists(root + gpu.PACKAGE_USE)
+
+
+# --- legacy NVIDIA branches + multi-vendor ----------------------------------
+
+def test_nvidia_atom_bare_vs_slotted():
+    assert gpu.nvidia_atom(GpuSpec(nvidia_proprietary=True)) == "x11-drivers/nvidia-drivers"
+    assert (gpu.nvidia_atom(GpuSpec(nvidia_proprietary=True, nvidia_slot="0/470"))
+            == "x11-drivers/nvidia-drivers:0/470")
+
+
+def test_driver_atoms_slotted_for_legacy():
+    spec = GpuSpec(video_cards=("nvidia",), nvidia_proprietary=True, nvidia_slot="0/390")
+    assert gpu.driver_atoms(spec) == [
+        "sys-kernel/linux-firmware", "x11-drivers/nvidia-drivers:0/390"]
+
+
+def test_package_unmask_only_for_legacy_slot():
+    assert (gpu.package_unmask(GpuSpec(nvidia_proprietary=True, nvidia_slot="0/470"))
+            == "# Legacy NVIDIA driver slot — managed by GeST\n"
+               "x11-drivers/nvidia-drivers:0/470\n")
+    assert gpu.package_unmask(GpuSpec(nvidia_proprietary=True)) == ""     # current slot
+    assert gpu.package_unmask(GpuSpec(video_cards=("amdgpu",))) == ""     # non-NVIDIA
+
+
+def test_resolve_gpu_kepler_uses_legacy_470():
+    spec = resolve_gpu(_lspci(
+        "01:00.0 VGA compatible controller: NVIDIA Corporation GK107 [GeForce GT 630]"))
+    assert spec.nvidia_proprietary is True and spec.nvidia_slot == "0/470"
+    assert spec.kernel_open is False and "nvidia" in spec.video_cards
+
+
+def test_resolve_gpu_fermi_uses_legacy_390():
+    spec = resolve_gpu(_lspci(
+        "01:00.0 VGA compatible controller: NVIDIA Corporation GF119 [GeForce GT 610]"))
+    assert spec.nvidia_proprietary is True and spec.nvidia_slot == "0/390"
+
+
+def test_resolve_gpu_tesla_falls_back_to_nouveau():
+    # G92 = Tesla → no supported proprietary driver → nouveau, firmware only
+    spec = resolve_gpu(_lspci(
+        "01:00.0 VGA compatible controller: NVIDIA Corporation G92 [GeForce 9800 GT]"))
+    assert spec.nvidia_proprietary is False and spec.nvidia_slot == ""
+    assert "nouveau" in spec.video_cards and "nvidia" not in spec.video_cards
+
+
+def test_resolve_gpu_maxwell_is_current_closed():
+    spec = resolve_gpu(_lspci(
+        "01:00.0 VGA compatible controller: NVIDIA Corporation GM206 [GeForce GTX 960]"))
+    assert spec.nvidia_proprietary is True
+    assert spec.nvidia_slot == "" and spec.kernel_open is False
+
+
+def test_resolve_gpu_amd_legacy_uses_radeon():
+    # Redwood = TeraScale 2 (HD 5000 series) → radeon backends, not amdgpu
+    spec = resolve_gpu(_lspci(
+        "01:00.0 VGA compatible controller: Advanced Micro Devices "
+        "[AMD/ATI] Redwood [Radeon HD 5670]"))
+    assert "radeon" in spec.video_cards and "amdgpu" not in spec.video_cards
+    assert spec.nvidia_proprietary is False
+
+
+def test_assemble_carries_nvidia_slot_and_drops_open():
+    plan = assemble_plan(InstallSelections(
+        disk="sda", root_password="x", nvidia_proprietary=True,
+        nvidia_slot="0/470", kernel_open=True), _STAGE3)
+    assert plan.gpu.nvidia_slot == "0/470"
+    assert plan.gpu.kernel_open is False   # kernel-open is never set for a legacy slot
+
+
+def test_install_gpu_drivers_legacy_unmasks_and_slots(tmp_path):
+    root, inner, _, _ = _run_gpu_step(
+        tmp_path,
+        GpuSpec(video_cards=("nvidia",), nvidia_proprietary=True, nvidia_slot="0/470"))
+    assert "x11-drivers/nvidia-drivers:0/470" in Path(root + gpu.PACKAGE_UNMASK).read_text()
+    assert ["emerge", "--getbinpkg", "--color", "n", "--noreplace",
+            "x11-drivers/nvidia-drivers:0/470"] in inner
+    assert "x11-drivers/nvidia-drivers NVIDIA-r2" in Path(root + gpu.PACKAGE_LICENSE).read_text()
+
+
+def test_install_gpu_drivers_current_writes_no_unmask(tmp_path):
+    root, _, _, _ = _run_gpu_step(
+        tmp_path, GpuSpec(video_cards=("nvidia",), nvidia_proprietary=True))
+    assert not os.path.exists(root + gpu.PACKAGE_UNMASK)
