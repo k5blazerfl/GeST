@@ -4,7 +4,9 @@
 #
 #   sudo packaging/livecd/spin-up.sh [--uefi] [--no-boot] [--snapshot ID]
 #                                    [--image desktop|cli] [--flavor systemd]
-#                                    [--storedir DIR]
+#                                    [--storedir DIR] [--out-dir DIR]
+#
+# --out-dir DIR: also copy the finished ISO + a .sha256 into DIR (e.g. GeST/iso).
 #
 # --image picks WHICH ISO to build:
 #   desktop (default) — the full HeDE live image (needs the Amphitheater overlay
@@ -40,6 +42,7 @@ boot=1
 firmware="bios"
 snapshot=""
 storedir=""
+out_dir=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -47,6 +50,7 @@ while [ $# -gt 0 ]; do
         --no-boot) boot=0; shift ;;
         --snapshot) snapshot="$2"; shift 2 ;;
         --image) image="$2"; shift 2 ;;
+        --out-dir) out_dir="$2"; shift 2 ;;
         --flavor) flavor="$2"; shift 2 ;;
         --storedir) storedir="$2"; shift 2 ;;
         -h|--help) grep -E '^#( |$)' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -148,7 +152,7 @@ CONFIG
 
 # --- 5. build ---------------------------------------------------------------
 say "Building the ${image} ISO (catalyst) — this takes a while"
-"${here}/build.sh" "${arch}" "${image}"
+"${here}/build.sh" "${arch}" "${image}" ${out_dir:+--out-dir "${out_dir}"}
 
 # --- 6. boot ----------------------------------------------------------------
 iso="$(ls -t "${storedir}/builds"/*/${iso_stem}-*.iso 2>/dev/null | head -1 || true)"

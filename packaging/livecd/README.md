@@ -68,7 +68,11 @@ wraps.
 To build without the turnkey wrapper: `packaging/livecd/build.sh amd64 cli`
 (or `desktop`) renders the flavor's spec templates and runs catalyst; the ISO
 lands under catalyst's `builds/` as `gesi-cli-amd64-<stamp>.iso` (or
-`gest-installer-amd64-<stamp>.iso`).
+`gest-installer-amd64-<stamp>.iso`). Add `--out-dir DIR` (also accepted by
+`spin-up.sh`) to copy the finished ISO + a `.sha256` into a staging directory —
+e.g. `build.sh amd64 cli --out-dir "$PWD/iso"` keeps a local copy alongside the
+desktop builds. It's off by default; the path is yours, so nothing
+machine-specific is baked into the build.
 
 ## amd64 — build a live ISO with catalyst
 

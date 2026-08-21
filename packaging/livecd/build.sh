@@ -2,7 +2,11 @@
 # Render the catalyst specs from config.env + the templates, then build the GeST
 # installer live image.
 #
-#   packaging/livecd/build.sh amd64 [desktop|cli]
+#   packaging/livecd/build.sh [arch] [desktop|cli] [--out-dir DIR]
+#
+# --out-dir DIR (optional): after the build, copy the finished ISO + a .sha256
+# into DIR (a local staging area, e.g. GeST/iso). Off by default; the path is
+# caller-supplied so no machine-specific location is baked into the build.
 #
 # Two amd64 flavors:
 #   * desktop (default) — the full HeDE live image: boots into the Helm Desktop
@@ -21,11 +25,26 @@
 # The rendered specs land in packaging/livecd/build/ and are what catalyst runs.
 set -euo pipefail
 
-arch="${1:-amd64}"
-flavor="${2:-desktop}"
 here="$(cd "$(dirname "$0")" && pwd)"
-specdir="${here}/${arch}"
 outdir="${here}/build"
+
+# Positional args: [arch] [flavor]. Optional flag: --out-dir DIR.
+arch="amd64"
+flavor="desktop"
+out_dir=""
+positional=()
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --out-dir)   out_dir="${2:?--out-dir needs a directory}"; shift 2 ;;
+        --out-dir=*) out_dir="${1#*=}"; shift ;;
+        -h|--help)   echo "usage: build.sh [arch] [desktop|cli] [--out-dir DIR]"; exit 0 ;;
+        -*)          echo "unknown option: $1" >&2; exit 1 ;;
+        *)           positional+=("$1"); shift ;;
+    esac
+done
+[ "${#positional[@]}" -ge 1 ] && arch="${positional[0]}"
+[ "${#positional[@]}" -ge 2 ] && flavor="${positional[1]}"
+specdir="${here}/${arch}"
 
 [ -d "${specdir}" ] || { echo "no specs for arch '${arch}'" >&2; exit 1; }
 
@@ -249,6 +268,26 @@ iso="${STOREDIR:-/var/tmp/catalyst}/builds/default/${iso_stem}-${TIMESTAMP}.iso"
 if [ "${flavor}" = desktop ] && [ -f "${iso}" ]; then
     "${here}/grub-theme-inject.sh" "${iso}" \
         || echo "!! GRUB theme inject failed — the ISO still boots with a plain menu."
+fi
+
+# Optional publish: drop the finished ISO + a .sha256 sibling into --out-dir (a
+# local staging area like GeST/iso). No-op unless --out-dir was given.
+if [ -n "${out_dir}" ]; then
+    if [ -f "${iso}" ]; then
+        mkdir -p "${out_dir}"
+        cp -f "${iso}" "${out_dir}/"
+        ( cd "${out_dir}" && sha256sum "$(basename "${iso}")" > "$(basename "${iso}").sha256" )
+        # Built via sudo (catalyst needs root)? Hand the published files back to the
+        # invoking user so the staging dir isn't full of root-owned ISOs.
+        if [ -n "${SUDO_USER:-}" ]; then
+            chown "${SUDO_USER}" \
+                "${out_dir}/$(basename "${iso}")" \
+                "${out_dir}/$(basename "${iso}").sha256" 2>/dev/null || true
+        fi
+        echo "published: ${out_dir}/$(basename "${iso}")  (+ .sha256)"
+    else
+        echo "!! --out-dir set but no ISO at ${iso} — nothing to publish" >&2
+    fi
 fi
 
 echo "done — the ISO is under catalyst's builds/ (livecd/iso: ${iso_stem}-${TIMESTAMP}.iso)."
