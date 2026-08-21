@@ -1,16 +1,17 @@
-"""Pure adapter for the Services (systemd) core module — models <-> property bags.
+"""Pure adapter for the Services core module — models <-> property bags.
 
 Converters take a model instance and return a plain dict (unit-testable with
-hand-built models, no subprocess). The live functions call ``reader`` (which shells
-out to ``systemctl`` — no Portage, no asyncio loop of its own, but blocking
-subprocess, so the D-Bus layer runs them off the loop).
+hand-built models, no subprocess). The live functions go through ``dispatch``,
+which picks the systemd (``systemctl``) or OpenRC (``rc-service``/``rc-update``)
+reader for the running host — no Portage, no asyncio loop of its own, but a
+blocking subprocess, so the D-Bus layer runs them off the loop.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from gest.core.services import reader
+from gest.core.services import dispatch
 
 
 def service_to_dict(s: Any) -> dict[str, Any]:
@@ -23,6 +24,7 @@ def service_to_dict(s: Any) -> dict[str, Any]:
         "running": s.running,
         "masked": s.masked,
         "description": s.description,
+        "runlevels": list(s.runlevels),
     }
 
 
@@ -41,19 +43,22 @@ def detail_to_dict(d: Any) -> dict[str, Any]:
         "running": d.running,
         "enabled": d.enabled,
         "masked": d.masked,
+        "runlevels": list(d.runlevels),
     }
 
 
 def list_services() -> list[dict[str, Any]]:
-    return [service_to_dict(s) for s in reader.list_services()]
+    return [service_to_dict(s) for s in dispatch.list_services()]
 
 
 def describe(name: str) -> dict[str, Any]:
     # Pass the current runtime/install state through so the detail is accurate
-    # without re-deriving it inside describe_service.
-    svc = next((s for s in reader.list_services() if s.name == name), None)
+    # without re-deriving it inside describe_service. runlevels is OpenRC-only
+    # (empty under systemd); dispatch routes each kwarg to the right reader.
+    svc = next((s for s in dispatch.list_services() if s.name == name), None)
     kw = (
-        {"status": svc.status, "sub_state": svc.sub_state, "enabled_state": svc.enabled_state}
+        {"status": svc.status, "sub_state": svc.sub_state,
+         "enabled_state": svc.enabled_state, "runlevels": list(svc.runlevels)}
         if svc else {}
     )
-    return detail_to_dict(reader.describe_service(name, **kw))
+    return detail_to_dict(dispatch.describe_service(name, **kw))

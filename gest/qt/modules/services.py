@@ -1,4 +1,8 @@
-"""Services module (systemd): start/stop/restart + enable, via the polkit backend."""
+"""Services module: start/stop/restart + enable, via the polkit backend.
+
+Reads are init-aware (systemd or OpenRC) through ``dispatch``; the polkit
+backend picks the matching mutation commands for the running host.
+"""
 
 from __future__ import annotations
 
@@ -14,8 +18,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from gest.core.services.dispatch import list_services
 from gest.core.services.model import Service
-from gest.core.services.reader import list_services
 from gest.qt.registry import ModuleDescriptor
 from gest.qt.services import control, service_label, set_enabled
 

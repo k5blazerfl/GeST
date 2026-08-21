@@ -1,15 +1,17 @@
-"""Services module (systemd) in urwid: list + start/stop/restart/enable/mask + detail.
+"""Services module in urwid: list + start/stop/restart/enable/mask + detail.
 
-Reads are unprivileged (``systemctl`` list/show); mutations go through the async
-ServicesBackend over D-Bus — this is the first ported module that proves the async
-mutation path on urwid's asyncio loop.
+Reads are unprivileged (``systemctl`` or ``rc-service`` list/show, chosen by the
+running init); mutations go through the async ServicesBackend over D-Bus — this
+is the first ported module that proves the async mutation path on urwid's
+asyncio loop.
 """
 
 from __future__ import annotations
 
 import urwid
 
-from gest.core.services import reader
+from gest.core import init
+from gest.core.services import dispatch
 from gest.core.services.backend_client import ServicesBackend
 from gest.core.services.model import Service
 from gest.tui.runtime import App, Screen, boxed
@@ -39,20 +41,29 @@ class ServicesScreen(Screen):
                 ("Esc", "Back"),
             ],
             help_text=(
-                "systemd service units on this system.\n\n"
-                "Each row shows the unit, its active state, and its install state\n"
-                "(enabled / disabled / static / masked …).\n\n"
-                "Enter  service detail (dependencies)\n"
-                "s / x / r   start / stop / restart\n"
-                "e      enable / disable at boot (systemctl enable/disable)\n"
-                "m      mask / unmask (systemctl mask/unmask)\n"
-                "Esc    back"
+                ("OpenRC services on this system.\n\n"
+                 "Each row shows the service, its run state, and whether it is\n"
+                 "enabled (added to a runlevel).\n\n"
+                 "Enter  service detail (dependencies / runlevels)\n"
+                 "s / x / r   start / stop / restart\n"
+                 "e      enable / disable at boot (rc-update add/del)\n"
+                 "m      mask (not supported on OpenRC)\n"
+                 "Esc    back")
+                if init.is_openrc() else
+                ("systemd service units on this system.\n\n"
+                 "Each row shows the unit, its active state, and its install state\n"
+                 "(enabled / disabled / static / masked …).\n\n"
+                 "Enter  service detail (dependencies)\n"
+                 "s / x / r   start / stop / restart\n"
+                 "e      enable / disable at boot (systemctl enable/disable)\n"
+                 "m      mask / unmask (systemctl mask/unmask)\n"
+                 "Esc    back")
             ),
         )
         app.run_async(self._load())
 
     async def _load(self) -> None:
-        services = await self.app.run_blocking(reader.list_services)
+        services = await self.app.run_blocking(dispatch.list_services)
         self._services = {s.name: s for s in services}
         self._order = [s.name for s in services]
         rows = [
@@ -150,9 +161,10 @@ class ServiceDetailScreen(Screen):
 
     async def _load(self) -> None:
         detail = await self.app.run_blocking(
-            lambda: reader.describe_service(
+            lambda: dispatch.describe_service(
                 self._svc.name, status=self._svc.status,
                 sub_state=self._svc.sub_state, enabled_state=self._svc.enabled_state,
+                runlevels=self._svc.runlevels,
             )
         )
         sub = f" ({detail.sub_state})" if detail.sub_state else ""
@@ -160,6 +172,8 @@ class ServiceDetailScreen(Screen):
             f"Status:  {'● active' if detail.running else detail.status}{sub}",
             f"Enabled: {detail.enabled_state or '—'}",
         ]
+        if detail.runlevels:
+            lines.append(f"Runlevels: {', '.join(detail.runlevels)}")
         if detail.load_state:
             lines.append(f"Loaded:  {detail.load_state}")
         if detail.description:
