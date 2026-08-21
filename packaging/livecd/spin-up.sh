@@ -121,7 +121,12 @@ fi
 say "Purging image-mutating binpkgs (gest, hede) from the pkgcache"
 rm -rf "${storedir}"/packages/*/*/app-admin/gest \
        "${storedir}"/packages/*/*/gui-apps/hede 2>/dev/null || true
-echo "  gest + hede will be rebuilt from source"
+# Drop the binhost index too — it still lists the just-removed gpkgs, so --usepkg
+# would try to fetch a "non-existent binary" and fail ("outdated index"). Portage
+# regenerates the index by scanning on the next emerge; the remaining dep gpkgs
+# are re-indexed automatically.
+rm -f "${storedir}"/packages/*/*/Packages 2>/dev/null || true
+echo "  gest + hede will be rebuilt from source (binhost index will regenerate)"
 
 # --- 2. snapshot ------------------------------------------------------------
 # Precedence: --snapshot > existing non-placeholder config.env > auto.
