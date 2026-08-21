@@ -1,9 +1,13 @@
 #include <QtTest>
 
+#include <QColor>
 #include <QDateTime>
 #include <QDir>
+#include <QImage>
+#include <QPaintEvent>
 #include <QSettings>
 #include <QTemporaryDir>
+#include <QWidget>
 
 #include "config.h"
 #include "palette.h"
@@ -222,6 +226,30 @@ private slots:
         // Client titlebar: light title, and a close button that reddens on hover.
         QVERIFY(qss.contains(QStringLiteral("#HelmTitleText { color: %1").arg(helm::barGlyphColor().name())));
         QVERIFY(qss.contains(QStringLiteral("#HelmWinClose:hover")));
+    }
+
+    // Regression guard for the invisible-chrome bug: a TOP-LEVEL widget with
+    // WA_TranslucentBackground + WA_StyledBackground does NOT auto-fill its
+    // #objectName QSS background — Qt paints nothing, so the panel/menu render
+    // fully transparent. helm::paintStyledSurface (called from their paintEvent)
+    // is what makes the glass land. String-only QSS tests can't catch this — it
+    // only shows when the surface is actually rendered.
+    void styledSurfacePaintsOnTranslucentTopLevel() {
+        qApp->setStyleSheet(QStringLiteral("#Glass { background: rgba(46,70,80,0.82); }"));
+        struct Surface : QWidget {
+            void paintEvent(QPaintEvent *) override { helm::paintStyledSurface(this); }
+        } w;
+        w.setObjectName(QStringLiteral("Glass"));
+        w.setAttribute(Qt::WA_StyledBackground, true);
+        w.setAttribute(Qt::WA_TranslucentBackground, true);
+        w.resize(40, 20);
+        w.show();
+        QTest::qWait(20);
+        const QColor c = w.grab().toImage().pixelColor(20, 10);
+        // The whole bug is alpha 0 (nothing painted) vs the 0.82 glass (~209).
+        // grab() returns premultiplied colour, so assert opacity, not exact RGB.
+        QVERIFY2(c.alpha() > 200, qPrintable(QStringLiteral("bg alpha=%1 (0 == the bug)").arg(c.alpha())));
+        qApp->setStyleSheet(QString());
     }
 };
 

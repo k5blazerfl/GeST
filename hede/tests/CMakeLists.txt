@@ -79,7 +79,7 @@ target_link_libraries(test-nineslice PRIVATE Qt6::Test Qt6::Gui helm-theme-lib)
 add_test(NAME nineslice COMMAND test-nineslice)
 
 qt_add_executable(test-appearance test_appearance.cpp)
-target_link_libraries(test-appearance PRIVATE Qt6::Test helm-appearance helm-theme-lib)
+target_link_libraries(test-appearance PRIVATE Qt6::Test Qt6::Widgets helm-appearance helm-theme-lib)
 add_test(NAME appearance COMMAND test-appearance)
 
 qt_add_executable(test-menu test_menu.cpp)

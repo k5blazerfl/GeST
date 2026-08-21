@@ -409,4 +409,17 @@ bool LauncherMenu::eventFilter(QObject *obj, QEvent *event) {
     return QWidget::eventFilter(obj, event);
 }
 
+void LauncherMenu::paintEvent(QPaintEvent *) { paintStyledSurface(this); }
+
+bool LauncherMenu::event(QEvent *e) {
+    // The pullout grabs keyboard focus on show (m_search/m_list setFocus), so it
+    // is the active window; when the user clicks another surface it deactivates —
+    // close, mirroring a click-outside popup grab that layer-shell doesn't give us.
+    if (e->type() == QEvent::WindowDeactivate) {
+        qApp->quit();
+        return true;
+    }
+    return QWidget::event(e);
+}
+
 } // namespace helm

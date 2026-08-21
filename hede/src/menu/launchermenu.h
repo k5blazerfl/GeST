@@ -24,6 +24,13 @@ class LauncherMenu : public QWidget {
 
   protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
+    // Paint the #HelmPullout glass background — the pullout is a top-level
+    // WA_TranslucentBackground widget, which otherwise renders fully transparent.
+    void paintEvent(QPaintEvent *event) override;
+    // Dismiss the menu when it loses window activation (clicked outside / focus
+    // moved away). A layer-shell surface gets no implicit popup grab, so without
+    // this the pullout stays open after losing focus.
+    bool event(QEvent *event) override;
 
   private slots:
     void showActions(const QPoint &pos); // right-click → pin + jump-list actions

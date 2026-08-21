@@ -6,7 +6,17 @@
 #include <QSize>
 #include <QString>
 
+class QWidget;
+
 namespace helm {
+
+// Paint a glass shell surface's QSS (#objectName) background + border from its
+// paintEvent. A TOP-LEVEL QWidget with WA_TranslucentBackground does not
+// auto-fill its styled background — Qt draws nothing, so the surface renders
+// FULLY TRANSPARENT (not the intended glass). The panel and the menu pullout are
+// exactly such surfaces, so each must call this from an overridden paintEvent.
+// (Child widgets, e.g. the toast card, are unaffected and need no override.)
+void paintStyledSurface(QWidget *w);
 
 // --- pure (unit-tested) ---
 // Readable text colour (black/white) for a given background.

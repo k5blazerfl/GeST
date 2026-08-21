@@ -7,9 +7,23 @@
 #include <QApplication>
 #include <QFileInfo>
 #include <QFileSystemWatcher>
+#include <QPainter>
+#include <QStyle>
+#include <QStyleOption>
 #include <QTimer>
+#include <QWidget>
 
 namespace helm {
+
+void paintStyledSurface(QWidget *w) {
+    // The documented Qt idiom for honouring a QSS background/border on a custom
+    // QWidget — required here because WA_TranslucentBackground suppresses the
+    // default styled fill on a top-level, leaving the glass surface transparent.
+    QStyleOption opt;
+    opt.initFrom(w);
+    QPainter p(w);
+    w->style()->drawPrimitive(QStyle::PE_Widget, &opt, &p, w);
+}
 
 QColor contrastText(const QColor &bg) {
     const double lum = 0.299 * bg.red() + 0.587 * bg.green() + 0.114 * bg.blue();
