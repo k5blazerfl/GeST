@@ -75,6 +75,11 @@ class GpuSpec:
     # (USE=kernel-open). NVIDIA-recommended for Turing+ (RTX 20-series and newer, incl.
     # Ada); NOT supported on pre-Turing cards, so it's off by default. Only meaningful
     # with nvidia_proprietary.
+    nvidia_slot: str = ""           # nvidia-drivers SLOT for a legacy branch, e.g.
+    # "0/470" (Kepler) or "0/390" (Fermi). Empty = the current/default slot. When set,
+    # the driver atom is slotted and GeST writes a package.unmask (the legacy slots are
+    # masked upstream). Only meaningful with nvidia_proprietary; kernel_open is never
+    # set for a legacy slot.
 
 
 @dataclass(slots=True, frozen=True)

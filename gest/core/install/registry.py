@@ -675,6 +675,12 @@ class InstallGpuDrivers(FuncStep):
         if use:
             up = write_under_root(ctx.root, gpu.PACKAGE_USE, use)
             _emit(on_progress, f"wrote {up} (nvidia-drivers[kernel-open])")
+        # A legacy NVIDIA slot (Kepler 0/470, Fermi 0/390) is masked by the profile —
+        # unmask it before the emerge, else the driver atom is mask-blocked.
+        unmask = gpu.package_unmask(spec)
+        if unmask:
+            un = write_under_root(ctx.root, gpu.PACKAGE_UNMASK, unmask)
+            _emit(on_progress, f"wrote {un} (legacy nvidia-drivers:{spec.nvidia_slot})")
         steps = [Step(f"emerge {atom}", _emerge_argv(ctx.plan, atom))
                  for atom in gpu.driver_atoms(spec)]
         if spec.nvidia_proprietary:

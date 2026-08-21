@@ -36,6 +36,50 @@ def test_detect_video_cards_nvidia_and_none():
 
 
 # --------------------------------------------------------------------------- #
+# NVIDIA driver branch by GPU architecture codename
+# --------------------------------------------------------------------------- #
+
+def _nv(codename):
+    return f"01:00.0 VGA compatible controller: NVIDIA Corporation {codename}\n"
+
+
+def test_nvidia_driver_branch_by_architecture():
+    b = detect.nvidia_driver_branch
+    assert b(_nv("AD103 [GeForce RTX 4070 Ti]")) == "current"    # Ada
+    assert b(_nv("GA104 [GeForce RTX 3070]")) == "current"       # Ampere
+    assert b(_nv("TU116 [GeForce GTX 1660]")) == "current"       # Turing
+    assert b(_nv("GP104 [GeForce GTX 1080]")) == "current"       # Pascal
+    assert b(_nv("GM206 [GeForce GTX 960]")) == "current"        # Maxwell
+    assert b(_nv("GK107 [GeForce GT 630]")) == "legacy-470"      # Kepler
+    assert b(_nv("GF119 [GeForce GT 610]")) == "legacy-390"      # Fermi
+    assert b(_nv("G92 [GeForce 9800 GT]")) == "nouveau"          # Tesla
+    assert b(_nv("GT218 [GeForce 210]")) == "nouveau"            # Tesla (GT2xx)
+
+
+def test_nvidia_driver_branch_none_and_unknown():
+    assert detect.nvidia_driver_branch("intel stuff\n") == ""            # no NVIDIA
+    # NVIDIA present but no codename spelled out → assume the current driver
+    assert detect.nvidia_driver_branch(
+        "01:00.0 VGA compatible controller: NVIDIA Corporation [GeForce Something]\n"
+    ) == "current"
+
+
+def test_nvidia_slots_map():
+    assert detect.NVIDIA_SLOTS == {"legacy-470": "0/470", "legacy-390": "0/390"}
+
+
+def test_amd_legacy_radeon_detection():
+    assert detect.amd_legacy_radeon(
+        "01:00.0 VGA compatible controller: Advanced Micro Devices "
+        "[AMD/ATI] Redwood [Radeon HD 5670]") is True          # TeraScale 2
+    assert detect.amd_legacy_radeon(
+        "01:00.0 VGA compatible controller: Advanced Micro Devices "
+        "[AMD/ATI] Navi 22 [Radeon RX 6700 XT]") is False      # modern → amdgpu
+    assert detect.amd_legacy_radeon(
+        "01:00.0 VGA compatible controller: NVIDIA Corporation GF119") is False
+
+
+# --------------------------------------------------------------------------- #
 # writer → fragment content
 # --------------------------------------------------------------------------- #
 

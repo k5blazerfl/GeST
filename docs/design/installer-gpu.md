@@ -22,6 +22,7 @@ into the install.
 | `video_cards` | the `VIDEO_CARDS` tokens for make.conf (`("nvidia",)`, `("amdgpu", "radeonsi")`, …) |
 | `nvidia_proprietary` | install `x11-drivers/nvidia-drivers` (license + module + KMS + nouveau blacklist) instead of nouveau |
 | `kernel_open` | build nvidia-drivers with the **open** kernel modules (`USE=kernel-open`) — NVIDIA-recommended for Turing+/Ada; off by default (unsupported pre-Turing), only meaningful with `nvidia_proprietary` |
+| `nvidia_slot` | the nvidia-drivers **SLOT** for a legacy branch — `"0/470"` (Kepler) or `"0/390"` (Fermi); empty = the current/default slot. When set, the driver atom is slotted and GeST writes a `package.unmask` (the legacy slots are masked upstream). `kernel_open` is never set for a legacy slot. |
 
 `nvidia_proprietary` implies a `nvidia` token (added in `assemble._build_gpu`), so
 asking for the proprietary stack is self-contained.
@@ -29,13 +30,34 @@ asking for the proprietary stack is self-contained.
 ### Detection (`assemble.resolve_gpu`)
 
 The peer of `resolve_stage3`: it runs `lspci` (I/O) via `hwflags.detect` and returns a
-`GpuSpec`, opting into the proprietary stack when an NVIDIA card is present — and into
-the **open kernel modules** when the card's `lspci` codename is Turing-or-newer
-(`TU/GA/AD/GB…`), which is NVIDIA-recommended and sidesteps closed-module IBT issues on
-kernels built with `CONFIG_X86_KERNEL_IBT`. Cards whose codename `lspci` doesn't spell
-out fall back to the closed module (conservative). The TUI installer calls this at
-install time unless the user overrode the choice (`InstallSelections.gpu_auto`), so a
-detected card is handled hands-off.
+`GpuSpec`. The TUI installer calls this at install time unless the user overrode the
+choice (`InstallSelections.gpu_auto`), so a detected card is handled hands-off.
+
+**NVIDIA driver branch by architecture.** NVIDIA splits its closed driver by GPU
+generation, and Gentoo ships each as a separate SLOT of `x11-drivers/nvidia-drivers`.
+`hwflags.detect.nvidia_driver_branch` reads the chip **codename** in the `lspci` line
+(`GK107`, `GF119`, `AD103`, …) — the two-letter prefix encodes the architecture — and
+maps it to a branch:
+
+| codename prefix | arch | branch | driver |
+| --- | --- | --- | --- |
+| `AD` `GB` `GA` `TU` | Ada / Blackwell / Ampere / Turing | `current` + `kernel_open` | `nvidia-drivers` (open modules) |
+| `GV` `GP` `GM` | Volta / Pascal / Maxwell | `current` | `nvidia-drivers` (closed modules) |
+| `GK` | Kepler | `legacy-470` | `nvidia-drivers:0/470` (+ unmask) |
+| `GF` | Fermi | `legacy-390` | `nvidia-drivers:0/390` (+ unmask) |
+| `G8x` `G9x` `GT2xx` | Tesla and older | `nouveau` | none — `VIDEO_CARDS=nouveau` |
+
+The open kernel modules are chosen only for Turing-or-newer (NVIDIA-recommended; it
+sidesteps closed-module IBT issues on kernels built with `CONFIG_X86_KERNEL_IBT`). A
+Kepler/Fermi card gets its legacy slot **plus** a `package.unmask/gest-gpu` (those slots
+are masked by the Gentoo profile). Tesla-and-older have no supported in-tree proprietary
+driver (the 340 branch is gone), so they fall back to nouveau, firmware-only. An NVIDIA
+card whose codename `lspci` doesn't spell out falls back to `current` (the common case is
+a newer card); a genuinely old unrecognized card can be switched to nouveau in the UI.
+
+**AMD legacy.** Pre-GCN (TeraScale) chips — matched by codename/family
+(`amd_legacy_radeon`) — get `VIDEO_CARDS="radeon r600"` instead of the default
+`amdgpu radeonsi`, since the modern `amdgpu` kernel driver doesn't support them.
 
 **Hybrid graphics** (e.g. a Ryzen X3D's RDNA2 iGPU alongside a discrete GeForce) are
 handled naturally: `detect_video_cards` accumulates every GPU, so `VIDEO_CARDS` gets
@@ -101,10 +123,15 @@ preserves them (it only manages `GRUB_CMDLINE_LINUX_DEFAULT`).
 
 | GPU | `VIDEO_CARDS` | extra emerge | modprobe.d / cmdline | notes |
 | --- | --- | --- | --- | --- |
-| NVIDIA (GeForce) | `nvidia` | `nvidia-drivers` + `@module-rebuild` | yes (blacklist + modeset) | the main case; nouveau insufficient for HeDE |
-| AMD | `amdgpu radeonsi` | — | no | in-tree amdgpu + mesa; firmware only |
+| NVIDIA Turing+ (RTX 20+/GTX 16) | `nvidia` | `nvidia-drivers` (open) + `@module-rebuild` | yes (blacklist + modeset) | open kernel modules |
+| NVIDIA Maxwell–Volta (GTX 9xx/10xx) | `nvidia` | `nvidia-drivers` (closed) + `@module-rebuild` | yes | current slot, closed modules |
+| NVIDIA Kepler (GTX 6xx/7xx) | `nvidia` | `nvidia-drivers:0/470` + unmask + `@module-rebuild` | yes | legacy 470 branch |
+| NVIDIA Fermi (GTX 4xx/5xx) | `nvidia` | `nvidia-drivers:0/390` + unmask + `@module-rebuild` | yes | legacy 390 branch |
+| NVIDIA Tesla & older (8/9/2xx) | `nouveau` | — | no | no proprietary driver in-tree |
+| AMD GCN+ | `amdgpu radeonsi` | — | no | in-tree amdgpu + mesa; firmware only |
+| AMD pre-GCN (TeraScale) | `radeon r600` | — | no | in-tree radeon + mesa; firmware only |
 | Intel | `intel` | — | no | in-tree i915 + mesa; firmware only |
-| hybrid (AMD/Intel + NVIDIA) | both | `nvidia-drivers` | yes (NVIDIA-only) | iGPU coexists with the dGPU |
+| hybrid (AMD/Intel + NVIDIA) | both | per NVIDIA branch | yes (NVIDIA-only) | iGPU coexists with the dGPU |
 | none / undetected | — | — | no | firmware only |
 
 ## Known follow-ups
