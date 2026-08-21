@@ -11,9 +11,11 @@ spawn), a filesystem op (``extract``/``move``/``copy``/``chmodx``/``write``), or
 variables (``$GAMEDIR``, ``$WINEPREFIX``, ``$CACHE``) and file-id references are
 resolved against a :class:`PlanContext`.
 
-Scope: the command steps are planned for **wine** barrels. Proton barrels (umu)
-run their install differently, so command steps on a Proton barrel become
-``manual`` ops with a note — filesystem steps still plan normally.
+Scope: the command steps are planned for both **wine** barrels (``wine`` +
+``winetricks`` + ``wineserver``) and **Proton** barrels, where they route through
+``umu-run`` (Proton's universal launcher — it bundles DXVK/VKD3D + protonfixes and
+creates the prefix). Filesystem steps are runner-agnostic. Only genuinely
+un-runnable directives stay ``manual``.
 """
 
 from __future__ import annotations
@@ -25,6 +27,13 @@ from pathlib import Path
 from gest.core.drydock import recipe as R
 from gest.core.drydock.model import RUNNER_PROTON
 from gest.core.drydock.recipe import Recipe
+
+# The Proton launcher and the env it needs (mirrors launch.build_env's Proton
+# branch). ``GAMEID`` is mandatory for umu; ``umu-0`` is the generic "no
+# protonfix" id used for install-time steps. ``STORE=none`` = not a store title.
+UMU_RUN = "umu-run"
+UMU_GAMEID = "umu-0"
+UMU_STORE = "none"
 
 OP_COMMAND = "command"
 OP_EXTRACT = "extract"
@@ -46,6 +55,7 @@ class PlanContext:
     cache: str = ""  # $CACHE — where `files` are downloaded
     arch: str = "win64"
     runner: str = "wine"
+    runner_version: str = ""  # Proton build → PROTONPATH (empty → umu's default)
 
     def variables(self) -> dict[str, str]:
         return {"GAMEDIR": self.gamedir, "WINEPREFIX": self.prefix,
@@ -129,12 +139,11 @@ def _plan_step(step: R.RecipeStep, context: PlanContext,
         return PlannedOp(OP_WRITE, f"write {fmt} {path}",
                          detail={"path": path, "format": fmt, "params": dict(params)})
 
-    # --- command ops: planned for wine; Proton install differs (umu) ---
+    # --- command ops: wine directly, Proton via umu-run ---
     if action in (R.ACTION_CREATE_PREFIX, R.ACTION_WINEEXEC, R.ACTION_WINETRICKS,
                   R.ACTION_REGEDIT_FILE, R.ACTION_WINEKILL):
         if context.runner == RUNNER_PROTON:
-            return PlannedOp(OP_MANUAL, f"{action}: Proton install not yet planned (umu)",
-                             detail={"original": action, "params": dict(params)})
+            return _plan_proton_command(action, params, context, variables)
         return _plan_wine_command(action, params, context, variables)
 
     # --- ACTION_MANUAL and anything unmapped ---
@@ -166,3 +175,42 @@ def _plan_wine_command(action: str, params: dict, context: PlanContext,
     # ACTION_WINEKILL
     return PlannedOp(OP_COMMAND, "kill the prefix's wine processes",
                      argv=["wineserver", "-k"], env=env)
+
+
+def _umu_env(context: PlanContext) -> dict[str, str]:
+    """The umu-run environment for a Proton install step (see :mod:`.launch`)."""
+    env = {"WINEPREFIX": context.prefix, "GAMEID": UMU_GAMEID, "STORE": UMU_STORE}
+    if context.runner_version:
+        env["PROTONPATH"] = context.runner_version  # else umu picks its default Proton
+    return env
+
+
+def _plan_proton_command(action: str, params: dict, context: PlanContext,
+                         variables: dict) -> PlannedOp:
+    """The Proton sibling of :func:`_plan_wine_command`: the same recipe verbs, run
+    through ``umu-run`` (which sets up Proton's wine + prefix). umu forwards its
+    argument to ``proton run``, so wine built-ins (``regedit``/``wineserver``) and
+    ``winetricks`` reach the Proton prefix; ``createprefix`` is umu's own verb."""
+    env = _umu_env(context)
+    if action == R.ACTION_CREATE_PREFIX:
+        return PlannedOp(OP_COMMAND,
+                         f"umu createprefix ({context.arch} Proton) at {context.prefix}",
+                         argv=[UMU_RUN, "createprefix"], env=env)
+    if action == R.ACTION_WINETRICKS:
+        verbs = _verbs(params)
+        return PlannedOp(OP_COMMAND, f"umu winetricks {' '.join(verbs)}".strip(),
+                         argv=[UMU_RUN, "winetricks", "-q", *verbs], env=env)
+    if action == R.ACTION_WINEEXEC:
+        exe = _s(params, "executable", variables) or _s(params, "exe", variables)
+        args = [_subst(str(a), variables) for a in params.get("args", [])] \
+            if isinstance(params.get("args"), (list, tuple)) \
+            else (_s(params, "args", variables).split() if params.get("args") else [])
+        return PlannedOp(OP_COMMAND, f"umu-run {exe} {' '.join(args)}".strip(),
+                         argv=[UMU_RUN, exe, *args], env=env)
+    if action == R.ACTION_REGEDIT_FILE:
+        reg = _s(params, "file", variables) or _s(params, "path", variables)
+        return PlannedOp(OP_COMMAND, f"umu regedit {reg}",
+                         argv=[UMU_RUN, "regedit", reg], env=env)
+    # ACTION_WINEKILL
+    return PlannedOp(OP_COMMAND, "kill the Proton prefix's wine processes",
+                     argv=[UMU_RUN, "wineserver", "-k"], env=env)

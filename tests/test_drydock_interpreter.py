@@ -108,15 +108,52 @@ def test_regedit_file_and_winekill():
     assert ops[1].argv == ["wineserver", "-k"]
 
 
-def test_proton_command_steps_become_manual():
-    recipe = Recipe(app_name="G", app_id="g",
-                    barrel=RecipeBarrel(runner="proton", arch="win64"),
-                    steps=[RecipeStep("winetricks", {"app": "dxvk"}),
-                           RecipeStep("extract", {"file": "/a.zip", "dst": "$GAMEDIR"})])
+def _proton_recipe(steps) -> Recipe:
+    return Recipe(app_name="G", app_id="g",
+                  barrel=RecipeBarrel(runner="proton", arch="win64"), steps=steps)
+
+
+def test_proton_command_steps_route_through_umu():
+    recipe = _proton_recipe([RecipeStep("winetricks", {"app": "vcrun2019"}),
+                             RecipeStep("extract", {"file": "/a.zip", "dst": "$GAMEDIR"})])
     ops = plan(recipe, _ctx(runner="proton"))
-    # command step → manual note; filesystem step still plans.
-    assert ops[0].kind == interpreter.OP_MANUAL and "Proton" in ops[0].summary
+    # command step → a real umu-run command (no longer a manual stub)…
+    assert ops[0].kind == interpreter.OP_COMMAND
+    assert ops[0].argv == ["umu-run", "winetricks", "-q", "vcrun2019"]
+    # …and the filesystem step still plans runner-agnostically.
     assert ops[1].kind == interpreter.OP_EXTRACT
+
+
+def test_proton_create_prefix_uses_umu_createprefix():
+    ops = plan(_proton_recipe([RecipeStep("create_prefix", {})]), _ctx(runner="proton"))
+    assert ops[0].kind == interpreter.OP_COMMAND
+    assert ops[0].argv == ["umu-run", "createprefix"]
+
+
+def test_proton_wineexec_and_regedit_and_winekill():
+    ops = plan(_proton_recipe([
+        RecipeStep("wineexec", {"exe": "$CACHE/setup.exe", "args": ["/S"]}),
+        RecipeStep("regedit_file", {"file": "$GAMEDIR/tweak.reg"}),
+        RecipeStep("winekill", {}),
+    ]), _ctx(runner="proton"))
+    assert ops[0].argv == ["umu-run", "/cache/setup.exe", "/S"]
+    assert ops[1].argv == ["umu-run", "regedit", "/pfx/drive_c/game/tweak.reg"]
+    assert ops[2].argv == ["umu-run", "wineserver", "-k"]
+
+
+def test_proton_env_has_umu_essentials_and_protonpath():
+    ops = plan(_proton_recipe([RecipeStep("wineexec", {"exe": "x.exe"})]),
+               _ctx(runner="proton", runner_version="GE-Proton9-20"))
+    env = ops[0].env
+    assert env["WINEPREFIX"] == "/pfx"
+    assert env["GAMEID"] == "umu-0" and env["STORE"] == "none"
+    assert env["PROTONPATH"] == "GE-Proton9-20"  # the barrel's pinned Proton
+
+
+def test_proton_env_omits_protonpath_when_unpinned():
+    # a recipe-only plan has no Proton pin → umu falls back to its default build.
+    ops = plan(_proton_recipe([RecipeStep("wineexec", {"exe": "x.exe"})]), _ctx(runner="proton"))
+    assert "PROTONPATH" not in ops[0].env
 
 
 def test_planned_op_to_dict():

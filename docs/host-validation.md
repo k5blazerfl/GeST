@@ -215,6 +215,14 @@ drydock export-recipe notepad-test -o /tmp/out.recipe   # barrel -> recipe (roun
       `install` and later `drydock run` share one `WINEPREFIX`. (The standalone
       `install`/`materialize` still compute prefixes separately — prefer
       `install-recipe`.)
+- [ ] **Proton path (needs `games-util/umu-launcher`, GURU overlay):** a recipe
+      whose `barrel.runner: proton` now plans its command steps through
+      `umu-run` — `drydock plan` shows `umu-run createprefix`,
+      `umu-run <installer.exe>`, `umu-run winetricks …`, `umu-run regedit …`
+      (env `GAMEID=umu-0 STORE=none WINEPREFIX=… [PROTONPATH=<runner_version>]`),
+      not the old `manual: Proton install not yet planned`. `install --run`
+      against a Proton barrel then drives umu for real. *(The argv/env are
+      CI-tested; the live umu forwarding of built-ins is what this step confirms.)*
 
 ---
 
