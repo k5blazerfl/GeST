@@ -4,12 +4,14 @@
 #
 #   sudo packaging/livecd/spin-up.sh [--uefi] [--no-boot] [--snapshot ID]
 #                                    [--flavor systemd] [--storedir DIR]
+#                                    [--hede-overlay DIR]
 #
 # It automates the catalyst inputs that build.sh otherwise assumes:
 #   1. syncs this checkout's GeST overlay into /var/db/repos/gest (→ latest GeST)
+#   1b. locates + refreshes the HeDE (Amphitheater) overlay (→ latest hede)
 #   2. ensures a portage snapshot (or use --snapshot / an existing config.env)
 #   3. downloads the latest stage3-amd64-<flavor> seed into catalyst's builds/
-#   4. writes config.env, runs build.sh, and (unless --no-boot) boots the ISO
+#   4. writes config.env (incl. HEDE_OVERLAY), runs build.sh, and boots the ISO
 #
 # Must run as root on a Gentoo host with catalyst + qemu installed:
 #   sudo emerge -av dev-util/catalyst app-emulation/qemu sys-firmware/edk2-ovmf
@@ -25,6 +27,7 @@ arch="amd64"
 flavor="systemd"   # HeDE is systemd-only; the live image seeds + boots systemd
 mirror="https://distfiles.gentoo.org"
 overlay_dst="/var/db/repos/gest"
+hede_overlay="/var/db/repos/amphitheater"   # where gui-apps/hede lives (external repo)
 boot=1
 firmware="bios"
 snapshot=""
@@ -37,6 +40,7 @@ while [ $# -gt 0 ]; do
         --snapshot) snapshot="$2"; shift 2 ;;
         --flavor) flavor="$2"; shift 2 ;;
         --storedir) storedir="$2"; shift 2 ;;
+        --hede-overlay) hede_overlay="$2"; shift 2 ;;
         -h|--help) grep -E '^#( |$)' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "unknown option: $1" >&2; exit 1 ;;
     esac
@@ -76,6 +80,35 @@ masters = gentoo
 auto-sync = no
 REPO
     echo "  registered /etc/portage/repos.conf/gest.conf"
+fi
+
+# --- 1b. HeDE (Amphitheater) overlay ----------------------------------------
+# gui-apps/hede is NOT in this repo's overlay — it lives in the external
+# Amphitheater overlay. It MUST reach the stage as an ebuild repo, else the
+# resolver can't see hede-<current> and silently falls back to a stale hede
+# binpkg from pkgcache (shipping an ancient desktop). So locate it, refresh it
+# if it's a git checkout, register it, and (step 4) write HEDE_OVERLAY so the
+# spec's `repos:` line includes it.
+say "Locating the HeDE overlay → ${hede_overlay}"
+[ -d "${hede_overlay}/gui-apps/hede" ] || die \
+    "HeDE overlay not found at ${hede_overlay} (expected gui-apps/hede/). Clone \
+k5blazerfl/Amphitheater there, or pass --hede-overlay DIR."
+if [ -d "${hede_overlay}/.git" ]; then
+    git -C "${hede_overlay}" pull --ff-only 2>/dev/null \
+        && echo "  refreshed (git pull)" \
+        || echo "  (could not fast-forward; using ${hede_overlay} as-is)"
+fi
+echo "  hede ebuilds: $(ls "${hede_overlay}/gui-apps/hede/"*.ebuild 2>/dev/null | \
+    sed 's#.*/##;s/\.ebuild$//' | tr '\n' ' ')"
+if ! grep -Rqs "location *= *${hede_overlay}" /etc/portage/repos.conf 2>/dev/null; then
+    mkdir -p /etc/portage/repos.conf
+    cat > /etc/portage/repos.conf/amphitheater.conf <<REPO
+[amphitheater]
+location = ${hede_overlay}
+masters = gentoo
+auto-sync = no
+REPO
+    echo "  registered /etc/portage/repos.conf/amphitheater.conf"
 fi
 
 # --- 2. snapshot ------------------------------------------------------------
@@ -125,6 +158,7 @@ PROFILE="default/linux/${arch}/23.0/desktop/systemd"
 SNAPSHOT="${snapshot}"
 STAGE3="${seed}"
 GEST_OVERLAY="${overlay_dst}"
+HEDE_OVERLAY="${hede_overlay}"
 TIMESTAMP=""
 CONFIG
 
