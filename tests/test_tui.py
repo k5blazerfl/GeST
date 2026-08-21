@@ -463,7 +463,7 @@ def test_services_enable_and_mask_toggle(monkeypatch):
             return None
 
     fake = [Service(name="sshd.service", status="active", enabled_state="disabled")]
-    monkeypatch.setattr(S.reader, "list_services", lambda: fake)
+    monkeypatch.setattr(S.dispatch, "list_services", lambda: fake)
     monkeypatch.setattr(S, "ServicesBackend", _FakeServicesBackend)
     app = App()
     scr = S.ServicesScreen(app)
