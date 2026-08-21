@@ -19,13 +19,24 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from gest.core.flotilla import backend, domainxml, images, model, prereq, vessels
-from gest.core.flotilla.model import DISPLAYS, OS_WINDOWS, OSES, Disk, Vessel
+from gest.core.flotilla import backend, domainxml, images, model, prereq, unattend, vessels
+from gest.core.flotilla.model import (
+    DISPLAYS,
+    ENTRY_RDP,
+    OS_WINDOWS,
+    OSES,
+    Disk,
+    RemoteAppProgram,
+    Vessel,
+)
+
+DEFAULT_USERNAME = "flotilla"  # the provisioned local account Gangway logs in as
 
 
 @dataclass
@@ -104,6 +115,8 @@ def cmd_create(args, env: FlotillaEnv) -> int:
     if vessels.load_vessel(vid, env.store_base) is not None:
         env.io.err(f"vessel {vid!r} already exists")
         return 1
+    if not _apply_provisioning(args, env, vessel):
+        return 1
 
     vessels.save_vessel(vessel, env.store_base)
     env.io.out(f"created vessel {vid} ({vessel.os}, {vessel.vcpus} vCPU, "
@@ -129,6 +142,58 @@ def _ensure_url_image(env: FlotillaEnv, image) -> str:
         return dest
     env.io.out(f"fetching {image.title} …")
     return dest if env.run_argv(images.curl_argv(image.url, dest)) == 0 else ""
+
+
+def _remote_app(value: str) -> RemoteAppProgram:
+    """Parse a ``--remote-app`` value: a guest-side Windows exe path, optionally
+    ``Name=path``. The Applications key / RAIL alias is the sanitized basename."""
+    if "=" in value:
+        name, _, path = value.partition("=")
+    else:
+        name, path = "", value
+    path = path.strip()
+    base = path.replace("/", "\\").rsplit("\\", 1)[-1]
+    key = re.sub(r"[^A-Za-z0-9]", "", base.rsplit(".", 1)[0]) or "app"
+    return RemoteAppProgram(key=key, name=name.strip() or base, path=path)
+
+
+def _build_unattend_iso(env: FlotillaEnv, vessel: Vessel) -> str:
+    """Host edge: stage autounattend.xml + firstboot.ps1 and burn the provisioning
+    ISO with xorriso. Returns the ISO path, or "" on failure."""
+    staging = vessels.vessel_dir(vessel.id, env.store_base) / "unattend"
+    staging.mkdir(parents=True, exist_ok=True)
+    files = unattend.staging_files(vessel, vessel.remote_app_programs, vessel.unattend_username)
+    for name, content in files.items():
+        (staging / name).write_text(content, encoding="utf-8")
+    out_iso = str(vessels.vessel_dir(vessel.id, env.store_base) / "unattend.iso")
+    argv = images.unattend_iso_argv(str(staging), out_iso, unattend.PROVISION_LABEL)
+    return out_iso if env.run_argv(argv) == 0 else ""
+
+
+def _apply_provisioning(args, env: FlotillaEnv, vessel: Vessel) -> bool:
+    """If ``--provision``/``--remote-app`` were given, provision the Windows vessel
+    for RemoteApp: attach a built unattend ISO + set the login user + default the
+    entry to RDP. Returns False (with an error printed) if provisioning was asked
+    for but couldn't be satisfied — callers must abort before defining the domain."""
+    programs = [_remote_app(v) for v in (getattr(args, "remote_app", None) or [])]
+    if not programs and not getattr(args, "provision", False):
+        return True  # not requested
+    if vessel.os != OS_WINDOWS:
+        env.io.err("guest enablement (--provision/--remote-app) is a Windows path")
+        return False
+    vessel.unattend_username = getattr(args, "username", "") or DEFAULT_USERNAME
+    vessel.remote_app_programs = programs
+    iso = _build_unattend_iso(env, vessel)
+    if not iso:
+        env.io.err("couldn't build the guest-enablement ISO (is xorriso / "
+                   "dev-libs/libisoburn installed?)")
+        return False
+    vessel.unattend_iso = iso
+    vessel.provisioned = True
+    vessel.entry = ENTRY_RDP  # a provisioned vessel opens seamless by default
+    env.io.out(f"provisioned {vessel.id} for RemoteApp "
+               f"({len(programs)} program(s), user {vessel.unattend_username!r})")
+    return True
 
 
 def cmd_launch(args, env: FlotillaEnv) -> int:
@@ -174,6 +239,10 @@ def cmd_launch(args, env: FlotillaEnv) -> int:
                        "virtio drivers)")
             return 1
         vessel.virtio_iso = virtio
+    # Build the guest-enablement ISO before defining — abort here (not at a cryptic
+    # boot failure) if it was requested but couldn't be built.
+    if not _apply_provisioning(args, env, vessel):
+        return 1
     if not vessel.is_valid():
         env.io.err("invalid vessel (check --os / --display)")
         return 2
@@ -389,6 +458,18 @@ COMMANDS: dict[str, Callable[..., int]] = {
 }
 
 
+def _add_provision_args(p: argparse.ArgumentParser) -> None:
+    """Windows guest-enablement flags shared by create/launch (§5/phase-5)."""
+    p.add_argument("--provision", action="store_true",
+                   help="build an unattend ISO that boots the Windows guest "
+                        "RemoteApp-ready (RDP+NLA+firewall+agent+user)")
+    p.add_argument("--remote-app", action="append", metavar="[NAME=]PATH",
+                   help="publish a Windows exe as a RemoteApp (repeatable); "
+                        "implies --provision")
+    p.add_argument("--username", default="",
+                   help=f"the local account Gangway logs in as (default {DEFAULT_USERNAME!r})")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="flotilla", description="Manage VMs (vessels).")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -404,6 +485,7 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("--display", choices=DISPLAYS, default="")
     create.add_argument("--no-allocate", action="store_true",
                         help="skip creating the qcow2 disk now")
+    _add_provision_args(create)
 
     launch = sub.add_parser("launch",
                             help="turnkey: create → fetch → allocate → define → boot → console")
@@ -417,6 +499,7 @@ def build_parser() -> argparse.ArgumentParser:
     launch.add_argument("--no-allocate", action="store_true")
     launch.add_argument("--no-start", action="store_true", help="define but don't boot")
     launch.add_argument("--no-console", action="store_true", help="boot but don't open the console")
+    _add_provision_args(launch)
 
     sub.add_parser("list", help="list vessels")
     sub.add_parser("images", help="list the install-media catalog")

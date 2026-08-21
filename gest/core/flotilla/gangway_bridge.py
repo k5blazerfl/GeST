@@ -36,6 +36,8 @@ def parse_agent_ipv4(domifaddr_output: str) -> str:
 def profile_for(vessel: Vessel, ip: str) -> RdpProfile:
     """A Gangway profile targeting a Windows vessel at ``ip`` — sensible defaults
     (clipboard/drive/audio redirect, NLA). The name is stable (so re-connecting
-    updates the same profile) and safe for Gangway's filename-based store."""
+    updates the same profile) and safe for Gangway's filename-based store. The
+    username is the local account the guest was provisioned with (§5/phase-5), so
+    NLA/CredSSP matches and the Keychain lookup keys off the right user."""
     name = vessel.gangway_profile or (_UNSAFE.sub("", f"{vessel.name} VM").strip() or vessel.id)
-    return RdpProfile(name=name, host=ip)
+    return RdpProfile(name=name, host=ip, username=vessel.unattend_username)
