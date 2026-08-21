@@ -49,7 +49,7 @@ trap cleanup EXIT
 
 qemu-img create -f qcow2 "${disk}" 20G >/dev/null
 
-args=(-m 4G -smp 2 -accel kvm:tcg -no-reboot -display none
+args=(-m 4G -smp 2 -machine accel=kvm:tcg -no-reboot -display none
       -serial "file:${serial}" -cdrom "${iso}"
       -drive "file=${disk},format=qcow2,if=virtio" -boot d -net nic -net user)
 if [ "${mode}" = "uefi" ]; then
