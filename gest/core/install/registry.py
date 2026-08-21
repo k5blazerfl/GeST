@@ -948,7 +948,7 @@ def _tier2_module_steps(plan: InstallPlan, key: str) -> list[InstallStep]:
             WriteConfigStep("Configure sshd", SSHD_CONFIG,
                             lambda: sshd_config.apply_settings("", SshdSettings())),
             ChrootCmdStep("Enable sshd at boot", "tier2_sshd_enable",
-                          ["rc-update", "add", "sshd", "default"]),
+                          ["systemctl", "enable", "sshd"]),
         ]
     if key == "firewall":
         return [
@@ -957,7 +957,7 @@ def _tier2_module_steps(plan: InstallPlan, key: str) -> list[InstallStep]:
             WriteConfigStep("Configure the firewall", fw_nft.NFT_PATH,
                             lambda: fw_nft.render_ruleset(_default_firewall())),
             ChrootCmdStep("Enable nftables at boot", "tier2_nftables_enable",
-                          ["rc-update", "add", "nftables", "default"]),
+                          ["systemctl", "enable", "nftables"]),
         ]
     if key == "sudo":
         return [
