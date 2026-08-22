@@ -85,6 +85,8 @@ class UserSpec:
     comment: str = ""
     shell: str = "/bin/bash"
     wheel: bool = True
+    set_password: bool = False     # whether to set this user's password (the actual
+    # password is NOT in the plan — it rides a run-time secret, like root's)
 
 
 @dataclass(slots=True, frozen=True)

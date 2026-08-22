@@ -657,7 +657,9 @@ class InstallRunScreen(Screen):
             return
 
         secret = self._sel.root_password
-        steps = build_registry(plan, root_secret=lambda: secret)
+        user_secret = self._sel.user_password
+        steps = build_registry(plan, root_secret=lambda: secret,
+                               user_secret=lambda: user_secret)
         self._labels = [s.label for s in steps]
         self._total = len(steps)
         self._bar = urwid.ProgressBar("pb_normal", "pb_complete", 0, max(self._total, 1))

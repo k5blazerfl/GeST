@@ -57,6 +57,7 @@ _EXPECTED_LABELS = [
     "Install the m1n1 boot stub",
     "Set the root password",
     "Create the user account",
+    "Set the user password",
     "Configure the network",
     "Enable the HeDE session",
     "Configure the clock",
@@ -85,7 +86,7 @@ _CHROOT_LABELS = {
     "Install the HeDE desktop",
     "Install kernel sources", "Build the kernel", "Install the bootloader",
     "Install the m1n1 boot stub",
-    "Set the root password", "Create the user account",
+    "Set the root password", "Create the user account", "Set the user password",
     "Configure the clock",
 }
 _PHASE_ORDER = list(Phase)
@@ -135,8 +136,8 @@ def test_registry_phases_are_non_decreasing():
     assert [s.phase for s in reg[13:16]] == [Phase.CONFIGURE] * 3
     # KERNEL_BOOT: sources, stage-config, build, gpu-drivers, bootloader, m1n1
     assert [s.phase for s in reg[16:22]] == [Phase.KERNEL_BOOT] * 6
-    assert [s.phase for s in reg[22:25]] == [Phase.USERS_NETWORK] * 3
-    assert [s.phase for s in reg[25:27]] == [Phase.FINISH] * 2       # HeDE session + clock
+    assert [s.phase for s in reg[22:26]] == [Phase.USERS_NETWORK] * 4  # +user password
+    assert [s.phase for s in reg[26:28]] == [Phase.FINISH] * 2       # HeDE session + clock
 
 
 def test_registry_chroot_and_opens_chroot_flags():
@@ -155,7 +156,7 @@ def test_registry_marker_keys():
 def test_tier2_default_empty():
     # base rows + 3 HeDE desktop steps + kernel-sources + stage-kernel-config +
     # gpu-drivers + enable-session + configure-clock + the arm64-gated m1n1 boot stub
-    assert len(build_registry(_plan())) == 27
+    assert len(build_registry(_plan())) == 28
 
 
 def test_boot_stub_step_is_arm64_gated():
@@ -650,3 +651,24 @@ def test_configure_clock_local_sets_local_rtc_no_ntp():
     steps = ConfigureClock().build(_ctx(FakeExecutor(), plan=plan))
     blob = " ".join(" ".join(s.argv) for s in steps)
     assert "LOCAL" in blob and "chrony" not in blob
+
+
+def test_set_user_password_gated_and_fed_on_stdin():
+    from gest.core.install.plan import UserSpec
+    from gest.core.install.registry import SetUserPassword
+    step = SetUserPassword()
+    step.secret = lambda: "pw"
+    # no user → no-op + satisfied
+    p0 = _plan()
+    assert step.build(_ctx(FakeExecutor(), plan=p0)) == []
+    assert asyncio.run(step.is_satisfied(_ctx(FakeExecutor(), plan=p0))) is True
+    # user WITH set_password → one chpasswd step; the password rides stdin, not argv
+    p1 = _plan(user=UserSpec(name="captain", set_password=True))
+    steps = step.build(_ctx(FakeExecutor(), plan=p1))
+    assert len(steps) == 1
+    assert "captain:pw" in steps[0].stdin and "pw" not in " ".join(steps[0].argv)
+    assert asyncio.run(step.is_satisfied(_ctx(FakeExecutor(), plan=p1))) is False
+    # user WITHOUT set_password → skipped
+    p2 = _plan(user=UserSpec(name="captain", set_password=False))
+    assert step.build(_ctx(FakeExecutor(), plan=p2)) == []
+    assert asyncio.run(step.is_satisfied(_ctx(FakeExecutor(), plan=p2))) is True

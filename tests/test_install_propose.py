@@ -157,3 +157,9 @@ def test_bad_clock_mode_rejected():
     sel = _base_sel(clock="ntpd")
     with pytest.raises(ValueError, match="clock"):
         assemble_plan(sel, _stage3())
+
+
+def test_user_password_marks_set_password():
+    sel = _base_sel(user_password="hunter2")          # desktop/rootless w/ create_user
+    plan = assemble_plan(sel, _stage3())
+    assert plan.user is not None and plan.user.set_password is True
