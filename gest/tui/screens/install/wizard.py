@@ -79,6 +79,22 @@ def _row(text: str) -> urwid.Widget:
     return urwid.AttrMap(urwid.SelectableIcon(text, 0), None, focus_map="focus")
 
 
+class _EnterList(urwid.ListBox):
+    """A ListBox where Enter on the focused row fires a callback — so picking a
+    disk/timezone is just highlight + Enter, not 'reach the Select button'."""
+
+    def __init__(self, body, on_enter):
+        super().__init__(body)
+        self._on_enter = on_enter
+
+    def keypress(self, size, key):
+        key = super().keypress(size, key)
+        if key == "enter":
+            self._on_enter()
+            return None
+        return key
+
+
 def _detect_ram_bytes() -> int:
     try:
         return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
@@ -120,7 +136,7 @@ def _choice_modal(app: App, title: str, options: list[tuple[str, str]],
             app.pop()
             done()
 
-    body = urwid.BoxAdapter(urwid.ListBox(walker), min(len(options) + 1, 8))
+    body = urwid.BoxAdapter(_EnterList(walker, select), min(len(options) + 1, 8))
     modal = Modal(app, title, [body], [("Select", select), ("Cancel", app.pop)])
     app.push_modal(modal, width=("relative", 66), height=("relative", 50))
 
@@ -159,7 +175,7 @@ def _pick_modal(app: App, title: str, choices: list[str], current: str,
         ("pack", urwid.Text(("hint", "Type to filter · ↓ into the list · Select."))),
         ("pack", filt),
         ("pack", urwid.Divider()),
-        ("weight", 1, urwid.BoxAdapter(urwid.ListBox(walker), 10)),
+        ("weight", 1, urwid.BoxAdapter(_EnterList(walker, select), 10)),
     ])
     modal = Modal(app, title, [body], [("Select", select), ("Cancel", app.pop)])
     app.push_modal(modal, width=("relative", 62), height=("relative", 74))

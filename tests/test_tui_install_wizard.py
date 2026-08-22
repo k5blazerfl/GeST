@@ -234,3 +234,31 @@ def test_role_cards_nudge_hede_and_omit_admin_style():
     # be advertised on the role cards
     for term in ("rootless", "sudo", "doas", "root", " su"):
         assert term not in blob, f"role cards should not mention {term!r}"
+
+
+def test_picker_enter_selects_the_focused_row():
+    import urwid
+    fired = []
+    walker = urwid.SimpleFocusListWalker([wz._row("sda"), wz._row("sdb")])
+    lst = wz._EnterList(walker, lambda: fired.append(walker.get_focus()[1]))
+    lst.render((20, 5), focus=True)          # ListBox needs a render before keypress
+    walker.set_focus(1)
+    assert lst.keypress((20, 5), "enter") is None   # consumed
+    assert fired == [1]                              # Enter fired select on the focused row
+
+
+def test_modal_tab_cycles_focus_between_body_and_buttons():
+    import urwid
+
+    from gest.tui.runtime import Modal
+    app = App()
+    body = urwid.BoxAdapter(urwid.ListBox(urwid.SimpleFocusListWalker([wz._row("x")])), 3)
+    m = Modal(app, "Pick", [body], [("Select", lambda: None), ("Cancel", lambda: None)])
+    # pile: 0 title, 1 divider, 2 body(selectable), 3 divider, 4 buttons(selectable)
+    m._pile.focus_position = 2
+    m._cycle_focus(1)
+    assert m._pile.focus_position == 4               # Tab → buttons
+    m._cycle_focus(1)
+    assert m._pile.focus_position == 2               # Tab wraps back to the list
+    m._cycle_focus(-1)
+    assert m._pile.focus_position == 4               # Shift-Tab → buttons

@@ -426,16 +426,29 @@ class Modal(urwid.WidgetWrap):
         ]
         grid = urwid.GridFlow(button_widgets, cell_width=button_width, h_sep=2,
                               v_sep=1, align="center")
-        pile = urwid.Pile(
+        self._pile = urwid.Pile(
             [urwid.Text(("title", title)), urwid.Divider(), *rows,
              urwid.Divider(), grid]
         )
-        super().__init__(urwid.Filler(pile, valign="top"))
+        super().__init__(urwid.Filler(self._pile, valign="top"))
+
+    def _cycle_focus(self, step: int) -> None:
+        """Tab/Shift-Tab across the modal's focusable widgets (body ↔ buttons)."""
+        positions = [i for i, (w, _o) in enumerate(self._pile.contents)
+                     if w.selectable()]
+        if not positions:
+            return
+        cur = self._pile.focus_position
+        idx = positions.index(cur) if cur in positions else 0
+        self._pile.focus_position = positions[(idx + step) % len(positions)]
 
     def keypress(self, size, key):
         key = super().keypress(size, key)
         if key == "esc":
             self.app.pop()
+            return None
+        if key in ("tab", "shift tab"):
+            self._cycle_focus(1 if key == "tab" else -1)
             return None
         return key
 
