@@ -42,3 +42,8 @@ def test_detect_ntp_none_installed():
 
 def test_now_string_format():
     assert reader.now_string(dt.datetime(2026, 8, 8, 12, 0, 0)) == "2026-08-08 12:00:00"
+
+
+def test_clock_line_time_first_star_date():
+    # Welcome clock: time, a star, then the date (swapped from now_string()).
+    assert reader.clock_line(dt.datetime(2026, 8, 8, 12, 30, 45)) == "12:30:45 * 2026-08-08"

@@ -266,10 +266,13 @@ def test_modal_tab_cycles_focus_between_body_and_buttons():
 
 
 def test_welcome_shows_current_time_and_clock_row():
+    import re
     _app, step, _ = _step(wz.LocalizationStep)
     out = "\n".join(r.decode() for r in step.render((92, 36), focus=True).text)
     assert "🕑" in out                       # current-time display
-    assert "Clock" in out and "chrony" in out
+    # time first, date second, a star between them (HH:MM:SS * YYYY-MM-DD)
+    assert re.search(r"\d\d:\d\d:\d\d \* \d{4}-\d\d-\d\d", out)
+    assert "Clock" in out and "Network (NTP sync)" in out
 
 
 def test_welcome_clock_local_renders():
@@ -277,7 +280,7 @@ def test_welcome_clock_local_renders():
     sel.clock = "local"
     _app, step, _ = _step(wz.LocalizationStep, sel)
     out = "\n".join(r.decode() for r in step.render((92, 36), focus=True).text)
-    assert "local (no sync)" in out
+    assert "Local (no sync)" in out
 
 
 def test_admin_model_lives_on_base_system_not_account():

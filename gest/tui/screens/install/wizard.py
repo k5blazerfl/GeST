@@ -75,7 +75,7 @@ _ADMIN_LABELS = {
     "rootless": "Rootless — root locked, wheel user escalates (Ubuntu-style)",
 }
 _CLOCK_LABELS = {
-    "chrony": "Chrony — keep time in sync over the network (NTP)",
+    "chrony": "Network — uses Chrony to keep time in sync over the internet (NTP)",
     "local": "Local — set from this clock, no network sync",
 }
 
@@ -329,17 +329,25 @@ class LocalizationStep(WizardStep):
 
     def __init__(self, app, sel, *, return_to=None, exit_to_terminal=False):
         super().__init__(app, sel, return_to=return_to, exit_to_terminal=exit_to_terminal)
+        # This gate is the wizard's entry screen, so it's constructed BEFORE
+        # app.run() starts the loop — meaning is_running() is still False here and
+        # we can't kick loop-bound work directly (that was the dead-clock bug). Arm
+        # a one-shot alarm instead: it fires on the first loop iteration in the live
+        # app, and never fires under tests (which build the screen but never run the
+        # loop), keeping both the warm-up and the tick quiet there.
+        self.app.main.set_alarm_in(0, self._on_shown)
+
+    def _on_shown(self, *_):
         # Warm the network up in the BACKGROUND while the user reads the welcome and
         # sets localization — so we're likely online by the time they hit Continue
-        # and can skip the Get Online gate entirely. Live app only (needs the loop).
-        if self.app.loop.is_running():
-            self.app.run_async(self._warm_network())
-            self._tick_clock()          # live-tick the current-time display
+        # and can skip the Get Online gate entirely — and start the live clock.
+        self.app.run_async(self._warm_network())
+        self._tick_clock()
 
     def _tick_clock(self, *_):
-        self._time_txt.set_text(("dim", f"🕑  {dt_reader.now_string()}"))
+        self._time_txt.set_text(("dim", f"🕑  {dt_reader.clock_line()}"))
         # keep ticking only while this gate is still on the stack (survives modals)
-        if self.app.loop.is_running() and self in self.app._stack:
+        if self in self.app._stack:
             self.app.main.set_alarm_in(1, self._tick_clock)
 
     def help(self) -> str:
@@ -381,7 +389,7 @@ class LocalizationStep(WizardStep):
         # here (the rail begins at the next gate) so the art has room to breathe.
         logo = urwid.Padding(urwid.Text(_GESI_LOGO_MARKUP, wrap="clip"),
                              align="center", width=_GESI_LOGO_W)
-        self._time_txt = urwid.Text(("dim", f"🕑  {dt_reader.now_string()}"), align="center")
+        self._time_txt = urwid.Text(("dim", f"🕑  {dt_reader.clock_line()}"), align="center")
         pile = NavPile([
             ("pack", urwid.Divider(" ")),
             ("pack", logo),
@@ -403,7 +411,7 @@ class LocalizationStep(WizardStep):
         return body, pile, [self._list_pos]
 
     def setting_rows(self):
-        clock = "chrony (NTP sync)" if self.sel.clock == "chrony" else "local (no sync)"
+        clock = "Network (NTP sync)" if self.sel.clock == "chrony" else "Local (no sync)"
         return [
             ("Language / Locale", self.sel.locale, self._edit_locale),
             ("Timezone", self.sel.timezone, self._edit_timezone),
