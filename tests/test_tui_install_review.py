@@ -49,15 +49,17 @@ def test_review_renders_grouped_readout():
 def test_ready_selection_has_no_blockers_and_offers_install():
     _app, scr = _review(_ready_desktop())
     assert scr._blockers() == []
-    assert "__install__" in scr._targets
+    # Install is a bottom-right action button (GeST ActionRow), always present.
+    assert any("Install" in "".join(
+        str(t) for t in btn.base_widget.get_text()[0]) for btn in scr._install_row.buttons)
 
 
-def test_missing_disk_is_a_blocker_and_disables_install():
+def test_missing_disk_blocks_and_install_is_refused():
     sel = _ready_desktop()
     sel.disk = ""
     _app, scr = _review(sel)
     assert "a target disk" in scr._blockers()
-    assert "__install__" not in scr._targets       # install row not selectable
+    assert "Install disabled" in _render(scr)       # blocker banner shown
 
 
 def test_rootless_without_user_blocks():

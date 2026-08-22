@@ -18,7 +18,7 @@ from gest.core.install.netcheck import check_connectivity
 from gest.core.install.plan import sets_root_password
 from gest.core.system.hostname import valid_hostname
 from gest.core.users.commands import valid_name as valid_user_name
-from gest.tui.runtime import App, Modal, NavPile, Screen, boxed
+from gest.tui.runtime import App, Modal, NavPile, Screen, boxed, focusable_actions
 
 
 def _sel_row(text: str) -> urwid.Widget:
@@ -33,10 +33,15 @@ class ReviewScreen(Screen):
         self._online, _ = check_connectivity()
         self._walker = urwid.SimpleFocusListWalker([])
         self._list = urwid.ListBox(self._walker)
+        # Install is a right-aligned action button at the bottom (GeST's ActionRow
+        # convention); it fires _install, which refuses while blockers remain.
+        self._install_row = focusable_actions([("Install", self._install)])
+        body = NavPile([("weight", 1, boxed(self._list, title="Review — Installation Settings")),
+                        ("pack", self._install_row)])
         super().__init__(
-            app, NavPile([boxed(self._list, title="Review — Installation Settings")]),
+            app, body,
             title="Install Gentoo — Review",
-            footer_keys=[("Enter", "Edit setting"), ("F10", "Install"), ("Esc", "Back")],
+            footer_keys=[("Enter", "Edit setting"), ("Tab", "Install"), ("Esc", "Back")],
             help_text=(
                 "A summary of everything the install will do. Enter on a setting\n"
                 "jumps back to the gate that owns it; fix it there and Continue to\n"
@@ -44,6 +49,7 @@ class ReviewScreen(Screen):
                 "are blockers — Install stays disabled until they're resolved.\n\n"
                 "Install asks you to type the disk name to confirm the wipe. Nothing\n"
                 "touches a disk until then."))
+        self.configure_pane_cycle(body, [0], action_row=self._install_row)
         self._build()
 
     # -- model ----------------------------------------------------------------
@@ -146,13 +152,8 @@ class ReviewScreen(Screen):
         blockers = self._blockers()
         if blockers:
             items.append(urwid.Text(("error", " Blocked — still needs: "
-                                     + ", ".join(blockers))))
+                                     + ", ".join(blockers) + " (Install disabled)")))
             self._targets.append(None)
-            items.append(urwid.Text(("dim", " [ Install ]  (resolve blockers first)")))
-            self._targets.append(None)
-        else:
-            items.append(_sel_row(" [ Install ▶ ]"))
-            self._targets.append("__install__")
         self._walker[:] = items
         stops = self._stops()
         if stops:
@@ -165,6 +166,12 @@ class ReviewScreen(Screen):
         # Rebuild from the (possibly just-edited) selection so a jump-back's edits
         # show on return; cheap, and _build preserves the focus row.
         self._build()
+        if key in ("f10", "f10 "):        # F10 installs from anywhere
+            self._install()
+            return None
+        # The Install button (action row) is Tab-reached and fired by the base nav.
+        if self._on_action_row():
+            return key
         if key in ("up", "down"):
             stops = self._stops()
             if not stops:
@@ -177,13 +184,8 @@ class ReviewScreen(Screen):
         if key == "enter":
             pos = self._walker.get_focus()[1]
             target = self._targets[pos] if 0 <= pos < len(self._targets) else None
-            if target == "__install__":
-                self._install()
-            elif target:
+            if target:
                 self._jump(target)
-            return None
-        if key in ("f10", "f10 "):
-            self._install()
             return None
         return key
 

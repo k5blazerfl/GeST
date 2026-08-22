@@ -115,3 +115,12 @@ def test_start_seeds_desktop_proposal():
     step = wz.start(App())
     assert isinstance(step, wz.LocalizationStep)
     assert step.sel.role == "desktop"
+
+
+def test_continue_is_a_bottom_action_button_that_advances():
+    app, step, _ = _step(wz.LocalizationStep)
+    # the Continue button lives in a right-aligned ActionRow, not the settings list
+    assert step._continue_row.buttons, "no Continue action button"
+    step._continue_row.focus_position = step._continue_row.button_position(0)
+    assert step._continue_row.activate_focused() is True    # fires advance()
+    assert isinstance(app._stack[-1], wz.OnlineStep)
