@@ -126,6 +126,12 @@ class MountTarget(FuncStep):
     target_aware = True
 
     async def run(self, ctx: InstallContext, on_progress: OnProgress | None = None) -> None:
+        # Quiet util-linux mount's repeating "your fstab has been modified — run
+        # systemctl daemon-reload" advisory: reload systemd's fstab view ONCE up
+        # front so the per-device target mounts below don't each print the hint.
+        # Best-effort — on a host without systemd this is a harmless no-op.
+        with contextlib.suppress(Exception):
+            await ctx.host.run(["systemctl", "daemon-reload"])
         await disk_mount.apply_mount_plan(ctx.plan.mount, ctx.host, on_progress=on_progress)
 
     async def is_satisfied(self, ctx: InstallContext) -> bool:

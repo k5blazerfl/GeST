@@ -83,6 +83,21 @@ def test_branded_body_shows_logo_and_phases(screen):
         assert ph in out
 
 
+def test_fail_message_formats_step_error_legibly():
+    from gest.core.exec.runner import RunResult
+    from gest.core.exec.steps import Step, StepError
+    err = StepError(Step("sync portage tree", ["env", "emerge"]),
+                    RunResult(127, "some noise\ncould not run 'env': Input/output error (errno 5)"))
+    msg = inst._fail_message(err)
+    assert "sync portage tree" in msg                 # step label, not a dataclass repr
+    assert "errno 5" in msg                           # the reason, last output line
+    assert "Step(" not in msg
+
+
+def test_fail_message_falls_back_for_a_bare_exception():
+    assert inst._fail_message(ValueError("boom")) == "Install failed: boom"
+
+
 def test_tab_toggles_to_the_output_log(screen):
     assert screen._branded is True
     screen.handle_key("tab")

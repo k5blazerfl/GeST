@@ -612,6 +612,22 @@ _STEP_BLURB = {
 }
 
 
+def _fail_message(exc: Exception) -> str:
+    """A legible failure headline from whatever the engine raised.
+
+    A ``StepError`` carries the failed argv step and its captured output; show the
+    step label and the last output line (which now carries e.g. the 'could not run
+    …: I/O error — re-burn the medium' hint) rather than a raw dataclass repr."""
+    step = getattr(exc, "step", None)
+    result = getattr(exc, "result", None)
+    if step is None:
+        return f"Install failed: {exc}"
+    label = getattr(step, "label", None) or str(step)
+    out = (result.output.strip() if result and result.output else "")
+    reason = out.splitlines()[-1] if out else ""
+    return f"Install failed at “{label}”" + (f": {reason}" if reason else "")
+
+
 class InstallRunScreen(StreamLog, Screen):
     """Run the install behind a calm, branded overview: the GeST (GeSI) wordmark,
     the six phases with a live spinner on the one in flight, and a progress bar
@@ -810,7 +826,7 @@ class InstallRunScreen(StreamLog, Screen):
         try:
             await run_install(ctx, steps, on_progress=self._on_progress, on_step=self._on_step)
         except Exception as exc:
-            self._finish(False, f"Install failed at: {getattr(exc, 'step', None) or exc}")
+            self._finish(False, _fail_message(exc))
             return
         self._finish(True, f"Gentoo installed onto /dev/{self._sel.disk}.")
 
