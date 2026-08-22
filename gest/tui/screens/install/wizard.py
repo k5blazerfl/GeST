@@ -152,8 +152,12 @@ class WizardStep(Screen):
     step_key = ""
     step_title = ""
 
-    def __init__(self, app: App, sel: InstallSelections) -> None:
+    def __init__(self, app: App, sel: InstallSelections, *, return_to=None) -> None:
         self.sel = sel
+        # When set (a Screen factory), Continue returns here instead of advancing
+        # the rail — used by the Review gate's jump-back so editing one setting
+        # drops straight back to Review rather than walking the rest of the rail.
+        self._return_to = return_to
         self._walker = urwid.SimpleFocusListWalker([])
         self._list = urwid.ListBox(self._walker)
         cols = urwid.Columns(
@@ -230,7 +234,7 @@ class WizardStep(Screen):
         if msg:
             self.app.notify(msg, error=True)
             return
-        self.app.push(self._next_screen())
+        self.app.push(self._return_to() if self._return_to else self._next_screen())
 
     def _next_screen(self) -> Screen:
         nxt = _RAIL_KEYS[_RAIL_KEYS.index(self.step_key) + 1]
@@ -581,12 +585,12 @@ _STEPS = {
 }
 
 
-def make_step(key: str, app: App, sel: InstallSelections) -> Screen:
-    """Construct the gate for ``key`` (``"review"`` → the settings overview)."""
+def make_step(key: str, app: App, sel: InstallSelections, *, return_to=None) -> Screen:
+    """Construct the gate for ``key`` (``"review"`` → the jump-back Review gate)."""
     if key == "review":
-        from gest.tui.screens.installer import InstallOverviewScreen
-        return InstallOverviewScreen(app, sel)
-    return _STEPS[key](app, sel)
+        from gest.tui.screens.install.review import ReviewScreen
+        return ReviewScreen(app, sel)
+    return _STEPS[key](app, sel, return_to=return_to)
 
 
 def start(app: App) -> Screen:

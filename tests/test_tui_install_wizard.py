@@ -99,16 +99,16 @@ def test_account_advances_into_the_review_overview():
     sel.disk = "vda"
     app, step, _ = _step(wz.AccountStep, sel)
     step.advance()
-    from gest.tui.screens.installer import InstallOverviewScreen
+    from gest.tui.screens.install.review import ReviewScreen
     top = app._stack[-1]
-    assert isinstance(top, InstallOverviewScreen)
-    assert top._sel is sel                              # the same selection flows through
+    assert isinstance(top, ReviewScreen)
+    assert top.sel is sel                               # the same selection flows through
 
 
-def test_make_step_review_is_the_overview():
-    from gest.tui.screens.installer import InstallOverviewScreen
+def test_make_step_review_is_the_review_gate():
+    from gest.tui.screens.install.review import ReviewScreen
     scr = wz.make_step("review", App(), assemble.propose("desktop"))
-    assert isinstance(scr, InstallOverviewScreen)
+    assert isinstance(scr, ReviewScreen)
 
 
 def test_start_seeds_desktop_proposal():
