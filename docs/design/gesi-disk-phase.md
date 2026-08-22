@@ -94,6 +94,28 @@ site), `registry.py` (Partition/MountTarget steps). Compose-above means these ke
 working on the per-disk `DiskPlan` and gain a thin `StoragePlan` wrapper — not a
 simultaneous rewrite.
 
+## Reuse with GeST's admin Partitioner (design constraint)
+
+GeST's Partitioner (`gest/tui/screens/partition.py :: PartitionScreen`, reached
+via "Disks & Mounts") is **already** a second frontend over the same
+`core/disk/provision` engine: it builds a `DiskPlan` (`uefi_plan`) and applies via
+`apply_plan` (direct, live-root) **or** `apply_via_backend` (polkit, installed
+system). So 3b's engine is shared by construction — the moment `StoragePlan` +
+`storage_steps` + the mdadm/LUKS/LVM builders + multi-disk `validate_plan` land in
+`core/disk/`, **both** the installer and the admin Partitioner gain RAID/LVM/LUKS.
+
+**One deliberate choice to make it fully reusable:** build the D-Adv0 advanced
+editor as a **standalone widget/screen that takes a `StoragePlan` and returns the
+edited one** — NOT baked into the wizard. Then the installer's Advanced disk step
+and `PartitionScreen` embed the same component; the admin Partitioner upgrades
+from today's ESP+swap+root form to the full StoragePlan editor in lockstep.
+
+**What does NOT transfer (context, not code):** live **non-destructive** edits of
+*populated* disks — resize/move a partition with data, grow a live filesystem, add
+a disk to a running array. The StoragePlan model is wipe-and-create; both surfaces
+stop at that frontier today (the admin editor still works on spare/unmounted disks
+via the backend). Non-destructive mutation is a separate, harder, later effort.
+
 ## Cross-refs
 - Memory: `gesi-disk-layout` (the D1→D4 chart), `gesi-redesign-next` (the wizard).
 - The guided single-disk layout + separate `/home` already ship in the Disk gate
