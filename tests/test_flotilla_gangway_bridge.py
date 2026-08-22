@@ -36,6 +36,15 @@ def test_profile_for_uses_ip_and_stable_name():
     assert gangway_bridge.profile_for(v, "10.0.0.9").name == "my-win"
 
 
+def test_profile_for_carries_provisioned_username():
+    # NLA/CredSSP needs the guest's local account; the bridge must pass it through
+    # (previously only `host` was set — the real gap this phase closes).
+    v = Vessel(id="win11", name="Windows 11", os=OS_WINDOWS, unattend_username="flotilla")
+    p = gangway_bridge.profile_for(v, "10.0.0.9")
+    assert p.username == "flotilla"
+    assert p.credential_attributes()["user"] == "flotilla"  # keys the Keychain lookup
+
+
 # ---- CLI ---------------------------------------------------------------
 class _H:
     def __init__(self, tmp_path, *, ip_output=_DOMIFADDR):

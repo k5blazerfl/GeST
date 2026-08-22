@@ -4,6 +4,7 @@ All host ops run through an injected run_argv; nothing is fetched or booted."""
 from __future__ import annotations
 
 import dataclasses
+from xml.etree import ElementTree as ET
 
 from gest.core.flotilla import vessels
 from gest.tui.flotilla.cli import CliIO, FlotillaEnv, run_cli
@@ -78,3 +79,72 @@ def test_launch_windows_mido_id_is_rejected(tmp_path):
     assert run_cli(["launch", "win11", "--os", "windows", "--iso", "win11"], env=h.env) == 2
     assert any("needs mido" in e for e in h.err)
     assert h.calls == []
+
+
+# ---- guest enablement (--provision / --remote-app) ---------------------
+def test_launch_windows_remote_app_builds_unattend_iso(tmp_path):
+    from gest.core.flotilla import domainxml, vessels
+    h = _H(tmp_path)
+    rc = run_cli(["launch", "Win11", "--os", "windows", "--iso", "/iso/win.iso",
+                  "--remote-app", r"Notepad=C:\Windows\notepad.exe",
+                  "--username", "skipper", "--no-start"], env=h.env)
+    assert rc == 0
+    # xorriso built the provisioning ISO, before `virsh define`.
+    assert "xorriso" in h.verbs()
+    assert h.verbs().index("xorriso") < h.verbs().index("define")
+    v = vessels.load_vessel("win11", h.store)
+    assert v.provisioned and v.unattend_username == "skipper"
+    assert v.entry == "rdp"  # a provisioned vessel opens seamless by default
+    assert v.remote_app_programs[0].name == "Notepad"
+    assert v.unattend_iso.endswith("/win11/unattend.iso")
+    # the staged files were written and the domain attaches the disc at sdm.
+    staged = tmp_path / "vessels" / "win11" / "unattend"
+    assert (staged / "autounattend.xml").is_file() and (staged / "firstboot.ps1").is_file()
+    root = ET.fromstring(domainxml.compile_domain(v))
+    cdroms = {c.find("target").get("dev") for c in root.findall("devices/disk[@device='cdrom']")}
+    assert "sdm" in cdroms
+
+
+def test_provision_flag_without_programs_is_permissive(tmp_path):
+    from gest.core.flotilla import vessels
+    h = _H(tmp_path)
+    assert run_cli(["launch", "Win11", "--os", "windows", "--iso", "/iso/win.iso",
+                    "--provision", "--no-start"], env=h.env) == 0
+    v = vessels.load_vessel("win11", h.store)
+    assert v.provisioned and v.remote_app_programs == []
+    assert v.unattend_username == "flotilla"  # the default account
+
+
+def test_provision_rejected_for_linux(tmp_path):
+    h = _H(tmp_path)
+    rc = run_cli(["launch", "deb", "--os", "linux", "--iso", "/iso/deb.iso",
+                  "--provision", "--no-start"], env=h.env)
+    assert rc == 1
+    assert any("Windows path" in e for e in h.err)
+    assert "xorriso" not in h.verbs() and "define" not in h.verbs()
+
+
+def test_provision_aborts_when_xorriso_fails(tmp_path):
+    # xorriso fails → abort before defining a domain that points <cdrom> at a
+    # nonexistent unattend ISO (the same discipline as the virtio-win guard).
+    h = _H(tmp_path)
+    def run(argv):
+        h.calls.append(argv)
+        return 1 if argv and argv[0] == "xorriso" else 0
+    env = dataclasses.replace(h.env, run_argv=run)
+    rc = run_cli(["launch", "Win11", "--os", "windows", "--iso", "/iso/win.iso",
+                  "--remote-app", r"C:\Windows\notepad.exe", "--no-start"], env=env)
+    assert rc == 1
+    assert any("guest-enablement ISO" in e for e in h.err)
+    assert "define" not in h.verbs()
+
+
+def test_create_windows_remote_app_provisions(tmp_path):
+    from gest.core.flotilla import vessels
+    h = _H(tmp_path)
+    rc = run_cli(["create", "Win11", "--os", "windows", "--no-allocate",
+                  "--remote-app", r"C:\Windows\System32\mspaint.exe"], env=h.env)
+    assert rc == 0
+    v = vessels.load_vessel("win11", h.store)
+    assert v.provisioned and v.remote_app_programs[0].key == "mspaint"
+    assert "xorriso" in h.verbs()

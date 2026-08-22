@@ -52,4 +52,7 @@ def requirements(vessel: Vessel) -> list[Requirement]:
     if vessel.os == OS_WINDOWS:
         reqs.append(Requirement("virtio-win", from_portage=False,
                                 note="virtio driver ISO for Windows (fetched from Fedora)"))
+        reqs.append(Requirement("dev-libs/libisoburn",
+                                note="xorriso — build the RemoteApp provisioning ISO "
+                                     "(guest enablement)"))
     return reqs

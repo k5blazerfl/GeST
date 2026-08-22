@@ -14,6 +14,7 @@ from gest.core.flotilla.model import (
     OS_WINDOWS,
     Disk,
     Network,
+    RemoteAppProgram,
     SharedFolder,
     Vessel,
     recommended,
@@ -34,6 +35,29 @@ def test_vessel_round_trip():
     v = _win(shared_folders=[SharedFolder(tag="host", path="/srv/share")],
              gangway_profile="win11-rdp")
     assert Vessel.from_dict(v.to_dict()) == v
+
+
+def test_vessel_round_trip_with_guest_enablement():
+    v = _win(
+        remote_app_programs=[
+            RemoteAppProgram(key="notepad", name="Notepad", path=r"C:\Windows\notepad.exe",
+                             vpath=r"%SystemRoot%\notepad.exe", cmdline_setting=1),
+            RemoteAppProgram(key="cmd", name="cmd", path=r"C:\Windows\System32\cmd.exe"),
+        ],
+        unattend_iso="/vm/win11/unattend.iso",
+        unattend_username="flotilla",
+        provisioned=True,
+    )
+    back = Vessel.from_dict(v.to_dict())
+    assert back == v
+    assert back.remote_app_programs[0].vpath == r"%SystemRoot%\notepad.exe"
+    assert back.provisioned and back.unattend_username == "flotilla"
+
+
+def test_guest_enablement_fields_default_off():
+    v = recommended(OS_WINDOWS, "Win 11", "win11")  # opt-in — nothing provisioned
+    assert v.remote_app_programs == [] and v.unattend_iso == ""
+    assert v.unattend_username == "" and v.provisioned is False
 
 
 def test_is_valid():
@@ -98,6 +122,24 @@ def test_disks_and_install_media():
     assert root.find("os/boot").get("dev") == "cdrom"  # boots the installer first
 
 
+def test_unattend_iso_is_a_third_cdrom_at_sdm():
+    root = _dom(_win(unattend_iso="/vm/win11/unattend.iso"))
+    cdroms = {c.find("target").get("dev"): c.find("source").get("file")
+              for c in root.findall("devices/disk[@device='cdrom']")}
+    # install=sdk, virtio=sdl, unattend=sdm — fixed slots, unattend always sdm.
+    assert cdroms["sdk"] == "/iso/win11.iso"
+    assert cdroms["sdl"] == "/iso/virtio-win.iso"
+    assert cdroms["sdm"] == "/vm/win11/unattend.iso"
+
+
+def test_unattend_iso_stays_sdm_even_without_virtio():
+    # with virtio absent the unattend disc must NOT slide down to sdl.
+    root = _dom(_win(virtio_iso="", unattend_iso="/vm/win11/unattend.iso"))
+    cdroms = {c.find("target").get("dev"): c.find("source").get("file")
+              for c in root.findall("devices/disk[@device='cdrom']")}
+    assert cdroms == {"sdk": "/iso/win11.iso", "sdm": "/vm/win11/unattend.iso"}
+
+
 def test_too_many_disks_is_a_clear_error_not_an_indexerror():
     # disks take letters a..j; k, l are the CD-ROM slots. 11+ disks used to run off
     # _DISK_LETTERS (IndexError) or collide device names with the CD-ROMs.
@@ -150,6 +192,7 @@ def test_prereqs_windows_uefi_tpm():
     assert "sys-firmware/edk2-ovmf" in atoms  # UEFI
     assert "app-crypt/swtpm" in atoms  # TPM
     assert "virtio-win" in atoms
+    assert "dev-libs/libisoburn" in atoms  # xorriso — guest-enablement ISO
     virtio = next(r for r in prereq.requirements(_win()) if r.atom == "virtio-win")
     assert virtio.from_portage is False  # fetched from Fedora
 

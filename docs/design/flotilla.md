@@ -193,7 +193,9 @@ Mirrors Drydock's `prereqs`: a checker + the software-core apply path.
 4. **The Gangway bridge** — agent/lease IP discovery → auto Gangway profile →
    `flotilla connect` opens RDP; Customs launcher + identity + jump-lists.
 5. **Guest-side automation** — `unattend.xml`/firstboot to enable RDP, spice
-   agent, virtiofs mounts; graceful shutdown via the guest agent.
+   agent, virtiofs mounts; graceful shutdown via the guest agent. *(RemoteApp
+   provisioning landed: `unattend.py` + `--provision/--remote-app`; the FreeRDP
+   RAIL spike that consumes this target is next.)*
 6. **Gentoo prereqs apply** — the checker + the software-core path (KVM/qemu/
    libvirt/OVMF/swtpm/libvirtd/group).
 7. **Qt Control Center module** — gated on the Qt frontend.
@@ -220,7 +222,12 @@ Mirrors Drydock's `prereqs`: a checker + the software-core apply path.
    core).
 2. **Guest-side RDP enablement.** `unattend.xml` at install vs. a guest-agent
    `exec` post-boot vs. a documented manual step. *Lean:* manual first (honest
-   locked door), then `unattend.xml` for the turnkey Windows flow.
+   locked door), then `unattend.xml` for the turnkey Windows flow. **Landed
+   (phase 5a-guest):** `flotilla launch --provision/--remote-app` now builds an
+   `autounattend.xml` + `firstboot.ps1` provisioning ISO (`gest/core/flotilla/
+   unattend.py`, pure) that boots the guest RemoteApp-ready — RDP + NLA + firewall
+   + guest-tools + a login account + the TSAppAllowList allow-list. Host-validated
+   (a real Windows install must consume it), not CI-able.
 3. **Vessel vocabulary.** "Vessel" for a VM (a ship in the flotilla) reads
    cleanly next to Drydock's *barrels* and Gangway's *profiles*; confirm before
    it sets in code.
