@@ -19,7 +19,17 @@ from gest.core.bootloader.install import InstallConfig
 from gest.core.disk import mount as disk_mount
 from gest.core.disk import provision
 from gest.core.hwflags import detect as hwdetect
-from gest.core.install.plan import GpuSpec, InstallPlan, NetworkSpec, UserSpec
+from gest.core.install import capabilities
+from gest.core.install.plan import (
+    ADMIN_MODELS,
+    ESCALATORS,
+    LICENSE_POLICIES,
+    GpuSpec,
+    InstallPlan,
+    NetworkSpec,
+    UserSpec,
+    sets_root_password,
+)
 from gest.core.kernel import config as kconfig
 from gest.core.kernel.build import BuildConfig
 from gest.core.network import netifrc, resolv
@@ -115,6 +125,96 @@ class InstallSelections:
     # opt-in day-2 modules to set up during install (sshd/firewall/sudo/sysctl);
     # empty by default. See registry.TIER2_MODULES.
     tier2: set[str] = field(default_factory=set)
+    # --- wizard fields (the YaST-gated redesign) ------------------------------
+    # System Role drives the proposal (assemble.propose); "custom" makes every
+    # field user-editable. The bare defaults below are the Desktop shape; propose()
+    # is the authoritative per-role setter the wizard calls when a role is picked.
+    role: str = "desktop"             # desktop | server | minimal | custom
+    license: str = "full"             # ACCEPT_LICENSE rung (plan.LICENSE_POLICIES key)
+    # Features checklist → system-wide USE (capabilities keys). Desktop pre-checks
+    # the common ones; resolve_global_use turns this into the make.conf USE tokens.
+    capabilities: set[str] = field(
+        default_factory=lambda: {"bluetooth", "printing", "wifi", "audio",
+                                 "wayland", "vaapi", "codecs"})
+    admin_model: str = "traditional"  # plan.ADMIN_MODELS: who can become root
+    escalator: str = "sudo"           # sudo | doas (sudo-augmented / rootless)
+    # Custom-role raw make.conf overrides (var -> value), overlaid last. Empty otherwise.
+    make_conf_overrides: dict[str, str] = field(default_factory=dict)
+
+
+ROLES: tuple[str, ...] = ("desktop", "server", "minimal", "custom")
+
+# Common desktop Features (capability keys) the Desktop role pre-checks.
+_DESKTOP_CAPABILITIES = frozenset(
+    {"bluetooth", "printing", "wifi", "audio", "wayland", "vaapi", "codecs"})
+
+
+def propose(role: str) -> InstallSelections:
+    """Role-proposed selections — the wizard's "proposals over blank fields".
+
+    A System Role fills the role-*owned* fields (stage3 flavor via desktop-ness,
+    build strategy, GPU policy, license, admin model, day-2 modules, Features)
+    with a coherent default set; everything else (disk, hostname, tz/locale, user,
+    root pw) is identical across roles and stays as the bare defaults. ``custom``
+    returns the Desktop baseline with every field left editable. Raises on an
+    unknown role. Pure — the wizard calls this when the role gate is answered and
+    then lets later gates diff against it (the ``•changed`` markers in review).
+    """
+    if role not in ROLES:
+        raise ValueError(f"unknown role: {role!r}")
+    sel = InstallSelections(role=role)
+    if role == "desktop":
+        sel.install_desktop = True
+        sel.gpu_auto = True
+        sel.binary_pref = True
+        sel.seamless = True
+        sel.license = "full"                 # @B-R @EULA — everything, no reconcile
+        sel.admin_model = "rootless"         # Ubuntu-familiar for refugees
+        sel.escalator = "sudo"
+        sel.tier2 = set()
+        sel.capabilities = set(_DESKTOP_CAPABILITIES)
+    elif role == "server":
+        sel.install_desktop = False
+        sel.gpu_auto = False                 # firmware only, no desktop GPU driver
+        sel.binary_pref = True
+        sel.seamless = False
+        sel.license = "redistributable"      # @B-R — firmware+NVIDIA-r2, no EULA
+        sel.admin_model = "traditional"      # root + su, the operator's model
+        sel.tier2 = {"sshd", "firewall"}
+        sel.capabilities = set()
+    elif role == "minimal":
+        sel.install_desktop = False
+        sel.gpu_auto = False
+        sel.binary_pref = False              # compile from source (tuned, small base)
+        sel.seamless = False
+        sel.license = "redistributable"
+        sel.admin_model = "traditional"
+        sel.tier2 = set()
+        sel.capabilities = set()
+    # custom: the InstallSelections(role="custom") baseline (Desktop shape), all
+    # fields editable downstream — no overrides here.
+    return sel
+
+
+# The fields a System Role owns — everything else (disk, hostname, tz/locale,
+# user, root pw) is identical across roles and must survive a role change.
+_ROLE_OWNED = (
+    "role", "install_desktop", "gpu_auto", "binary_pref", "seamless",
+    "license", "admin_model", "escalator", "tier2", "capabilities",
+    "video_cards", "nvidia_proprietary",
+)
+
+
+def apply_role(sel: InstallSelections, role: str) -> None:
+    """Re-apply a role's proposal onto an existing selection, in place.
+
+    Only the role-owned fields change; user-entered disk/localization/account
+    values are preserved. Lets the wizard's System Role gate switch roles without
+    wiping earlier gates. Raises on an unknown role (via :func:`propose`).
+    """
+    proposed = propose(role)
+    for attr in _ROLE_OWNED:
+        setattr(sel, attr, getattr(proposed, attr))
 
 
 def resolve_stage3(variant: Stage3Variant, *, mirror: str = index.MIRROR) -> Stage3Selection:
@@ -271,8 +371,6 @@ def assemble_plan(sel: InstallSelections, stage3: Stage3Selection) -> InstallPla
     """
     if not sel.disk:
         raise ValueError("no target disk selected")
-    if not sel.root_password:
-        raise ValueError("a root password is required")
     if sel.firmware not in ("uefi", "bios"):
         raise ValueError(f"invalid firmware: {sel.firmware!r}")
     # Target arch flows from the chosen stage3 variant; the bootloader step branches
@@ -290,6 +388,22 @@ def assemble_plan(sel: InstallSelections, stage3: Stage3Selection) -> InstallPla
         raise ValueError(f"invalid locale: {sel.locale!r}")
     if not valid_keymap(sel.keymap):
         raise ValueError(f"invalid keymap: {sel.keymap!r}")
+    if sel.license not in LICENSE_POLICIES:
+        raise ValueError(f"invalid license policy: {sel.license!r}")
+    if sel.admin_model not in ADMIN_MODELS:
+        raise ValueError(f"invalid admin model: {sel.admin_model!r}")
+    if sel.escalator not in ESCALATORS:
+        raise ValueError(f"invalid escalator: {sel.escalator!r}")
+    # Admin-model safety: traditional/sudo-augmented need a root password; rootless
+    # locks root, so it instead needs an admin-capable (wheel) user to escalate from
+    # — never ship a system you can't administer (gesi-account-model invariant).
+    if sets_root_password(sel.admin_model):
+        if not sel.root_password:
+            raise ValueError("a root password is required")
+    elif not (sel.create_user and valid_user_name(sel.user_name) and sel.user_wheel):
+        raise ValueError("a rootless install needs an admin-capable (wheel) user")
+    global_use = capabilities.resolve_global_use(sel.capabilities)  # raises on typo
+    overrides = tuple(sorted(sel.make_conf_overrides.items()))
     user = _build_user(sel)
     network = _build_network(sel)
     # Seamless boot needs plymouth + the HeDE theme, both installed by the desktop
@@ -343,4 +457,12 @@ def assemble_plan(sel: InstallSelections, stage3: Stage3Selection) -> InstallPla
         network=network,
         binary_pref=sel.binary_pref,
         tier2=frozenset(sel.tier2),
+        # rootless locks root instead of setting a password (the escalator step + a
+        # wheel user carry admin rights); traditional/sudo-augmented set it.
+        root_password=sets_root_password(sel.admin_model),
+        license=sel.license,
+        admin_model=sel.admin_model,
+        escalator=sel.escalator,
+        global_use=global_use,
+        make_conf_overrides=overrides,
     )

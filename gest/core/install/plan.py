@@ -31,6 +31,47 @@ class Phase(Enum):
     FINISH = "Finish"
 
 
+# ACCEPT_LICENSE policy: the wizard's 3-rung license choice → the make.conf value.
+# @BINARY-REDISTRIBUTABLE is a superset of @FREE (it literally starts with @FREE)
+# and already covers firmware + the proprietary NVIDIA driver (NVIDIA-r2) with no
+# click-throughs; @EULA is the disjoint click-through pile (chrome/cuda/…). See
+# docs — the Desktop default is Full so the review gate has nothing to reconcile.
+LICENSE_POLICIES: dict[str, str] = {
+    "libre": "@FREE",
+    "redistributable": "@BINARY-REDISTRIBUTABLE",
+    "full": "@BINARY-REDISTRIBUTABLE @EULA",
+}
+
+# Admin-account model (see docs / gesi-account-model): who can become root.
+#   traditional     — root password set; wheel escalates via `su -`. No sudo.
+#   sudo-augmented  — root password set AND a %wheel escalator rule. Both work.
+#   rootless        — root LOCKED (passwd -l); first user escalates via sudo/doas.
+ADMIN_MODELS: tuple[str, ...] = ("traditional", "sudo-augmented", "rootless")
+ESCALATORS: tuple[str, ...] = ("sudo", "doas")
+
+
+def license_accept_value(policy: str) -> str:
+    """The ``ACCEPT_LICENSE`` string for a policy key; raises on an unknown rung."""
+    try:
+        return LICENSE_POLICIES[policy]
+    except KeyError:
+        raise ValueError(f"unknown license policy: {policy!r}") from None
+
+
+def sets_root_password(admin_model: str) -> bool:
+    """Whether this admin model sets a root password (rootless locks root instead)."""
+    if admin_model not in ADMIN_MODELS:
+        raise ValueError(f"unknown admin model: {admin_model!r}")
+    return admin_model != "rootless"
+
+
+def installs_escalator(admin_model: str) -> bool:
+    """Whether this admin model installs+configures a sudo/doas escalator rule."""
+    if admin_model not in ADMIN_MODELS:
+        raise ValueError(f"unknown admin model: {admin_model!r}")
+    return admin_model in ("sudo-augmented", "rootless")
+
+
 @dataclass(slots=True, frozen=True)
 class UserSpec:
     """The optional non-root user to create in the target."""
@@ -112,3 +153,13 @@ class InstallPlan:
     gpu: GpuSpec = field(default_factory=GpuSpec)   # VIDEO_CARDS + optional NVIDIA
     # proprietary stack; drives WriteMakeConf's VIDEO_CARDS and the InstallGpuDrivers
     # step. Default (empty) installs firmware only — no driver — a safe no-op.
+    license: str = "full"          # ACCEPT_LICENSE policy rung (LICENSE_POLICIES key);
+    # rendered into make.conf by WriteMakeConf. Full is the Desktop default.
+    admin_model: str = "traditional"   # who can become root (ADMIN_MODELS); gates
+    # SetRootPassword + the escalator step. Traditional = today's root+su behaviour.
+    escalator: str = "sudo"        # sudo|doas — the escalator installed for
+    # sudo-augmented/rootless models (ignored by traditional).
+    global_use: tuple[str, ...] = ()   # system-wide USE= tokens resolved from the
+    # wizard's Features checklist (capabilities.resolve_global_use); WriteMakeConf renders them.
+    make_conf_overrides: tuple[tuple[str, str], ...] = ()   # Custom-role raw make.conf
+    # var overrides (name, value); overlaid last by WriteMakeConf. Empty for canned roles.

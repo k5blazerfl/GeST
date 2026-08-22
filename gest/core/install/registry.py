@@ -42,9 +42,15 @@ from gest.core.exec.runner import OnProgress
 from gest.core.exec.steps import Step, run_steps
 from gest.core.firewall import nft as fw_nft
 from gest.core.firewall.model import FirewallPolicy
+from gest.core.hwflags import detect as hwdetect
 from gest.core.install import desktop, gpu
 from gest.core.install.context import InstallContext
-from gest.core.install.plan import InstallPlan, Phase
+from gest.core.install.plan import (
+    InstallPlan,
+    Phase,
+    installs_escalator,
+    license_accept_value,
+)
 from gest.core.install.step import ArgvStep, FuncStep, InstallStep
 from gest.core.install.write import write_under_root
 from gest.core.kernel import config as kconfig
@@ -55,7 +61,7 @@ from gest.core.network import resolv as net_resolv
 from gest.core.portage import paths
 from gest.core.portage.codec import shell
 from gest.core.privilege import render as priv_render
-from gest.core.privilege.model import SUDOERS_DROPIN, EscalationPolicy
+from gest.core.privilege.model import DOAS_CONF, SUDOERS_DROPIN, EscalationPolicy
 from gest.core.sshd import config as sshd_config
 from gest.core.sshd.model import SshdSettings
 from gest.core.sshd.reader import SSHD_CONFIG
@@ -240,11 +246,32 @@ class WriteMakeConf(FuncStep):
             text = ""
         jobs = ctx.plan.kernel.jobs if ctx.plan.kernel.jobs > 0 else 1
         rendered = shell.render(text, "MAKEOPTS", f"-j{jobs}")
+        # ACCEPT_LICENSE policy — set before @world so licensed atoms (firmware,
+        # NVIDIA-r2, EULA packages) resolve per the reviewed rung.
+        rendered = shell.render(rendered, "ACCEPT_LICENSE",
+                                license_accept_value(ctx.plan.license))
         # VIDEO_CARDS must be set before @world so mesa/xorg build with the right
         # driver USE; the driver packages themselves come later (InstallGpuDrivers).
         cards = gpu.video_cards_value(ctx.plan.gpu)
         if cards:
             rendered = shell.render(rendered, "VIDEO_CARDS", cards)
+        # CPU_FLAGS_X86 — always hardware-probed (no decision); best-effort, so a
+        # host without cpuid2cpuflags just leaves the stage3 default in place.
+        cpu_flags = hwdetect.detect_cpu_flags()
+        if cpu_flags:
+            rendered = shell.render(rendered, "CPU_FLAGS_X86", " ".join(cpu_flags))
+        # System-wide USE from the wizard's Features checklist (explicit +/- both ways).
+        if ctx.plan.global_use:
+            rendered = shell.render(rendered, "USE", " ".join(ctx.plan.global_use))
+        # Source builds only: tune for this CPU. Binpkgs use the binhost's flags, so
+        # COMMON_FLAGS/RUSTFLAGS only bite when compiling — it's a consequence of the
+        # build-strategy fork, not a separate decision.
+        if not ctx.plan.binary_pref:
+            rendered = shell.render(rendered, "COMMON_FLAGS", "-march=native -O2 -pipe")
+            rendered = shell.render(rendered, "RUSTFLAGS", "-C target-cpu=native")
+        # Custom-role raw overrides, overlaid last (last-wins over everything above).
+        for name, value in ctx.plan.make_conf_overrides:
+            rendered = shell.render(rendered, name, value)
         path = write_under_root(ctx.root, "/etc/portage/make.conf", rendered)
         _emit(on_progress, f"wrote {path}")
 
@@ -587,11 +614,11 @@ class InstallKernelSources(ArgvStep):
         ]
         if ctx.plan.kernel.method == "genkernel":
             # A fresh stage3/@world has no genkernel; the build step needs it in the
-            # target. USE=-firmware skips the (masked, license-gated) linux-firmware
-            # dep — the initramfs needs no firmware to reach the root fs; hardware
-            # firmware lives on the installed root, loaded after the pivot.
-            steps.append(Step("emerge genkernel", _emerge_argv(
-                ctx.plan, "sys-kernel/genkernel", env={"USE": "-firmware"})))
+            # target. linux-firmware is now license-permitted (ACCEPT_LICENSE covers
+            # @BINARY-REDISTRIBUTABLE) so genkernel pulls it normally — the target
+            # gets firmware for real hardware instead of the old USE=-firmware skip.
+            steps.append(Step("emerge genkernel",
+                              _emerge_argv(ctx.plan, "sys-kernel/genkernel")))
         steps.append(Step("select /usr/src/linux", set_argv("kernel", 1)))
         return steps
 
@@ -1013,6 +1040,40 @@ def _root_password_step(root_secret: Secret | None) -> SetRootPassword:
     return step
 
 
+def _admin_model_steps(plan: InstallPlan) -> list[InstallStep]:
+    """Escalation + root-lock steps for the admin model (empty for *traditional*).
+
+    Runs after ``CreateUser`` so the wheel user exists before root is ever locked —
+    the "never ship a system you can't administer" invariant (gesi-account-model).
+    *sudo-augmented* adds the escalator rule (root still has a password);
+    *rootless* adds it AND locks the root account (``passwd -l root``).
+    """
+    model = plan.admin_model
+    if model == "traditional":
+        return []
+    steps: list[InstallStep] = []
+    if installs_escalator(model):
+        if plan.escalator == "doas":
+            steps.append(ChrootCmdStep("Emerge doas", "admin_doas",
+                                       _emerge_argv(plan, "app-admin/doas")))
+            steps.append(WriteConfigStep(
+                "Configure doas (wheel)", DOAS_CONF,
+                lambda: priv_render.render_doas_block(EscalationPolicy("doas", group="wheel")),
+                mode=0o400))
+        else:
+            steps.append(ChrootCmdStep("Emerge sudo", "admin_sudo",
+                                       _emerge_argv(plan, "app-admin/sudo")))
+            steps.append(WriteConfigStep(
+                "Configure sudo (wheel)", SUDOERS_DROPIN,
+                lambda: priv_render.render_sudoers(EscalationPolicy("sudo", group="wheel")),
+                mode=0o440))
+    if model == "rootless":
+        # Last, and only after the escalator + wheel user are in place.
+        steps.append(ChrootCmdStep("Lock the root account", "admin_lock_root",
+                                   ["passwd", "-l", "root"]))
+    return steps
+
+
 def build_registry(plan: InstallPlan, *, root_secret: Secret | None = None) -> list[InstallStep]:
     """The full ordered install steps for ``plan``, in Handbook order (the contract).
 
@@ -1051,6 +1112,9 @@ def build_registry(plan: InstallPlan, *, root_secret: Secret | None = None) -> l
         ConfigureNetwork(),
         EnableDesktopSession(),     # boot into HeDE (no-op for base Gentoo)
     ]
+    # Admin model (escalator + rootless root-lock); empty for traditional, so the
+    # default registry is byte-identical. FINISH phase, after the user exists.
+    steps.extend(_admin_model_steps(plan))
     steps.extend(_tier2_steps(plan))
     return steps
 
