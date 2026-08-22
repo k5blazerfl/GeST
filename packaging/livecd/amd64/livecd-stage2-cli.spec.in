@@ -33,7 +33,15 @@ boot/kernel/gentoo/config: ${KERNEL_CONFIG}
 # Plain, readable console boot — NO Plymouth splash (this is a CLI installer, and
 # seeing the kernel/systemd boot messages is a feature here). loglevel=4 keeps the
 # console quiet enough to read without hiding real warnings.
-livecd/bootargs: loglevel=4
+#
+# nomodeset: this console installer ships NO GPU firmware (fsscript-cli.sh prunes
+# i915/amdgpu/radeon/nvidia to shrink the image). On real hardware the kernel would
+# still bind the KMS driver during udev coldplug, request the now-missing firmware,
+# and the udev worker hangs for minutes ("activating udev"). Verified on an RTX
+# 4070 Ti Super (nouveau needs GSP firmware). A text installer needs no KMS, so
+# force the simple framebuffer (efifb/vesafb) and skip GPU driver init entirely.
+# The INSTALLED target is unaffected — it gets full linux-firmware + real drivers.
+livecd/bootargs: loglevel=4 nomodeset
 
 # image: a squashfs root packed into a hybrid, UEFI-capable ISO.
 livecd/type: generic-livecd
