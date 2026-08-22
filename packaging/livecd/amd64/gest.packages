@@ -17,6 +17,8 @@ sys-fs/xfsprogs          # xfs
 sys-fs/btrfs-progs       # btrfs
 sys-fs/f2fs-tools        # f2fs
 sys-fs/dosfstools        # vfat (the ESP)
+sys-fs/ntfs3g            # ntfs (mkfs.ntfs — Windows/interop data partitions)
+sys-fs/exfatprogs        # exfat (mkfs.exfat — removable/interop data partitions)
 
 # stage3 fetch + verify + unpack
 net-misc/wget

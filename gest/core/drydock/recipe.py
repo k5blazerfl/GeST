@@ -22,9 +22,9 @@ from gest.core.drydock.model import ARCH_WIN64, RUNNER_WINE
 RECIPE_VERSION = 1
 
 # The step vocabulary. The importer maps Lutris directives onto these names; the
-# interpreter (phase 6, ``_plan_step``) dispatches most of them. ``execute``,
-# ``regedit``, ``regdelete``, and ``eject_disc`` are recognised but not yet
-# auto-run — they plan as ``manual`` (a visible TODO) until wired.
+# interpreter (phase 6, ``_plan_step``) dispatches all of them — ``execute``,
+# ``regedit``, ``regdelete``, and ``eject_disc`` now plan to real commands
+# (``wine``/``umu-run``/``reg``/``eject``); only ``manual`` needs a human.
 ACTION_EXTRACT = "extract"
 ACTION_MOVE = "move"
 ACTION_COPY = "copy"

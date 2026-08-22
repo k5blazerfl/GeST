@@ -85,6 +85,15 @@ def sha256_argv(path: str) -> list[str]:
     return ["sha256sum", path]
 
 
+def unattend_iso_argv(staging_dir: str, out_iso: str, label: str) -> list[str]:
+    """Build the small Windows guest-enablement provisioning ISO from a staging
+    directory (autounattend.xml + firstboot.ps1). ``-V <label>`` sets the volume
+    label firstboot locates itself by; ``-J -r`` add Joliet + Rock Ridge so the
+    filenames survive. Requires ``dev-libs/libisoburn`` (xorriso)."""
+    return ["xorriso", "-as", "mkisofs", "-V", label, "-J", "-r",
+            "-o", out_iso, staging_dir]
+
+
 def verify_sha256(sha256sum_output: str, expected: str) -> bool:
     """Compare ``sha256sum <file>`` output (``<hash>  <file>``) to ``expected``."""
     got = sha256sum_output.strip().split(maxsplit=1)[0] if sha256sum_output.strip() else ""

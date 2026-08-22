@@ -49,9 +49,16 @@ def test_sgdisk_partition_argv_encodes_each_partition():
 def test_mkfs_argv_per_kind():
     assert commands.mkfs_argv("/dev/sda2", "ext4", "root") == \
         ["mkfs.ext4", "-F", "-L", "root", "/dev/sda2"]
+    assert commands.mkfs_argv("/dev/sda2", "ext3", "root") == \
+        ["mkfs.ext3", "-F", "-L", "root", "/dev/sda2"]
     assert commands.mkfs_argv("/dev/sda1", "vfat", "ESP") == \
         ["mkfs.vfat", "-F", "32", "-n", "ESP", "/dev/sda1"]
     assert commands.mkfs_argv("/dev/sda3", "btrfs") == ["mkfs.btrfs", "-f", "/dev/sda3"]
+    # interop/data filesystems: ntfs quick+force, exfat quick-by-default.
+    assert commands.mkfs_argv("/dev/sda4", "ntfs", "data") == \
+        ["mkfs.ntfs", "-Q", "-F", "-L", "data", "/dev/sda4"]
+    assert commands.mkfs_argv("/dev/sda5", "exfat", "share") == \
+        ["mkfs.exfat", "-L", "share", "/dev/sda5"]
 
 
 def test_swap_builders():
@@ -262,6 +269,13 @@ def test_uefi_plan_rejects_bad_root_fs():
         provision.uefi_plan("sda", "512M", "", "swap")     # swap isn't a root fs
     with pytest.raises(ValueError):
         provision.uefi_plan("sda", "512M", "", "reiser4")  # unsupported
+    # mkfs-supported but NOT bootable as a Linux root — must be rejected here even
+    # though commands.mkfs_argv can make them (they are data/interop only).
+    for bad in ("vfat", "ntfs", "exfat"):
+        with pytest.raises(ValueError):
+            provision.uefi_plan("sda", "512M", "", bad)
+    # ext3 IS a valid root and must be accepted.
+    provision.uefi_plan("sda", "512M", "", "ext3")
 
 
 def test_bios_plan_with_swap():

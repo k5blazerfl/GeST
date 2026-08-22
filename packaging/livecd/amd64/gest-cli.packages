@@ -1,0 +1,55 @@
+# Packages for the BAREBONES GeSI CLI installer live image (catalyst
+# livecd/packages) — the `cli` build flavor (packaging/livecd/build.sh amd64 cli).
+#
+# This is the small, fast-to-build installer ISO: a console that boots straight
+# into GeST's guided "Install Gentoo" TUI (a YaST-style CLI install). It ships
+# app-admin/gest plus every tool GeST's install path shells out to, and NOTHING
+# of the HeDE desktop — no gui-apps/hede, labwc, foot, greetd, plymouth, seatd,
+# or the symbol font. That desktop stack is what pushes the HeDE live ISO toward
+# the 2 GB budget and makes it slow to rebuild; dropping it is the whole point of
+# this flavor (iterate a real-metal HeDE *install* without rebuilding a desktop).
+#
+# Keep this in sync with the desktop image's amd64/gest.packages for everything
+# in the install path (the two lists must offer the same install tooling); the
+# ONLY intended difference is the desktop stack, which lives in gest.packages.
+
+# GeST (from the GeST overlay — see portage_overlay in the stage1 spec). Its
+# ebuild RDEPENDs pull portage, pygobject:3, urwid, dbus-next, polkit and dbus,
+# which is all the TUI installer needs.
+app-admin/gest
+
+# storage provisioning: partition, mkfs, swap, mount
+sys-apps/gptfdisk          # sgdisk
+sys-block/parted
+sys-apps/util-linux      # mount, lsblk, wipefs, swapon
+sys-fs/e2fsprogs         # ext4
+sys-fs/xfsprogs          # xfs
+sys-fs/btrfs-progs       # btrfs
+sys-fs/f2fs-tools        # f2fs
+sys-fs/dosfstools        # vfat (the ESP)
+sys-fs/ntfs3g            # ntfs (mkfs.ntfs — Windows/interop data partitions)
+sys-fs/exfatprogs        # exfat (mkfs.exfat — removable/interop data partitions)
+
+# stage3 fetch + verify + unpack
+net-misc/wget
+app-arch/tar
+app-arch/xz-utils
+app-crypt/gnupg
+
+# kernel + bootloader
+sys-kernel/genkernel
+sys-boot/grub
+sys-boot/efibootmgr
+
+# network (live env + the target's config tools)
+net-misc/dhcpcd
+net-wireless/wpa_supplicant
+net-wireless/iw
+
+# day-2 firewall backends GeST's Firewall module can drive
+net-firewall/nftables
+net-firewall/firewalld
+
+# the D-Bus / polkit runtime the backend needs (also pulled by gest, listed for clarity)
+sys-auth/polkit
+sys-apps/dbus

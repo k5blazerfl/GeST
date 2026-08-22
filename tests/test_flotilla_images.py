@@ -33,6 +33,15 @@ def test_argv_builders():
     assert images.sha256_argv("/c/a.iso") == ["sha256sum", "/c/a.iso"]
 
 
+def test_unattend_iso_argv():
+    argv = images.unattend_iso_argv("/stage/win11", "/vm/win11/unattend.iso", "FLOTILLA")
+    assert argv[:4] == ["xorriso", "-as", "mkisofs", "-V"]
+    assert argv[4] == "FLOTILLA"  # volume label firstboot locates itself by
+    assert "-J" in argv and "-r" in argv  # Joliet + Rock Ridge preserve filenames
+    assert argv[argv.index("-o") + 1] == "/vm/win11/unattend.iso"
+    assert argv[-1] == "/stage/win11"  # the staging dir is the source
+
+
 def test_verify_sha256():
     out = "abc123  /cache/images/a.iso\n"
     assert images.verify_sha256(out, "abc123") is True

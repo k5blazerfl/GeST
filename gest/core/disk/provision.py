@@ -192,7 +192,7 @@ def uefi_plan(disk_name: str, esp_size: str, swap_size: str, root_fs: str) -> Di
     root filesystem or a size/label the argv builders reject (checked eagerly via
     :func:`plan_steps`).
     """
-    if root_fs not in commands.FS_KINDS or root_fs == "swap":
+    if root_fs not in commands.ROOT_FS_KINDS:
         raise ValueError(f"unsupported root filesystem: {root_fs!r}")
     partitions: list[Partition] = []
     filesystems: list[Filesystem] = []
@@ -230,7 +230,7 @@ def bios_plan(disk_name: str, swap_size: str, root_fs: str) -> DiskPlan:
     no swap. Raises ``ValueError`` on an unsupported root filesystem or a bad
     size/label (checked eagerly via :func:`plan_steps`).
     """
-    if root_fs not in commands.FS_KINDS or root_fs == "swap":
+    if root_fs not in commands.ROOT_FS_KINDS:
         raise ValueError(f"unsupported root filesystem: {root_fs!r}")
     partitions: list[Partition] = []
     filesystems: list[Filesystem] = []

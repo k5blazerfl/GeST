@@ -1,0 +1,15 @@
+[Unit]
+# Headless boot-smoke beacon for the CLI installer image. Announces a completed
+# boot over the serial port so an unattended QEMU smoke test
+# (packaging/livecd/boot-smoke.sh) can assert the live image actually boots. It is
+# SERIAL-ONLY by design: on real hardware without a serial port the write is a
+# silent no-op, so it never marks the boot failed and never touches the console.
+Description=GeSI CLI headless boot-smoke beacon
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'echo "GEST_BOOT_OK gesi-cli multi-user.target reached" > /dev/ttyS0 2>/dev/null || true'
+
+[Install]
+WantedBy=multi-user.target

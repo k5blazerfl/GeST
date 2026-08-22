@@ -26,16 +26,27 @@ _GUID_RE = re.compile(r"\A[0-9A-Fa-f]{4}\Z")
 _LABEL_RE = re.compile(r"\A[A-Za-z0-9_-]{1,36}\Z")
 
 # kind -> (program, force-flags, label-flag). The force flags let mkfs overwrite
-# an existing signature non-interactively (the plan already gated the wipe).
+# an existing signature non-interactively (the plan already gated the wipe); for
+# ntfs/exfat they also force a *quick* format (metadata only) — a full format
+# zeroes the whole device and can take many minutes on a large disk.
 _MKFS: dict[str, tuple[str, list[str], str]] = {
     "ext4": ("mkfs.ext4", ["-F"], "-L"),
+    "ext3": ("mkfs.ext3", ["-F"], "-L"),
     "xfs": ("mkfs.xfs", ["-f"], "-L"),
     "btrfs": ("mkfs.btrfs", ["-f"], "-L"),
     "f2fs": ("mkfs.f2fs", ["-f"], "-l"),
     "vfat": ("mkfs.vfat", ["-F", "32"], "-n"),
+    "ntfs": ("mkfs.ntfs", ["-Q", "-F"], "-L"),   # sys-fs/ntfs3g; -Q quick, -F force
+    "exfat": ("mkfs.exfat", [], "-L"),           # sys-fs/exfatprogs; quick by default
 }
 
 FS_KINDS = frozenset(_MKFS) | {"swap"}
+
+# The subset of _MKFS that can hold a *Linux root* (i.e. is bootable). vfat/ntfs/
+# exfat are data/interop filesystems only — a Linux system can't boot from them —
+# and swap is not a filesystem, so none of them are offered as a root choice. The
+# installer's root picker and provision.*_plan validate against this set.
+ROOT_FS_KINDS = frozenset({"ext4", "ext3", "xfs", "btrfs", "f2fs"})
 
 
 # --- mount / unmount (existing) --------------------------------------------

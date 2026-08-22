@@ -85,6 +85,34 @@ class SharedFolder:
         return cls(tag=str(d["tag"]), path=str(d["path"]))
 
 
+# TSAppAllowList\Applications\<key>\CommandLineSetting (DWORD): 0 = no command
+# line allowed, 1 = any command line, 2 = only a fixed command line. Default 1.
+CMDLINE_ANY = 1
+
+
+@dataclass(slots=True)
+class RemoteAppProgram:
+    """A published RemoteApp on a Windows vessel — one TSAppAllowList entry the
+    guest firstboot writes, and (later) a FreeRDP RAIL alias Gangway launches by.
+    ``key`` is the ``Applications\\<key>`` subkey / RAIL alias; ``path`` is the
+    guest-side Windows path to the executable; ``vpath`` is its expandable form."""
+    key: str
+    name: str
+    path: str
+    vpath: str = ""  # env-var form (e.g. %ProgramFiles%\…); defaults to path
+    cmdline_setting: int = CMDLINE_ANY
+
+    def to_dict(self) -> dict:
+        return {"key": self.key, "name": self.name, "path": self.path,
+                "vpath": self.vpath, "cmdline_setting": self.cmdline_setting}
+
+    @classmethod
+    def from_dict(cls, d: Mapping) -> RemoteAppProgram:
+        return cls(key=str(d["key"]), name=str(d.get("name", "")), path=str(d["path"]),
+                   vpath=str(d.get("vpath", "")),
+                   cmdline_setting=int(d.get("cmdline_setting", CMDLINE_ANY)))
+
+
 @dataclass(slots=True)
 class Vessel:
     id: str
@@ -105,6 +133,12 @@ class Vessel:
     guest_agent: bool = True
     shared_folders: list[SharedFolder] = field(default_factory=list)
     gangway_profile: str = ""  # linked Gangway profile id (Windows, seamless RDP)
+    # Guest-enablement (Windows RemoteApp provisioning, §5/phase-5). Opt-in — empty
+    # by default. `provisioned` records that the unattend ISO was built for these.
+    remote_app_programs: list[RemoteAppProgram] = field(default_factory=list)
+    unattend_iso: str = ""  # provisioning CD (autounattend + firstboot), attached at install
+    unattend_username: str = ""  # the local account Gangway authenticates as
+    provisioned: bool = False
 
     def is_valid(self) -> bool:
         return (bool(self.id) and self.os in OSES and self.firmware in FIRMWARES
@@ -123,6 +157,9 @@ class Vessel:
             "guest_agent": self.guest_agent,
             "shared_folders": [s.to_dict() for s in self.shared_folders],
             "gangway_profile": self.gangway_profile,
+            "remote_app_programs": [p.to_dict() for p in self.remote_app_programs],
+            "unattend_iso": self.unattend_iso, "unattend_username": self.unattend_username,
+            "provisioned": self.provisioned,
         }
 
     @classmethod
@@ -141,6 +178,11 @@ class Vessel:
             guest_agent=bool(d.get("guest_agent", True)),
             shared_folders=[SharedFolder.from_dict(x) for x in d.get("shared_folders", [])],
             gangway_profile=str(d.get("gangway_profile", "")),
+            remote_app_programs=[RemoteAppProgram.from_dict(x)
+                                 for x in d.get("remote_app_programs", [])],
+            unattend_iso=str(d.get("unattend_iso", "")),
+            unattend_username=str(d.get("unattend_username", "")),
+            provisioned=bool(d.get("provisioned", False)),
         )
 
 

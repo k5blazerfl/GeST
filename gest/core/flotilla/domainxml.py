@@ -19,9 +19,13 @@ from gest.core.flotilla.model import (
 )
 
 _DISK_LETTERS = "abcdefghijklmnop"
-# Disks take letters a..j; the two CD-ROM slots (install + virtio) take k, l. Cap
-# disks at 10 so they never collide with the CD-ROMs (or run off _DISK_LETTERS).
+# Disks take letters a..j; the three CD-ROM slots (install + virtio + unattend)
+# take k, l, m. Cap disks at 10 so they never collide with the CD-ROMs (or run off
+# _DISK_LETTERS).
 _MAX_DISKS = 10
+# Fixed CD-ROM device slots so the unattend disc is always sdm regardless of which
+# of the install/virtio ISOs are present.
+_CDROM_SLOTS = (("install_iso", 10), ("virtio_iso", 11), ("unattend_iso", 12))
 
 
 def compile_domain(vessel: Vessel) -> str:
@@ -74,11 +78,14 @@ def _devices(domain: ET.Element, vessel: Vessel) -> None:
         prefix = "vd" if disk.bus == "virtio" else "sd"
         ET.SubElement(d, "target", dev=prefix + _DISK_LETTERS[i], bus=disk.bus)
 
-    for j, iso in enumerate(x for x in (vessel.install_iso, vessel.virtio_iso) if x):
+    for attr, slot in _CDROM_SLOTS:
+        iso = getattr(vessel, attr)
+        if not iso:
+            continue
         cd = ET.SubElement(devices, "disk", type="file", device="cdrom")
         ET.SubElement(cd, "driver", name="qemu", type="raw")
         ET.SubElement(cd, "source", file=iso)
-        ET.SubElement(cd, "target", dev="sd" + _DISK_LETTERS[10 + j], bus="sata")
+        ET.SubElement(cd, "target", dev="sd" + _DISK_LETTERS[slot], bus="sata")
         ET.SubElement(cd, "readonly")
 
     for net in vessel.networks:
