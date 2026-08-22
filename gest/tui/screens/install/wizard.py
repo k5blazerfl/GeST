@@ -24,6 +24,7 @@ from gest.core.install import assemble, capabilities
 from gest.core.install.assemble import InstallSelections
 from gest.core.install.netcheck import check_connectivity
 from gest.core.install.plan import ADMIN_MODELS, LICENSE_POLICIES, sets_root_password
+from gest.core.network import reader as net_reader
 from gest.core.system import console as console_core
 from gest.core.system import hostname as hostname_core
 from gest.core.system import locale as locale_core
@@ -305,9 +306,46 @@ class LocalizationStep(WizardStep):
     step_key = "localization"
     step_title = "Welcome"
 
+    def __init__(self, app, sel, *, return_to=None, exit_to_terminal=False):
+        super().__init__(app, sel, return_to=return_to, exit_to_terminal=exit_to_terminal)
+        # Warm the network up in the BACKGROUND while the user reads the welcome and
+        # sets localization — so we're likely online by the time they hit Continue
+        # and can skip the Get Online gate entirely. Live app only (needs the loop).
+        if self.app.loop.is_running():
+            self.app.run_async(self._warm_network())
+
     def help(self) -> str:
         return ("Welcome to the Gentoo installer. Set your language/locale, timezone\n"
-                "and keyboard — all offline, no network needed — then Continue.")
+                "and keyboard — all offline, no network needed — then Continue.\n\n"
+                "The network is coming up in the background; if it's ready you'll go\n"
+                "straight to the next step, otherwise you'll be asked to connect.")
+
+    async def _warm_network(self):
+        """Best-effort: bring each wired link up + DHCP so connectivity is ready by
+        Continue. Wi-Fi is skipped (it needs credentials — that's the Get Online
+        gate's job). Reuses the GeST network stack (reader + link/dhcp commands)."""
+        import contextlib
+
+        from gest.core.exec.select import choose_executor
+        from gest.core.network import commands as net_commands
+        ex = choose_executor()
+        try:
+            ifaces = await self.app.run_blocking(net_reader.list_interfaces)
+        except Exception:
+            return
+        for iface in ifaces:
+            if (iface.loopback or iface.name.startswith(net_reader._WIFI_PREFIXES)
+                    or (iface.up and iface.addresses)):
+                continue
+            with contextlib.suppress(Exception):
+                await ex.run(net_commands.iplink_argv(iface.name, True))
+                await ex.run(["dhcpcd", iface.name])
+
+    def _next_screen(self) -> Screen:
+        # Skip the Get Online gate when the background warm-up already got us online.
+        if check_connectivity()[0]:
+            return make_step("role", self.app, self.sel)
+        return make_step("online", self.app, self.sel)
 
     def _compose_body(self):
         # The front door: a full-screen cover page with the GeST ASCII wordmark,
@@ -364,23 +402,45 @@ class OnlineStep(WizardStep):
     step_title = "Get Online"
 
     def help(self) -> str:
-        return ("The installer downloads a stage3 and syncs Portage, so the live\n"
-                "environment needs a working network connection before you continue.\n"
-                "Wired usually comes up automatically; for Wi-Fi use Network → Wi-Fi\n"
-                "from the main menu (Esc), then re-check here.")
+        return ("The installer downloads a stage3 and syncs Portage, so it needs a\n"
+                "network connection. You only see this step because the background\n"
+                "bring-up didn't get you online. Bring up a wired link, set up Wi-Fi\n"
+                "(the GeST Wi-Fi module), then re-check.")
 
     def _online(self) -> bool:
         ok, _detail = check_connectivity()      # (bool, detail) — network probe
         return ok
 
+    def _interfaces(self):
+        try:
+            return [i for i in net_reader.list_interfaces() if not i.loopback]
+        except Exception:
+            return []
+
+    @staticmethod
+    def _is_wifi(iface) -> bool:
+        return iface.name.startswith(net_reader._WIFI_PREFIXES)
+
     def setting_rows(self):
+        ifaces = self._interfaces()
         online = self._online()
-        return [
-            ("Network", "connected" if online else "NOT connected — required", None),
-            None,
-            ("Bring up wired network (dhcpcd)", None, self._dhcp),
-            ("Re-check connectivity", None, self._render),
-        ]
+        rows = [("Connectivity", "connected" if online else "NOT connected", None), None]
+        if not ifaces:
+            rows.append(("No usable network devices were found.", None, None))
+            rows.append(("Check the adapter/cabling, then Re-check.", None, None))
+            rows.append(None)
+            rows.append(("Re-check connectivity", None, self._render))
+            return rows
+        for i in ifaces:
+            kind = "Wi-Fi" if self._is_wifi(i) else "wired"
+            addr = i.addresses[0] if i.addresses else "no address"
+            rows.append((f"{i.name} ({kind})", f"{i.state.lower()}, {addr}", None))
+        rows.append(None)
+        rows.append(("Bring up wired network (DHCP)", None, self._dhcp))
+        if any(self._is_wifi(i) for i in ifaces):
+            rows.append(("Set up Wi-Fi…", None, self._wifi))
+        rows.append(("Re-check connectivity", None, self._render))
+        return rows
 
     def _dhcp(self):
         self.app.notify("Bringing up wired network (dhcpcd) …")
@@ -394,9 +454,17 @@ class OnlineStep(WizardStep):
             await choose_executor().run(["dhcpcd"])
         self._render()
 
+    def _wifi(self):
+        # Fold in the GeST Wi-Fi module (scan/connect); Esc returns here, re-check.
+        from gest.tui.screens.wifi import WifiScreen
+        self.app.push(WifiScreen(self.app))
+
     def validate(self):
-        return None if self._online() else \
-            "No network — the install needs a connection to fetch the stage3."
+        if self._online():
+            return None
+        if not self._interfaces():
+            return "No usable network devices — the install needs a connection."
+        return "Not connected yet — bring a link up (or set up Wi-Fi), then Continue."
 
 
 class RoleStep(WizardStep):
