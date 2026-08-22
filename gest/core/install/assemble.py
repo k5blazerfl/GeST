@@ -288,8 +288,8 @@ def resolve_gpu(runner: hwdetect.Runner | None = None) -> GpuSpec:
     run = runner or hwdetect._default_runner
     try:
         rc, out = run(["lspci"])
-    except FileNotFoundError:
-        return GpuSpec()
+    except OSError:                      # missing binary (ENOENT) OR an exec/IO error (EIO)
+        return GpuSpec()                 # firmware-only — never fail the whole prep on lspci
     if rc != 0:
         return GpuSpec()
     cards = hwdetect.parse_video_cards(out)

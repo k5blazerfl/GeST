@@ -117,3 +117,15 @@ def test_reader_round_trips_writer(tmp_path):
 
 def test_reader_missing_file_is_empty(tmp_path):
     assert reader.current_cpu_flags(str(tmp_path / "nope")) == []
+
+
+def test_detect_cpu_flags_io_error_is_empty():
+    def boom(argv):
+        raise OSError(5, "Input/output error", "cpuid2cpuflags")
+    assert detect.detect_cpu_flags(boom) == []
+
+
+def test_detect_video_cards_io_error_is_empty():
+    def boom(argv):
+        raise OSError(5, "Input/output error", "lspci")
+    assert detect.detect_video_cards(boom) == []
