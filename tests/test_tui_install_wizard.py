@@ -223,3 +223,14 @@ def test_online_passes_when_connected(monkeypatch):
     # default stub: check_connectivity → (True, "ok")
     _app, step, _ = _step(wz.OnlineStep)
     assert step.validate() is None
+
+
+def test_role_cards_nudge_hede_and_omit_admin_style():
+    labels = [lbl for _k, lbl in wz.RoleStep._ROLES]
+    desktop = next(lbl for lbl in labels if lbl.startswith("Desktop"))
+    assert "Helm" in desktop                      # a friendly nudge toward our HeDE
+    blob = " ".join(labels).lower()
+    # the admin/root style is user-choosable on the Account gate, so it must NOT
+    # be advertised on the role cards
+    for term in ("rootless", "sudo", "doas", "root", " su"):
+        assert term not in blob, f"role cards should not mention {term!r}"
