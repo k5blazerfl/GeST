@@ -30,10 +30,11 @@ from gest.core.system import locale as locale_core
 from gest.core.system import timezone as timezone_core
 from gest.core.users.commands import valid_name as valid_user_name
 from gest.tui.runtime import App, Modal, NavPile, Screen, boxed, focusable_actions
+from gest.tui.screens.loading import _LOGO_MARKUP, _LOGO_W  # shared GeST ASCII wordmark
 
 # The rail: ordered (key, title). "review" is the terminus (the overview screen).
 _RAIL: tuple[tuple[str, str], ...] = (
-    ("localization", "Localization"),
+    ("localization", "Welcome"),
     ("online", "Get Online"),
     ("role", "System Role"),
     ("disk", "Disk"),
@@ -166,23 +167,32 @@ class WizardStep(Screen):
         self._return_to = return_to
         self._walker = urwid.SimpleFocusListWalker([])
         self._list = urwid.ListBox(self._walker)
-        cols = urwid.Columns(
-            [(20, _rail_widget(self.step_key)),
-             boxed(self._list, title=self.step_title)],
-            dividechars=1, focus_column=1)
         # Back + Continue are right-aligned action buttons at the bottom (GeST's
         # ActionRow convention), not in-list rows — Tab reaches them, Enter fires.
         # Back steps to the previous gate (or the menu at the first gate); Esc does
         # the same for anyone who reaches for it.
         self._nav_row = focusable_actions([("Back", self._back), ("Continue", self.advance)])
-        body = NavPile([("weight", 1, cols), ("pack", self._nav_row)])
+        body, cycle_container, cycle_positions = self._compose_body()
         super().__init__(
             app, body, title=f"Install Gentoo — {self.step_title}",
             footer_keys=[("Enter", "Select / Edit"), ("Tab", "Back / Continue"),
                          ("Esc", "Back")],
             help_text=self.help())
-        self.configure_pane_cycle(body, [0], action_row=self._nav_row)
+        self.configure_pane_cycle(cycle_container, cycle_positions,
+                                  action_row=self._nav_row)
         self._render()
+
+    def _compose_body(self):
+        """Build the screen body. Returns (body, cycle_container, cycle_positions)
+        for Tab pane-cycling. The default is the standard gate — a left step-rail
+        beside the settings list; a gate can override this (e.g. the Welcome
+        cover page). ``self._list`` and ``self._nav_row`` are already built."""
+        cols = urwid.Columns(
+            [(20, _rail_widget(self.step_key)),
+             boxed(self._list, title=self.step_title)],
+            dividechars=1, focus_column=1)
+        body = NavPile([("weight", 1, cols), ("pack", self._nav_row)])
+        return body, body, [0]
 
     def _back(self) -> None:
         self.app.pop()
@@ -260,17 +270,42 @@ class WizardStep(Screen):
 
 class LocalizationStep(WizardStep):
     step_key = "localization"
-    step_title = "Localization"
+    step_title = "Welcome"
 
     def help(self) -> str:
-        return ("Set the target's timezone, locale and console keymap. These are\n"
-                "offline pickers — no network needed.")
+        return ("Welcome to the Gentoo installer. Set your language/locale, timezone\n"
+                "and keyboard — all offline, no network needed — then Continue.")
+
+    def _compose_body(self):
+        # The front door: a full-screen cover page with the GeST ASCII wordmark,
+        # a welcome line, the localization pickers, and Back/Continue. No step-rail
+        # here (the rail begins at the next gate) so the art has room to breathe.
+        logo = urwid.Padding(urwid.Text(_LOGO_MARKUP, wrap="clip"),
+                             align="center", width=_LOGO_W)
+        pile = NavPile([
+            ("pack", urwid.Divider(" ")),
+            ("pack", logo),
+            ("pack", urwid.Divider(" ")),
+            ("pack", urwid.Text(("title", "Welcome — let's install Gentoo"),
+                                align="center")),
+            ("pack", urwid.Divider(" ")),
+            ("pack", urwid.BoxAdapter(self._list, 3)),   # tz / locale / keymap
+            ("pack", urwid.Divider(" ")),
+            ("pack", self._nav_row),
+        ])
+        self._list_pos = 5
+        panel = boxed(pile, title="Install Gentoo")
+        body = urwid.Filler(
+            urwid.Padding(panel, align="center", width=("relative", 72),
+                          min_width=_LOGO_W + 6),
+            valign="middle", height="pack")
+        return body, pile, [self._list_pos]
 
     def setting_rows(self):
         return [
+            ("Language / Locale", self.sel.locale, self._edit_locale),
             ("Timezone", self.sel.timezone, self._edit_timezone),
-            ("Locale", self.sel.locale, self._edit_locale),
-            ("Console keymap", self.sel.keymap, self._edit_keymap),
+            ("Keyboard", self.sel.keymap, self._edit_keymap),
         ]
 
     def _edit_timezone(self):
@@ -278,7 +313,7 @@ class LocalizationStep(WizardStep):
                     self.sel.timezone, self._set("timezone"), self._render)
 
     def _edit_locale(self):
-        _pick_modal(self.app, "Locale", locale_core.list_locales(),
+        _pick_modal(self.app, "Language / Locale", locale_core.list_locales(),
                     self.sel.locale, self._set("locale"), self._render)
 
     def _edit_keymap(self):
