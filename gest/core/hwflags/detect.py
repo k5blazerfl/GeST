@@ -50,7 +50,7 @@ def detect_cpu_flags(runner: Runner = _default_runner) -> list[str]:
     """
     try:
         rc, out = runner(["cpuid2cpuflags"])
-    except FileNotFoundError:
+    except OSError:                      # missing binary (ENOENT) OR an exec/IO error (EIO)
         return []
     if rc != 0:
         return []
@@ -169,7 +169,7 @@ def detect_video_cards(runner: Runner = _default_runner) -> list[str]:
     """Recommended VIDEO_CARDS tokens from ``lspci`` (``[]`` if none/unavailable)."""
     try:
         rc, out = runner(["lspci"])
-    except FileNotFoundError:
+    except OSError:                      # missing binary (ENOENT) OR an exec/IO error (EIO)
         return []
     if rc != 0:
         return []

@@ -367,3 +367,11 @@ def test_install_gpu_drivers_current_writes_no_unmask(tmp_path):
     root, _, _, _ = _run_gpu_step(
         tmp_path, GpuSpec(video_cards=("nvidia",), nvidia_proprietary=True))
     assert not os.path.exists(root + gpu.PACKAGE_UNMASK)
+
+
+def test_resolve_gpu_survives_lspci_io_error():
+    # baremetal-shakedown regression: lspci raising OSError(EIO) must NOT crash prep
+    def boom(argv):
+        raise OSError(5, "Input/output error", "lspci")
+    spec = resolve_gpu(boom)
+    assert spec.video_cards == () and spec.nvidia_proprietary is False   # firmware-only
