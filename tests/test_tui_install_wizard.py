@@ -136,3 +136,16 @@ def test_back_button_pops_to_previous_gate():
     second._nav_row.focus_position = second._nav_row.button_position(0)  # Back
     assert second._nav_row.activate_focused() is True
     assert app._stack[-1] is first                                    # stepped back
+
+
+def test_welcome_is_a_cover_page_with_ascii_logo_and_no_rail():
+    from gest.tui.screens.loading import _LOGO_LINES
+    app, step, _ = _step(wz.LocalizationStep)
+    out = "\n".join(r.decode() for r in step.render((92, 34), focus=True).text)
+    assert _LOGO_LINES[-1] in out                     # the GeST ASCII wordmark
+    assert "Welcome" in out and "Language / Locale" in out
+    # cover page: the step-rail (other gates' titles) is NOT shown here
+    assert "Get Online" not in out and "System Role" not in out
+    # still advances into the rail proper
+    step.advance()
+    assert isinstance(app._stack[-1], wz.OnlineStep)
