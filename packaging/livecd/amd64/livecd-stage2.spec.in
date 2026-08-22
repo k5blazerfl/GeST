@@ -44,7 +44,7 @@ boot/kernel/gentoo/config: ${KERNEL_CONFIG}
 # rejects a bare `gk_mainargs` as an unrecognized argument.
 livecd/gk_mainargs: --plymouth --plymouth-theme=hede
 # Quiet kernel + systemd console so nothing scrolls behind the splash.
-livecd/bootargs: quiet splash loglevel=3 rd.udev.log_level=3 vt.global_cursor_default=0 systemd.show_status=false
+livecd/bootargs: quiet splash loglevel=3 rd.udev.log_level=3 vt.global_cursor_default=0 systemd.show_status=false scandelay=5
 
 # image: a squashfs root packed into a hybrid, UEFI-capable ISO
 livecd/type: generic-livecd

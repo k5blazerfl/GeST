@@ -41,7 +41,12 @@ boot/kernel/gentoo/config: ${KERNEL_CONFIG}
 # 4070 Ti Super (nouveau needs GSP firmware). A text installer needs no KMS, so
 # force the simple framebuffer (efifb/vesafb) and skip GPU driver init entirely.
 # The INSTALLED target is unaffected — it gets full linux-firmware + real drivers.
-livecd/bootargs: loglevel=4 nomodeset
+#
+# scandelay=5: on real hardware (USB boot) the genkernel initramfs scans for the
+# live medium before slow USB controllers have enumerated it, so mounting the ISO
+# fails. Wait 5s for devices to settle first. Raise it at the GRUB prompt
+# (scandelay=10) if a particularly slow stick still isn't found.
+livecd/bootargs: loglevel=4 nomodeset scandelay=5
 
 # image: a squashfs root packed into a hybrid, UEFI-capable ISO.
 livecd/type: generic-livecd
