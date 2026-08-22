@@ -31,6 +31,14 @@ systemctl enable getty@tty1.service || true
 # boots unattended. Serial-only → harmless (silent no-op) on real hardware.
 systemctl enable gesi-boot-beacon.service || true
 
+# Log console on tty12 (Alt+F12): journald (50-installer-tty12.conf drop-in)
+# forwards warnings-and-worse there so they don't paint over the wizard on tty1
+# (GeST also quiets kernel printk while the TUI is up). Mask autovt@tty12 so
+# logind can't spawn a getty login prompt that fights the forwarded log, and
+# enable the one-shot that prints a header banner so tty12 is self-labeling.
+systemctl mask autovt@tty12.service || true
+systemctl enable gesi-log-console.service || true
+
 # --- firmware trim (barebones console installer) ---------------------------
 # linux-firmware is ~1.9 GB and by far the largest thing on the image, but the
 # live CONSOLE only needs firmware for networking (to fetch the stage3): a text

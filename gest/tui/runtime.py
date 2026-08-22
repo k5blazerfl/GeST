@@ -561,8 +561,13 @@ class App:
         raise urwid.ExitMainLoop()
 
     def run(self, root: urwid.Widget) -> None:
+        from gest.tui.console import quiet_kernel_console
+
         self.push(root)
-        self.main.run()
+        # Keep kernel printk (warnings, udev noise) from painting over the TUI on
+        # a text console; restored on exit. No-op off a VT / unprivileged.
+        with quiet_kernel_console():
+            self.main.run()
 
     def _unhandled(self, key):
         # Quitting is a top-level action: the Control Center menu handles q/Q/F9.
