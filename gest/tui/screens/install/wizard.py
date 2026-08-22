@@ -30,7 +30,25 @@ from gest.core.system import locale as locale_core
 from gest.core.system import timezone as timezone_core
 from gest.core.users.commands import valid_name as valid_user_name
 from gest.tui.runtime import App, Modal, NavPile, Screen, boxed, focusable_actions
-from gest.tui.screens.loading import _LOGO_MARKUP, _LOGO_W  # shared GeST ASCII wordmark
+
+# The installer's own ASCII wordmark — the GeST mark (screens/loading.py) with the
+# trailing T turned into an I (a bottom bar added to the stem) so it reads GESI,
+# "Gentoo System Installer". Kept LOCAL so the app-wide GeST loading logo is
+# unchanged; same blue-over-purple split.
+_GESI_LOGO_LINES = [
+    "      ::::::::  :::::::::: :::::::: :::::::::::",
+    "    :+:    :+: :+:       :+:    :+:    :+:",
+    "   +:+        +:+       +:+           +:+",
+    "  :#:        +#++:++#  +#++:++#++    +#+",
+    " +#+   +#+# +#+              +#+    +#+",
+    "#+#    #+# #+#       #+#    #+#    #+#",
+    "########  ########## ########     ###########",
+]
+_GESI_LOGO_W = max(len(line) for line in _GESI_LOGO_LINES)
+_GESI_LOGO_MARKUP = [
+    ("box_title", "\n".join(_GESI_LOGO_LINES[:3]) + "\n"),   # top 3: Gentoo blue
+    ("title", "\n".join(_GESI_LOGO_LINES[3:])),              # bottom 4: Gentoo purple
+]
 
 # The rail: ordered (key, title). "review" is the terminus (the overview screen).
 _RAIL: tuple[tuple[str, str], ...] = (
@@ -159,7 +177,8 @@ class WizardStep(Screen):
     step_key = ""
     step_title = ""
 
-    def __init__(self, app: App, sel: InstallSelections, *, return_to=None) -> None:
+    def __init__(self, app: App, sel: InstallSelections, *, return_to=None,
+                 exit_to_terminal: bool = False) -> None:
         self.sel = sel
         # When set (a Screen factory), Continue returns here instead of advancing
         # the rail — used by the Review gate's jump-back so editing one setting
@@ -169,14 +188,19 @@ class WizardStep(Screen):
         self._list = urwid.ListBox(self._walker)
         # Back + Continue are right-aligned action buttons at the bottom (GeST's
         # ActionRow convention), not in-list rows — Tab reaches them, Enter fires.
-        # Back steps to the previous gate (or the menu at the first gate); Esc does
-        # the same for anyone who reaches for it.
-        self._nav_row = focusable_actions([("Back", self._back), ("Continue", self.advance)])
+        # At the root Welcome gate (exit_to_terminal), "Back" becomes "Exit to
+        # Terminal" and quits the installer to the shell instead of popping; Esc
+        # matches the button either way.
+        self._exit_to_terminal = exit_to_terminal
+        back_label, back_cb = (("Exit to Terminal", self.app_quit) if exit_to_terminal
+                               else ("Back", self._back))
+        self._nav_row = focusable_actions([(back_label, back_cb), ("Continue", self.advance)])
         body, cycle_container, cycle_positions = self._compose_body()
         super().__init__(
             app, body, title=f"Install Gentoo — {self.step_title}",
-            footer_keys=[("Enter", "Select / Edit"), ("Tab", "Back / Continue"),
-                         ("Esc", "Back")],
+            footer_keys=[("Enter", "Select / Edit"),
+                         ("Tab", f"{back_label} / Continue"),
+                         ("Esc", back_label)],
             help_text=self.help())
         self.configure_pane_cycle(cycle_container, cycle_positions,
                                   action_row=self._nav_row)
@@ -196,6 +220,10 @@ class WizardStep(Screen):
 
     def _back(self) -> None:
         self.app.pop()
+
+    def app_quit(self) -> None:
+        """Exit the installer to the shell (the Welcome gate's 'Exit to Terminal')."""
+        self.app.quit()
 
     # -- subclass hooks --------------------------------------------------------
     def setting_rows(self) -> list:
@@ -232,6 +260,11 @@ class WizardStep(Screen):
             self._walker.set_focus(sel[0])
 
     def handle_key(self, key):
+        # Esc matches the Back/Exit button: quit to the shell at the root Welcome
+        # gate, else step back to the previous gate.
+        if key == "esc":
+            self.app_quit() if self._exit_to_terminal else self._back()
+            return None
         # Only drive the settings list here; the Continue button (action row) is
         # reached by Tab and fired by the base nav (Enter/Space).
         if self._on_action_row():
@@ -280,24 +313,24 @@ class LocalizationStep(WizardStep):
         # The front door: a full-screen cover page with the GeST ASCII wordmark,
         # a welcome line, the localization pickers, and Back/Continue. No step-rail
         # here (the rail begins at the next gate) so the art has room to breathe.
-        logo = urwid.Padding(urwid.Text(_LOGO_MARKUP, wrap="clip"),
-                             align="center", width=_LOGO_W)
+        logo = urwid.Padding(urwid.Text(_GESI_LOGO_MARKUP, wrap="clip"),
+                             align="center", width=_GESI_LOGO_W)
         pile = NavPile([
             ("pack", urwid.Divider(" ")),
             ("pack", logo),
             ("pack", urwid.Divider(" ")),
-            ("pack", urwid.Text(("title", "Welcome — let's install Gentoo"),
-                                align="center")),
+            ("pack", urwid.Text(("title", "-Gentoo System Installer-"), align="center")),
+            ("pack", urwid.Text(("dim", "Welcome! Let's get started!"), align="center")),
             ("pack", urwid.Divider(" ")),
             ("pack", urwid.BoxAdapter(self._list, 3)),   # tz / locale / keymap
             ("pack", urwid.Divider(" ")),
             ("pack", self._nav_row),
         ])
-        self._list_pos = 5
+        self._list_pos = 6          # 0 div,1 logo,2 div,3 title,4 subtitle,5 div,6 list
         panel = boxed(pile, title="Install Gentoo")
         body = urwid.Filler(
             urwid.Padding(panel, align="center", width=("relative", 72),
-                          min_width=_LOGO_W + 6),
+                          min_width=_GESI_LOGO_W + 6),
             valign="middle", height="pack")
         return body, pile, [self._list_pos]
 
@@ -675,7 +708,13 @@ def make_step(key: str, app: App, sel: InstallSelections, *, return_to=None) -> 
     return _STEPS[key](app, sel, return_to=return_to)
 
 
-def start(app: App) -> Screen:
-    """The wizard's first gate, seeded with the Desktop proposal. ``gest --install``
-    pushes this; the admin menu sits beneath it as an escape hatch."""
-    return LocalizationStep(app, assemble.propose("desktop"))
+def start(app: App, *, exit_to_terminal: bool = False) -> Screen:
+    """The wizard's first gate (Welcome), seeded with the Desktop proposal.
+
+    ``exit_to_terminal`` = True for the standalone installer (``gest --install`` on
+    the live medium): the Welcome gate's first button reads "Exit to Terminal" and
+    quits to the shell. False when launched from the GeST menu, where it stays a
+    "Back" that returns to the menu.
+    """
+    return LocalizationStep(app, assemble.propose("desktop"),
+                            exit_to_terminal=exit_to_terminal)
