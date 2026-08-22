@@ -439,7 +439,7 @@ def cmd_install_recipe(args, env: DrydockEnv) -> int:
         prefix=barrel.prefix,
         gamedir=str(Path(barrel.prefix) / "drive_c" / barrel.id),
         cache=args.cache or str(Path("~/.cache/drydock").expanduser() / barrel.id),
-        arch=barrel.arch, runner=barrel.runner)
+        arch=barrel.arch, runner=barrel.runner, runner_version=barrel.runner_version)
     ops = interpreter.plan(recipe, ctx)
     if not ops:
         env.io.out("(recipe has no install steps — barrel is ready)")
