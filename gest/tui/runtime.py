@@ -12,6 +12,7 @@ import asyncio
 import contextlib
 import os
 import re
+import subprocess
 from collections.abc import Awaitable, Callable
 
 import urwid
@@ -572,6 +573,22 @@ class App:
     async def run_blocking(self, fn: Callable, *args):
         """Run a blocking callable in a thread; return its result on the loop."""
         return await self.loop.run_in_executor(None, fn, *args)
+
+    async def run_in_terminal(self, argv: list[str], *, cwd: str | None = None) -> int:
+        """Suspend the TUI and run ``argv`` interactively on the real terminal.
+
+        Stops the urwid *screen* only (not the event loop), so the subprocess
+        inherits the real tty for an interactive session (e.g. a recovery shell),
+        then restores the screen. Returns the subprocess exit code.
+        """
+        screen = self.main.screen
+        screen.stop()                          # hand the terminal back to the child
+        try:
+            return await self.loop.run_in_executor(
+                None, lambda: subprocess.call(argv, cwd=cwd))
+        finally:
+            screen.start()                     # reclaim the terminal for urwid
+            self.refresh()
 
     def quit(self) -> None:
         raise urwid.ExitMainLoop()

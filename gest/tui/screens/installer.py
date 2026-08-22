@@ -14,7 +14,9 @@ live-network step land in 5b/5c.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
+import os
 
 import urwid
 
@@ -24,7 +26,7 @@ from gest.core.exec.select import choose_executor
 from gest.core.install import assemble
 from gest.core.install.assemble import InstallSelections, UserDraft
 from gest.core.install.context import InstallContext, StateStore
-from gest.core.install.engine import run_install
+from gest.core.install.engine import FailureAction, run_install
 from gest.core.install.netcheck import check_connectivity
 from gest.core.install.plan import Phase
 from gest.core.install.registry import build_registry
@@ -628,6 +630,22 @@ def _fail_message(exc: Exception) -> str:
     return f"Install failed at “{label}”" + (f": {reason}" if reason else "")
 
 
+class _FailureModal(Modal):
+    """The step-failure prompt. Esc routes to the abort callback (rather than a
+    bare pop) so the awaiting ``_on_failure`` hook always resolves — a dangling
+    modal would otherwise hang the install waiting on a decision."""
+
+    def __init__(self, app: App, title: str, rows: list, buttons: list, *, on_escape):
+        super().__init__(app, title, rows, buttons)
+        self._on_escape = on_escape
+
+    def keypress(self, size, key):
+        if key == "esc":
+            self._on_escape()
+            return None
+        return super().keypress(size, key)
+
+
 class InstallRunScreen(StreamLog, Screen):
     """Run the install behind a calm, branded overview: the GeST (GeSI) wordmark,
     the six phases with a live spinner on the one in flight, and a progress bar
@@ -827,11 +845,75 @@ class InstallRunScreen(StreamLog, Screen):
             mounts=disk_reader.read_proc_mounts())
 
         try:
-            await run_install(ctx, steps, on_progress=self._on_progress, on_step=self._on_step)
+            await run_install(ctx, steps, on_progress=self._on_progress,
+                              on_step=self._on_step, on_failure=self._on_failure)
         except Exception as exc:
             self._finish(False, _fail_message(exc))
             return
         self._finish(True, f"Gentoo installed onto /dev/{self._sel.disk}.")
+
+    async def _on_failure(self, step, exc, in_chroot: bool) -> FailureAction:
+        """Engine failure hook — the oddlama-style recover-in-place prompt.
+
+        Loops on the Retry/Shell/Skip/Abort modal: *Shell* suspends the TUI and
+        drops into ``chroot <root> /bin/bash`` (or a host shell if the chroot
+        isn't open yet), then re-shows the prompt; the other three resolve to a
+        :class:`FailureAction` the engine acts on.
+        """
+        while True:
+            choice = await self._ask_failure(step, exc, in_chroot)
+            if choice == "shell":
+                await self._open_shell(in_chroot)
+                continue
+            return {"retry": FailureAction.RETRY, "skip": FailureAction.SKIP,
+                    "abort": FailureAction.ABORT}[choice]
+
+    async def _ask_failure(self, step, exc, in_chroot: bool) -> str:
+        """Push the failure modal and await the chosen action key."""
+        fut: asyncio.Future = self.app.loop.create_future()
+
+        def choose(key: str) -> None:
+            self.app.pop()                      # dismiss the modal overlay
+            if not fut.done():
+                fut.set_result(key)
+
+        output = getattr(getattr(exc, "result", None), "output", "") or str(exc)
+        tail = [ln for ln in output.splitlines() if ln.strip()][-6:]
+        shell_where = "in the target" if in_chroot else "on the live host"
+        rows = [
+            urwid.Text(("error", f" {getattr(step, 'label', 'A step')} failed")),
+            urwid.Divider(),
+            *[urwid.Text(("hint", strip_ansi(ln))) for ln in tail],
+            urwid.Divider(),
+            urwid.Text(("field",
+                        f"Retry it, open a shell {shell_where} to fix the problem then retry, "
+                        "skip it (may leave the system incomplete), or abort."
+                        )),
+        ]
+        buttons = [
+            ("Retry", lambda: choose("retry")),
+            ("Shell", lambda: choose("shell")),
+            ("Skip", lambda: choose("skip")),
+            ("Abort", lambda: choose("abort")),
+        ]
+        modal = _FailureModal(self.app, "Step failed", rows, buttons,
+                              on_escape=lambda: choose("abort"))
+        self.app.push_modal(modal, width=("relative", 72), height=("relative", 60))
+        return await fut
+
+    async def _open_shell(self, in_chroot: bool) -> None:
+        """Suspend the TUI and hand the user an interactive recovery shell."""
+        root = self._sel.target_root
+        if in_chroot:
+            argv = ["chroot", root, "/bin/bash"]
+            cwd = None
+        else:
+            argv = ["/bin/bash"]
+            cwd = root if os.path.isdir(root) else None
+        self._on_progress([f"— recovery shell ({'target' if in_chroot else 'host'}); "
+                           "fix the problem, then `exit` to return —"])
+        with contextlib.suppress(Exception):
+            await self.app.run_in_terminal(argv, cwd=cwd)
 
     def _finish(self, ok: bool, message: str) -> None:
         self._done = True                       # also stops the spinner tick
