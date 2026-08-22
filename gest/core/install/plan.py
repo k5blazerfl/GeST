@@ -49,6 +49,11 @@ LICENSE_POLICIES: dict[str, str] = {
 ADMIN_MODELS: tuple[str, ...] = ("traditional", "sudo-augmented", "rootless")
 ESCALATORS: tuple[str, ...] = ("sudo", "doas")
 
+# How the installed system keeps time:
+#   chrony — RTC in UTC, chrony installed + enabled for NTP sync (the default)
+#   local  — RTC in local time, no NTP daemon (Windows-dual-boot / offline style)
+CLOCK_MODES: tuple[str, ...] = ("chrony", "local")
+
 
 def license_accept_value(policy: str) -> str:
     """The ``ACCEPT_LICENSE`` string for a policy key; raises on an unknown rung."""
@@ -159,6 +164,8 @@ class InstallPlan:
     # SetRootPassword + the escalator step. Traditional = today's root+su behaviour.
     escalator: str = "sudo"        # sudo|doas — the escalator installed for
     # sudo-augmented/rootless models (ignored by traditional).
+    clock: str = "chrony"          # how the target keeps time (CLOCK_MODES): chrony
+    # (RTC=UTC + NTP via chrony) or local (RTC in local time, no NTP). ConfigureClock renders it.
     global_use: tuple[str, ...] = ()   # system-wide USE= tokens resolved from the
     # wizard's Features checklist (capabilities.resolve_global_use); WriteMakeConf renders them.
     make_conf_overrides: tuple[tuple[str, str], ...] = ()   # Custom-role raw make.conf

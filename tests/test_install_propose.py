@@ -150,3 +150,10 @@ def test_separate_home_adds_a_home_mount():
     paths = [m.path for m in plan.mount.mounts]
     assert "/" in paths and "/home" in paths
     assert any(f.label == "home" for f in plan.disk.filesystems)
+
+
+def test_bad_clock_mode_rejected():
+    import pytest
+    sel = _base_sel(clock="ntpd")
+    with pytest.raises(ValueError, match="clock"):
+        assemble_plan(sel, _stage3())

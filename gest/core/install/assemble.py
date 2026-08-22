@@ -22,6 +22,7 @@ from gest.core.hwflags import detect as hwdetect
 from gest.core.install import capabilities
 from gest.core.install.plan import (
     ADMIN_MODELS,
+    CLOCK_MODES,
     ESCALATORS,
     LICENSE_POLICIES,
     GpuSpec,
@@ -79,6 +80,7 @@ class InstallSelections:
     locale: str = "C.UTF-8"   # stays C.UTF-8 (glibc built-in, no locale-gen) until the
     # SetTimezoneLocale locale-gen fix lands; only then is en_US.UTF-8 safe as a default.
     keymap: str = "us"
+    clock: str = "chrony"             # how the target keeps time (plan.CLOCK_MODES)
     # user (optional; created in the target when create_user)
     create_user: bool = False
     user_name: str = ""
@@ -398,6 +400,8 @@ def assemble_plan(sel: InstallSelections, stage3: Stage3Selection) -> InstallPla
         raise ValueError(f"invalid admin model: {sel.admin_model!r}")
     if sel.escalator not in ESCALATORS:
         raise ValueError(f"invalid escalator: {sel.escalator!r}")
+    if sel.clock not in CLOCK_MODES:
+        raise ValueError(f"invalid clock mode: {sel.clock!r}")
     # Admin-model safety: traditional/sudo-augmented need a root password; rootless
     # locks root, so it instead needs an admin-capable (wheel) user to escalate from
     # — never ship a system you can't administer (gesi-account-model invariant).
@@ -461,6 +465,7 @@ def assemble_plan(sel: InstallSelections, stage3: Stage3Selection) -> InstallPla
         timezone=sel.timezone,
         locale=sel.locale,
         keymap=sel.keymap,
+        clock=sel.clock,
         user=user,
         network=network,
         binary_pref=sel.binary_pref,

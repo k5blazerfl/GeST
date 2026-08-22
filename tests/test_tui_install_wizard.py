@@ -262,3 +262,18 @@ def test_modal_tab_cycles_focus_between_body_and_buttons():
     assert m._pile.focus_position == 2               # Tab wraps back to the list
     m._cycle_focus(-1)
     assert m._pile.focus_position == 4               # Shift-Tab → buttons
+
+
+def test_welcome_shows_current_time_and_clock_row():
+    _app, step, _ = _step(wz.LocalizationStep)
+    out = "\n".join(r.decode() for r in step.render((92, 36), focus=True).text)
+    assert "🕑" in out                       # current-time display
+    assert "Clock" in out and "chrony" in out
+
+
+def test_welcome_clock_local_renders():
+    sel = assemble.propose("desktop")
+    sel.clock = "local"
+    _app, step, _ = _step(wz.LocalizationStep, sel)
+    out = "\n".join(r.decode() for r in step.render((92, 36), focus=True).text)
+    assert "local (no sync)" in out

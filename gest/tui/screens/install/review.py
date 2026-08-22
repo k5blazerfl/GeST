@@ -94,6 +94,8 @@ class ReviewScreen(Screen):
                 ("Timezone", s.timezone, "ok", "localization"),
                 ("Locale", s.locale, "ok", "localization"),
                 ("Keymap", s.keymap, "ok", "localization"),
+                ("Clock", "chrony (NTP)" if s.clock == "chrony" else "local (no sync)",
+                 "ok", "localization"),
             ]),
             ("Network (live)", [
                 ("Connectivity", online, "ok" if self._online else "blocker", "online"),
