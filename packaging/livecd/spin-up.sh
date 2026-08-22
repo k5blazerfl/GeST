@@ -5,6 +5,7 @@
 #   sudo packaging/livecd/spin-up.sh [--uefi] [--no-boot] [--snapshot ID]
 #                                    [--image desktop|cli] [--flavor systemd]
 #                                    [--storedir DIR] [--out-dir DIR]
+#                                    [--hede-overlay DIR]
 #
 # --out-dir DIR: also copy the finished ISO + a .sha256 into DIR (e.g. GeST/iso).
 #
@@ -19,9 +20,10 @@
 #
 # It automates the catalyst inputs that build.sh otherwise assumes:
 #   1. syncs this checkout's GeST overlay into /var/db/repos/gest (→ latest GeST)
+#   1b. locates + refreshes the HeDE (Amphitheater) overlay (→ latest hede)
 #   2. ensures a portage snapshot (or use --snapshot / an existing config.env)
 #   3. downloads the latest stage3-amd64-<flavor> seed into catalyst's builds/
-#   4. writes config.env, runs build.sh, and (unless --no-boot) boots the ISO
+#   4. writes config.env (incl. HEDE_OVERLAY), runs build.sh, and boots the ISO
 #
 # Must run as root on a Gentoo host with catalyst + qemu installed:
 #   sudo emerge -av dev-util/catalyst app-emulation/qemu sys-firmware/edk2-ovmf
@@ -38,6 +40,7 @@ image="desktop"    # which ISO to build: desktop (HeDE) | cli (barebones install
 flavor="systemd"   # HeDE is systemd-only; the live image seeds + boots systemd
 mirror="https://distfiles.gentoo.org"
 overlay_dst="/var/db/repos/gest"
+hede_overlay="/var/db/repos/amphitheater"   # where gui-apps/hede lives (external repo)
 boot=1
 firmware="bios"
 snapshot=""
@@ -53,6 +56,7 @@ while [ $# -gt 0 ]; do
         --out-dir) out_dir="$2"; shift 2 ;;
         --flavor) flavor="$2"; shift 2 ;;
         --storedir) storedir="$2"; shift 2 ;;
+        --hede-overlay) hede_overlay="$2"; shift 2 ;;
         -h|--help) grep -E '^#( |$)' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "unknown option: $1" >&2; exit 1 ;;
     esac
@@ -99,6 +103,52 @@ auto-sync = no
 REPO
     echo "  registered /etc/portage/repos.conf/gest.conf"
 fi
+
+# --- 1b. HeDE (Amphitheater) overlay ----------------------------------------
+# gui-apps/hede is NOT in this repo's overlay — it lives in the external
+# Amphitheater overlay. It MUST reach the stage as an ebuild repo, else the
+# resolver can't see hede-<current> and silently falls back to a stale hede
+# binpkg from pkgcache (shipping an ancient desktop). So locate it, refresh it
+# if it's a git checkout, register it, and (step 4) write HEDE_OVERLAY so the
+# spec's `repos:` line includes it.
+say "Locating the HeDE overlay → ${hede_overlay}"
+[ -d "${hede_overlay}/gui-apps/hede" ] || die \
+    "HeDE overlay not found at ${hede_overlay} (expected gui-apps/hede/). Clone \
+k5blazerfl/Amphitheater there, or pass --hede-overlay DIR."
+if [ -d "${hede_overlay}/.git" ]; then
+    git -C "${hede_overlay}" pull --ff-only 2>/dev/null \
+        && echo "  refreshed (git pull)" \
+        || echo "  (could not fast-forward; using ${hede_overlay} as-is)"
+fi
+echo "  hede ebuilds: $(ls "${hede_overlay}/gui-apps/hede/"*.ebuild 2>/dev/null | \
+    sed 's#.*/##;s/\.ebuild$//' | tr '\n' ' ')"
+if ! grep -Rqs "location *= *${hede_overlay}" /etc/portage/repos.conf 2>/dev/null; then
+    mkdir -p /etc/portage/repos.conf
+    cat > /etc/portage/repos.conf/amphitheater.conf <<REPO
+[amphitheater]
+location = ${hede_overlay}
+masters = gentoo
+auto-sync = no
+REPO
+    echo "  registered /etc/portage/repos.conf/amphitheater.conf"
+fi
+
+# --- 1c. purge image-mutating binpkgs (gest, hede) --------------------------
+# catalyst's pkgcache keeps binpkgs from prior builds and --usepkg prefers them.
+# For the packages that DEFINE the image (built from our overlays) that is wrong
+# on two counts: a stale binpkg silently substitutes an old version, and
+# assert-iso-versions requires these built *from source*. Purge them so every
+# build compiles gest + hede fresh from the just-synced overlays. Dep binpkgs are
+# kept (they only speed the build; their versions don't gate the image).
+say "Purging image-mutating binpkgs (gest, hede) from the pkgcache"
+rm -rf "${storedir}"/packages/*/*/app-admin/gest \
+       "${storedir}"/packages/*/*/gui-apps/hede 2>/dev/null || true
+# Drop the binhost index too — it still lists the just-removed gpkgs, so --usepkg
+# would try to fetch a "non-existent binary" and fail ("outdated index"). Portage
+# regenerates the index by scanning on the next emerge; the remaining dep gpkgs
+# are re-indexed automatically.
+rm -f "${storedir}"/packages/*/*/Packages 2>/dev/null || true
+echo "  gest + hede will be rebuilt from source (binhost index will regenerate)"
 
 # --- 2. snapshot ------------------------------------------------------------
 # Precedence: --snapshot > existing non-placeholder config.env > auto.
@@ -147,6 +197,7 @@ PROFILE="default/linux/${arch}/23.0/desktop/systemd"
 SNAPSHOT="${snapshot}"
 STAGE3="${seed}"
 GEST_OVERLAY="${overlay_dst}"
+HEDE_OVERLAY="${hede_overlay}"
 TIMESTAMP=""
 CONFIG
 
