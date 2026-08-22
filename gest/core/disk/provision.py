@@ -249,6 +249,60 @@ def bios_plan(disk_name: str, swap_size: str, root_fs: str) -> DiskPlan:
     return plan
 
 
+# The wizard's guided-disk proposal ("proposals over blank fields"). A 1 GiB ESP
+# (roomy for multiple kernels/initramfs), a RAM-sized swap capped for big-RAM boxes,
+# and root filling the rest. Auto-sizing is pure + testable; the Manual fork edits
+# the returned plan. ESP is bigger than the legacy 512M default — modern firmware +
+# genkernel initramfs leave 512M cramped.
+ESP_PROPOSAL_SIZE = "1G"
+_GIB = 1024 ** 3
+# Root needs headroom for stage3 + @world + a kernel build; warn below this.
+MIN_ROOT_GIB = 15
+
+
+def propose_swap_size(ram_bytes: int) -> str:
+    """RAM-sized swap: =RAM when RAM ≤ 8 GiB (enough to hibernate), else capped at
+    16 GiB (past 8 GiB of RAM, swap is overflow insurance, not hibernation-sized).
+    Returns a gdisk size string (``"8G"``); minimum 1 GiB."""
+    gib = max(1, round(ram_bytes / _GIB))
+    return f"{gib if gib <= 8 else 16}G"
+
+
+def propose_layout(disk_name: str, ram_bytes: int, firmware: str,
+                   root_fs: str = "ext4") -> DiskPlan:
+    """Guided whole-disk proposal for ``disk_name`` (pure; wraps uefi/bios_plan).
+
+    Auto-sizes the ESP (1 GiB, UEFI only) and a RAM-sized swap
+    (:func:`propose_swap_size`), root fills the rest. ``firmware`` is ``"uefi"`` or
+    ``"bios"``. Raises ``ValueError`` on a bad firmware or root filesystem (the
+    underlying builders validate sizes/labels). Disk-too-small is a soft warning
+    (:func:`layout_warning`), not a hard error — the user may still proceed.
+    """
+    if firmware not in ("uefi", "bios"):
+        raise ValueError(f"invalid firmware: {firmware!r}")
+    swap = propose_swap_size(ram_bytes)
+    if firmware == "bios":
+        return bios_plan(disk_name, swap, root_fs)
+    return uefi_plan(disk_name, ESP_PROPOSAL_SIZE, swap, root_fs)
+
+
+def layout_warning(disk_bytes: int, ram_bytes: int, firmware: str) -> str | None:
+    """A human warning if the guided layout would leave too little root, else None.
+
+    Estimates root = disk - ESP(1 GiB, UEFI) - swap; warns when that dips under
+    :data:`MIN_ROOT_GIB`. The UI shows it beside the proposal; it does not block.
+    """
+    overhead_gib = round(int(propose_swap_size(ram_bytes).rstrip("G")))
+    if firmware != "bios":
+        overhead_gib += 1        # ESP
+    root_gib = disk_bytes / _GIB - overhead_gib
+    if root_gib < MIN_ROOT_GIB:
+        return (f"Only ~{root_gib:.0f} GiB would be left for root after swap"
+                f"{' + ESP' if firmware != 'bios' else ''}; "
+                f"{MIN_ROOT_GIB} GiB is the recommended minimum.")
+    return None
+
+
 def plan_phase_labels(plan: DiskPlan) -> list[str]:
     """Coarse, one-per-phase labels for the backend path (and the apply UI).
 
