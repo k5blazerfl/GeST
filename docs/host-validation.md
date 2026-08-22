@@ -283,6 +283,13 @@ flotilla connect win11 --rdp                         # provisions a Gangway prof
   built (prefix creation + filesystem install steps now *are*, via §3c).
 - Gangway **seamless RemoteApp** (single-window RAIL) and **per-profile** taskbar
   identity — **Phase 5** (see the Gangway Phase-5 scope design doc), experimental
-  and upstream-gated.
-- Flotilla **guest-side RDP-enable automation** (`unattend.xml`), **Customs
-  launchers/jump-lists** for vessels, and the **Qt module** — later Flotilla phases.
+  and upstream-gated. The RAIL engine (5b) is gated on a host-validation spike:
+  run [`scripts/host-validation/rail-spike.py`](../scripts/host-validation/rail-spike.py)
+  against a provisioned vessel (protocol +
+  findings: [`docs/design/gangway-phase5b-rail-spike.md`](design/gangway-phase5b-rail-spike.md);
+  pin FreeRDP ≥ 3.24.0). GREEN unlocks the engine; the 5a taskbar identity spine
+  ships regardless.
+- Flotilla **Customs launchers/jump-lists** for vessels and the **Qt module** —
+  later Flotilla phases. (Guest-side RDP-enable automation — `autounattend.xml` +
+  RemoteApp `TSAppAllowList` — is now built: `flotilla … --provision/--remote-app`,
+  the prerequisite target the RAIL spike above measures against.)
