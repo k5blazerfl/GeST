@@ -138,14 +138,47 @@ def test_back_button_pops_to_previous_gate():
     assert app._stack[-1] is first                                    # stepped back
 
 
-def test_welcome_is_a_cover_page_with_ascii_logo_and_no_rail():
-    from gest.tui.screens.loading import _LOGO_LINES
+def test_welcome_is_a_cover_page_with_gesi_ascii_logo_and_no_rail():
     app, step, _ = _step(wz.LocalizationStep)
-    out = "\n".join(r.decode() for r in step.render((92, 34), focus=True).text)
-    assert _LOGO_LINES[-1] in out                     # the GeST ASCII wordmark
-    assert "Welcome" in out and "Language / Locale" in out
+    out = "\n".join(r.decode() for r in step.render((94, 34), focus=True).text)
+    assert wz._GESI_LOGO_LINES[-1] in out             # the GESI wordmark (T→I)
+    assert "-Gentoo System Installer-" in out
+    assert "Welcome! Let's get started!" in out
+    assert "Language / Locale" in out
     # cover page: the step-rail (other gates' titles) is NOT shown here
     assert "Get Online" not in out and "System Role" not in out
     # still advances into the rail proper
     step.advance()
     assert isinstance(app._stack[-1], wz.OnlineStep)
+
+
+def test_gesi_logo_differs_from_gest_only_by_the_I_bottom_bar():
+    from gest.tui.screens.loading import _LOGO_LINES
+    # first six rows identical to the GeST mark; only the last row gains the I's bar
+    assert wz._GESI_LOGO_LINES[:6] == _LOGO_LINES[:6]
+    assert wz._GESI_LOGO_LINES[6].endswith("###########")   # I bottom bar
+    assert wz._GESI_LOGO_LINES[6] != _LOGO_LINES[6]
+
+
+def test_welcome_exit_to_terminal_quits(monkeypatch):
+    import urwid
+    app = App()
+    step = wz.start(app, exit_to_terminal=True)         # standalone installer root
+    app._stack.append(step)
+    labels = ["".join(str(t) for t in b.base_widget.get_text()[0])
+              for b in step._nav_row.buttons]
+    assert any("Exit to Terminal" in x for x in labels)
+    # activating it raises ExitMainLoop (quit to shell), not a pop
+    step._nav_row.focus_position = step._nav_row.button_position(0)
+    with pytest.raises(urwid.ExitMainLoop):
+        step._nav_row.activate_focused()
+
+
+def test_welcome_from_menu_keeps_back(monkeypatch):
+    # launched WITHOUT exit_to_terminal → first button is Back (returns to menu)
+    app = App()
+    step = wz.start(app)                                # default exit_to_terminal=False
+    app._stack.append(step)
+    labels = ["".join(str(t) for t in b.base_widget.get_text()[0])
+              for b in step._nav_row.buttons]
+    assert any("Back" in x for x in labels) and not any("Exit" in x for x in labels)

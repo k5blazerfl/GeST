@@ -30,12 +30,11 @@ def main() -> None:
         raise SystemExit(1)
     app = App()
     if args.install:
-        # Launch straight into the install wizard (first gate). The admin menu
-        # (with the installer category) sits beneath it as an escape hatch, so Esc
-        # from the wizard drops to the menu rather than exiting.
+        # The standalone installer: launch straight into the wizard as the root
+        # screen. The Welcome gate's "Exit to Terminal" quits to the shell — there
+        # is no GeST admin menu to fall back to in this (live-medium) context.
         from gest.tui.screens.install.wizard import start as start_wizard
-        app.push(MenuScreen(app, installer=True))
-        app.run(start_wizard(app))
+        app.run(start_wizard(app, exit_to_terminal=True))
     else:
         app.run(MenuScreen(app, installer=False))
 
