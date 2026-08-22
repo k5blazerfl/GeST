@@ -471,17 +471,20 @@ class RoleStep(WizardStep):
     step_key = "role"
     step_title = "System Role"
 
+    # Descriptions deliberately DON'T name the admin/root style — that's proposed
+    # per role but freely changed on the Account gate, so advertising it here is
+    # misleading. Desktop gives our own Helm Desktop a friendly nudge.
     _ROLES = (
-        ("desktop", "Desktop (HeDE)  — full graphical desktop, rootless sudo"),
-        ("server", "Server          — headless, sshd + firewall, root + su"),
-        ("minimal", "Minimal         — base Gentoo from source, no desktop"),
-        ("custom", "Custom          — the Desktop baseline, everything editable"),
+        ("desktop", "Desktop (HeDE)  — our own Helm Desktop, all hands on deck. Come aboard!"),
+        ("server", "Server          — headless: SSH + firewall, ready to serve"),
+        ("minimal", "Minimal         — base Gentoo, compiled from source, no desktop"),
+        ("custom", "Custom          — start from Desktop and configure everything yourself"),
     )
 
     def help(self) -> str:
         return ("Pick what this machine is for. The role proposes a coherent set of\n"
-                "defaults (build strategy, licenses, admin model, services) that the\n"
-                "later gates then let you fine-tune.")
+                "defaults (build strategy, licenses, services, and a suggested admin\n"
+                "model) that the later gates let you fine-tune — nothing here is locked in.")
 
     def setting_rows(self):
         out = [("Selected role", self.sel.role, None), None]
