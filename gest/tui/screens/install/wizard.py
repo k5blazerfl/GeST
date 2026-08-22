@@ -29,7 +29,7 @@ from gest.core.system import hostname as hostname_core
 from gest.core.system import locale as locale_core
 from gest.core.system import timezone as timezone_core
 from gest.core.users.commands import valid_name as valid_user_name
-from gest.tui.runtime import App, Modal, NavPile, Screen, boxed
+from gest.tui.runtime import App, Modal, NavPile, Screen, boxed, focusable_actions
 
 # The rail: ordered (key, title). "review" is the terminus (the overview screen).
 _RAIL: tuple[tuple[str, str], ...] = (
@@ -164,10 +164,16 @@ class WizardStep(Screen):
             [(20, _rail_widget(self.step_key)),
              boxed(self._list, title=self.step_title)],
             dividechars=1, focus_column=1)
+        # Continue is a right-aligned action button at the bottom (GeST's
+        # ActionRow convention), not an in-list row — Tab reaches it, Enter fires.
+        self._continue_row = focusable_actions([("Continue", self.advance)])
+        body = NavPile([("weight", 1, cols), ("pack", self._continue_row)])
         super().__init__(
-            app, NavPile([cols]), title=f"Install Gentoo — {self.step_title}",
-            footer_keys=[("Enter", "Select / Edit"), ("Esc", "Back")],
+            app, body, title=f"Install Gentoo — {self.step_title}",
+            footer_keys=[("Enter", "Select / Edit"), ("Tab", "Continue"),
+                         ("Esc", "Back")],
             help_text=self.help())
+        self.configure_pane_cycle(body, [0], action_row=self._continue_row)
         self._render()
 
     # -- subclass hooks --------------------------------------------------------
@@ -193,10 +199,6 @@ class WizardStep(Screen):
             text = label if value is None else f"{label:<24}: {value}"
             items.append(_row(text))
             self._actions.append(action)
-        items.append(urwid.Divider())
-        self._actions.append(None)
-        items.append(_row("Continue ▶"))
-        self._actions.append("__continue__")
         self._walker[:] = items
         self._focus_first()
 
@@ -209,6 +211,10 @@ class WizardStep(Screen):
             self._walker.set_focus(sel[0])
 
     def handle_key(self, key):
+        # Only drive the settings list here; the Continue button (action row) is
+        # reached by Tab and fired by the base nav (Enter/Space).
+        if self._on_action_row():
+            return key
         if key in ("up", "down"):
             sel = self._selectable_positions()
             if not sel:
@@ -221,9 +227,7 @@ class WizardStep(Screen):
         if key == "enter":
             pos = self._walker.get_focus()[1]
             action = self._actions[pos] if 0 <= pos < len(self._actions) else None
-            if action == "__continue__":
-                self.advance()
-            elif callable(action):
+            if callable(action):
                 action()
             return None
         return key
