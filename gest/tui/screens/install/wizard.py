@@ -721,7 +721,11 @@ class AccountStep(WizardStep):
                 "password.")
 
     def setting_rows(self):
-        user = self.sel.user_name if self.sel.create_user else "(none)"
+        if self.sel.create_user:
+            user = self.sel.user_name + (" · password set" if self.sel.user_password
+                                         else " · no password")
+        else:
+            user = "(none)"
         rootpw = "(set)" if self.sel.root_password else "(not set)"
         out = [
             ("Hostname", self.sel.hostname, self._edit_hostname),
@@ -739,6 +743,8 @@ class AccountStep(WizardStep):
         name = urwid.Edit("Name              : ", self.sel.user_name)
         comment = urwid.Edit("Full name/comment : ", self.sel.user_comment)
         wheel = urwid.CheckBox("Admin (wheel) user", state=self.sel.user_wheel)
+        pw = urwid.Edit("Password          : ", self.sel.user_password, mask="*")
+        pw2 = urwid.Edit("Confirm           : ", self.sel.user_password, mask="*")
 
         def save():
             if create.state:
@@ -746,19 +752,24 @@ class AccountStep(WizardStep):
                 if not valid_user_name(uname):
                     self.app.notify("Invalid user name.", error=True)
                     return
+                if pw.edit_text != pw2.edit_text:
+                    self.app.notify("Passwords do not match.", error=True)
+                    return
                 self.sel.create_user = True
                 self.sel.user_name = uname
                 self.sel.user_comment = comment.edit_text.strip()
                 self.sel.user_wheel = wheel.state
+                self.sel.user_password = pw.edit_text
             else:
                 self.sel.create_user = False
             self.app.pop()
             self._render()
         modal = Modal(self.app, "User account",
-                      [urwid.Text(("hint", "An admin user (wheel) for day-to-day use.")),
-                       urwid.Divider(), create, name, comment, wheel],
+                      [urwid.Text(("hint", "An admin user (wheel) for day-to-day use. "
+                                           "A password lets them log in and sudo.")),
+                       urwid.Divider(), create, name, comment, wheel, pw, pw2],
                       [("Save", save), ("Cancel", self.app.pop)])
-        self.app.push_modal(modal, width=("relative", 70), height=("relative", 60))
+        self.app.push_modal(modal, width=("relative", 70), height=("relative", 64))
 
     def _edit_rootpw(self):
         pw = urwid.Edit("Root password: ", mask="*")
@@ -794,9 +805,12 @@ class AccountStep(WizardStep):
         if sets_root_password(self.sel.admin_model):
             if not self.sel.root_password:
                 return "Set a root password (or choose the Rootless admin model)."
-        elif not (self.sel.create_user and valid_user_name(self.sel.user_name)
-                  and self.sel.user_wheel):
-            return "Rootless needs an admin (wheel) user — create one."
+        else:
+            if not (self.sel.create_user and valid_user_name(self.sel.user_name)
+                    and self.sel.user_wheel):
+                return "Rootless needs an admin (wheel) user — create one."
+            if not self.sel.user_password:
+                return "Rootless: give the admin user a password (needed to log in / sudo)."
         return None
 
 

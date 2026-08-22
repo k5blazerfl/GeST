@@ -91,6 +91,7 @@ def test_account_rootless_needs_admin_user():
     sel.create_user = True
     sel.user_name = "captain"
     sel.user_wheel = True
+    sel.user_password = "hunter2"                     # rootless also needs a user password
     assert step.validate() is None
 
 
@@ -290,3 +291,15 @@ def test_admin_model_lives_on_base_system_not_account():
     assert "Admin model" not in acct_out and "Escalator" not in acct_out
     # validation still lives on Account and still honors the model
     assert acct.validate() is not None                    # rootless w/o wheel user → blocks
+
+
+def test_rootless_requires_a_user_password():
+    sel = assemble.propose("desktop")                 # rootless
+    sel.create_user = True
+    sel.user_name = "captain"
+    sel.user_wheel = True
+    sel.user_password = ""
+    _app, step, _ = _step(wz.AccountStep, sel)
+    assert step.validate() is not None                # admin user has no password → blocks
+    sel.user_password = "hunter2"
+    assert step.validate() is None

@@ -87,6 +87,7 @@ class InstallSelections:
     user_comment: str = ""
     user_shell: str = "/bin/bash"
     user_wheel: bool = True
+    user_password: str = ""           # in-memory only; never in the plan (like root_password)
     # target network (the INSTALLED system's netifrc/DNS — not the live env).
     # net_interface blank leaves it default/unconfigured (the step no-ops).
     net_interface: str = ""
@@ -257,6 +258,7 @@ def _build_user(sel: InstallSelections) -> UserSpec | None:
         comment=sel.user_comment,
         shell=sel.user_shell,
         wheel=sel.user_wheel,
+        set_password=bool(sel.user_password),
     )
 
 

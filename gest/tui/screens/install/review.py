@@ -72,6 +72,8 @@ class ReviewScreen(Screen):
                 out.append("a root password")
         elif not (s.create_user and valid_user_name(s.user_name) and s.user_wheel):
             out.append("an admin (wheel) user")
+        elif not s.user_password:
+            out.append("a password for the admin user")
         if not valid_hostname(s.hostname):
             out.append("a valid hostname")
         return out
@@ -86,7 +88,13 @@ class ReviewScreen(Screen):
                  f"root ({s.root_fs})"
         build = "binary packages" if s.binary_pref else "compile from source"
         feats = ", ".join(sorted(s.capabilities)) or "(none)"
-        user = s.user_name if s.create_user else "(none)"
+        if s.create_user:
+            user = s.user_name + (" (password set)" if s.user_password else " (no password)")
+        else:
+            user = "(none)"
+        # rootless admin: the wheel user needs a password to log in / sudo
+        user_state = ("blocker" if (not sets_root_password(s.admin_model)
+                                    and s.create_user and not s.user_password) else "ok")
         rootpw = "(set)" if s.root_password else "(not set)"
         online = "connected" if self._online else "NOT connected"
         return [
@@ -121,7 +129,7 @@ class ReviewScreen(Screen):
             ("Account", [
                 ("Hostname", s.hostname,
                  "ok" if valid_hostname(s.hostname) else "blocker", "account"),
-                ("User", user, "ok", "account"),
+                ("User", user, user_state, "account"),
                 ("Root password", rootpw,
                  "blocker" if (sets_root_password(s.admin_model)
                                and not s.root_password) else "ok", "account"),

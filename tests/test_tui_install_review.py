@@ -28,6 +28,7 @@ def _ready_desktop():
     sel.create_user = True
     sel.user_name = "captain"
     sel.user_wheel = True
+    sel.user_password = "hunter2"                # rootless needs the admin user to have one
     return sel
 
 

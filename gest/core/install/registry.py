@@ -862,6 +862,38 @@ class CreateUser(ArgvStep):
             return False
 
 
+class SetUserPassword(ArgvStep):
+    """Set the created user's password via ``chpasswd`` inside the target.
+
+    Mirrors :class:`SetRootPassword` — the password is NOT in the plan; it rides a
+    run-time :attr:`secret` callable, fed to ``chpasswd`` on stdin so it never
+    lands in argv or a log. Runs after ``CreateUser`` (the user must exist).
+    """
+
+    label = "Set the user password"
+    phase = Phase.USERS_NETWORK
+    chroot = True
+
+    #: Callable[[], str] returning the password; set by the caller before run.
+    secret = None
+
+    def __init__(self) -> None:
+        self.stdin = ""
+
+    def build(self, ctx: InstallContext) -> list[Step]:
+        user = ctx.plan.user
+        if user is None or not user.set_password:
+            return []
+        if self.secret is None:
+            raise ValueError("no user-password secret supplied to SetUserPassword")
+        argv, self.stdin = chpasswd_input(user.name, self.secret())
+        return [Step(f"set {user.name}'s password", argv, stdin=self.stdin)]
+
+    async def is_satisfied(self, ctx: InstallContext) -> bool:
+        user = ctx.plan.user
+        return not (user is not None and user.set_password)
+
+
 class ConfigureNetwork(FuncStep):
     """Write netifrc ``/etc/conf.d/net``, ``/etc/resolv.conf`` and ``/etc/hosts``."""
 
@@ -1040,6 +1072,14 @@ def _root_password_step(root_secret: Secret | None) -> SetRootPassword:
     return step
 
 
+def _user_password_step(user_secret: Secret | None) -> SetUserPassword:
+    """A ``SetUserPassword`` with its run-time secret callable wired in (if given)."""
+    step = SetUserPassword()
+    if user_secret is not None:
+        step.secret = user_secret
+    return step
+
+
 def _admin_model_steps(plan: InstallPlan) -> list[InstallStep]:
     """Escalation + root-lock steps for the admin model (empty for *traditional*).
 
@@ -1103,7 +1143,8 @@ class ConfigureClock(ArgvStep):
         return ctx.state.done(self.key)
 
 
-def build_registry(plan: InstallPlan, *, root_secret: Secret | None = None) -> list[InstallStep]:
+def build_registry(plan: InstallPlan, *, root_secret: Secret | None = None,
+                   user_secret: Secret | None = None) -> list[InstallStep]:
     """The full ordered install steps for ``plan``, in Handbook order (the contract).
 
     Row 2 (``MakeFilesystems``) is folded into ``Partition`` and row 20 (teardown)
@@ -1138,6 +1179,7 @@ def build_registry(plan: InstallPlan, *, root_secret: Secret | None = None) -> l
         InstallBootStub(),          # arm64/Asahi only; no-op on x86
         _root_password_step(root_secret),
         CreateUser(),
+        _user_password_step(user_secret),
         ConfigureNetwork(),
         EnableDesktopSession(),     # boot into HeDE (no-op for base Gentoo)
         ConfigureClock(),           # RTC convention + chrony/local NTP policy
