@@ -119,8 +119,20 @@ def test_start_seeds_desktop_proposal():
 
 def test_continue_is_a_bottom_action_button_that_advances():
     app, step, _ = _step(wz.LocalizationStep)
-    # the Continue button lives in a right-aligned ActionRow, not the settings list
-    assert step._continue_row.buttons, "no Continue action button"
-    step._continue_row.focus_position = step._continue_row.button_position(0)
-    assert step._continue_row.activate_focused() is True    # fires advance()
+    # Back + Continue live in a right-aligned ActionRow, not the settings list
+    assert len(step._nav_row.buttons) == 2, "expected Back + Continue buttons"
+    step._nav_row.focus_position = step._nav_row.button_position(1)   # Continue
+    assert step._nav_row.activate_focused() is True                   # fires advance()
     assert isinstance(app._stack[-1], wz.OnlineStep)
+
+
+def test_back_button_pops_to_previous_gate():
+    app = App()
+    sel = assemble.propose("desktop")
+    first = wz.LocalizationStep(app, sel)
+    app._stack.append(first)
+    second = wz.OnlineStep(app, sel)
+    app._stack.append(second)
+    second._nav_row.focus_position = second._nav_row.button_position(0)  # Back
+    assert second._nav_row.activate_focused() is True
+    assert app._stack[-1] is first                                    # stepped back

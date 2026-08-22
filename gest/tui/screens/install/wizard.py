@@ -84,9 +84,12 @@ def _rail_widget(current: str) -> urwid.Widget:
 def _choice_modal(app: App, title: str, options: list[tuple[str, str]],
                   current: str, apply, done) -> None:
     """A small single-choice picker: ``options`` are (key, label) rows; Enter (or
-    Select) applies the focused key. Used for role/license/admin/build choices."""
-    walker = urwid.SimpleFocusListWalker([_row(label) for _key, label in options])
+    Select) applies the focused key. The active choice carries a filled ``◉``
+    marker (the rest ``○``) so the selection is visible even where the focus
+    highlight isn't — e.g. the plain framebuffer console under ``nomodeset``."""
     keys = [k for k, _ in options]
+    walker = urwid.SimpleFocusListWalker(
+        [_row(("◉ " if k == current else "○ ") + lbl) for k, lbl in options])
     if current in keys:
         walker.set_focus(keys.index(current))
 
@@ -111,7 +114,10 @@ def _pick_modal(app: App, title: str, choices: list[str], current: str,
     def fill(items):
         nonlocal visible
         visible = items
-        walker[:] = [_row(c) for c in items] or [urwid.Text(" (no matches)")]
+        # A ▸ marks the current value; others get a matching indent so the column
+        # stays aligned (visible without relying on the focus highlight).
+        walker[:] = [_row(("▸ " if c == current else "  ") + c) for c in items] \
+            or [urwid.Text(" (no matches)")]
         if items and current in items:
             walker.set_focus(items.index(current))
         elif items:
@@ -164,17 +170,22 @@ class WizardStep(Screen):
             [(20, _rail_widget(self.step_key)),
              boxed(self._list, title=self.step_title)],
             dividechars=1, focus_column=1)
-        # Continue is a right-aligned action button at the bottom (GeST's
-        # ActionRow convention), not an in-list row — Tab reaches it, Enter fires.
-        self._continue_row = focusable_actions([("Continue", self.advance)])
-        body = NavPile([("weight", 1, cols), ("pack", self._continue_row)])
+        # Back + Continue are right-aligned action buttons at the bottom (GeST's
+        # ActionRow convention), not in-list rows — Tab reaches them, Enter fires.
+        # Back steps to the previous gate (or the menu at the first gate); Esc does
+        # the same for anyone who reaches for it.
+        self._nav_row = focusable_actions([("Back", self._back), ("Continue", self.advance)])
+        body = NavPile([("weight", 1, cols), ("pack", self._nav_row)])
         super().__init__(
             app, body, title=f"Install Gentoo — {self.step_title}",
-            footer_keys=[("Enter", "Select / Edit"), ("Tab", "Continue"),
+            footer_keys=[("Enter", "Select / Edit"), ("Tab", "Back / Continue"),
                          ("Esc", "Back")],
             help_text=self.help())
-        self.configure_pane_cycle(body, [0], action_row=self._continue_row)
+        self.configure_pane_cycle(body, [0], action_row=self._nav_row)
         self._render()
+
+    def _back(self) -> None:
+        self.app.pop()
 
     # -- subclass hooks --------------------------------------------------------
     def setting_rows(self) -> list:
@@ -362,21 +373,31 @@ class DiskStep(WizardStep):
 
     def setting_rows(self):
         disks = [d for d in disk_reader.list_block_devices() if d.type == "disk"]
-        summary = self._layout_summary()
-        return [
+        rows = [
             ("Target disk", self.sel.disk or "(none — required)", lambda: self._pick_disk(disks)),
             None,
-            ("Proposed layout", summary, None),
+            ("Proposed layout", self._layout_summary(), None),
             ("ESP size", self.sel.esp_size, self._edit_esp),
             ("Swap size", self.sel.swap_size or "(none)", self._edit_swap),
             ("Root filesystem", self.sel.root_fs, self._edit_root_fs),
+            ("Separate /home", "yes" if self.sel.separate_home else "no",
+             self._edit_separate_home),
         ]
+        if self.sel.separate_home:
+            rows.append(("Root size", self.sel.root_size, self._edit_root_size))
+            rows.append(("/home filesystem", self.sel.home_fs, self._edit_home_fs))
+        # For Advanced (RAID / custom layouts), see the deferred plan
+        # (docs/design/gesi-disk-phase.md — its own session).
+        return rows
 
     def _layout_summary(self) -> str:
         if not self.sel.disk:
             return "(pick a disk)"
         esp = "" if self.sel.firmware == "bios" else f"ESP {self.sel.esp_size} + "
         swap = f"swap {self.sel.swap_size} + " if self.sel.swap_size else ""
+        if self.sel.separate_home:
+            return (f"{esp}{swap}root ({self.sel.root_fs}, {self.sel.root_size}) "
+                    f"+ /home ({self.sel.home_fs}, rest)")
         return f"{esp}{swap}root ({self.sel.root_fs}, rest)"
 
     def _pick_disk(self, disks):
@@ -404,6 +425,23 @@ class DiskStep(WizardStep):
         _choice_modal(self.app, "Root filesystem", opts, self.sel.root_fs,
                       self._set_attr("root_fs"), self._render)
 
+    def _edit_separate_home(self):
+        _choice_modal(
+            self.app, "Separate /home partition",
+            [("no", "No — one root partition (root fills the disk)"),
+             ("yes", "Yes — split /home onto its own partition")],
+            "yes" if self.sel.separate_home else "no",
+            lambda k: setattr(self.sel, "separate_home", k == "yes"), self._render)
+
+    def _edit_root_size(self):
+        self._edit_text("Root size (e.g. 40G)", "root_size")
+
+    def _edit_home_fs(self):
+        from gest.core.disk.commands import ROOT_FS_KINDS
+        opts = [(fs, fs) for fs in sorted(ROOT_FS_KINDS)]
+        _choice_modal(self.app, "/home filesystem", opts, self.sel.home_fs,
+                      self._set_attr("home_fs"), self._render)
+
     def _edit_text(self, title, attr):
         edit = urwid.Edit(f"{title}: ", getattr(self.sel, attr))
 
@@ -420,7 +458,12 @@ class DiskStep(WizardStep):
         return apply
 
     def validate(self):
-        return None if self.sel.disk else "Select a target disk."
+        if not self.sel.disk:
+            return "Select a target disk."
+        if self.sel.separate_home and (not self.sel.root_size
+                                       or self.sel.root_size == "rest"):
+            return "Set a fixed root size for the separate /home layout."
+        return None
 
 
 class BaseSystemStep(WizardStep):

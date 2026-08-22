@@ -142,3 +142,11 @@ def test_make_conf_overrides_frozen_sorted():
 def test_license_policies_cover_three_rungs():
     assert set(LICENSE_POLICIES) == {"libre", "redistributable", "full"}
     assert assemble.LICENSE_POLICIES["full"].endswith("@EULA")
+
+
+def test_separate_home_adds_a_home_mount():
+    sel = _base_sel(separate_home=True, root_size="30G", home_fs="ext4")
+    plan = assemble_plan(sel, _stage3())
+    paths = [m.path for m in plan.mount.mounts]
+    assert "/" in paths and "/home" in paths
+    assert any(f.label == "home" for f in plan.disk.filesystems)
