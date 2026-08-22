@@ -184,12 +184,14 @@ def test_install_kernel_sources_adds_genkernel_for_the_genkernel_method():
     # make method (default test plan): gentoo-sources only, no genkernel
     base = InstallKernelSources().build(_ctx(FakeExecutor()))
     assert not any("sys-kernel/genkernel" in s.argv for s in base)
-    # genkernel method: also emerges genkernel with USE=-firmware (skips linux-firmware)
+    # genkernel method: also emerges genkernel — normally, WITHOUT the old
+    # USE=-firmware hack (linux-firmware is now license-permitted via ACCEPT_LICENSE).
     steps = InstallKernelSources().build(_ctx(FakeExecutor(), plan=_genkernel_plan()))
     by_label = {s.label: s.argv for s in steps}
     assert "sys-kernel/gentoo-sources" in by_label["emerge gentoo-sources"]
     gk = by_label["emerge genkernel"]
-    assert gk[:2] == ["env", "USE=-firmware"] and "sys-kernel/genkernel" in gk
+    assert "sys-kernel/genkernel" in gk
+    assert "env" not in gk and not any("USE=" in a for a in gk)   # no -firmware hack
     assert steps[-1].argv == ["eselect", "kernel", "set", "1"]   # select /usr/src/linux last
 
 
@@ -556,3 +558,72 @@ def test_download_argv_prefers_wget_then_curl():
         "curl", "-L", "--fail", "-o", "/d/f", "https://m/f"]
     assert stage3_commands.download_argv("u", "d", curl="/usr/bin/curl", wget="")[0] \
         == "/usr/bin/curl"
+
+
+# --- wizard P2: admin model steps + make.conf renders ------------------------
+
+def _admin_plan(**kw):
+    import dataclasses
+    return dataclasses.replace(_plan(user=UserSpec(name="captain")), **kw)
+
+
+def test_traditional_admin_adds_no_escalation_steps():
+    labels = [s.label for s in build_registry(_plan())]
+    assert "Emerge sudo" not in labels and "Lock the root account" not in labels
+
+
+def test_sudo_augmented_adds_wheel_rule_but_no_lock():
+    reg = build_registry(_admin_plan(admin_model="sudo-augmented", escalator="sudo"))
+    labels = [s.label for s in reg]
+    assert "Emerge sudo" in labels and "Configure sudo (wheel)" in labels
+    assert "Lock the root account" not in labels
+
+
+def test_rootless_sudo_locks_root_last_and_phases_hold():
+    reg = build_registry(_admin_plan(admin_model="rootless", escalator="sudo"))
+    labels = [s.label for s in reg]
+    assert "Configure sudo (wheel)" in labels
+    assert labels[-1] == "Lock the root account"        # after escalator + user
+    idx = [list(Phase).index(s.phase) for s in reg]
+    assert idx == sorted(idx)                            # non-decreasing (FINISH)
+
+
+def test_rootless_doas_uses_doas():
+    reg = build_registry(_admin_plan(admin_model="rootless", escalator="doas"))
+    labels = [s.label for s in reg]
+    assert "Emerge doas" in labels and "Configure doas (wheel)" in labels
+    assert "Emerge sudo" not in labels
+    assert labels[-1] == "Lock the root account"
+
+
+async def test_write_makeconf_renders_license_use_and_overrides(tmp_path, monkeypatch):
+    import dataclasses
+
+    from gest.core.hwflags import detect as hwdetect
+    from gest.core.install import capabilities
+    from gest.core.install.registry import WriteMakeConf
+    monkeypatch.setattr(hwdetect, "detect_cpu_flags", lambda *a, **k: [])
+    use = capabilities.resolve_global_use({"bluetooth"})
+    plan = dataclasses.replace(
+        _plan(), license="redistributable", global_use=use, binary_pref=True,
+        make_conf_overrides=(("ACCEPT_KEYWORDS", "~amd64"),))
+    ctx = _ctx(FakeExecutor(), root=str(tmp_path), plan=plan)
+    await WriteMakeConf().run(ctx)
+    text = (tmp_path / "etc/portage/make.conf").read_text()
+    assert "ACCEPT_LICENSE" in text and "@BINARY-REDISTRIBUTABLE" in text
+    assert "bluetooth" in text and "USE=" in text
+    assert "~amd64" in text                              # raw override, overlaid last
+    assert "-march=native" not in text                  # binary_pref → no CPU tuning
+
+
+async def test_write_makeconf_tunes_cpu_on_source_builds(tmp_path, monkeypatch):
+    import dataclasses
+
+    from gest.core.hwflags import detect as hwdetect
+    from gest.core.install.registry import WriteMakeConf
+    monkeypatch.setattr(hwdetect, "detect_cpu_flags", lambda *a, **k: [])
+    plan = dataclasses.replace(_plan(), binary_pref=False)
+    ctx = _ctx(FakeExecutor(), root=str(tmp_path), plan=plan)
+    await WriteMakeConf().run(ctx)
+    text = (tmp_path / "etc/portage/make.conf").read_text()
+    assert "-march=native" in text and "target-cpu=native" in text
