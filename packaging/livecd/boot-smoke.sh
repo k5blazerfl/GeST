@@ -49,12 +49,15 @@ trap cleanup EXIT
 
 qemu-img create -f qcow2 "${disk}" 20G >/dev/null
 
-args=(-m 4G -smp 2 -accel kvm:tcg -no-reboot -display none
+# accel fallback is a colon list on -machine (kvm, else tcg); `-accel kvm:tcg`
+# is invalid syntax and makes QEMU exit immediately on hosts that parse it strictly.
+args=(-m 4G -smp 2 -machine accel=kvm:tcg -no-reboot -display none
       -serial "file:${serial}" -cdrom "${iso}"
       -drive "file=${disk},format=qcow2,if=virtio" -boot d -net nic -net user)
 if [ "${mode}" = "uefi" ]; then
     ovmf=""
-    for c in /usr/share/edk2-ovmf/OVMF_CODE.fd /usr/share/OVMF/OVMF_CODE.fd; do
+    for c in /usr/share/edk2-ovmf/OVMF_CODE.fd /usr/share/OVMF/OVMF_CODE.fd \
+             /usr/share/edk2/OvmfX64/OVMF_CODE.fd /usr/share/edk2/ovmf/OVMF_CODE.fd; do
         [ -f "$c" ] && ovmf="$c" && break
     done
     [ -n "${ovmf}" ] || { echo "no OVMF firmware (emerge sys-firmware/edk2-ovmf)" >&2; exit 2; }

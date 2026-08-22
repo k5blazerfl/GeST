@@ -11,12 +11,22 @@ gui-libs/greetd ~amd64
 # toolchain (notably dev-lang/perl 5.44) ahead of the stable stage3 seed's perl
 # 5.42, causing a perl:0 slot conflict against the seed's installed dev-perl
 # modules. Keywording only these keeps the base/toolchain at the seed's stable
-# versions. (Most of the stack — wlroots, foot, Qt6, PySide6 — is already stable.)
+# versions. (Qt6/PySide6 are stable; the Wayland-session bits are keyworded below.)
 dev-libs/wayland ~amd64
 dev-util/glslang ~amd64
 dev-util/spirv-tools ~amd64
 media-libs/vulkan-loader ~amd64
 gui-wm/labwc ~amd64
+
+# HeDE 0.7.0's Wayland-session runtime deps that have since bumped to ~amd64
+# (the "already stable" note above had drifted). Without these the stage cannot
+# satisfy gui-apps/hede-0.7.0, so the resolver silently backtracks to a stale
+# hede binpkg from pkgcache and the ISO ships an ancient desktop. ALWAYS grep the
+# build log for the installed hede version after a bump.
+gui-libs/wlroots ~amd64            # compositor lib (pulled by labwc); 0.20.x is ~amd64
+gui-apps/foot ~amd64               # the terminal helm-panel spawns; 1.27.x is ~amd64
+gui-apps/swaylock ~amd64           # session lock (RDEPEND new in 0.7.0)
+kde-frameworks/layer-shell-qt ~amd64   # Qt layer-shell the shell binds (|| dep)
 
 # Version-locked companions of the above (must match their keyworded siblings):
 # wayland-scanner↔wayland, vulkan-headers↔vulkan-loader, spirv-headers↔spirv-tools.
