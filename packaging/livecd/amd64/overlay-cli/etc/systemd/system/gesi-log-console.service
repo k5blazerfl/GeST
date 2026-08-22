@@ -1,0 +1,16 @@
+[Unit]
+# Labels tty12 as the installer's live log console so it isn't a mystery blank
+# screen before the first warning scrolls in. journald (50-installer-tty12.conf)
+# forwards warnings-and-worse here; this just prints a one-time header. autovt@
+# tty12 is masked (fsscript-cli.sh) so no getty login prompt fights the log.
+Description=GeSI installer log-console header (tty12)
+After=systemd-journald.service
+Before=getty@tty1.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'printf "\\n  === GeSI installer log console (tty12) ===\\n  Kernel/service warnings appear below. Alt+F1 returns to the installer.\\n\\n" > /dev/tty12 2>/dev/null || true'
+
+[Install]
+WantedBy=multi-user.target
