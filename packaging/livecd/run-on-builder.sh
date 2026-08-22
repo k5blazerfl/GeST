@@ -4,8 +4,13 @@
 #
 #   packaging/livecd/run-on-builder.sh [--builder user@host] [--out DIR]
 #                                      [--workdir DIR] [--snapshot ID]
-#                                      [--storedir DIR] [--sync-only]
-#                                      [--boot [--uefi]] [--smoke [--uefi]]
+#                                      [--storedir DIR] [--image desktop|cli]
+#                                      [--sync-only] [--boot [--uefi]]
+#                                      [--smoke [--uefi]]
+#
+# --image picks the ISO flavor (passed through to spin-up.sh): `cli` = the
+# barebones GeSI console installer (small, fast — the usual choice for iterating);
+# `desktop` (default) = the full HeDE live image.
 #
 # Catalyst is heavy (CPU + IO); this drives it on a dedicated Gentoo build host
 # instead of your laptop. It does three things over SSH:
@@ -38,6 +43,7 @@ arch="amd64"                 # spin-up.sh is amd64-only; arm64 goes to the Asahi
 builder=""
 workdir="gest-build"         # remote checkout dir (relative → ~/gest-build)
 out="${HOME}/gest-isos"      # local landing dir for the pulled ISO
+image="desktop"              # ISO flavor passed to spin-up.sh: desktop | cli
 snapshot=""
 storedir=""
 sync_only=0
@@ -52,6 +58,7 @@ while [ $# -gt 0 ]; do
         --out)      out="$2"; shift 2 ;;
         --snapshot) snapshot="$2"; shift 2 ;;
         --storedir) storedir="$2"; shift 2 ;;
+        --image)    image="$2"; shift 2 ;;
         --sync-only) sync_only=1; shift ;;
         --boot)     boot=1; shift ;;
         --smoke)    smoke=1; shift ;;
@@ -63,6 +70,12 @@ done
 
 say() { printf '\n\033[1;35m== %s\033[0m\n' "$*"; }
 die() { echo "run-on-builder: $*" >&2; exit 1; }
+
+case "${image}" in
+    desktop) iso_stem="gest-installer" ;;
+    cli)     iso_stem="gesi-cli" ;;
+    *)       die "unknown --image '${image}' (want: desktop | cli)" ;;
+esac
 
 # --- resolve the builder host -----------------------------------------------
 # --builder > $BUILDER > BUILDER= in config.env (config.env is regenerated on the
@@ -99,12 +112,12 @@ rsync -az --delete \
 
 if [ "${sync_only}" = 1 ]; then
     say "Synced (--sync-only). Build it yourself with:"
-    echo "  ssh ${builder} 'sudo ${workdir}/packaging/livecd/spin-up.sh --no-boot'"
+    echo "  ssh ${builder} 'sudo ${workdir}/packaging/livecd/spin-up.sh --no-boot --image ${image}'"
     exit 0
 fi
 
 # --- 2. build on the builder (catalyst) -------------------------------------
-spin_args=(--no-boot)
+spin_args=(--no-boot --image "${image}")
 [ -n "${snapshot}" ] && spin_args+=(--snapshot "${snapshot}")
 [ -n "${storedir}" ] && spin_args+=(--storedir "${storedir}")
 say "Building on ${builder} (catalyst — this takes a while)"
@@ -122,7 +135,7 @@ remote_iso="$(bssh "
              /etc/catalyst/catalyst.conf 2>/dev/null | tr -d '[:space:]' | head -1)
         sd=\${sd:-/var/tmp/catalyst}
     fi
-    ls -t \"\$sd/builds\"/*/gest-installer-${arch}-*.iso 2>/dev/null | head -1
+    ls -t \"\$sd/builds\"/*/${iso_stem}-${arch}-*.iso 2>/dev/null | head -1
 " | tr -d '\r')"
 [ -n "${remote_iso}" ] || die "build finished but no ISO found on the builder"
 say "Built: ${remote_iso}"

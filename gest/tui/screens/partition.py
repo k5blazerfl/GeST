@@ -141,7 +141,7 @@ class PartitionScreen(Screen):
             self.app, f"Configure layout — {disk.name}",
             [urwid.Text(("hint", "GPT/UEFI: ESP + optional swap + root (fills the rest).")),
              urwid.Text(("hint", f"Root filesystem one of: "
-                                  f"{', '.join(sorted(commands.FS_KINDS - {'swap'}))}.")),
+                                  f"{', '.join(sorted(commands.ROOT_FS_KINDS))}.")),
              urwid.Divider(), esp, swap, root_fs],
             [("Save", save), ("Cancel", self.app.pop)],
         )

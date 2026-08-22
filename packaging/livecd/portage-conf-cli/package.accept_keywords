@@ -1,0 +1,4 @@
+# The GeST ebuild is published ~amd64; accept it in the livecd build root.
+# The CLI image needs nothing else keyworded — no HeDE/wayland/labwc/vulkan stack
+# (that lives in the desktop image's portage-conf/).
+app-admin/gest ~amd64

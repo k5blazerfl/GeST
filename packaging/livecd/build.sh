@@ -2,7 +2,19 @@
 # Render the catalyst specs from config.env + the templates, then build the GeST
 # installer live image.
 #
-#   packaging/livecd/build.sh amd64
+#   packaging/livecd/build.sh [arch] [desktop|cli] [--out-dir DIR]
+#
+# --out-dir DIR (optional): after the build, copy the finished ISO + a .sha256
+# into DIR (a local staging area, e.g. GeST/iso). Off by default; the path is
+# caller-supplied so no machine-specific location is baked into the build.
+#
+# Two amd64 flavors:
+#   * desktop (default) — the full HeDE live image: boots into the Helm Desktop
+#     Environment, install GeST from there. Big; slow to rebuild.
+#   * cli — the barebones GeSI CLI installer: a small console-only ISO that boots
+#     straight into GeST's guided "Install Gentoo" TUI (YaST-style). No desktop,
+#     no display server, no Plymouth — fast to build, for iterating a real-metal
+#     install without rebuilding the whole desktop stack every change.
 #
 # Prerequisites on the build host (a Gentoo box):
 #   * dev-util/catalyst installed and configured (/etc/catalyst/catalyst.conf)
@@ -13,12 +25,52 @@
 # The rendered specs land in packaging/livecd/build/ and are what catalyst runs.
 set -euo pipefail
 
-arch="${1:-amd64}"
 here="$(cd "$(dirname "$0")" && pwd)"
-specdir="${here}/${arch}"
 outdir="${here}/build"
 
+# Positional args: [arch] [flavor]. Optional flag: --out-dir DIR.
+arch="amd64"
+flavor="desktop"
+out_dir=""
+positional=()
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --out-dir)   out_dir="${2:?--out-dir needs a directory}"; shift 2 ;;
+        --out-dir=*) out_dir="${1#*=}"; shift ;;
+        -h|--help)   echo "usage: build.sh [arch] [desktop|cli] [--out-dir DIR]"; exit 0 ;;
+        -*)          echo "unknown option: $1" >&2; exit 1 ;;
+        *)           positional+=("$1"); shift ;;
+    esac
+done
+[ "${#positional[@]}" -ge 1 ] && arch="${positional[0]}"
+[ "${#positional[@]}" -ge 2 ] && flavor="${positional[1]}"
+specdir="${here}/${arch}"
+
 [ -d "${specdir}" ] || { echo "no specs for arch '${arch}'" >&2; exit 1; }
+
+case "${flavor}" in
+    desktop)
+        stage1_in="livecd-stage1.spec.in"
+        stage2_in="livecd-stage2.spec.in"
+        packages_file="gest.packages"
+        fsscript_file="fsscript.sh"
+        overlay_dir="overlay"
+        motd_file="motd"
+        iso_stem="gest-installer-${arch}"
+        ;;
+    cli)
+        stage1_in="livecd-stage1-cli.spec.in"
+        stage2_in="livecd-stage2-cli.spec.in"
+        packages_file="gest-cli.packages"
+        fsscript_file="fsscript-cli.sh"
+        overlay_dir="overlay-cli"
+        motd_file="motd-cli"
+        iso_stem="gesi-cli-${arch}"
+        ;;
+    *)
+        echo "unknown flavor '${flavor}' (want: desktop | cli)" >&2; exit 1 ;;
+esac
+[ -f "${specdir}/${stage1_in}" ] || { echo "no ${stage1_in} for arch '${arch}'" >&2; exit 1; }
 [ -f "${here}/config.env" ] || { echo "missing ${here}/config.env" >&2; exit 1; }
 
 # shellcheck source=/dev/null
@@ -34,15 +86,37 @@ case "${SNAPSHOT}${STAGE3}" in
     *CHANGE-ME*) echo "!! fill SNAPSHOT and STAGE3 in ${here}/config.env first." >&2; exit 2 ;;
 esac
 
+# The cli flavor builds the LIVE IMAGE against the *base* systemd profile, not the
+# desktop one in config.env: a console installer needs no X/Wayland/mesa USE, and
+# the desktop profile drags mesa/opengl/libX* into the closure (bigger + slower to
+# build) for nothing. Derive it by dropping the `desktop/` segment, so it tracks
+# whatever release the desktop profile targets. This is the profile the LIVE MEDIUM
+# is built with only — the profile GeST sets on the INSTALLED target is chosen
+# separately by the installer (assemble.profile_name), so this doesn't change what
+# a user ends up installing.
+if [ "${flavor}" = cli ]; then
+    PROFILE="${PROFILE/desktop\//}"
+    echo "cli flavor: building the live image against base profile '${PROFILE}'"
+fi
+
 # Paths the templates reference (ASAHI_OVERLAY is arm64-only; harmless on amd64).
 export PROFILE SNAPSHOT STAGE3 GEST_OVERLAY TIMESTAMP
 export ASAHI_OVERLAY="${ASAHI_OVERLAY:-}"
 # The Amphitheater overlay, where gui-apps/hede (the amd64 desktop) lives. Only
-# the amd64 specs reference it; harmless (empty) on arm64.
-export HEDE_OVERLAY="${HEDE_OVERLAY:-}"
-export PORTAGE_CONFDIR="${here}/portage-conf"
-export MOTD="${specdir}/motd"
-export FSSCRIPT="${specdir}/fsscript.sh"
+# the amd64 DESKTOP specs reference it; the cli flavor has no desktop, so force it
+# empty there — that also makes assert-iso-versions.sh skip its hede check.
+if [ "${flavor}" = cli ]; then
+    export HEDE_OVERLAY=""
+else
+    export HEDE_OVERLAY="${HEDE_OVERLAY:-}"
+fi
+if [ "${flavor}" = cli ]; then
+    export PORTAGE_CONFDIR="${here}/portage-conf-cli"   # no qt/desktop USE + base-profile fixups
+else
+    export PORTAGE_CONFDIR="${here}/portage-conf"
+fi
+export MOTD="${specdir}/${motd_file}"
+export FSSCRIPT="${specdir}/${fsscript_file}"
 # Files copied verbatim into the image root (e.g. /etc/greetd/config.toml, which
 # autologins into HeDE). Optional — only wired if the arch ships an overlay/ dir.
 # For amd64 we point catalyst at a build-time STAGING copy of the overlay so the
@@ -50,10 +124,13 @@ export FSSCRIPT="${specdir}/fsscript.sh"
 # image-mutating packages — see stage_binpkg_fixups + gest/core/install/desktop.py)
 # after stage1 fills catalyst's pkgcache, without dirtying the tracked overlay/.
 staging_overlay="${outdir}/root-overlay"
-if [ "${arch}" = "amd64" ] && [ -d "${specdir}/overlay" ]; then
+if [ "${arch}" = "amd64" ] && [ "${flavor}" = desktop ] && [ -d "${specdir}/${overlay_dir}" ]; then
+    # desktop only: stage the quickpkg-fixup binpkgs into a copy of the overlay.
     export ROOT_OVERLAY="${staging_overlay}"
 else
-    export ROOT_OVERLAY="${specdir}/overlay"
+    # cli (and non-amd64): the tracked overlay is used verbatim — no image-mutating
+    # desktop packages, so no binpkg fixups to stage.
+    export ROOT_OVERLAY="${specdir}/${overlay_dir}"
 fi
 # Kernel .config genkernel builds from (CD-boot filesystems compiled in). Only
 # referenced by the amd64 stage2 spec.
@@ -116,12 +193,12 @@ stage_binpkg_fixups() {
 
 # stage1: render the template, then append the package list (tab-indented atoms,
 # comments/blank lines stripped) under the `livecd/packages:` line.
-envsubst < "${specdir}/livecd-stage1.spec.in" > "${outdir}/livecd-stage1.spec"
-grep -vE '^\s*(#|$)' "${specdir}/gest.packages" | sed 's/^/\t/' \
+envsubst < "${specdir}/${stage1_in}" > "${outdir}/livecd-stage1.spec"
+grep -vE '^\s*(#|$)' "${specdir}/${packages_file}" | sed 's/^/\t/' \
     >> "${outdir}/livecd-stage1.spec"
 
 # stage2: just the substitution.
-envsubst < "${specdir}/livecd-stage2.spec.in" > "${outdir}/livecd-stage2.spec"
+envsubst < "${specdir}/${stage2_in}" > "${outdir}/livecd-stage2.spec"
 
 echo "rendered:"
 echo "  ${outdir}/livecd-stage1.spec"
@@ -159,7 +236,7 @@ echo "== livecd-stage1 =="
 catalyst -f "${outdir}/livecd-stage1.spec" 2>&1 | tee -a "${build_log}"
 # Stage the real binpkg fixups into the root overlay now that stage1 has filled the
 # pkgcache, so stage2 lays them into the image. amd64 desktop image only.
-if [ "${arch}" = "amd64" ] && [ -d "${specdir}/overlay" ]; then
+if [ "${arch}" = "amd64" ] && [ "${flavor}" = desktop ] && [ -d "${specdir}/overlay" ]; then
     echo "== staging quickpkg-fixup binpkgs =="
     stage_binpkg_fixups
 fi
@@ -169,19 +246,48 @@ catalyst -f "${outdir}/livecd-stage2.spec" 2>&1 | tee -a "${build_log}"
 # Gate: the image must have installed app-admin/gest (and gui-apps/hede on amd64)
 # at the version the overlay offers, built from source. Fails the build on drift
 # or a silent binpkg fallback. SKIP_VERSION_ASSERT=1 bypasses (not recommended).
-if [ "${SKIP_VERSION_ASSERT:-0}" != 1 ]; then
+#
+# The cli flavor skips this: it is a local DEV-iteration image, not a release
+# artifact, and a warm rebuild legitimately re-uses the cached gest binpkg of the
+# CORRECT overlay version — which this source-only gate would reject. The gate
+# stays ON for the desktop/release ISO, where a source build matters. To land NEW
+# gest source in a cli ISO, bump the gest ebuild version (the normal release flow)
+# so the cached binpkg no longer matches and portage rebuilds it.
+if [ "${flavor}" != cli ] && [ "${SKIP_VERSION_ASSERT:-0}" != 1 ]; then
     echo "== asserting installed versions =="
     "${here}/assert-iso-versions.sh" "${build_log}"
 fi
 
 # Theme the ISO's GRUB menu (the Harbor look — pairs with the Plymouth splash).
 # catalyst writes a plain grub.cfg onto the ISO filesystem, which the build can't
-# reach otherwise, so this is a post-build inject. Best-effort: a plain menu still
-# boots. STOREDIR defaults to catalyst's default; override if catalyst.conf moved it.
-iso="${STOREDIR:-/var/tmp/catalyst}/builds/default/gest-installer-amd64-${TIMESTAMP}.iso"
-if [ -f "${iso}" ]; then
+# reach otherwise, so this is a post-build inject. Desktop flavor only: the
+# barebones CLI installer keeps a plain, fast GRUB menu (no splash to pair with).
+# Best-effort: a plain menu still boots. STOREDIR defaults to catalyst's default;
+# override if catalyst.conf moved it.
+iso="${STOREDIR:-/var/tmp/catalyst}/builds/default/${iso_stem}-${TIMESTAMP}.iso"
+if [ "${flavor}" = desktop ] && [ -f "${iso}" ]; then
     "${here}/grub-theme-inject.sh" "${iso}" \
         || echo "!! GRUB theme inject failed — the ISO still boots with a plain menu."
 fi
 
-echo "done — the ISO is under catalyst's builds/ (livecd/iso: gest-installer-amd64-${TIMESTAMP}.iso)."
+# Optional publish: drop the finished ISO + a .sha256 sibling into --out-dir (a
+# local staging area like GeST/iso). No-op unless --out-dir was given.
+if [ -n "${out_dir}" ]; then
+    if [ -f "${iso}" ]; then
+        mkdir -p "${out_dir}"
+        cp -f "${iso}" "${out_dir}/"
+        ( cd "${out_dir}" && sha256sum "$(basename "${iso}")" > "$(basename "${iso}").sha256" )
+        # Built via sudo (catalyst needs root)? Hand the published files back to the
+        # invoking user so the staging dir isn't full of root-owned ISOs.
+        if [ -n "${SUDO_USER:-}" ]; then
+            chown "${SUDO_USER}" \
+                "${out_dir}/$(basename "${iso}")" \
+                "${out_dir}/$(basename "${iso}").sha256" 2>/dev/null || true
+        fi
+        echo "published: ${out_dir}/$(basename "${iso}")  (+ .sha256)"
+    else
+        echo "!! --out-dir set but no ISO at ${iso} — nothing to publish" >&2
+    fi
+fi
+
+echo "done — the ISO is under catalyst's builds/ (livecd/iso: ${iso_stem}-${TIMESTAMP}.iso)."

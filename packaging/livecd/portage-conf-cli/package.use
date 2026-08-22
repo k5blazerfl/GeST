@@ -1,0 +1,17 @@
+# USE flags for the BAREBONES GeSI CLI installer live image (applied via
+# portage_confdir in the cli stage1 spec). Deliberately separate from the desktop
+# image's portage-conf/: this image has NO Qt/Wayland/desktop, so it must NOT
+# enable the flags that pull that stack in.
+
+# gest WITHOUT qt: the CLI image ships only the urwid TUI installer, so leave the
+# `qt` flag off — enabling it would drag in dev-python/pyside:6 (PySide6) and the
+# whole Qt6 + mesa/X closure, which is exactly the fat this flavor exists to shed.
+app-admin/gest -qt
+
+# The cli flavor builds against the *base* systemd profile (not desktop/systemd),
+# which doesn't enable systemd's `policykit` USE. sys-auth/polkit[systemd] (pulled
+# by gest → polkit) requires sys-apps/systemd[policykit], so turn it on here.
+sys-apps/systemd policykit
+
+# firewalld drives nftables with the json/python/xtables backends.
+net-firewall/nftables json python xtables

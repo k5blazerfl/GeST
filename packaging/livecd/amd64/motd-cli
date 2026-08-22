@@ -1,0 +1,17 @@
+
+  Welcome to GeSI — the guided Gentoo installer (CLI).
+
+  This is the barebones console installer image. It boots straight into GeST's
+  "Install Gentoo" TUI: a guided, step-by-step install (partition a disk, unpack
+  a stage3, build a kernel, install a bootloader) — the Gentoo Handbook, driven
+  by GeST, YaST-style, from the console.
+
+  If you exit the installer you land here, at a root shell (no password on the
+  live medium). Re-run it any time with:  gest --install
+
+  Networking: a wired link usually comes up via DHCP automatically. For Wi-Fi,
+  run `wpa_supplicant`/`iw` by hand, or use GeST → Network → Wi-Fi, before
+  installing (the install downloads a stage3 and emerges packages).
+
+  Tip: this image installs a base Gentoo system. To get a full HeDE desktop,
+  turn on the desktop option in GeST's installer.

@@ -1,0 +1,61 @@
+# catalyst livecd-stage2 for the BAREBONES GeSI CLI installer image (TEMPLATE).
+#
+# The `cli` build flavor: build.sh amd64 cli renders this to
+# build/livecd-stage2.spec (substituting ${VARS} from config.env). Stage 2 takes
+# livecd-stage1's build root, adds a kernel + bootloader, lays down the CLI root
+# overlay + runs the fsscript (autologin root on tty1 into the guided installer),
+# and packs a hybrid ISO (BIOS + UEFI) that boots straight to a console running
+# GeST's "Install Gentoo" TUI. No desktop, no display server, no Plymouth.
+
+subarch: amd64
+version_stamp: gesi-cli-${TIMESTAMP}
+target: livecd-stage2
+rel_type: default
+profile: ${PROFILE}
+snapshot_treeish: ${SNAPSHOT}
+portage_confdir: ${PORTAGE_CONFDIR}
+source_subpath: default/livecd-stage1-amd64-gesi-cli-${TIMESTAMP}
+
+# Same overlay as stage1 (catalyst 4.x `repos` key). GeST only — no HeDE overlay.
+repos: ${GEST_OVERLAY}
+
+# kernel — full sources: catalyst's livecd flow runs genkernel to build the
+# kernel AND the livecd initramfs (which knows how to find + mount the ISO's
+# squashfs). A dist-kernel (gentoo-kernel-bin) ships a stripped source tree that
+# genkernel can't compile, so it can't be used here.
+boot/kernel: gentoo
+boot/kernel/gentoo/sources: sys-kernel/gentoo-sources
+# Kernel config with the CD-boot filesystems built IN (=y): iso9660, squashfs,
+# loop, sr, cdrom — shared with the desktop image. This keeps the live medium
+# mountable while GPU drivers stay normal modules that load after root-pivot.
+boot/kernel/gentoo/config: ${KERNEL_CONFIG}
+
+# Plain, readable console boot — NO Plymouth splash (this is a CLI installer, and
+# seeing the kernel/systemd boot messages is a feature here). loglevel=4 keeps the
+# console quiet enough to read without hiding real warnings.
+livecd/bootargs: loglevel=4
+
+# image: a squashfs root packed into a hybrid, UEFI-capable ISO.
+livecd/type: generic-livecd
+livecd/fstype: squashfs
+# gensquashfs opts: 1 MiB blocks + xz level 1. Unlike the desktop ISO (which uses
+# slow xz level 9 to squeeze under GitHub's 2 GiB release-asset limit), this is a
+# local dev-iteration image that isn't uploaded — so it trades a little size for
+# much faster packing on each rebuild. We stay on xz (not zstd) because
+# squashfs-tools-ng is commonly built without zstd support (gensquashfs then only
+# offers gzip/lzma/xz), so xz is the portable choice that works on any builder;
+# level 1 is dramatically faster than level 9 and barely larger here, since the
+# bulk of the image is the (incompressible) firmware blobs.
+livecd/fsops: -b 1048576 -X level=1
+livecd/iso: gesi-cli-amd64-${TIMESTAMP}.iso
+livecd/volid: GESI_CLI
+livecd/motd: ${MOTD}
+
+# Files copied into the image root before fsscript runs: the tty1 autologin
+# drop-in, root's shell profile that launches the guided installer, and the
+# headless boot-smoke beacon.
+livecd/root_overlay: ${ROOT_OVERLAY}
+
+# Run inside the stage2 chroot after packages install: autologin root on tty1 and
+# enable the wired-network + dbus services so the guided install can fetch a stage3.
+livecd/fsscript: ${FSSCRIPT}
