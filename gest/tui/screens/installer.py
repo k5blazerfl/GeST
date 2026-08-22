@@ -26,6 +26,7 @@ from gest.core.install.assemble import InstallSelections
 from gest.core.install.context import InstallContext, StateStore
 from gest.core.install.engine import run_install
 from gest.core.install.netcheck import check_connectivity
+from gest.core.install.plan import Phase
 from gest.core.install.registry import build_registry
 from gest.core.network import netifrc, resolv
 from gest.core.stage3.model import VARIANTS
@@ -35,6 +36,8 @@ from gest.core.system import locale as locale_core
 from gest.core.system import timezone as timezone_core
 from gest.core.users.commands import valid_name as valid_user_name
 from gest.tui.runtime import App, Modal, NavPile, Screen, boxed, strip_ansi
+from gest.tui.screens.apply import _PROGRESS_RE, RawLogScreen, StreamLog
+from gest.tui.screens.install.wizard import _GESI_LOGO_MARKUP, _GESI_LOGO_W
 
 
 def _row(text) -> urwid.Widget:
@@ -586,59 +589,207 @@ class InstallOverviewScreen(Screen):
         self.app.push_modal(modal, width=("relative", 72), height=("relative", 56))
 
 
-class InstallRunScreen(Screen):
-    """Resolve the stage3, build the plan, and stream the flow engine's run."""
+# Braille spinner frames for the active-phase throb — plain terminal text, cycled
+# on a set_alarm_in tick (same mechanism as the wizard's live clock). No graphics.
+_SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+# The six install phases, Handbook-ordered, keyed by the Phase enum the registry
+# stamps on every step. The branded overview shows one line per phase.
+_PHASE_ORDER = [Phase.PREPARE_DISK, Phase.BASE_SYSTEM, Phase.CONFIGURE,
+                Phase.KERNEL_BOOT, Phase.USERS_NETWORK, Phase.FINISH]
+_PHASE_GLYPH = {"done": "✓", "failed": "✗", "pending": "·", "active": "▸"}
+_PHASE_ATTR = {"done": "ok", "failed": "error", "pending": "dim", "active": "field"}
+
+# Plain-language line for the active step (the raw emerge "(N of M)" detail
+# overrides this while a package build is streaming). Default: the label itself.
+_STEP_BLURB = {
+    "Unpack the stage3 tarball": "unpacking the stage3 tarball",
+    "Sync the Portage tree": "syncing the Portage tree",
+    "Emerge @world": "emerging the base system — this is the long one",
+    "Build the kernel": "building the kernel — this can take a while",
+    "Install GPU drivers & firmware": "installing GPU drivers & firmware",
+    "Install the HeDE desktop": "installing the HeDE desktop",
+}
+
+
+def _fail_message(exc: Exception) -> str:
+    """A legible failure headline from whatever the engine raised.
+
+    A ``StepError`` carries the failed argv step and its captured output; show the
+    step label and the last output line (which now carries e.g. the 'could not run
+    …: I/O error — re-burn the medium' hint) rather than a raw dataclass repr."""
+    step = getattr(exc, "step", None)
+    result = getattr(exc, "result", None)
+    if step is None:
+        return f"Install failed: {exc}"
+    label = getattr(step, "label", None) or str(step)
+    out = (result.output.strip() if result and result.output else "")
+    reason = out.splitlines()[-1] if out else ""
+    return f"Install failed at “{label}”" + (f": {reason}" if reason else "")
+
+
+class InstallRunScreen(StreamLog, Screen):
+    """Run the install behind a calm, branded overview: the GeST (GeSI) wordmark,
+    the six phases with a live spinner on the one in flight, and a progress bar
+    that creeps package-by-package during the long emerges. The full scrolling
+    emerge output is one Tab away (and always spilled to an on-disk log)."""
 
     def __init__(self, app: App, sel: InstallSelections) -> None:
         self._sel = sel
         self._done = False
+        # StreamLog: lazy on-disk log spill + coalesced redraws.
+        self._logfile = None
+        self._logpath: str | None = None
+        self._refresh_pending = False
+        # progress state
         self._labels: list[str] = []
-        self._total = 1
+        self._step_phases: list[Phase] = []
+        self._step_index = 0
+        self._total_steps = 1
+        self._active_phase: Phase | None = None
+        self._failed_phase: Phase | None = None
+        self._spin = 0
+        self._sub = ""                       # the active step's detail line
+
+        # One bar + one phase-line object, shared by BOTH bodies (the old screen
+        # rebuilt the bar after build_registry and left the stale one on screen).
+        # 0..100 so it can creep smoothly within a step, not just per whole step.
+        self._bar = urwid.ProgressBar("pb_normal", "pb_complete", 0, 100)
         self._phase = urwid.Text(("field", " Preparing …"))
-        self._bar = urwid.ProgressBar("pb_normal", "pb_complete", 0, 1)
+        self._steps_text = urwid.Text("", wrap="clip")   # never wrap a long detail line
         self._log_walker = urwid.SimpleFocusListWalker([])
         self._log = urwid.ListBox(self._log_walker)
-        body = urwid.Pile([
+
+        self._brand_body = self._make_brand_body()
+        self._detail_body = self._make_detail_body()
+        self._branded = True
+        super().__init__(app, self._brand_body, title="Installing Gentoo",
+                         footer_keys=[("Tab", "Output log"), ("l", "View log"),
+                                      ("Esc", "Back")])
+        self._active_phase = Phase.PREPARE_DISK
+        self._sub = "checking connectivity …"
+        self._render_phases()
+        self.app.main.set_alarm_in(0.12, self._tick)     # start the spinner
+        app.run_async(self._run())
+
+    # -- layout -------------------------------------------------------------
+
+    def _make_brand_body(self) -> urwid.Widget:
+        logo = urwid.Padding(urwid.Text(_GESI_LOGO_MARKUP, wrap="clip"),
+                             align="center", width=_GESI_LOGO_W)
+        panel = boxed(urwid.Pile([
+            ("pack", urwid.Divider(" ")),
+            ("pack", logo),
+            ("pack", urwid.Divider(" ")),
+            ("pack", urwid.Text(("dim", "Installing Gentoo…"), align="center")),
+            ("pack", urwid.Divider(" ")),
+            ("pack", self._steps_text),
+            ("pack", urwid.Divider(" ")),
+            ("pack", self._bar),
+            ("pack", urwid.Divider(" ")),
+            ("pack", urwid.Text(("dim", "Tab — full output log"), align="center")),
+        ]), title="Installing Gentoo")
+        return urwid.Filler(
+            urwid.Padding(panel, align="center", width=("relative", 66),
+                          min_width=_GESI_LOGO_W + 6),
+            valign="middle", height="pack")
+
+    def _make_detail_body(self) -> urwid.Widget:
+        return urwid.Pile([
             ("pack", urwid.AttrMap(self._phase, "field")),
             ("pack", urwid.Divider("─")),
             ("pack", self._bar),
             ("pack", urwid.Divider("─")),
             ("weight", 1, boxed(self._log, title="Output")),
         ])
-        super().__init__(app, body, title="Installing Gentoo",
-                         footer_keys=[("Esc", "Back")])
-        app.run_async(self._run())
 
-    def _log_lines(self, lines) -> None:
-        for ln in lines:
-            self._log_walker.append(urwid.Text(strip_ansi(ln)))
-        del self._log_walker[:-500]
-        with contextlib.suppress(Exception):
-            self._log_walker.set_focus(len(self._log_walker) - 1)
+    def _toggle_view(self) -> None:
+        self._branded = not self._branded
+        self.set_body(self._brand_body if self._branded else self._detail_body)
         self.app.refresh()
+
+    # -- progress rendering -------------------------------------------------
+
+    def _phase_status(self, ph: Phase) -> str:
+        if ph == self._failed_phase:
+            return "failed"
+        if self._failed_phase is not None:
+            fi = _PHASE_ORDER.index(self._failed_phase)
+            return "done" if _PHASE_ORDER.index(ph) < fi else "pending"
+        if self._done:
+            return "done"
+        if self._active_phase is None:
+            return "pending"
+        ai, pi = _PHASE_ORDER.index(self._active_phase), _PHASE_ORDER.index(ph)
+        return "done" if pi < ai else "active" if pi == ai else "pending"
+
+    def _render_phases(self) -> None:
+        spin = _SPINNER[self._spin % len(_SPINNER)]
+        markup: list = []
+        for ph in _PHASE_ORDER:
+            status = self._phase_status(ph)
+            markup.append((_PHASE_ATTR[status], f"   {_PHASE_GLYPH[status]}  {ph.value}\n"))
+            if status == "active" and self._sub:
+                markup.append(("dim", f"        {spin}  {self._sub}\n"))
+        self._steps_text.set_text(markup)
+        self._schedule_refresh()
+
+    def _tick(self, *_) -> None:
+        self._spin += 1
+        self._render_phases()
+        if not self._done and self in self.app._stack:
+            self.app.main.set_alarm_in(0.12, self._tick)
+
+    def _set_bar(self, sub_frac: float = 0.0) -> None:
+        pct = (self._step_index + sub_frac) / max(self._total_steps, 1) * 100
+        self._bar.set_completion(int(min(pct, 100)))
 
     def _on_step(self, index: int) -> None:
-        self._bar.set_completion(min(index, self._total))
-        if 0 <= index < self._total:
-            self._phase.set_text(("field", f" {self._labels[index]}"))
-        self.app.refresh()
+        self._step_index = index
+        if 0 <= index < len(self._labels):
+            label = self._labels[index]
+            self._sub = _STEP_BLURB.get(label, label[:1].lower() + label[1:])
+            self._phase.set_text(("field", f" {label}"))
+            if index < len(self._step_phases):
+                self._active_phase = self._step_phases[index]
+        self._set_bar()
+        self._render_phases()
+
+    def _on_progress(self, lines) -> None:
+        self._write_log(lines)                        # full on-disk record
+        for ln in lines:
+            self._log_walker.append(urwid.Text(strip_ansi(ln)))
+            self._consume(ln)
+        del self._log_walker[:-500]                   # cap the on-screen tail
+        with contextlib.suppress(Exception):
+            self._log_walker.set_focus(len(self._log_walker) - 1)
+        self._schedule_refresh()
+
+    def _consume(self, line: str) -> None:
+        """Creep the bar within the active step from an emerge '(N of M)' marker."""
+        m = _PROGRESS_RE.search(strip_ansi(line))
+        if not m:
+            return
+        stage, n, total = m.group(1), int(m.group(2)), int(m.group(3))
+        done = n if stage == "Installing" else max(n - 1, 0)
+        self._set_bar(done / max(total, 1))
+        # Keep the calm view short (the package atom is in the Tab output log).
+        self._sub = f"{stage.lower()} {n} of {total} packages"
 
     async def _run(self) -> None:
         # Pre-flight: the install downloads a stage3 and emerges, so the live
         # machine must be online. Fail here with a clear message rather than deep
         # in the stage3 download.
-        self._phase.set_text(("field", " Checking connectivity …"))
-        self.app.refresh()
         online, detail = await self.app.run_blocking(check_connectivity)
-        self._log_lines([detail])
+        self._on_progress([detail])
         if not online:
             self._finish(False, "No network connectivity — connect this machine "
                                 "(the 'Connect this machine' row) and try again.")
             return
 
         # Resolve the stage3 (network) and assemble the plan.
-        self._phase.set_text(("field", " Resolving stage3 …"))
-        self.app.refresh()
+        self._sub = "resolving the stage3 tarball …"
+        self._render_phases()
         try:
             stage3 = await self.app.run_blocking(
                 lambda: assemble.resolve_stage3(self._sel.variant))
@@ -661,8 +812,8 @@ class InstallRunScreen(Screen):
         steps = build_registry(plan, root_secret=lambda: secret,
                                user_secret=lambda: user_secret)
         self._labels = [s.label for s in steps]
-        self._total = len(steps)
-        self._bar = urwid.ProgressBar("pb_normal", "pb_complete", 0, max(self._total, 1))
+        self._step_phases = [s.phase for s in steps]
+        self._total_steps = len(steps)
 
         host = choose_executor()
         root = self._sel.target_root
@@ -673,17 +824,24 @@ class InstallRunScreen(Screen):
             mounts=disk_reader.read_proc_mounts())
 
         try:
-            await run_install(ctx, steps, on_progress=self._log_lines, on_step=self._on_step)
+            await run_install(ctx, steps, on_progress=self._on_progress, on_step=self._on_step)
         except Exception as exc:
-            self._finish(False, f"Install failed at: {getattr(exc, 'step', None) or exc}")
+            self._finish(False, _fail_message(exc))
             return
         self._finish(True, f"Gentoo installed onto /dev/{self._sel.disk}.")
 
     def _finish(self, ok: bool, message: str) -> None:
-        self._done = True
-        self._bar.set_completion(self._total if ok else self._bar.current)
+        self._done = True                       # also stops the spinner tick
+        self._close_log()
+        if ok:
+            self._bar.set_completion(100)
+        else:
+            self._failed_phase = self._active_phase
         self._phase.set_text(("ok" if ok else "error", " done" if ok else " failed"))
+        self._render_phases()
         self.app.notify("done" if ok else "failed", error=not ok)
+        if self._logpath and not ok:
+            message = f"{message}\n\nFull log: {self._logpath}"
 
         def back():
             self.app.pop()      # modal
@@ -693,7 +851,13 @@ class InstallRunScreen(Screen):
             self.app.pop()
             self.app.run_async(self._reboot())
 
+        def view():
+            self.app.pop()      # modal
+            self.app.push(RawLogScreen(self.app, self._logpath))
+
         buttons = ([("Reboot now", reboot)] if ok else []) + [("Back", back)]
+        if not ok and self._logpath:
+            buttons.insert(0, ("View log", view))
         modal = Modal(
             self.app, "Installation complete" if ok else "Installation failed",
             [urwid.Text(("ok" if ok else "error", message)),
@@ -708,6 +872,12 @@ class InstallRunScreen(Screen):
             await choose_executor().run(["reboot"])
 
     def handle_key(self, key):
-        if key == "esc" and self._done:
+        if key == "tab":
+            self._toggle_view()
+        elif key in ("l", "L"):
+            self.app.push(RawLogScreen(self.app, self._logpath))
+        elif key == "esc" and self._done:
             self.app.pop()
+        else:
+            return key
         return None

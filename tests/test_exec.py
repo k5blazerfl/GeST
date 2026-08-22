@@ -61,3 +61,31 @@ def test_direct_executor_streams_output_and_exit_code():
 def test_dbus_executor_stub_raises_until_wired():
     with pytest.raises(NotImplementedError):
         asyncio.run(DBusExecutor().run(["sgdisk", "--zap-all", "/dev/sda"]))
+
+
+# --- exec failure is a legible non-zero result, not a raw OSError -----------
+
+def test_missing_binary_returns_exec_failed_not_raise():
+    from gest.core.exec.runner import EXEC_FAILED
+    ex = DirectExecutor()
+    lines: list[str] = []
+    result = asyncio.run(ex.run(["gest-no-such-binary-xyz", "-h"], on_progress=lines.extend))
+    assert result.code == EXEC_FAILED                      # 127, not an exception
+    assert "could not run 'gest-no-such-binary-xyz'" in result.output
+    assert lines and "could not run" in lines[-1]          # also streamed to progress
+
+
+def test_eio_exec_failure_hints_at_the_medium(monkeypatch):
+    import errno as _errno
+
+    from gest.core.exec import runner
+
+    async def _boom(*_a, **_k):
+        raise OSError(_errno.EIO, "Input/output error", "env")
+
+    monkeypatch.setattr(runner.asyncio, "create_subprocess_exec", _boom)
+    result = asyncio.run(runner.stream(["env", "PKGDIR=/x", "quickpkg"]))
+    assert result.code == runner.EXEC_FAILED
+    assert "could not run 'env'" in result.output
+    assert "install medium may be failing" in result.output   # actionable hint
+    assert "re-burn" in result.output

@@ -15,6 +15,7 @@ from gest.core.disk import mount as disk_mount
 from gest.core.disk import provision
 from gest.core.exec.chroot import ChrootExecutor
 from gest.core.exec.executor import FakeExecutor
+from gest.core.exec.steps import StepError
 from gest.core.install.context import InstallContext, StateStore
 from gest.core.install.engine import run_install
 from gest.core.install.plan import InstallPlan, Phase, UserSpec
@@ -23,6 +24,7 @@ from gest.core.install.registry import (
     EmergeWorld,
     SetHostname,
     SetRootPassword,
+    SyncTree,
     build_registry,
 )
 from gest.core.install.write import write_under_root
@@ -117,6 +119,55 @@ def _ctx(executor, root=_ROOT, *, plan=None, target_root=_ROOT):
     return InstallContext(
         root=root, host=executor, target=ChrootExecutor(executor, target_root),
         state=StateStore(), plan=plan or _plan())
+
+
+# --- SyncTree retry + webrsync fallback -------------------------------------
+
+def _sync_step():
+    step = SyncTree()
+    step._BACKOFF = 0          # no real sleeps in tests
+    return step
+
+
+def _is_sync(argv):        # argv is chroot-wrapped: ["chroot", root, "emerge", "--sync", …]
+    return "--sync" in argv
+
+
+def _is_webrsync(argv):
+    return "emerge-webrsync" in argv
+
+
+def test_sync_retries_then_succeeds_without_webrsync():
+    calls = {"sync": 0}
+
+    def code_for(argv):
+        if _is_sync(argv):
+            calls["sync"] += 1
+            return 0 if calls["sync"] >= 2 else 1     # fail once, then take
+        return 0
+
+    ex = FakeExecutor(code_for)
+    asyncio.run(_sync_step().run(_ctx(ex)))
+    assert calls["sync"] == 2
+    assert not any(_is_webrsync(c) for c in ex.calls)  # never needed the fallback
+
+
+def test_sync_falls_back_to_webrsync_after_retries():
+    def code_for(argv):
+        return 0 if _is_webrsync(argv) else 1          # --sync always fails
+
+    ex = FakeExecutor(code_for)
+    asyncio.run(_sync_step().run(_ctx(ex)))            # must NOT raise
+    assert sum(_is_sync(c) for c in ex.calls) == SyncTree._RETRIES
+    assert any(_is_webrsync(c) for c in ex.calls)      # fell back
+
+
+def test_sync_raises_when_both_paths_fail():
+    ex = FakeExecutor(lambda _argv: 1)                 # everything fails
+    with pytest.raises(StepError):
+        asyncio.run(_sync_step().run(_ctx(ex)))
+    assert sum(_is_sync(c) for c in ex.calls) == SyncTree._RETRIES
+    assert any(_is_webrsync(c) for c in ex.calls)      # tried the fallback too
 
 
 # --- pure registry ordering / markers ---------------------------------------

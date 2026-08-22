@@ -23,6 +23,7 @@ prefix for free.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import os
 import shutil
@@ -38,8 +39,8 @@ from gest.core.disk import mount as disk_mount
 from gest.core.disk import provision
 from gest.core.disk import reader as disk_reader
 from gest.core.eselect.commands import set_argv
-from gest.core.exec.runner import OnProgress
-from gest.core.exec.steps import Step, run_steps
+from gest.core.exec.runner import OnProgress, RunResult
+from gest.core.exec.steps import Step, StepError, run_steps
 from gest.core.firewall import nft as fw_nft
 from gest.core.firewall.model import FirewallPolicy
 from gest.core.hwflags import detect as hwdetect
@@ -125,6 +126,12 @@ class MountTarget(FuncStep):
     target_aware = True
 
     async def run(self, ctx: InstallContext, on_progress: OnProgress | None = None) -> None:
+        # Quiet util-linux mount's repeating "your fstab has been modified — run
+        # systemctl daemon-reload" advisory: reload systemd's fstab view ONCE up
+        # front so the per-device target mounts below don't each print the hint.
+        # Best-effort — on a host without systemd this is a harmless no-op.
+        with contextlib.suppress(Exception):
+            await ctx.host.run(["systemctl", "daemon-reload"])
         await disk_mount.apply_mount_plan(ctx.plan.mount, ctx.host, on_progress=on_progress)
 
     async def is_satisfied(self, ctx: InstallContext) -> bool:
@@ -295,15 +302,51 @@ class PrepareChroot(FuncStep):
 
 
 class SyncTree(ArgvStep):
-    """``emerge --sync`` inside the target."""
+    """``emerge --sync`` inside the target, with retry + a webrsync fallback.
+
+    A plain ``emerge --sync`` fails hard on a *transient* mirror inconsistency —
+    most often a gemato Manifest/tree mismatch while a public rsync mirror is
+    mid-update — which would otherwise abort the whole install for something that
+    clears itself in a minute. So we retry a few times with a short backoff, and
+    if it still won't take, fall back to ``emerge-webrsync``: that pulls a signed
+    daily snapshot tarball over HTTP instead of rsync, sidestepping the mirror's
+    momentary state entirely.
+    """
 
     label = "Sync the Portage tree"
     phase = Phase.BASE_SYSTEM
     chroot = True
     key = "sync_tree"
 
+    _SYNC = ["emerge", "--sync", "--color", "n"]
+    _WEBRSYNC = ["emerge-webrsync"]
+    _RETRIES = 3        # emerge --sync attempts before the webrsync fallback
+    _BACKOFF = 5.0      # seconds between --sync attempts (0 in tests)
+
     def build(self, ctx: InstallContext) -> list[Step]:
-        return [Step("sync portage tree", ["emerge", "--sync", "--color", "n"])]
+        # The primary path (kept for the registry contract + as the argv of record).
+        return [Step("sync portage tree", self._SYNC)]
+
+    async def run(self, ctx: InstallContext, on_progress: OnProgress | None = None) -> None:
+        executor = ctx.executor_for(self.chroot)
+        last: RunResult | None = None
+        for attempt in range(1, self._RETRIES + 1):
+            if attempt > 1:
+                if on_progress is not None:
+                    on_progress([f"emerge --sync failed; retry {attempt}/{self._RETRIES}…"])
+                if self._BACKOFF:
+                    await asyncio.sleep(self._BACKOFF)   # let the mirror settle
+            last = await executor.run(self._SYNC, on_progress=on_progress)
+            if last.code == 0:
+                return
+        # rsync path exhausted — fall back to the HTTP snapshot tarball.
+        if on_progress is not None:
+            on_progress(["emerge --sync still failing; falling back to emerge-webrsync…"])
+        res = await executor.run(self._WEBRSYNC, on_progress=on_progress)
+        if res.code == 0:
+            return
+        # Both paths failed; surface the last --sync failure for context.
+        raise StepError(Step("sync portage tree", self._SYNC), last or res)
 
     async def is_satisfied(self, ctx: InstallContext) -> bool:
         return ctx.state.done(self.key)
