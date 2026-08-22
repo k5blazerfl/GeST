@@ -15,6 +15,7 @@ from gest.tui.screens.install import wizard as wz
 def _stub_env(monkeypatch):
     monkeypatch.setattr(wz, "check_connectivity", lambda: (True, "ok"))
     monkeypatch.setattr(disk_reader, "list_block_devices", lambda: [])
+    monkeypatch.setattr(wz.net_reader, "list_interfaces", lambda *a, **k: [])
 
 
 def _step(cls, sel=None):
@@ -30,7 +31,15 @@ def test_rail_is_the_mainline_order():
         "localization", "online", "role", "disk", "base", "account", "review"]
 
 
-def test_localization_advances_to_online():
+def test_welcome_skips_get_online_when_already_connected():
+    # background warm-up got us online → Welcome goes straight to System Role
+    app, step, _ = _step(wz.LocalizationStep)
+    step.advance()
+    assert isinstance(app._stack[-1], wz.RoleStep)
+
+
+def test_welcome_goes_to_get_online_when_offline(monkeypatch):
+    monkeypatch.setattr(wz, "check_connectivity", lambda: (False, "no route"))
     app, step, _ = _step(wz.LocalizationStep)
     step.advance()
     assert isinstance(app._stack[-1], wz.OnlineStep)
@@ -123,7 +132,7 @@ def test_continue_is_a_bottom_action_button_that_advances():
     assert len(step._nav_row.buttons) == 2, "expected Back + Continue buttons"
     step._nav_row.focus_position = step._nav_row.button_position(1)   # Continue
     assert step._nav_row.activate_focused() is True                   # fires advance()
-    assert isinstance(app._stack[-1], wz.OnlineStep)
+    assert isinstance(app._stack[-1], wz.RoleStep)                    # online → skips Get Online
 
 
 def test_back_button_pops_to_previous_gate():
@@ -147,9 +156,9 @@ def test_welcome_is_a_cover_page_with_gesi_ascii_logo_and_no_rail():
     assert "Language / Locale" in out
     # cover page: the step-rail (other gates' titles) is NOT shown here
     assert "Get Online" not in out and "System Role" not in out
-    # still advances into the rail proper
+    # still advances into the rail proper (online here → System Role)
     step.advance()
-    assert isinstance(app._stack[-1], wz.OnlineStep)
+    assert isinstance(app._stack[-1], wz.RoleStep)
 
 
 def test_gesi_logo_differs_from_gest_only_by_the_I_bottom_bar():
@@ -182,3 +191,35 @@ def test_welcome_from_menu_keeps_back(monkeypatch):
     labels = ["".join(str(t) for t in b.base_widget.get_text()[0])
               for b in step._nav_row.buttons]
     assert any("Back" in x for x in labels) and not any("Exit" in x for x in labels)
+
+
+def test_online_no_usable_devices_blocks_with_clear_message(monkeypatch):
+    monkeypatch.setattr(wz, "check_connectivity", lambda: (False, "no route"))
+    monkeypatch.setattr(wz.net_reader, "list_interfaces", lambda *a, **k: [])
+    _app, step, _ = _step(wz.OnlineStep)
+    out = "\n".join(r.decode() for r in step.render((90, 30), focus=True).text)
+    assert "No usable network devices" in out
+    assert "No usable network devices" in (step.validate() or "")
+
+
+def test_online_lists_devices_and_offers_wifi(monkeypatch):
+    from gest.core.network.model import Interface
+    monkeypatch.setattr(wz, "check_connectivity", lambda: (False, "no route"))
+    monkeypatch.setattr(wz.net_reader, "list_interfaces", lambda *a, **k: [
+        Interface(name="enp0s3", state="DOWN"),
+        Interface(name="wlp2s0", state="DOWN"),
+    ])
+    _app, step, _ = _step(wz.OnlineStep)
+    out = "\n".join(r.decode() for r in step.render((90, 30), focus=True).text)
+    assert "enp0s3 (wired)" in out and "wlp2s0 (Wi-Fi)" in out
+    assert "Set up Wi-Fi" in out          # a Wi-Fi device is present
+    assert step.validate() is not None    # present but not connected → still blocks
+
+
+def test_online_passes_when_connected(monkeypatch):
+    from gest.core.network.model import Interface
+    monkeypatch.setattr(wz.net_reader, "list_interfaces", lambda *a, **k: [
+        Interface(name="enp0s3", state="UP", addresses=["192.168.1.5/24"])])
+    # default stub: check_connectivity → (True, "ok")
+    _app, step, _ = _step(wz.OnlineStep)
+    assert step.validate() is None
