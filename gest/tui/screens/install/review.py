@@ -33,9 +33,10 @@ class ReviewScreen(Screen):
         self._online, _ = check_connectivity()
         self._walker = urwid.SimpleFocusListWalker([])
         self._list = urwid.ListBox(self._walker)
-        # Install is a right-aligned action button at the bottom (GeST's ActionRow
-        # convention); it fires _install, which refuses while blockers remain.
-        self._install_row = focusable_actions([("Install", self._install)])
+        # Back + Install are right-aligned action buttons at the bottom (GeST's
+        # ActionRow convention); Install refuses while blockers remain, Back steps
+        # to the previous gate.
+        self._install_row = focusable_actions([("Back", app.pop), ("Install", self._install)])
         body = NavPile([("weight", 1, boxed(self._list, title="Review — Installation Settings")),
                         ("pack", self._install_row)])
         super().__init__(

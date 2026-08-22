@@ -185,15 +185,24 @@ def partition_device(disk_name: str, number: int) -> str:
     return f"/dev/{disk_name}{sep}{number}"
 
 
-def uefi_plan(disk_name: str, esp_size: str, swap_size: str, root_fs: str) -> DiskPlan:
-    """Build a GPT/UEFI ``DiskPlan``: ESP + optional swap + root (fills the rest).
+def uefi_plan(disk_name: str, esp_size: str, swap_size: str, root_fs: str, *,
+              root_size: str = "rest", home_fs: str | None = None) -> DiskPlan:
+    """Build a GPT/UEFI ``DiskPlan``: ESP + optional swap + root + optional /home.
 
-    ``swap_size`` empty means no swap. Raises ``ValueError`` on an unsupported
-    root filesystem or a size/label the argv builders reject (checked eagerly via
-    :func:`plan_steps`).
+    ``swap_size`` empty means no swap. With ``home_fs`` set, a separate ``/home``
+    partition takes the rest and ``root_size`` must be a fixed size (root and home
+    can't both claim "rest"); without it, root fills the rest. Raises ``ValueError``
+    on an unsupported filesystem or a size/label the argv builders reject (checked
+    eagerly via :func:`plan_steps`).
     """
     if root_fs not in commands.ROOT_FS_KINDS:
         raise ValueError(f"unsupported root filesystem: {root_fs!r}")
+    if home_fs is not None:
+        if home_fs not in commands.ROOT_FS_KINDS:
+            raise ValueError(f"unsupported /home filesystem: {home_fs!r}")
+        if root_size == "rest":
+            raise ValueError("a separate /home needs a fixed root size (root can't "
+                             "also take the rest)")
     partitions: list[Partition] = []
     filesystems: list[Filesystem] = []
     number = 1
@@ -204,8 +213,14 @@ def uefi_plan(disk_name: str, esp_size: str, swap_size: str, root_fs: str) -> Di
         partitions.append(Partition(number, swap_size, "8200", "swap"))
         filesystems.append(Filesystem(partition_device(disk_name, number), "swap", "swap"))
         number += 1
-    partitions.append(Partition(number, "rest", "8300", "root"))
+    root_span = root_size if home_fs is not None else "rest"
+    partitions.append(Partition(number, root_span, "8300", "root"))
     filesystems.append(Filesystem(partition_device(disk_name, number), root_fs, "root"))
+    number += 1
+    if home_fs is not None:
+        partitions.append(Partition(number, "rest", "8302", "home"))   # 8302 = Linux /home
+        filesystems.append(Filesystem(partition_device(disk_name, number), home_fs, "home"))
+        number += 1
     plan = DiskPlan(disk=f"/dev/{disk_name}", wipe=True,
                     partitions=partitions, filesystems=filesystems)
     plan_steps(plan)          # validate sizes/labels eagerly; raises ValueError
@@ -220,18 +235,27 @@ def uefi_plan(disk_name: str, esp_size: str, swap_size: str, root_fs: str) -> Di
 BIOS_BOOT_SIZE = "2M"
 
 
-def bios_plan(disk_name: str, swap_size: str, root_fs: str) -> DiskPlan:
-    """Build a GPT/BIOS ``DiskPlan``: a BIOS-boot partition + optional swap + root.
+def bios_plan(disk_name: str, swap_size: str, root_fs: str, *,
+              root_size: str = "rest", home_fs: str | None = None) -> DiskPlan:
+    """Build a GPT/BIOS ``DiskPlan``: a BIOS-boot partition + optional swap + root
+    + optional /home.
 
     Legacy-BIOS counterpart of :func:`uefi_plan`. There is no ESP — BIOS GRUB
     embeds ``core.img`` in the ``EF02`` partition and reads ``/boot/grub`` from the
     root filesystem. The BIOS-boot partition carries no filesystem (it is written
     raw), so it never appears in the mount plan or fstab. ``swap_size`` empty means
-    no swap. Raises ``ValueError`` on an unsupported root filesystem or a bad
+    no swap; ``home_fs`` set adds a separate ``/home`` (rest) and needs a fixed
+    ``root_size``. Raises ``ValueError`` on an unsupported filesystem or a bad
     size/label (checked eagerly via :func:`plan_steps`).
     """
     if root_fs not in commands.ROOT_FS_KINDS:
         raise ValueError(f"unsupported root filesystem: {root_fs!r}")
+    if home_fs is not None:
+        if home_fs not in commands.ROOT_FS_KINDS:
+            raise ValueError(f"unsupported /home filesystem: {home_fs!r}")
+        if root_size == "rest":
+            raise ValueError("a separate /home needs a fixed root size (root can't "
+                             "also take the rest)")
     partitions: list[Partition] = []
     filesystems: list[Filesystem] = []
     number = 1
@@ -241,8 +265,14 @@ def bios_plan(disk_name: str, swap_size: str, root_fs: str) -> DiskPlan:
         partitions.append(Partition(number, swap_size, "8200", "swap"))
         filesystems.append(Filesystem(partition_device(disk_name, number), "swap", "swap"))
         number += 1
-    partitions.append(Partition(number, "rest", "8300", "root"))
+    root_span = root_size if home_fs is not None else "rest"
+    partitions.append(Partition(number, root_span, "8300", "root"))
     filesystems.append(Filesystem(partition_device(disk_name, number), root_fs, "root"))
+    number += 1
+    if home_fs is not None:
+        partitions.append(Partition(number, "rest", "8302", "home"))   # 8302 = Linux /home
+        filesystems.append(Filesystem(partition_device(disk_name, number), home_fs, "home"))
+        number += 1
     plan = DiskPlan(disk=f"/dev/{disk_name}", wipe=True,
                     partitions=partitions, filesystems=filesystems)
     plan_steps(plan)          # validate sizes/labels eagerly; raises ValueError
@@ -269,21 +299,25 @@ def propose_swap_size(ram_bytes: int) -> str:
 
 
 def propose_layout(disk_name: str, ram_bytes: int, firmware: str,
-                   root_fs: str = "ext4") -> DiskPlan:
+                   root_fs: str = "ext4", *, separate_home: bool = False,
+                   root_size: str = "40G", home_fs: str = "ext4") -> DiskPlan:
     """Guided whole-disk proposal for ``disk_name`` (pure; wraps uefi/bios_plan).
 
     Auto-sizes the ESP (1 GiB, UEFI only) and a RAM-sized swap
-    (:func:`propose_swap_size`), root fills the rest. ``firmware`` is ``"uefi"`` or
-    ``"bios"``. Raises ``ValueError`` on a bad firmware or root filesystem (the
-    underlying builders validate sizes/labels). Disk-too-small is a soft warning
-    (:func:`layout_warning`), not a hard error — the user may still proceed.
+    (:func:`propose_swap_size`); root fills the rest, or — with ``separate_home`` —
+    root takes ``root_size`` and a ``/home`` (``home_fs``) fills the rest.
+    ``firmware`` is ``"uefi"`` or ``"bios"``. Raises ``ValueError`` on a bad
+    firmware or filesystem. Disk-too-small is a soft warning
+    (:func:`layout_warning`), not a hard error.
     """
     if firmware not in ("uefi", "bios"):
         raise ValueError(f"invalid firmware: {firmware!r}")
     swap = propose_swap_size(ram_bytes)
+    hfs = home_fs if separate_home else None
+    rsz = root_size if separate_home else "rest"
     if firmware == "bios":
-        return bios_plan(disk_name, swap, root_fs)
-    return uefi_plan(disk_name, ESP_PROPOSAL_SIZE, swap, root_fs)
+        return bios_plan(disk_name, swap, root_fs, root_size=rsz, home_fs=hfs)
+    return uefi_plan(disk_name, ESP_PROPOSAL_SIZE, swap, root_fs, root_size=rsz, home_fs=hfs)
 
 
 def layout_warning(disk_bytes: int, ram_bytes: int, firmware: str) -> str | None:

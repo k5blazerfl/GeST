@@ -57,3 +57,26 @@ def test_layout_warning_fires_on_small_disk():
 
 def test_layout_warning_silent_on_roomy_disk():
     assert provision.layout_warning(500 * _GIB, 16 * _GIB, "uefi") is None
+
+
+def test_propose_layout_separate_home():
+    plan = provision.propose_layout("vda", 8 * _GIB, "uefi",
+                                    separate_home=True, root_size="40G", home_fs="ext4")
+    assert [f.kind for f in plan.filesystems] == ["vfat", "swap", "ext4", "ext4"]
+    assert "home" in [f.label for f in plan.filesystems]
+    root = next(p for p in plan.partitions if p.label == "root")
+    home = next(p for p in plan.partitions if p.label == "home")
+    assert root.size == "40G" and home.size == "rest"   # root fixed, home fills rest
+
+
+def test_home_needs_a_fixed_root_size():
+    import pytest
+    with pytest.raises(ValueError):
+        provision.uefi_plan("vda", "1G", "8G", "ext4", root_size="rest", home_fs="ext4")
+
+
+def test_bios_separate_home_has_no_esp():
+    plan = provision.propose_layout("vda", 8 * _GIB, "bios",
+                                    separate_home=True, root_size="30G")
+    assert "EF00" not in [p.type_guid for p in plan.partitions]
+    assert [f.label for f in plan.filesystems] == ["swap", "root", "home"]

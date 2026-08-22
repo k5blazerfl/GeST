@@ -64,6 +64,10 @@ class InstallSelections:
     esp_size: str = "512M"
     swap_size: str = "8G"             # "" = no swap
     root_fs: str = "ext4"
+    # Split /home onto its own partition: root takes root_size, /home takes the rest.
+    separate_home: bool = False
+    root_size: str = "40G"            # fixed root size when separate_home (else root=rest)
+    home_fs: str = "ext4"
     target_root: str = DEFAULT_TARGET_ROOT
     # stage3
     variant: Stage3Variant = DEFAULT_VARIANT
@@ -412,10 +416,14 @@ def assemble_plan(sel: InstallSelections, stage3: Stage3Selection) -> InstallPla
     profile = profile_name(arch, sel.variant.flavor)
     # BIOS installs need a GPT layout with a BIOS-boot partition (no ESP); UEFI
     # needs the ESP. The bootloader step branches on firmware to match this layout.
+    home_fs = sel.home_fs if sel.separate_home else None
+    root_size = sel.root_size if sel.separate_home else "rest"
     if sel.firmware == "bios":
-        disk = provision.bios_plan(sel.disk, sel.swap_size, sel.root_fs)
+        disk = provision.bios_plan(sel.disk, sel.swap_size, sel.root_fs,
+                                   root_size=root_size, home_fs=home_fs)
     else:
-        disk = provision.uefi_plan(sel.disk, sel.esp_size, sel.swap_size, sel.root_fs)
+        disk = provision.uefi_plan(sel.disk, sel.esp_size, sel.swap_size, sel.root_fs,
+                                   root_size=root_size, home_fs=home_fs)
     mount = disk_mount.derive_mount_plan(disk, sel.target_root)
     return InstallPlan(
         disk=disk,
