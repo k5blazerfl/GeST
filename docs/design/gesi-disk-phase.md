@@ -40,6 +40,60 @@ lvcreate / cryptsetup. So custom multi-device layouts need new core.
 ## Non-goals (v1)
 Repair, nested-archive-of-disks, cloud/iSCSI targets. RAID write only via mdadm.
 
+## Model design — SETTLED (2026-08-22): compose above `DiskPlan`, don't widen it
+
+Decision: introduce a **`StoragePlan`** layer that *composes* the existing
+single-disk `DiskPlan` (and its proven `plan_steps` engine) as the bottom
+building block, rather than widening `DiskPlan.disk: str` into a multi-disk model.
+Guided single-disk installs build a trivial `StoragePlan` (one `DiskPlan`, no
+virtual devices) → **zero regression**; the Advanced editor edits a `StoragePlan`
+value the Review gate can diff.
+
+```
+StoragePlan
+  disks:       list[DiskPlan]      # partition each physical disk — TODAY's model + plan_steps, reused
+  arrays:      list[RaidArray]     # mdadm: level, members[], name → /dev/mdN
+  crypts:      list[LuksVolume]    # cryptsetup: backing dev → /dev/mapper/<name>; passphrase = RUNTIME secret
+  volgroups:   list[VolumeGroup]   # pvcreate/vgcreate (+ logvols[]) → /dev/<vg>/<lv>
+  filesystems: list[Filesystem]    # unchanged type — device is any str (partition | md | mapper | lv)
+```
+
+`storage_steps(plan)` = a **topological** builder over the virtual-device graph:
+per-disk partitions (reuse `plan_steps`) → mdadm create/assemble → LUKS
+luksFormat/luksOpen → LVM pvcreate/vgcreate/lvcreate → mkfs → mount. Real stacks
+nest RAID→LUKS→LVM→fs, so build in that order.
+
+### What already flexes (no change needed)
+- `Filesystem.device` is a plain `str` → can point at `/dev/mdN`, `/dev/mapper/*`,
+  `/dev/vg/lv`, not just a partition node.
+- `Partition.type_guid` already names `8E00` (LVM) / `FD00` (RAID); nothing acts
+  on it yet — the vocabulary exists.
+- Mount-by-label (`_role_path`) already handles arbitrary roles; fstab keyed by UUID.
+
+### The real gaps (the work)
+1. **New step builders** (the bulk): mdadm, cryptsetup (+ `/etc/crypttab`), LVM
+   (pvcreate/vgcreate/lvcreate). None exist today.
+2. **`validate_plan`** — extend from one `plan.disk` to every disk in `disks[]`
+   (each present, unmounted, not the boot medium) + composition consistency
+   (referenced members exist, no cycles, ESP not on mdraid).
+3. **Secrets** — LUKS passphrase rides the run-time `secret` callable pattern
+   (like `SetRootPassword`), NEVER frozen in the plan.
+4. **initramfs** — `BuildConfig` needs `lvm`/`mdadm`/`luks` flags derived from the
+   StoragePlan → genkernel `--lvm --mdadm --luks` (kernel config already ships
+   DM_CRYPT/RAID/LVM modules).
+5. **bootloader** — GRUB `cryptodisk` + `GRUB_ENABLE_CRYPTODISK`; RAID means the
+   ESP is replicated per member and GRUB installed on every member.
+6. **`assemble.py`** — the single build site (`uefi_plan`/`bios_plan` +
+   `derive_mount_plan`) wraps its result in a one-disk `StoragePlan`; the engine's
+   Partition/Mount steps consume `storage_steps`.
+
+### Blast radius (consumers of DiskPlan today)
+`provision.py` (validate_plan/plan_steps/apply_plan/plan_phase_labels),
+`mount.py` (derive_mount_plan/generate_target_fstab), `assemble.py` (one build
+site), `registry.py` (Partition/MountTarget steps). Compose-above means these keep
+working on the per-disk `DiskPlan` and gain a thin `StoragePlan` wrapper — not a
+simultaneous rewrite.
+
 ## Cross-refs
 - Memory: `gesi-disk-layout` (the D1→D4 chart), `gesi-redesign-next` (the wizard).
 - The guided single-disk layout + separate `/home` already ship in the Disk gate
