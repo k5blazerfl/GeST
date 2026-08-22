@@ -196,6 +196,27 @@ def propose(role: str) -> InstallSelections:
     return sel
 
 
+# The fields a System Role owns — everything else (disk, hostname, tz/locale,
+# user, root pw) is identical across roles and must survive a role change.
+_ROLE_OWNED = (
+    "role", "install_desktop", "gpu_auto", "binary_pref", "seamless",
+    "license", "admin_model", "escalator", "tier2", "capabilities",
+    "video_cards", "nvidia_proprietary",
+)
+
+
+def apply_role(sel: InstallSelections, role: str) -> None:
+    """Re-apply a role's proposal onto an existing selection, in place.
+
+    Only the role-owned fields change; user-entered disk/localization/account
+    values are preserved. Lets the wizard's System Role gate switch roles without
+    wiping earlier gates. Raises on an unknown role (via :func:`propose`).
+    """
+    proposed = propose(role)
+    for attr in _ROLE_OWNED:
+        setattr(sel, attr, getattr(proposed, attr))
+
+
 def resolve_stage3(variant: Stage3Variant, *, mirror: str = index.MIRROR) -> Stage3Selection:
     """Resolve a variant to a concrete download via the mirror's latest index (I/O).
 
