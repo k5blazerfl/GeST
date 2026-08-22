@@ -1074,6 +1074,35 @@ def _admin_model_steps(plan: InstallPlan) -> list[InstallStep]:
     return steps
 
 
+class ConfigureClock(ArgvStep):
+    """Set the target's clock policy (plan.clock): RTC convention + NTP.
+
+    chrony → RTC in UTC, systemd-timesyncd off, chrony emerged + chronyd enabled.
+    local  → RTC in local time (/etc/adjtime LOCAL), no NTP daemon (dual-boot style).
+    """
+
+    label = "Configure the clock"
+    phase = Phase.FINISH
+    chroot = True
+    key = "configure_clock"
+
+    def build(self, ctx: InstallContext) -> list[Step]:
+        conv = "LOCAL" if ctx.plan.clock == "local" else "UTC"
+        steps = [
+            Step("set the RTC convention",
+                 ["sh", "-c", f"printf '0.0 0 0.0\\n0\\n{conv}\\n' > /etc/adjtime"]),
+            Step("disable systemd-timesyncd",
+                 ["sh", "-c", "systemctl disable systemd-timesyncd 2>/dev/null || true"]),
+        ]
+        if ctx.plan.clock == "chrony":
+            steps.append(Step("emerge chrony", _emerge_argv(ctx.plan, "net-misc/chrony")))
+            steps.append(Step("enable chronyd at boot", ["systemctl", "enable", "chronyd"]))
+        return steps
+
+    async def is_satisfied(self, ctx: InstallContext) -> bool:
+        return ctx.state.done(self.key)
+
+
 def build_registry(plan: InstallPlan, *, root_secret: Secret | None = None) -> list[InstallStep]:
     """The full ordered install steps for ``plan``, in Handbook order (the contract).
 
@@ -1111,6 +1140,7 @@ def build_registry(plan: InstallPlan, *, root_secret: Secret | None = None) -> l
         CreateUser(),
         ConfigureNetwork(),
         EnableDesktopSession(),     # boot into HeDE (no-op for base Gentoo)
+        ConfigureClock(),           # RTC convention + chrony/local NTP policy
     ]
     # Admin model (escalator + rootless root-lock); empty for traditional, so the
     # default registry is byte-identical. FINISH phase, after the user exists.

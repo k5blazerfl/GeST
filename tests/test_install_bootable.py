@@ -122,7 +122,7 @@ def test_minimal_is_a_strict_subset_of_the_full_registry():
         "Clean up desktop binpkgs", "Enable the HeDE session",
         "Install GPU drivers & firmware",
         "Set timezone and locale", "Set the hostname", "Set the console keymap",
-        "Create the user account", "Configure the network",
+        "Create the user account", "Configure the network", "Configure the clock",
     }
     # everything the minimal set keeps is present in the full set, same relative order
     full_order = [s.label for s in build_registry(_plan())]

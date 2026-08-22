@@ -18,6 +18,7 @@ import os
 
 import urwid
 
+from gest.core.datetime import reader as dt_reader
 from gest.core.disk import provision
 from gest.core.disk import reader as disk_reader
 from gest.core.install import assemble, capabilities
@@ -72,6 +73,10 @@ _ADMIN_LABELS = {
     "traditional": "Traditional — root password, escalate with su",
     "sudo-augmented": "Sudo-augmented — root password AND wheel sudo",
     "rootless": "Rootless — root locked, wheel user escalates (Ubuntu-style)",
+}
+_CLOCK_LABELS = {
+    "chrony": "Chrony — keep time in sync over the network (NTP)",
+    "local": "Local — set from this clock, no network sync",
 }
 
 
@@ -329,6 +334,13 @@ class LocalizationStep(WizardStep):
         # and can skip the Get Online gate entirely. Live app only (needs the loop).
         if self.app.loop.is_running():
             self.app.run_async(self._warm_network())
+            self._tick_clock()          # live-tick the current-time display
+
+    def _tick_clock(self, *_):
+        self._time_txt.set_text(("dim", f"🕑  {dt_reader.now_string()}"))
+        # keep ticking only while this gate is still on the stack (survives modals)
+        if self.app.loop.is_running() and self in self.app._stack:
+            self.app.main.set_alarm_in(1, self._tick_clock)
 
     def help(self) -> str:
         return ("Welcome to the Gentoo installer. Set your language/locale, timezone\n"
@@ -369,18 +381,20 @@ class LocalizationStep(WizardStep):
         # here (the rail begins at the next gate) so the art has room to breathe.
         logo = urwid.Padding(urwid.Text(_GESI_LOGO_MARKUP, wrap="clip"),
                              align="center", width=_GESI_LOGO_W)
+        self._time_txt = urwid.Text(("dim", f"🕑  {dt_reader.now_string()}"), align="center")
         pile = NavPile([
             ("pack", urwid.Divider(" ")),
             ("pack", logo),
             ("pack", urwid.Divider(" ")),
             ("pack", urwid.Text(("title", "-Gentoo System Installer-"), align="center")),
             ("pack", urwid.Text(("dim", "Welcome! Let's get started!"), align="center")),
+            ("pack", self._time_txt),
             ("pack", urwid.Divider(" ")),
-            ("pack", urwid.BoxAdapter(self._list, 3)),   # tz / locale / keymap
+            ("pack", urwid.BoxAdapter(self._list, 4)),   # locale / tz / keyboard / clock
             ("pack", urwid.Divider(" ")),
             ("pack", self._nav_row),
         ])
-        self._list_pos = 6          # 0 div,1 logo,2 div,3 title,4 subtitle,5 div,6 list
+        self._list_pos = 7    # 0 div,1 logo,2 div,3 title,4 subtitle,5 time,6 div,7 list
         panel = boxed(pile, title="Install Gentoo")
         body = urwid.Filler(
             urwid.Padding(panel, align="center", width=("relative", 72),
@@ -389,11 +403,17 @@ class LocalizationStep(WizardStep):
         return body, pile, [self._list_pos]
 
     def setting_rows(self):
+        clock = "chrony (NTP sync)" if self.sel.clock == "chrony" else "local (no sync)"
         return [
             ("Language / Locale", self.sel.locale, self._edit_locale),
             ("Timezone", self.sel.timezone, self._edit_timezone),
             ("Keyboard", self.sel.keymap, self._edit_keymap),
+            ("Clock", clock, self._edit_clock),
         ]
+
+    def _edit_clock(self):
+        _choice_modal(self.app, "Clock", list(_CLOCK_LABELS.items()), self.sel.clock,
+                      lambda k: setattr(self.sel, "clock", k), self._render)
 
     def _edit_timezone(self):
         _pick_modal(self.app, "Timezone", timezone_core.list_zones(),

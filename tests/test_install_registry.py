@@ -59,6 +59,7 @@ _EXPECTED_LABELS = [
     "Create the user account",
     "Configure the network",
     "Enable the HeDE session",
+    "Configure the clock",
 ]
 
 # The six marker-gated steps (§6) and the one step that opens the chroot.
@@ -77,6 +78,7 @@ _MARKER_KEYS = {
     "Install the bootloader": "install_bootloader",
     "Install the m1n1 boot stub": "install_boot_stub",
     "Enable the HeDE session": "enable_desktop_session",
+    "Configure the clock": "configure_clock",
 }
 _CHROOT_LABELS = {
     "Sync the Portage tree", "Select the profile", "Emerge @world",
@@ -84,6 +86,7 @@ _CHROOT_LABELS = {
     "Install kernel sources", "Build the kernel", "Install the bootloader",
     "Install the m1n1 boot stub",
     "Set the root password", "Create the user account",
+    "Configure the clock",
 }
 _PHASE_ORDER = list(Phase)
 
@@ -133,7 +136,7 @@ def test_registry_phases_are_non_decreasing():
     # KERNEL_BOOT: sources, stage-config, build, gpu-drivers, bootloader, m1n1
     assert [s.phase for s in reg[16:22]] == [Phase.KERNEL_BOOT] * 6
     assert [s.phase for s in reg[22:25]] == [Phase.USERS_NETWORK] * 3
-    assert [s.phase for s in reg[25:26]] == [Phase.FINISH]           # +HeDE session
+    assert [s.phase for s in reg[25:27]] == [Phase.FINISH] * 2       # HeDE session + clock
 
 
 def test_registry_chroot_and_opens_chroot_flags():
@@ -151,8 +154,8 @@ def test_registry_marker_keys():
 
 def test_tier2_default_empty():
     # base rows + 3 HeDE desktop steps + kernel-sources + stage-kernel-config +
-    # gpu-drivers + enable-session + the arm64-gated m1n1 boot stub (inert on x86)
-    assert len(build_registry(_plan())) == 26
+    # gpu-drivers + enable-session + configure-clock + the arm64-gated m1n1 boot stub
+    assert len(build_registry(_plan())) == 27
 
 
 def test_boot_stub_step_is_arm64_gated():
@@ -627,3 +630,23 @@ async def test_write_makeconf_tunes_cpu_on_source_builds(tmp_path, monkeypatch):
     await WriteMakeConf().run(ctx)
     text = (tmp_path / "etc/portage/make.conf").read_text()
     assert "-march=native" in text and "target-cpu=native" in text
+
+
+def test_configure_clock_chrony_installs_ntp_and_utc_rtc():
+    import dataclasses
+
+    from gest.core.install.registry import ConfigureClock
+    plan = dataclasses.replace(_plan(), clock="chrony")
+    steps = ConfigureClock().build(_ctx(FakeExecutor(), plan=plan))
+    blob = " ".join(" ".join(s.argv) for s in steps)
+    assert "UTC" in blob and "net-misc/chrony" in blob and "chronyd" in blob
+
+
+def test_configure_clock_local_sets_local_rtc_no_ntp():
+    import dataclasses
+
+    from gest.core.install.registry import ConfigureClock
+    plan = dataclasses.replace(_plan(), clock="local")
+    steps = ConfigureClock().build(_ctx(FakeExecutor(), plan=plan))
+    blob = " ".join(" ".join(s.argv) for s in steps)
+    assert "LOCAL" in blob and "chrony" not in blob
