@@ -54,8 +54,10 @@ _TIER2_LABELS = {
 class InstallOverviewScreen(Screen):
     """The 'Installation Settings' overview — edit each setting, then Install."""
 
-    def __init__(self, app: App) -> None:
-        self._sel = InstallSelections()
+    def __init__(self, app: App, selections: InstallSelections | None = None) -> None:
+        # The wizard's System Role gate hands in a role-proposed selection
+        # (assemble.propose); with none we fall back to the bare defaults.
+        self._sel = selections if selections is not None else InstallSelections()
         self._disks = [d for d in disk_reader.list_block_devices() if d.type == "disk"]
         self._walker = urwid.SimpleFocusListWalker([])
         self._list = urwid.ListBox(self._walker)

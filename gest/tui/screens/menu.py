@@ -240,8 +240,8 @@ class MenuScreen(Screen):
 
     def _open(self, key: str) -> None:
         if key == "install":
-            from gest.tui.screens.installer import InstallOverviewScreen
-            self.app.push(InstallOverviewScreen(self.app))
+            from gest.tui.screens.install.role import RoleScreen
+            self.app.push(RoleScreen(self.app))
         elif key == "news":
             self.app.push(NewsScreen(self.app))
         elif key == "software":

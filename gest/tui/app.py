@@ -29,7 +29,15 @@ def main() -> None:
         )
         raise SystemExit(1)
     app = App()
-    app.run(MenuScreen(app, installer=args.install))
+    if args.install:
+        # Launch straight into the install wizard (System Role gate). The admin
+        # menu (with the installer category) sits beneath it as an escape hatch,
+        # so Esc from the wizard drops to the menu rather than exiting.
+        from gest.tui.screens.install.role import RoleScreen
+        app.push(MenuScreen(app, installer=True))
+        app.run(RoleScreen(app))
+    else:
+        app.run(MenuScreen(app, installer=False))
 
 
 if __name__ == "__main__":
