@@ -646,19 +646,34 @@ class BaseSystemStep(WizardStep):
     step_title = "Base System"
 
     def help(self) -> str:
-        return ("How the base system is built and licensed. Binary packages are fast;\n"
-                "compiling from source tunes to your CPU. The license rung sets\n"
-                "ACCEPT_LICENSE; Features become system-wide USE flags. Your role has\n"
-                "proposed sensible values — change any of them or just continue.")
+        return ("How the base system is built, licensed, and administered. Binary\n"
+                "packages are fast; compiling from source tunes to your CPU. The\n"
+                "license rung sets ACCEPT_LICENSE; Features become system-wide USE.\n"
+                "The admin model is how you become root. Your role has proposed sane\n"
+                "values for all of these — a newcomer can just Continue; tweak to taste.")
 
     def setting_rows(self):
         build = "Binary packages (fast)" if self.sel.binary_pref else "Compile from source"
         feats = ", ".join(sorted(self.sel.capabilities)) or "(none)"
-        return [
+        rows = [
             ("Build strategy", build, self._edit_build),
             ("License policy", _LICENSE_LABELS[self.sel.license], self._edit_license),
             ("Features (USE)", feats, self._edit_features),
+            ("Admin model", _ADMIN_LABELS[self.sel.admin_model], self._edit_admin),
         ]
+        if self.sel.admin_model in ("sudo-augmented", "rootless"):
+            rows.append(("Escalator", self.sel.escalator, self._edit_escalator))
+        return rows
+
+    def _edit_admin(self):
+        opts = [(k, _ADMIN_LABELS[k]) for k in ADMIN_MODELS]
+        _choice_modal(self.app, "Admin model", opts, self.sel.admin_model,
+                      lambda k: setattr(self.sel, "admin_model", k), self._render)
+
+    def _edit_escalator(self):
+        _choice_modal(self.app, "Escalator", [("sudo", "sudo"), ("doas", "doas")],
+                      self.sel.escalator,
+                      lambda k: setattr(self.sel, "escalator", k), self._render)
 
     def _edit_build(self):
         opts = [("binary", "Binary packages — prebuilt, fast, modest hardware"),
@@ -700,36 +715,24 @@ class AccountStep(WizardStep):
     step_title = "Your Account"
 
     def help(self) -> str:
-        return ("The machine's hostname, admin model, and accounts. Rootless locks\n"
-                "the root account and needs an admin (wheel) user; the other models\n"
-                "set a root password. Your role proposed a default admin model.")
+        return ("The machine's hostname and accounts. Whether a root password is\n"
+                "needed depends on the admin model (set on Base System): rootless\n"
+                "locks root and needs an admin (wheel) user; the others set a root\n"
+                "password.")
 
     def setting_rows(self):
         user = self.sel.user_name if self.sel.create_user else "(none)"
         rootpw = "(set)" if self.sel.root_password else "(not set)"
         out = [
             ("Hostname", self.sel.hostname, self._edit_hostname),
-            ("Admin model", _ADMIN_LABELS[self.sel.admin_model], self._edit_admin),
+            ("User account", user, self._edit_user),
         ]
-        if self.sel.admin_model in ("sudo-augmented", "rootless"):
-            out.append(("Escalator", self.sel.escalator, self._edit_escalator))
-        out.append(("User account", user, self._edit_user))
         if sets_root_password(self.sel.admin_model):
             out.append(("Root password", rootpw, self._edit_rootpw))
         return out
 
     def _edit_hostname(self):
         self._edit_text("Hostname", "hostname")
-
-    def _edit_admin(self):
-        opts = [(k, _ADMIN_LABELS[k]) for k in ADMIN_MODELS]
-        _choice_modal(self.app, "Admin model", opts, self.sel.admin_model,
-                      lambda k: setattr(self.sel, "admin_model", k), self._render)
-
-    def _edit_escalator(self):
-        _choice_modal(self.app, "Escalator", [("sudo", "sudo"), ("doas", "doas")],
-                      self.sel.escalator,
-                      lambda k: setattr(self.sel, "escalator", k), self._render)
 
     def _edit_user(self):
         create = urwid.CheckBox("Create a user", state=self.sel.create_user)

@@ -116,11 +116,11 @@ class ReviewScreen(Screen):
                 ("Build strategy", build + chg("binary_pref"), "ok", "base"),
                 ("License", s.license + chg("license"), "ok", "base"),
                 ("Features", feats + chg("capabilities"), "ok", "base"),
+                ("Admin model", s.admin_model + chg("admin_model"), "ok", "base"),
             ]),
             ("Account", [
                 ("Hostname", s.hostname,
                  "ok" if valid_hostname(s.hostname) else "blocker", "account"),
-                ("Admin model", s.admin_model + chg("admin_model"), "ok", "account"),
                 ("User", user, "ok", "account"),
                 ("Root password", rootpw,
                  "blocker" if (sets_root_password(s.admin_model)
