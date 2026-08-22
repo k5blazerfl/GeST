@@ -277,3 +277,16 @@ def test_welcome_clock_local_renders():
     _app, step, _ = _step(wz.LocalizationStep, sel)
     out = "\n".join(r.decode() for r in step.render((92, 36), focus=True).text)
     assert "local (no sync)" in out
+
+
+def test_admin_model_lives_on_base_system_not_account():
+    # newcomers Next-past Base System; power users tweak the admin model there.
+    sel = assemble.propose("desktop")                     # rootless → escalator too
+    _app, base, _ = _step(wz.BaseSystemStep, sel)
+    base_out = "\n".join(r.decode() for r in base.render((96, 30), focus=True).text)
+    assert "Admin model" in base_out and "Escalator" in base_out
+    _app2, acct, _ = _step(wz.AccountStep, sel)
+    acct_out = "\n".join(r.decode() for r in acct.render((96, 30), focus=True).text)
+    assert "Admin model" not in acct_out and "Escalator" not in acct_out
+    # validation still lives on Account and still honors the model
+    assert acct.validate() is not None                    # rootless w/o wheel user → blocks
