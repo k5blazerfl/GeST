@@ -35,7 +35,7 @@ def test_assemble_builds_a_full_plan():
     assert plan.kernel.method == "genkernel"                    # auto-config source build
     assert plan.profile == "default/linux/amd64/23.0/systemd"   # systemd default
     assert plan.bootloader.firmware == "uefi"
-    assert plan.hostname == "gentoo" and plan.timezone == "UTC"
+    assert plan.hostname == "gentoo" and plan.timezone == "America/New_York"  # US Eastern default
     assert plan.binary_pref is True
     # the root password is NOT in the plan (it stays on the selections as a secret)
     assert not hasattr(plan, "root_password") or isinstance(plan.root_password, bool)

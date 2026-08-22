@@ -59,8 +59,11 @@ class InstallSelections:
     variant: Stage3Variant = DEFAULT_VARIANT
     # system (editable rows in 5b; defaults keep a fresh overview valid)
     hostname: str = "gentoo"
-    timezone: str = "UTC"
-    locale: str = "C.UTF-8"
+    timezone: str = "America/New_York"   # US Eastern — the project's home (Tallahassee, FL)
+    # and primary audience. Any zone is a searchable pick away; UTC is not a friendlier
+    # default for the people most likely to use this.
+    locale: str = "C.UTF-8"   # stays C.UTF-8 (glibc built-in, no locale-gen) until the
+    # SetTimezoneLocale locale-gen fix lands; only then is en_US.UTF-8 safe as a default.
     keymap: str = "us"
     # user (optional; created in the target when create_user)
     create_user: bool = False
