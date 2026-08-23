@@ -176,7 +176,7 @@ def propose(role: str) -> InstallSelections:
         sel.binary_pref = True
         sel.seamless = True
         sel.license = "full"                 # @B-R @EULA — everything, no reconcile
-        sel.admin_model = "rootless"         # Ubuntu-familiar for refugees
+        sel.admin_model = "rootless"         # locked root + sudo, familiar to newcomers
         sel.escalator = "sudo"
         sel.tier2 = set()
         sel.capabilities = set(_DESKTOP_CAPABILITIES)
