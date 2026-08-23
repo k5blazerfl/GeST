@@ -762,7 +762,9 @@ class AccountStep(WizardStep):
         self._edit_text("Hostname", "hostname")
 
     def _edit_user(self):
-        create = urwid.CheckBox("Create a user", state=self.sel.create_user)
+        # No "Create a user" toggle — being in this editor is the intent to make
+        # one. The name field is the switch: a name creates the account, a blank
+        # name means no separate user (root-only setups).
         name = urwid.Edit("Name              : ", self.sel.user_name)
         comment = urwid.Edit("Full name/comment : ", self.sel.user_comment)
         wheel = urwid.CheckBox("Administrator account", state=self.sel.user_wheel)
@@ -770,28 +772,30 @@ class AccountStep(WizardStep):
         pw2 = urwid.Edit("Confirm           : ", self.sel.user_password, mask="*")
 
         def save():
-            if create.state:
-                uname = name.edit_text.strip()
-                if not valid_user_name(uname):
-                    self.app.notify("Invalid user name.", error=True)
-                    return
-                if pw.edit_text != pw2.edit_text:
-                    self.app.notify("Passwords do not match.", error=True)
-                    return
-                self.sel.create_user = True
-                self.sel.user_name = uname
-                self.sel.user_comment = comment.edit_text.strip()
-                self.sel.user_wheel = wheel.state
-                self.sel.user_password = pw.edit_text
-            else:
-                self.sel.create_user = False
+            uname = name.edit_text.strip()
+            if not uname:
+                self.sel.create_user = False          # blank name → no separate user
+                self.app.pop()
+                self._render()
+                return
+            if not valid_user_name(uname):
+                self.app.notify("Invalid user name.", error=True)
+                return
+            if pw.edit_text != pw2.edit_text:
+                self.app.notify("Passwords do not match.", error=True)
+                return
+            self.sel.create_user = True
+            self.sel.user_name = uname
+            self.sel.user_comment = comment.edit_text.strip()
+            self.sel.user_wheel = wheel.state
+            self.sel.user_password = pw.edit_text
             self.app.pop()
             self._render()
         modal = Modal(self.app, "User account",
                       [urwid.Text(("hint", "An everyday account with administrator "
                                            "rights. A password lets them log in and "
                                            "make system changes.")),
-                       urwid.Divider(), create, name, comment, wheel, pw, pw2],
+                       urwid.Divider(), name, comment, wheel, pw, pw2],
                       [("Save", save), ("Cancel", self.app.pop)])
         self.app.push_modal(modal, width=("relative", 70), height=("relative", 64))
 
