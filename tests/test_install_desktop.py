@@ -42,6 +42,25 @@ def test_emerge_desktop_is_binary_only():
         "gui-apps/hede", "sys-boot/plymouth", "gui-libs/greetd"]
 
 
+def test_emerge_desktop_network_mode_uses_getbinpkg():
+    # CLI ISO path: no local binpkgs → --getbinpkg (binhost, source fallback)
+    assert desktop.emerge_desktop_argv(binary_only=False) == [
+        "emerge", "--getbinpkg", "--color", "n",
+        "gui-apps/hede", "sys-boot/plymouth", "gui-libs/greetd"]
+
+
+def test_sync_overlay_argv_force_syncs_amphitheater():
+    assert desktop.sync_overlay_argv() == ["emaint", "sync", "-r", "amphitheater"]
+
+
+def test_has_desktop_binpkg_detects_hede_in_pkgdir(tmp_path):
+    assert desktop.has_desktop_binpkg(str(tmp_path)) is False       # empty target
+    pkg = tmp_path / "var/cache/binpkgs/gui-apps"
+    pkg.mkdir(parents=True)
+    (pkg / "hede-0.7.0-1.gpkg.tar").write_text("x")
+    assert desktop.has_desktop_binpkg(str(tmp_path)) is True
+
+
 def test_cleanup_removes_target_pkgdir():
     assert desktop.cleanup_pkgdir_argv(root="/mnt/gentoo") == [
         "rm", "-rf", "/mnt/gentoo/var/cache/binpkgs"]

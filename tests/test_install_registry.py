@@ -308,15 +308,42 @@ def test_desktop_steps_are_gated_on_plan_desktop():
         assert asyncio.run(step.is_satisfied(base)) is True
 
 
-def test_install_desktop_emerges_usepkgonly_when_enabled():
+def test_install_desktop_uses_binpkgs_when_present(tmp_path):
     from gest.core.install.desktop import DESKTOP_ATOMS
     from gest.core.install.registry import InstallDesktop
-    desk = _ctx(FakeExecutor(), plan=_desktop_plan())
+    # desktop ISO: a quickpkg'd hede binpkg sits in the target PKGDIR → binary-only
+    pkg = tmp_path / "var/cache/binpkgs/gui-apps"
+    pkg.mkdir(parents=True)
+    (pkg / "hede-0.7.0-1.gpkg.tar").write_text("x")
+    desk = _ctx(FakeExecutor(), root=str(tmp_path), plan=_desktop_plan())
     steps = InstallDesktop().build(desk)
     assert [s.argv for s in steps] == [
         ["emaint", "binhost", "--fix"],                                # refresh index (fixups)
         ["emerge", "--usepkgonly", "--color", "n", *DESKTOP_ATOMS]]    # binary-only, offline
     assert asyncio.run(InstallDesktop().is_satisfied(desk)) is False
+
+
+def test_install_desktop_git_syncs_overlay_when_unseeded_and_no_binpkgs(tmp_path):
+    from gest.core.install.desktop import DESKTOP_ATOMS
+    from gest.core.install.registry import InstallDesktop
+    # CLI ISO, overlay not seeded → install git, git-sync the overlay, emerge (network)
+    desk = _ctx(FakeExecutor(), root=str(tmp_path), plan=_desktop_plan())
+    steps = InstallDesktop().build(desk)
+    assert [s.argv for s in steps] == [
+        ["emerge", "--getbinpkg", "--color", "n", "dev-vcs/git"],
+        ["emaint", "sync", "-r", "amphitheater"],
+        ["emerge", "--getbinpkg", "--color", "n", *DESKTOP_ATOMS]]
+
+
+def test_install_desktop_skips_sync_when_overlay_seeded_but_no_binpkgs(tmp_path):
+    from gest.core.install.desktop import DESKTOP_ATOMS
+    from gest.core.install.registry import InstallDesktop
+    # overlay content present (seeded) but no binpkgs → no git/sync, just emerge
+    (tmp_path / "var/db/repos/amphitheater").mkdir(parents=True)
+    desk = _ctx(FakeExecutor(), root=str(tmp_path), plan=_desktop_plan())
+    steps = InstallDesktop().build(desk)
+    assert [s.argv for s in steps] == [
+        ["emerge", "--getbinpkg", "--color", "n", *DESKTOP_ATOMS]]
 
 
 def test_cleanup_desktop_binpkgs_removes_target_pkgdir_when_enabled():
