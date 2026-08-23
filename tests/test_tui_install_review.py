@@ -67,7 +67,7 @@ def test_rootless_without_user_blocks():
     sel = assemble.propose("desktop")              # rootless, no user yet
     sel.disk = "vda"
     _app, scr = _review(sel)
-    assert "an admin (wheel) user" in scr._blockers()
+    assert "an administrator account" in scr._blockers()
 
 
 def test_offline_blocks(monkeypatch):
