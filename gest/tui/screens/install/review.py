@@ -92,10 +92,13 @@ class ReviewScreen(Screen):
             user = s.user_name + (" (password set)" if s.user_password else " (no password)")
         else:
             user = "(none)"
-        # rootless admin: the wheel user needs a password to log in / sudo
+        # rootless admin: the admin user needs a password to log in / escalate
         user_state = ("blocker" if (not sets_root_password(s.admin_model)
                                     and s.create_user and not s.user_password) else "ok")
-        rootpw = "(set)" if s.root_password else "(not set)"
+        # Rootless locks the root account, so a root password doesn't apply at all.
+        rootpw = ("(set)" if s.root_password
+                  else "(not set)" if sets_root_password(s.admin_model)
+                  else "(N/A)")
         online = "connected" if self._online else "NOT connected"
         return [
             ("Localization", [

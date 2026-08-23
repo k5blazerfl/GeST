@@ -47,6 +47,20 @@ def test_review_renders_grouped_readout():
     assert "Install" in out
 
 
+def test_rootless_root_password_reads_not_applicable():
+    _app, scr = _review(_ready_desktop())            # desktop = rootless, root locked
+    out = _render(scr)
+    assert "Root password" in out and "(N/A)" in out
+    assert "(not set)" not in out                     # not a "missing" field — N/A
+
+
+def test_traditional_root_password_reads_not_set_when_missing():
+    sel = assemble.propose("server")                 # traditional → a root password applies
+    sel.disk = "vda"
+    _app, scr = _review(sel)
+    assert "(not set)" in _render(scr)                # applicable but not yet provided
+
+
 def test_ready_selection_has_no_blockers_and_offers_install():
     _app, scr = _review(_ready_desktop())
     assert scr._blockers() == []
