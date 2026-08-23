@@ -122,7 +122,7 @@ def test_minimal_is_a_strict_subset_of_the_full_registry():
         "Clean up desktop binpkgs", "Enable the HeDE session",
         "Install GPU drivers & firmware",
         "Set timezone and locale", "Set the hostname", "Set the console keymap",
-        "Create the user account", "Set the user password",
+        "Create user accounts", "Set user passwords",
         "Configure the network", "Configure the clock",
     }
     # everything the minimal set keeps is present in the full set, same relative order

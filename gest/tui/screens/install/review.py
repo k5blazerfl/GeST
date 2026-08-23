@@ -67,12 +67,13 @@ class ReviewScreen(Screen):
             out.append("a target disk")
         if not self._online:
             out.append("a network connection")
+        admins = [u for u in s.users if valid_user_name(u.name) and u.admin]
         if sets_root_password(s.admin_model):
             if not s.root_password:
                 out.append("a root password")
-        elif not (s.create_user and valid_user_name(s.user_name) and s.user_wheel):
+        elif not admins:
             out.append("an administrator account")
-        elif not s.user_password:
+        elif not any(a.password for a in admins):
             out.append("a password for the administrator")
         if not valid_hostname(s.hostname):
             out.append("a valid hostname")
@@ -88,17 +89,14 @@ class ReviewScreen(Screen):
                  f"root ({s.root_fs})"
         build = "binary packages" if s.binary_pref else "compile from source"
         feats = ", ".join(sorted(s.capabilities)) or "(none)"
-        if s.create_user:
-            user = s.user_name + (" (password set)" if s.user_password else " (no password)")
-        else:
-            user = "(none)"
-        # rootless admin: the admin user needs a password to log in / escalate
+        named = [u for u in s.users if u.name]
+        user = (", ".join(u.name + (" (admin)" if u.admin else "") for u in named)
+                if named else "(none)")
+        # A rootless admin account with no password can't log in or escalate.
         user_state = ("blocker" if (not sets_root_password(s.admin_model)
-                                    and s.create_user and not s.user_password) else "ok")
-        # Rootless locks the root account, so a root password doesn't apply at all.
-        rootpw = ("(set)" if s.root_password
-                  else "(not set)" if sets_root_password(s.admin_model)
-                  else "(N/A)")
+                      and any(u.admin and not u.password for u in named)) else "ok")
+        # Root is enabled (has a password) unless the admin model locks it (rootless).
+        root_status = "enabled" if sets_root_password(s.admin_model) else "disabled"
         online = "connected" if self._online else "NOT connected"
         return [
             ("Localization", [
@@ -132,8 +130,8 @@ class ReviewScreen(Screen):
             ("Account", [
                 ("Hostname", s.hostname,
                  "ok" if valid_hostname(s.hostname) else "blocker", "account"),
-                ("User", user, user_state, "account"),
-                ("Root password", rootpw,
+                ("Users", user, user_state, "account"),
+                ("Root", root_status,
                  "blocker" if (sets_root_password(s.admin_model)
                                and not s.root_password) else "ok", "account"),
             ]),
