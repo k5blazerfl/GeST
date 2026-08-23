@@ -308,7 +308,11 @@ class WizardStep(Screen):
                 continue
             label, value, action = entry
             text = label if value is None else f"{label:<24}: {value}"
-            items.append(_row(text))
+            # Actionable rows are focusable (Enter edits); pure informational rows
+            # (a heading, the proposed-partition table, the data-loss warning)
+            # render as plain Text so the cursor can't land on — or highlight —
+            # something there's nothing to do with.
+            items.append(_row(text) if action is not None else urwid.Text(text))
             self._actions.append(action)
         self._walker[:] = items
         self._focus_first()
@@ -630,15 +634,21 @@ class DiskStep(WizardStep):
             # partition table this proposal would create (derived from the real
             # DiskPlan so it can't drift from what actually gets written).
             rows.append(None)
-            rows.append((f"⚠  Installing ERASES ALL DATA on "
-                         f"{self._target_label(disks)} — done at Install, "
-                         "after you confirm at Review", None, None))
+            # `!` not `⚠`: the warning-sign glyph is missing from the plain
+            # framebuffer console font (nomodeset), where it renders as a tofu
+            # square. The `!` and the words carry the red `error` attr so the
+            # data-loss line stands out; the rest of the sentence stays default.
+            rows.append(([("error", "!"), "  Installing ",
+                          ("error", "ERASES ALL DATA"),
+                          f" on {self._target_label(disks)} — done at Install, "
+                          "after you confirm at Review"], None, None))
             rows.append(None)
             rows.append(("Proposed layout:", None, None))
             rows.extend(self._partition_rows())
             warn = self._space_warning(disks)
             if warn:
-                rows.append((f"  ⚠  {warn}", None, None))
+                # Same nomodeset-safe `!` (red) instead of the ⚠ tofu square.
+                rows.append(([("error", "  !  "), warn], None, None))
         rows.append(None)
         if self.sel.firmware != "bios":
             rows.append(("ESP size", self.sel.esp_size, self._edit_esp))
