@@ -25,6 +25,7 @@ struct DesktopEntry {
     bool hidden = false;
     bool terminal = false;
     QStringList mimeTypes;          // MimeType= entries this app declares it opens
+    QStringList categories;         // Categories= (freedesktop groups → menu sections)
     QVector<DesktopAction> actions; // jump-list actions, in Actions= order
 };
 

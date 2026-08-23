@@ -33,6 +33,7 @@ private slots:
             "MimeType=text/plain;\n");
         const helm::DesktopEntry v = helm::parseDesktopEntry(viewer, QStringLiteral("view"));
         QCOMPARE(v.mimeTypes, (QStringList{"image/png", "image/jpeg"})); // ; split, no empties
+        QVERIFY(v.categories.isEmpty()); // no Categories= → empty
 
         const QVector<helm::DesktopEntry> all{
             v, helm::parseDesktopEntry(editor, QStringLiteral("edit"))};
@@ -41,6 +42,14 @@ private slots:
         QCOMPARE(png.first().name, QStringLiteral("Image Viewer"));
         QVERIFY(helm::handlersForMimeType(all, QStringLiteral("application/pdf")).isEmpty());
         QVERIFY(helm::handlersForMimeType(all, QString()).isEmpty()); // empty mime → none
+    }
+
+    void parsesCategories() {
+        const QString text = QStringLiteral(
+            "[Desktop Entry]\nType=Application\nName=Browser\nExec=browser %U\n"
+            "Categories=Network;WebBrowser;\n");
+        const helm::DesktopEntry e = helm::parseDesktopEntry(text, QStringLiteral("browser"));
+        QCOMPARE(e.categories, (QStringList{"Network", "WebBrowser"})); // ; split, no empties
     }
 
     void parsesJumpListActions() {
