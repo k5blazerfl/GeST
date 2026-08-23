@@ -352,7 +352,7 @@ class LocalizationStep(WizardStep):
         self._tick_clock()
 
     def _tick_clock(self, *_):
-        self._time_txt.set_text(("dim", dt_reader.clock_line(sep="🕑")))
+        self._time_txt.set_text(("dim", dt_reader.clock_line(sep=".")))
         # keep ticking only while this gate is still on the stack (survives modals)
         if self in self.app._stack:
             self.app.main.set_alarm_in(1, self._tick_clock)
@@ -396,7 +396,7 @@ class LocalizationStep(WizardStep):
         # here (the rail begins at the next gate) so the art has room to breathe.
         logo = urwid.Padding(urwid.Text(_GESI_LOGO_MARKUP, wrap="clip"),
                              align="center", width=_GESI_LOGO_W)
-        self._time_txt = urwid.Text(("dim", dt_reader.clock_line(sep="🕑")), align="center")
+        self._time_txt = urwid.Text(("dim", dt_reader.clock_line(sep=".")), align="center")
         pile = NavPile([
             ("pack", urwid.Divider(" ")),
             ("pack", logo),

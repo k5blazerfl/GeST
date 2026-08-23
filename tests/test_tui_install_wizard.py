@@ -271,9 +271,8 @@ def test_welcome_shows_current_time_and_clock_row():
     import re
     _app, step, _ = _step(wz.LocalizationStep)
     out = "\n".join(r.decode() for r in step.render((92, 36), focus=True).text)
-    assert "🕑" in out                       # the clock glyph is the separator now
-    # time first, then the clock glyph, then the date (HH:MM:SS 🕑 YYYY-MM-DD)
-    assert re.search(r"\d\d:\d\d:\d\d\s+🕑\s+\d{4}-\d\d-\d\d", out)
+    # time first, an ASCII dot separator, then the date (HH:MM:SS . YYYY-MM-DD)
+    assert re.search(r"\d\d:\d\d:\d\d\s+\.\s+\d{4}-\d\d-\d\d", out)
     assert "Clock" in out and "Network (NTP sync)" in out
 
 
