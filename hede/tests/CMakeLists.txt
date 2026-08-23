@@ -10,6 +10,10 @@ qt_add_executable(test-desktopentry test_desktopentry.cpp)
 target_link_libraries(test-desktopentry PRIVATE Qt6::Test helm-apps)
 add_test(NAME desktopentry COMMAND test-desktopentry)
 
+qt_add_executable(test-categories test_categories.cpp)
+target_link_libraries(test-categories PRIVATE Qt6::Test helm-apps)
+add_test(NAME categories COMMAND test-categories)
+
 qt_add_executable(test-launcherstore test_launcherstore.cpp)
 target_link_libraries(test-launcherstore PRIVATE Qt6::Test helm-apps)
 add_test(NAME launcherstore COMMAND test-launcherstore)

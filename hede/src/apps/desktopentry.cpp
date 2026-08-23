@@ -58,6 +58,8 @@ DesktopEntry parseDesktopEntry(const QString &text, const QString &id) {
     e.terminal = toBool(main.value(QStringLiteral("Terminal")));
     e.mimeTypes = main.value(QStringLiteral("MimeType"))
                       .split(QLatin1Char(';'), Qt::SkipEmptyParts);
+    e.categories = main.value(QStringLiteral("Categories"))
+                       .split(QLatin1Char(';'), Qt::SkipEmptyParts);
 
     const QString actions = main.value(QStringLiteral("Actions"));
     for (const QString &aid : actions.split(QLatin1Char(';'), Qt::SkipEmptyParts)) {
