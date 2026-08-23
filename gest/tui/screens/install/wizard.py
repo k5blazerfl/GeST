@@ -72,7 +72,7 @@ _LICENSE_LABELS = {
 _ADMIN_LABELS = {
     "traditional": "Traditional — root password, escalate with su",
     "sudo-augmented": "Sudo-augmented — root password AND wheel sudo",
-    "rootless": "Rootless — root locked, wheel user escalates (Ubuntu-style)",
+    "rootless": "Rootless — root locked, wheel user escalates with sudo/doas",
 }
 _CLOCK_LABELS = {
     "chrony": "Network — uses Chrony to keep time in sync over the internet (NTP)",
