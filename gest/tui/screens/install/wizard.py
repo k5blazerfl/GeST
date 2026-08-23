@@ -107,6 +107,40 @@ def _detect_ram_bytes() -> int:
         return 8 * 1024 ** 3
 
 
+_SIZE_UNITS = {"K": 1024, "M": 1024 ** 2, "G": 1024 ** 3, "T": 1024 ** 4, "P": 1024 ** 5}
+
+
+def _size_to_bytes(text: str) -> int:
+    """Parse an lsblk human size ("238.5G", "512M", "1.8T") to bytes; 0 if unknown.
+
+    lsblk's SIZE is 1024-based (a "G" is a GiB), matching :data:`_SIZE_UNITS`.
+    """
+    text = (text or "").strip().upper().rstrip("B")
+    if not text:
+        return 0
+    if text[-1] in _SIZE_UNITS:
+        try:
+            return int(float(text[:-1]) * _SIZE_UNITS[text[-1]])
+        except ValueError:
+            return 0
+    try:
+        return int(float(text))
+    except ValueError:
+        return 0
+
+
+# Mount point + one-line purpose per partition label (the labels uefi_plan /
+# bios_plan stamp onto each Partition). Drives the on-screen layout breakdown so
+# it reads like the Gentoo Handbook's partition table.
+_PART_PURPOSE = {
+    "ESP": ("/boot/efi", "bootloader + kernels"),
+    "BIOS": ("(raw)", "GRUB boot code"),
+    "swap": ("swap", "paging + hibernate"),
+    "root": ("/", "the whole system"),
+    "home": ("/home", "your files, separate"),
+}
+
+
 def _rail_widget(current: str) -> urwid.Widget:
     rows = []
     cur_i = _RAIL_KEYS.index(current)
@@ -565,22 +599,53 @@ class DiskStep(WizardStep):
     step_title = "Disk"
 
     def help(self) -> str:
-        return ("Choose the target disk. A guided layout is proposed (ESP + RAM-sized\n"
-                "swap + root); you can adjust the sizes and root filesystem. The disk\n"
-                "is only wiped after you confirm at the Review step — nothing yet.")
+        return (
+            "GeSI proposes a whole-disk layout — like the Gentoo Handbook's\n"
+            "example, but sized for this machine. Nothing is written now; the\n"
+            "disk is partitioned and formatted only at the Install step, after\n"
+            "you confirm at Review.\n"
+            "\n"
+            "The partitions it proposes:\n"
+            "  • ESP (/boot/efi, vfat) — the EFI System Partition holds the\n"
+            "    bootloader and kernels; UEFI firmware reads it directly. On\n"
+            "    legacy BIOS you get a tiny raw BIOS-boot partition instead.\n"
+            "  • swap — paging space for when RAM fills, and the store for\n"
+            "    hibernation. Proposed = your RAM size (so you can hibernate),\n"
+            "    up to 8 GiB; above that it's capped at 16 GiB, since past\n"
+            "    8 GiB swap is overflow insurance, not hibernation-sized.\n"
+            "  • root (/) — fills the rest: the whole system (/usr, /etc, and\n"
+            "    your home, unless you split /home onto its own partition).\n"
+            "\n"
+            "You can edit any size or filesystem below. Installing ERASES\n"
+            "EVERYTHING on the target disk — back up anything you need first.")
 
     def setting_rows(self):
         disks = [d for d in disk_reader.list_block_devices() if d.type == "disk"]
         rows = [
-            ("Target disk", self.sel.disk or "(none — required)", lambda: self._pick_disk(disks)),
-            None,
-            ("Proposed layout", self._layout_summary(), None),
-            ("ESP size", self.sel.esp_size, self._edit_esp),
-            ("Swap size", self.sel.swap_size or "(none)", self._edit_swap),
-            ("Root filesystem", self.sel.root_fs, self._edit_root_fs),
-            ("Separate /home", "yes" if self.sel.separate_home else "no",
-             self._edit_separate_home),
+            ("Target disk", self._target_label(disks),
+             lambda: self._pick_disk(disks)),
         ]
+        if self.sel.disk:
+            # Handbook-style context: the data-loss warning, then the concrete
+            # partition table this proposal would create (derived from the real
+            # DiskPlan so it can't drift from what actually gets written).
+            rows.append(None)
+            rows.append((f"⚠  Installing ERASES ALL DATA on "
+                         f"{self._target_label(disks)} — done at Install, "
+                         "after you confirm at Review", None, None))
+            rows.append(None)
+            rows.append(("Proposed layout:", None, None))
+            rows.extend(self._partition_rows())
+            warn = self._space_warning(disks)
+            if warn:
+                rows.append((f"  ⚠  {warn}", None, None))
+        rows.append(None)
+        if self.sel.firmware != "bios":
+            rows.append(("ESP size", self.sel.esp_size, self._edit_esp))
+        rows.append(("Swap size", self.sel.swap_size or "(none)", self._edit_swap))
+        rows.append(("Root filesystem", self.sel.root_fs, self._edit_root_fs))
+        rows.append(("Separate /home", "yes" if self.sel.separate_home else "no",
+                     self._edit_separate_home))
         if self.sel.separate_home:
             rows.append(("Root size", self.sel.root_size, self._edit_root_size))
             rows.append(("/home filesystem", self.sel.home_fs, self._edit_home_fs))
@@ -588,15 +653,59 @@ class DiskStep(WizardStep):
         # (docs/design/gesi-disk-phase.md — its own session).
         return rows
 
-    def _layout_summary(self) -> str:
+    def _target_label(self, disks) -> str:
+        """The target disk with its size (``sda (238.5G)``), or the required-hint."""
         if not self.sel.disk:
-            return "(pick a disk)"
-        esp = "" if self.sel.firmware == "bios" else f"ESP {self.sel.esp_size} + "
-        swap = f"swap {self.sel.swap_size} + " if self.sel.swap_size else ""
-        if self.sel.separate_home:
-            return (f"{esp}{swap}root ({self.sel.root_fs}, {self.sel.root_size}) "
-                    f"+ /home ({self.sel.home_fs}, rest)")
-        return f"{esp}{swap}root ({self.sel.root_fs}, rest)"
+            return "(none — required)"
+        size = next((d.size for d in disks if d.name == self.sel.disk), "")
+        return f"{self.sel.disk} ({size})" if size else self.sel.disk
+
+    def _build_plan(self):
+        """The :class:`DiskPlan` the current selections would create, or ``None``
+        if they're not yet valid (e.g. a bad size or a separate /home without a
+        fixed root size) — so the breakdown mirrors exactly what gets written."""
+        home_fs = self.sel.home_fs if self.sel.separate_home else None
+        root_size = self.sel.root_size if self.sel.separate_home else "rest"
+        try:
+            if self.sel.firmware == "bios":
+                return provision.bios_plan(
+                    self.sel.disk, self.sel.swap_size, self.sel.root_fs,
+                    root_size=root_size, home_fs=home_fs)
+            return provision.uefi_plan(
+                self.sel.disk, self.sel.esp_size, self.sel.swap_size,
+                self.sel.root_fs, root_size=root_size, home_fs=home_fs)
+        except ValueError:
+            return None
+
+    def _partition_rows(self):
+        """One read-only row per proposed partition: number, mount, size, fs, why.
+
+        Rendered verbatim (``value=None``) with compact self-aligned columns so it
+        reads as a table even on a narrow (80-col) install console, instead of
+        wasting the base row's 24-col label padding.
+        """
+        plan = self._build_plan()
+        if plan is None:
+            return [("  (adjust the sizes / filesystem below to see the layout)",
+                     None, None)]
+        fs_by_label = {f.label: f.kind for f in plan.filesystems}
+        rows = []
+        for p in plan.partitions:
+            mount, purpose = _PART_PURPOSE.get(p.label, (p.label or "", ""))
+            kind = fs_by_label.get(p.label, "—")
+            size = "rest" if p.size == "rest" else p.size
+            rows.append((f"  {p.number}. {mount:<10}{size:<6}{kind:<6}{purpose}",
+                         None, None))
+        return rows
+
+    def _space_warning(self, disks) -> str | None:
+        """The provision layer's too-small-root warning for this disk, or None."""
+        disk_bytes = _size_to_bytes(
+            next((d.size for d in disks if d.name == self.sel.disk), ""))
+        if not disk_bytes:
+            return None
+        return provision.layout_warning(
+            disk_bytes, _detect_ram_bytes(), self.sel.firmware)
 
     def _pick_disk(self, disks):
         opts = [(d.name, f"{d.name}  {getattr(d, 'size', '')}") for d in disks] \
