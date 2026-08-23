@@ -1,5 +1,6 @@
 #include "launchermenu.h"
 
+#include "categories.h"
 #include "config.h"
 #include "launch.h"
 #include "palette.h"
@@ -8,6 +9,7 @@
 
 #include <QAction>
 #include <QApplication>
+#include <QCursor>
 #include <QDateTime>
 #include <QEvent>
 #include <QFileInfo>
@@ -18,6 +20,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QMap>
 #include <QMenu>
 #include <QProcess>
 #include <QPushButton>
@@ -61,20 +64,33 @@ QToolButton *powerButton(const QString &icon, const QString &tip, QWidget *paren
 
 LauncherMenu::LauncherMenu(QWidget *parent)
     : QWidget(parent), m_search(new QLineEdit(this)), m_list(new QListWidget(this)) {
-    setFixedSize(560, 480);
+    m_classic = Config().string(QStringLiteral("launcher/style"),
+                                QStringLiteral("win7_two_pane"))
+                == QLatin1String("classic");
 
     // The acrylic pullout: objectName drives the #HelmPullout QSS (see
     // helm::styleSheet); styled + translucent so it reads as glass, with a flat
-    // bottom edge that tucks against the bar (the pullout standard).
+    // bottom edge that tucks against the bar (the pullout standard). Both styles
+    // share this shell; the caption strip is a child (#HelmClassicCaption).
     setObjectName(QStringLiteral("HelmPullout"));
     setAttribute(Qt::WA_StyledBackground, true);
     setAttribute(Qt::WA_TranslucentBackground, true);
 
-    auto *cols = new QHBoxLayout(this);
-    cols->setContentsMargins(10, 10, 10, 10);
-    cols->setSpacing(8);
-    cols->addWidget(buildLeftPane(), 1);
-    cols->addWidget(buildRightPane());
+    if (m_classic) {
+        setFixedSize(300, 520); // taller, narrower single column
+        auto *cols = new QHBoxLayout(this);
+        cols->setContentsMargins(0, 0, 10, 0); // caption bleeds to the left edge
+        cols->setSpacing(8);
+        cols->addWidget(buildCaptionStrip());
+        cols->addWidget(buildClassicColumn(), 1);
+    } else {
+        setFixedSize(560, 480);
+        auto *cols = new QHBoxLayout(this);
+        cols->setContentsMargins(10, 10, 10, 10);
+        cols->setSpacing(8);
+        cols->addWidget(buildLeftPane(), 1);
+        cols->addWidget(buildRightPane());
+    }
 
     // Search focus is a setting (tokens.launcher.search.focus): "auto" focuses
     // the search on open (type immediately, the default); "tab" leaves focus on
@@ -100,6 +116,14 @@ QWidget *LauncherMenu::buildLeftPane() {
     m_search->installEventFilter(this);
     v->addWidget(m_search);
 
+    loadModel();
+    rebuild();
+    wireList();
+
+    return pane;
+}
+
+void LauncherMenu::loadModel() {
     m_all = scanDesktopEntries(defaultApplicationDirs());
     m_pathExes = pathExecutables(); // cached once; search filters this per keystroke
     for (const DesktopEntry &e : m_all)
@@ -107,14 +131,13 @@ QWidget *LauncherMenu::buildLeftPane() {
     m_store = loadStore();
     if (m_store.pinned.isEmpty())
         m_store.pinned = defaultPins(m_byId.keys());
-    rebuild();
+}
 
+void LauncherMenu::wireList() {
     connect(m_search, &QLineEdit::textChanged, this, &LauncherMenu::refilter);
     connect(m_list, &QListWidget::itemActivated, this, &LauncherMenu::launch);
     m_list->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(m_list, &QWidget::customContextMenuRequested, this, &LauncherMenu::showActions);
-
-    return pane;
 }
 
 QWidget *LauncherMenu::buildRightPane() {
@@ -154,9 +177,13 @@ QWidget *LauncherMenu::buildRightPane() {
     v->addWidget(runBtn);
 
     v->addStretch(1);
+    v->addWidget(buildPowerRow(rail)); // power actions, bottom-right
 
-    // Power actions, bottom-right of the rail.
-    auto *powerRow = new QWidget(rail);
+    return rail;
+}
+
+QWidget *LauncherMenu::buildPowerRow(QWidget *parent) {
+    auto *powerRow = new QWidget(parent);
     auto *p = new QHBoxLayout(powerRow);
     p->setContentsMargins(0, 0, 0, 0);
     p->setSpacing(2);
@@ -182,9 +209,99 @@ QWidget *LauncherMenu::buildRightPane() {
         });
         p->addWidget(b);
     }
-    v->addWidget(powerRow);
+    return powerRow;
+}
 
-    return rail;
+// classic: a vertical accent caption band down the left edge (Open-Shell's
+// signature caption strip). v1 is the accent fallback + the ⎈ mark; the per-biome
+// start-art render + "Linux <kernel>" caption are a follow-up (asset packaging).
+QWidget *LauncherMenu::buildCaptionStrip() {
+    auto *strip = new QWidget(this);
+    strip->setObjectName(QStringLiteral("HelmClassicCaption"));
+    strip->setAttribute(Qt::WA_StyledBackground, true);
+    strip->setFixedWidth(40);
+    auto *v = new QVBoxLayout(strip);
+    v->setContentsMargins(0, 8, 0, 10);
+    v->addStretch(1);
+    auto *mark = new QLabel(QString::fromUtf8("⎈"), strip);
+    mark->setAlignment(Qt::AlignHCenter);
+    QFont f = mark->font();
+    f.setPointSizeF(f.pointSizeF() * 1.5);
+    f.setBold(true);
+    mark->setFont(f);
+    v->addWidget(mark);
+    return strip;
+}
+
+// classic: one dense column — the app list (Pinned → Recent → "All Programs ▸"),
+// search at the bottom, then a compact action strip (Control Center, Run, power).
+QWidget *LauncherMenu::buildClassicColumn() {
+    auto *pane = new QWidget(this);
+    auto *v = new QVBoxLayout(pane);
+    v->setContentsMargins(0, 10, 0, 10);
+    v->setSpacing(6);
+
+    v->addWidget(m_list, 1);
+
+    m_search->setPlaceholderText(tr("Search…"));
+    m_search->setClearButtonEnabled(true);
+    m_search->installEventFilter(this);
+    v->addWidget(m_search);
+
+    // Action strip: Control Center + Run on the left, power on the right.
+    auto *actions = new QWidget(pane);
+    auto *h = new QHBoxLayout(actions);
+    h->setContentsMargins(0, 0, 0, 0);
+    h->setSpacing(2);
+    auto *cc = railButton(QStringLiteral("preferences-system"), tr("Control Center"), actions);
+    cc->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    connect(cc, &QToolButton::clicked, this, [this] {
+        const QString cmd =
+            Config().string(QStringLiteral("settings/command"), QStringLiteral("gest-settings"));
+        launchAndQuit(cmd);
+    });
+    h->addWidget(cc);
+    auto *runBtn = railButton(QStringLiteral("system-run"), tr("Run…"), actions);
+    runBtn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    connect(runBtn, &QToolButton::clicked, this, &LauncherMenu::openRun);
+    h->addWidget(runBtn);
+    h->addStretch(1);
+    h->addWidget(buildPowerRow(actions));
+    v->addWidget(actions);
+
+    loadModel();
+    rebuild();
+    wireList();
+
+    return pane;
+}
+
+// classic: "All Programs" fly-out — apps grouped into cascading category submenus
+// (via helm::sectionForCategories). QMenu gives native cascade + keyboard nav.
+void LauncherMenu::openAllPrograms() {
+    QMap<QString, QVector<const DesktopEntry *>> bySection; // QMap → sections A→Z
+    for (const DesktopEntry &e : m_all)                     // m_all is name-sorted
+        bySection[sectionForCategories(e.categories)].append(&e);
+
+    QMenu menu(this);
+    for (auto it = bySection.constBegin(); it != bySection.constEnd(); ++it) {
+        QMenu *sub = menu.addMenu(it.key());
+        for (const DesktopEntry *e : it.value()) {
+            QAction *a = sub->addAction(QIcon::fromTheme(e->icon), e->name);
+            const QStringList argv = commandArgv(*e);
+            const QString id = e->id;
+            connect(a, &QAction::triggered, this, [this, argv, id] {
+                if (!id.isEmpty()) {
+                    recordLaunch(m_store, id, QDateTime::currentSecsSinceEpoch());
+                    saveStore(m_store);
+                }
+                if (!argv.isEmpty())
+                    launchAndQuit(argv.first(), argv.mid(1));
+            });
+        }
+    }
+    if (!menu.isEmpty())
+        menu.exec(QCursor::pos());
 }
 
 void LauncherMenu::refilter(const QString &) {
@@ -281,8 +398,11 @@ void LauncherMenu::rebuild() {
                     shown << id;
                 }
         }
-        auto *all = new QListWidgetItem(tr("All apps  ▸"), m_list);
-        all->setData(kKindRole, 1);
+        // win7 expands All-apps in place (kind 1); classic flies out a cascading
+        // category menu (kind 2).
+        auto *all = new QListWidgetItem(m_classic ? tr("All Programs  ▸") : tr("All apps  ▸"),
+                                        m_list);
+        all->setData(kKindRole, m_classic ? 2 : 1);
     }
 
     // Select the first navigable (app / expander) row.
@@ -315,9 +435,14 @@ void LauncherMenu::openRun() {
 void LauncherMenu::launch(QListWidgetItem *item) {
     if (!item)
         return;
-    if (item->data(kKindRole).toInt() == 1) { // "All apps" → expand in place
+    const int kind = item->data(kKindRole).toInt();
+    if (kind == 1) { // win7 "All apps" → expand in place
         m_showAllApps = true;
         rebuild();
+        return;
+    }
+    if (kind == 2) { // classic "All Programs" → cascading category fly-out
+        openAllPrograms();
         return;
     }
     const QStringList argv = item->data(kArgvRole).toStringList();
