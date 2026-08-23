@@ -6,7 +6,12 @@ from __future__ import annotations
 import pytest
 
 from gest.core.install import assemble, capabilities
-from gest.core.install.assemble import InstallSelections, assemble_plan, propose
+from gest.core.install.assemble import (
+    InstallSelections,
+    UserDraft,
+    assemble_plan,
+    propose,
+)
 from gest.core.install.plan import LICENSE_POLICIES
 from gest.core.stage3.model import Stage3Selection
 
@@ -89,8 +94,7 @@ def _base_sel(**kw) -> InstallSelections:
     sel = propose("desktop")
     sel.disk = "vda"
     # desktop is rootless → needs an admin user, not a root pw
-    sel.create_user = True
-    sel.user_name = "captain"
+    sel.users = [UserDraft(name="captain", admin=True)]
     for k, v in kw.items():
         setattr(sel, k, v)
     return sel
@@ -106,7 +110,7 @@ def test_plan_carries_license_admin_and_use():
 
 
 def test_rootless_requires_admin_user():
-    sel = _base_sel(create_user=False, user_name="")
+    sel = _base_sel(users=[])                          # no admin user
     with pytest.raises(ValueError, match="admin-capable"):
         assemble_plan(sel, _stage3())
 
@@ -160,6 +164,6 @@ def test_bad_clock_mode_rejected():
 
 
 def test_user_password_marks_set_password():
-    sel = _base_sel(user_password="hunter2")          # desktop/rootless w/ create_user
+    sel = _base_sel(users=[UserDraft(name="captain", admin=True, password="hunter2")])
     plan = assemble_plan(sel, _stage3())
-    assert plan.user is not None and plan.user.set_password is True
+    assert plan.users and plan.users[0].set_password is True

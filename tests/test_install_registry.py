@@ -58,8 +58,8 @@ _EXPECTED_LABELS = [
     "Install the bootloader",
     "Install the m1n1 boot stub",
     "Set the root password",
-    "Create the user account",
-    "Set the user password",
+    "Create user accounts",
+    "Set user passwords",
     "Configure the network",
     "Enable the HeDE session",
     "Configure the clock",
@@ -88,13 +88,15 @@ _CHROOT_LABELS = {
     "Install the HeDE desktop",
     "Install kernel sources", "Build the kernel", "Install the bootloader",
     "Install the m1n1 boot stub",
-    "Set the root password", "Create the user account", "Set the user password",
+    "Set the root password", "Create user accounts", "Set user passwords",
     "Configure the clock",
 }
 _PHASE_ORDER = list(Phase)
 
 
-def _plan(*, user=None):
+def _plan(*, user=None, users=()):
+    if user is not None:                       # compat shim for single-user call sites
+        users = (user,)
     disk = provision.uefi_plan("sda", "512M", "8G", "ext4")
     return InstallPlan(
         disk=disk,
@@ -111,7 +113,7 @@ def _plan(*, user=None):
         timezone="UTC",
         locale="en_US.UTF-8",
         keymap="us",
-        user=user,
+        users=tuple(users),
     )
 
 
@@ -704,22 +706,43 @@ def test_configure_clock_local_sets_local_rtc_no_ntp():
     assert "LOCAL" in blob and "chrony" not in blob
 
 
-def test_set_user_password_gated_and_fed_on_stdin():
+def test_createuser_builds_a_step_set_per_user():
+    p = _plan(users=(UserSpec(name="alice", wheel=True),
+                     UserSpec(name="bob", wheel=False)))
+    steps = CreateUser().build(_ctx(FakeExecutor(), plan=p))
+    labels = " | ".join(s.label for s in steps)
+    assert "create user alice" in labels and "create user bob" in labels
+    assert "add alice to wheel" in labels
+    assert "add bob to wheel" not in labels          # bob isn't an admin
+
+
+def test_set_user_passwords_gated_and_fed_on_stdin():
     from gest.core.install.plan import UserSpec
     from gest.core.install.registry import SetUserPassword
     step = SetUserPassword()
-    step.secret = lambda: "pw"
-    # no user → no-op + satisfied
+    step.secrets = {"captain": lambda: "pw", "guest": lambda: "gg"}
+    # no users → no-op + satisfied
     p0 = _plan()
     assert step.build(_ctx(FakeExecutor(), plan=p0)) == []
     assert asyncio.run(step.is_satisfied(_ctx(FakeExecutor(), plan=p0))) is True
-    # user WITH set_password → one chpasswd step; the password rides stdin, not argv
-    p1 = _plan(user=UserSpec(name="captain", set_password=True))
+    # two users, one WITHOUT set_password → one chpasswd step per set_password user;
+    # each password rides stdin, not argv, keyed by name
+    p1 = _plan(users=(UserSpec(name="captain", set_password=True),
+                      UserSpec(name="guest", set_password=False)))
     steps = step.build(_ctx(FakeExecutor(), plan=p1))
     assert len(steps) == 1
     assert "captain:pw" in steps[0].stdin and "pw" not in " ".join(steps[0].argv)
     assert asyncio.run(step.is_satisfied(_ctx(FakeExecutor(), plan=p1))) is False
-    # user WITHOUT set_password → skipped
+    # every user WITHOUT set_password → skipped/satisfied
     p2 = _plan(user=UserSpec(name="captain", set_password=False))
     assert step.build(_ctx(FakeExecutor(), plan=p2)) == []
     assert asyncio.run(step.is_satisfied(_ctx(FakeExecutor(), plan=p2))) is True
+
+
+def test_set_user_passwords_missing_secret_raises():
+    from gest.core.install.plan import UserSpec
+    from gest.core.install.registry import SetUserPassword
+    step = SetUserPassword()                      # no secrets wired
+    p = _plan(user=UserSpec(name="captain", set_password=True))
+    with pytest.raises(ValueError, match="captain"):
+        step.build(_ctx(FakeExecutor(), plan=p))

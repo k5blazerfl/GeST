@@ -150,7 +150,7 @@ class InstallPlan:
     # (a profile NAME, not a number — systemd for HeDE; assemble derives it per
     # arch + stage3 flavor via assemble.profile_name)
     root_password: bool = True     # whether to set it (secret prompted at run)
-    user: UserSpec | None = None
+    users: tuple[UserSpec, ...] = ()   # the non-root accounts to create in the target
     network: NetworkSpec = field(default_factory=NetworkSpec)
     binary_pref: bool = True       # --getbinpkg for @world, else source
     tier2: frozenset[str] = frozenset()   # opt-in day-2 modules, off by default

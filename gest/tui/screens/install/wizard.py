@@ -22,7 +22,7 @@ from gest.core.datetime import reader as dt_reader
 from gest.core.disk import provision
 from gest.core.disk import reader as disk_reader
 from gest.core.install import assemble, capabilities
-from gest.core.install.assemble import InstallSelections
+from gest.core.install.assemble import InstallSelections, UserDraft
 from gest.core.install.netcheck import check_connectivity
 from gest.core.install.plan import ADMIN_MODELS, LICENSE_POLICIES, sets_root_password
 from gest.core.network import reader as net_reader
@@ -744,37 +744,42 @@ class AccountStep(WizardStep):
                 "others set a root password.")
 
     def setting_rows(self):
-        if self.sel.create_user:
-            user = self.sel.user_name + (" · password set" if self.sel.user_password
-                                         else " · no password")
-        else:
-            user = "(none)"
-        rootpw = "(set)" if self.sel.root_password else "(not set)"
-        out = [
+        rows = [
             ("Hostname", self.sel.hostname, self._edit_hostname),
-            ("User account", user, self._edit_user),
+            None,
+            ("Users", None, None),                          # section header
         ]
-        if sets_root_password(self.sel.admin_model):
-            out.append(("Root password", rootpw, self._edit_rootpw))
-        return out
+        for i, u in enumerate(self.sel.users):
+            tag = "  (admin)" if u.admin else ""
+            rows.append((f"   {u.name or '(unnamed)'}{tag}", None,
+                         lambda i=i: self._edit_user(i)))
+        rows.append(("   + Add user", None, lambda: self._edit_user(None)))
+        rows.append(None)
+        # Root is enabled (has a password) unless the admin model locks it (rootless).
+        enabled = sets_root_password(self.sel.admin_model)
+        rows.append(("Root", "enabled" if enabled else "disabled",
+                     self._edit_rootpw if enabled else None))
+        return rows
 
     def _edit_hostname(self):
         self._edit_text("Hostname", "hostname")
 
-    def _edit_user(self):
-        # No "Create a user" toggle — being in this editor is the intent to make
-        # one. The name field is the switch: a name creates the account, a blank
-        # name means no separate user (root-only setups).
-        name = urwid.Edit("Name              : ", self.sel.user_name)
-        comment = urwid.Edit("Full name/comment : ", self.sel.user_comment)
-        wheel = urwid.CheckBox("Administrator account", state=self.sel.user_wheel)
-        pw = urwid.Edit("Password          : ", self.sel.user_password, mask="*")
-        pw2 = urwid.Edit("Confirm           : ", self.sel.user_password, mask="*")
+    def _edit_user(self, index=None):
+        # index None → add a new account; otherwise edit sel.users[index]. Clearing
+        # the name of an existing account removes it.
+        editing = index is not None
+        draft = self.sel.users[index] if editing else UserDraft()
+        name = urwid.Edit("Name              : ", draft.name)
+        comment = urwid.Edit("Full name/comment : ", draft.comment)
+        admin = urwid.CheckBox("Administrator account", state=draft.admin)
+        pw = urwid.Edit("Password          : ", draft.password, mask="*")
+        pw2 = urwid.Edit("Confirm           : ", draft.password, mask="*")
 
         def save():
             uname = name.edit_text.strip()
             if not uname:
-                self.sel.create_user = False          # blank name → no separate user
+                if editing:
+                    del self.sel.users[index]            # cleared name → remove
                 self.app.pop()
                 self._render()
                 return
@@ -784,20 +789,32 @@ class AccountStep(WizardStep):
             if pw.edit_text != pw2.edit_text:
                 self.app.notify("Passwords do not match.", error=True)
                 return
-            self.sel.create_user = True
-            self.sel.user_name = uname
-            self.sel.user_comment = comment.edit_text.strip()
-            self.sel.user_wheel = wheel.state
-            self.sel.user_password = pw.edit_text
+            draft.name = uname
+            draft.comment = comment.edit_text.strip()
+            draft.admin = admin.state
+            draft.password = pw.edit_text
+            if not editing:
+                self.sel.users.append(draft)
             self.app.pop()
             self._render()
+
+        def remove():
+            if editing:
+                del self.sel.users[index]
+            self.app.pop()
+            self._render()
+
+        buttons = [("Save", save)]
+        if editing:
+            buttons.append(("Remove", remove))
+        buttons.append(("Cancel", self.app.pop))
         modal = Modal(self.app, "User account",
-                      [urwid.Text(("hint", "An everyday account with administrator "
-                                           "rights. A password lets them log in and "
-                                           "make system changes.")),
-                       urwid.Divider(), name, comment, wheel, pw, pw2],
-                      [("Save", save), ("Cancel", self.app.pop)])
-        self.app.push_modal(modal, width=("relative", 70), height=("relative", 64))
+                      [urwid.Text(("hint", "An everyday account. Turn on Administrator "
+                                           "to let it install software and change "
+                                           "settings; a password lets it log in.")),
+                       urwid.Divider(), name, comment, admin, pw, pw2],
+                      buttons)
+        self.app.push_modal(modal, width=("relative", 70), height=("relative", 66))
 
     def _edit_rootpw(self):
         pw = urwid.Edit("Root password: ", mask="*")
@@ -830,18 +847,21 @@ class AccountStep(WizardStep):
     def validate(self):
         if not hostname_core.valid_hostname(self.sel.hostname):
             return f"Invalid hostname: {self.sel.hostname!r}"
+        # Every account you name has to be usable: a valid name and a password.
+        for u in self.sel.users:
+            if not u.name:
+                continue
+            if not valid_user_name(u.name):
+                return f"“{u.name}” isn't a valid user name."
+            if not u.password:
+                return f"Give {u.name} a password — it's needed to log in."
         if sets_root_password(self.sel.admin_model):
             if not self.sel.root_password:
-                return "Set a root password (or choose the Rootless admin model)."
-        else:
-            if not (self.sel.create_user and valid_user_name(self.sel.user_name)
-                    and self.sel.user_wheel):
-                return ("This setup needs an administrator account.\n\n"
-                        "On the User account row, add a user and turn on "
-                        "“Administrator account”.")
-            if not self.sel.user_password:
-                return ("Give the administrator a password — they'll need it to log "
-                        "in and make system changes.")
+                return ("Set a root password (or choose the Rootless admin model on "
+                        "Base System).")
+        elif not any(valid_user_name(u.name) and u.admin for u in self.sel.users):
+            return ("This setup needs an administrator account.\n\n"
+                    "In the Users list, add a user and turn on “Administrator account”.")
         return None
 
 

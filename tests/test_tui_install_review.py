@@ -25,10 +25,8 @@ def _online(monkeypatch):
 def _ready_desktop():
     sel = assemble.propose("desktop")            # rootless
     sel.disk = "vda"
-    sel.create_user = True
-    sel.user_name = "captain"
-    sel.user_wheel = True
-    sel.user_password = "hunter2"                # rootless needs the admin user to have one
+    # rootless needs an admin user with a password
+    sel.users = [assemble.UserDraft(name="captain", admin=True, password="hunter2")]
     return sel
 
 
@@ -47,18 +45,26 @@ def test_review_renders_grouped_readout():
     assert "Install" in out
 
 
-def test_rootless_root_password_reads_not_applicable():
+def test_rootless_root_reads_disabled():
     _app, scr = _review(_ready_desktop())            # desktop = rootless, root locked
     out = _render(scr)
-    assert "Root password" in out and "(N/A)" in out
-    assert "(not set)" not in out                     # not a "missing" field — N/A
+    assert "Root" in out and "disabled" in out
+    assert "(set)" not in out and "(not set)" not in out   # no password flags
 
 
-def test_traditional_root_password_reads_not_set_when_missing():
-    sel = assemble.propose("server")                 # traditional → a root password applies
+def test_traditional_root_reads_enabled():
+    sel = assemble.propose("server")                 # traditional → root has a password
     sel.disk = "vda"
     _app, scr = _review(sel)
-    assert "(not set)" in _render(scr)                # applicable but not yet provided
+    assert "enabled" in _render(scr)
+
+
+def test_review_shows_users_as_a_roster():
+    sel = _ready_desktop()
+    sel.users.append(assemble.UserDraft(name="guest", admin=False, password="g"))
+    out = _render(_review(sel)[1])
+    assert "captain" in out and "(admin)" in out and "guest" in out
+    assert "password set" not in out                 # password flags gone
 
 
 def test_ready_selection_has_no_blockers_and_offers_install():

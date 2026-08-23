@@ -5,7 +5,12 @@ import pytest
 
 from gest.core.bootloader.install import install_steps
 from gest.core.install import assemble
-from gest.core.install.assemble import InstallSelections, assemble_plan, resolve_stage3
+from gest.core.install.assemble import (
+    InstallSelections,
+    UserDraft,
+    assemble_plan,
+    resolve_stage3,
+)
 from gest.core.install.plan import NetworkSpec, UserSpec
 from gest.core.stage3.model import (
     ARM64_VARIANTS,
@@ -168,25 +173,27 @@ def test_default_selections_need_a_disk_and_password():
 
 # --- user account -----------------------------------------------------------
 
-def test_assemble_builds_a_user_when_requested():
-    sel = _ok_selection(create_user=True, user_name="tux", user_comment="Tux",
-                        user_shell="/bin/zsh", user_wheel=True)
+def test_assemble_builds_users_when_requested():
+    sel = _ok_selection(users=[
+        UserDraft(name="tux", comment="Tux", shell="/bin/zsh", admin=True),
+        UserDraft(name="guest", admin=False, password="pw"),
+    ])
     plan = assemble_plan(sel, _S3)
-    assert isinstance(plan.user, UserSpec)
-    assert plan.user == UserSpec(name="tux", comment="Tux", shell="/bin/zsh", wheel=True)
+    assert plan.users == (
+        UserSpec(name="tux", comment="Tux", shell="/bin/zsh", wheel=True),
+        UserSpec(name="guest", wheel=False, set_password=True),
+    )
 
 
-def test_assemble_omits_the_user_by_default():
-    assert assemble_plan(_ok_selection(), _S3).user is None
-    # create_user False even with a name filled in → no user
-    assert assemble_plan(_ok_selection(user_name="tux"), _S3).user is None
+def test_assemble_omits_users_by_default():
+    assert assemble_plan(_ok_selection(), _S3).users == ()
+    # a blank draft (unfilled "+ Add user" row) is skipped, not created
+    assert assemble_plan(_ok_selection(users=[UserDraft()]), _S3).users == ()
 
 
-def test_assemble_rejects_a_bad_or_empty_user_name():
+def test_assemble_rejects_a_bad_user_name():
     with pytest.raises(ValueError, match="user name"):
-        assemble_plan(_ok_selection(create_user=True, user_name=""), _S3)
-    with pytest.raises(ValueError, match="user name"):
-        assemble_plan(_ok_selection(create_user=True, user_name="1bad"), _S3)
+        assemble_plan(_ok_selection(users=[UserDraft(name="1bad")]), _S3)
 
 
 # --- target network ---------------------------------------------------------

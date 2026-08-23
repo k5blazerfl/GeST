@@ -515,7 +515,11 @@ class EnableDesktopSession(FuncStep):
     async def run(self, ctx: InstallContext, on_progress: OnProgress | None = None) -> None:
         if not ctx.plan.desktop:
             return
-        user = ctx.plan.user.name if ctx.plan.user else "root"
+        # Autologin the first admin account (fall back to the first account, then
+        # root) — a desktop needs someone to land on the session.
+        admins = [u.name for u in ctx.plan.users if u.wheel]
+        others = [u.name for u in ctx.plan.users]
+        user = admins[0] if admins else others[0] if others else "root"
         path = write_under_root(
             ctx.root, desktop.GREETD_CONFIG, desktop.greetd_autologin_config(user))
         _emit(on_progress, f"wrote {path}")
@@ -866,75 +870,75 @@ class SetRootPassword(ArgvStep):
 
 
 class CreateUser(ArgvStep):
-    """Create the optional non-root user and add it to ``wheel``."""
+    """Create the non-root accounts and add each admin one to ``wheel``."""
 
-    label = "Create the user account"
+    label = "Create user accounts"
     phase = Phase.USERS_NETWORK
     chroot = True
 
     def build(self, ctx: InstallContext) -> list[Step]:
-        user = ctx.plan.user
-        if user is None:
-            return []
-        steps = [Step(f"create user {user.name}",
-                      useradd_argv(user.name, comment=user.comment, shell=user.shell))]
-        if user.wheel:
-            steps.append(Step(f"add {user.name} to wheel",
-                              gpasswd_argv("wheel", user.name, add=True)))
-        if ctx.plan.desktop:
-            # A desktop autologin user needs GPU/input/audio access. systemd-logind
-            # grants it to the active session via seat ACLs, but the conventional
-            # groups are belt-and-suspenders (and needed if a compositor probes them
-            # directly). Best-effort per group so one the profile didn't create can't
-            # fail the install.
-            steps.append(Step(f"add {user.name} to the desktop device groups", [
-                "sh", "-c",
-                'for g in video input audio render; do getent group "$g" '
-                f'>/dev/null && gpasswd -a {user.name} "$g"; done']))
+        steps: list[Step] = []
+        for user in ctx.plan.users:
+            steps.append(Step(f"create user {user.name}",
+                         useradd_argv(user.name, comment=user.comment, shell=user.shell)))
+            if user.wheel:
+                steps.append(Step(f"add {user.name} to wheel",
+                                  gpasswd_argv("wheel", user.name, add=True)))
+            if ctx.plan.desktop:
+                # A desktop autologin user needs GPU/input/audio access. systemd-logind
+                # grants it to the active session via seat ACLs, but the conventional
+                # groups are belt-and-suspenders (and needed if a compositor probes them
+                # directly). Best-effort per group so one the profile didn't create can't
+                # fail the install.
+                steps.append(Step(f"add {user.name} to the desktop device groups", [
+                    "sh", "-c",
+                    'for g in video input audio render; do getent group "$g" '
+                    f'>/dev/null && gpasswd -a {user.name} "$g"; done']))
         return steps
 
     async def is_satisfied(self, ctx: InstallContext) -> bool:
-        user = ctx.plan.user
-        if user is None:
+        if not ctx.plan.users:
             return True
         path = rootpath.resolve(ctx.root, "/etc/passwd")
         try:
             with open(path, encoding="utf-8") as fh:
-                return any(line.split(":", 1)[0] == user.name for line in fh)
+                names = {line.split(":", 1)[0] for line in fh}
         except OSError:
             return False
+        return all(u.name in names for u in ctx.plan.users)
 
 
 class SetUserPassword(ArgvStep):
-    """Set the created user's password via ``chpasswd`` inside the target.
+    """Set each account's password via ``chpasswd`` inside the target.
 
-    Mirrors :class:`SetRootPassword` — the password is NOT in the plan; it rides a
-    run-time :attr:`secret` callable, fed to ``chpasswd`` on stdin so it never
-    lands in argv or a log. Runs after ``CreateUser`` (the user must exist).
+    Mirrors :class:`SetRootPassword` — passwords are NOT in the plan; each rides a
+    run-time callable in :attr:`secrets` (keyed by user name), fed to ``chpasswd``
+    on stdin so it never lands in argv or a log. Runs after ``CreateUser``.
     """
 
-    label = "Set the user password"
+    label = "Set user passwords"
     phase = Phase.USERS_NETWORK
     chroot = True
 
-    #: Callable[[], str] returning the password; set by the caller before run.
-    secret = None
-
     def __init__(self) -> None:
-        self.stdin = ""
+        #: dict[str, Callable[[], str]] — password callable per user name; set by
+        #: the caller (build_registry) before the step runs.
+        self.secrets: dict[str, object] = {}
 
     def build(self, ctx: InstallContext) -> list[Step]:
-        user = ctx.plan.user
-        if user is None or not user.set_password:
-            return []
-        if self.secret is None:
-            raise ValueError("no user-password secret supplied to SetUserPassword")
-        argv, self.stdin = chpasswd_input(user.name, self.secret())
-        return [Step(f"set {user.name}'s password", argv, stdin=self.stdin)]
+        steps: list[Step] = []
+        for user in ctx.plan.users:
+            if not user.set_password:
+                continue
+            secret = self.secrets.get(user.name)
+            if secret is None:
+                raise ValueError(f"no password secret supplied for user {user.name!r}")
+            argv, stdin = chpasswd_input(user.name, secret())
+            steps.append(Step(f"set {user.name}'s password", argv, stdin=stdin))
+        return steps
 
     async def is_satisfied(self, ctx: InstallContext) -> bool:
-        user = ctx.plan.user
-        return not (user is not None and user.set_password)
+        return not any(u.set_password for u in ctx.plan.users)
 
 
 class ConfigureNetwork(FuncStep):
@@ -1115,11 +1119,11 @@ def _root_password_step(root_secret: Secret | None) -> SetRootPassword:
     return step
 
 
-def _user_password_step(user_secret: Secret | None) -> SetUserPassword:
-    """A ``SetUserPassword`` with its run-time secret callable wired in (if given)."""
+def _user_password_step(user_secrets: dict[str, Secret] | None) -> SetUserPassword:
+    """A ``SetUserPassword`` with its per-user secret callables wired in (if given)."""
     step = SetUserPassword()
-    if user_secret is not None:
-        step.secret = user_secret
+    if user_secrets:
+        step.secrets = dict(user_secrets)
     return step
 
 
@@ -1187,7 +1191,7 @@ class ConfigureClock(ArgvStep):
 
 
 def build_registry(plan: InstallPlan, *, root_secret: Secret | None = None,
-                   user_secret: Secret | None = None) -> list[InstallStep]:
+                   user_secrets: dict[str, Secret] | None = None) -> list[InstallStep]:
     """The full ordered install steps for ``plan``, in Handbook order (the contract).
 
     Row 2 (``MakeFilesystems``) is folded into ``Partition`` and row 20 (teardown)
@@ -1222,7 +1226,7 @@ def build_registry(plan: InstallPlan, *, root_secret: Secret | None = None,
         InstallBootStub(),          # arm64/Asahi only; no-op on x86
         _root_password_step(root_secret),
         CreateUser(),
-        _user_password_step(user_secret),
+        _user_password_step(user_secrets),
         ConfigureNetwork(),
         EnableDesktopSession(),     # boot into HeDE (no-op for base Gentoo)
         ConfigureClock(),           # RTC convention + chrony/local NTP policy

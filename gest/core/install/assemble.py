@@ -52,6 +52,22 @@ DEFAULT_TARGET_ROOT = "/mnt/gentoo"
 
 
 @dataclass(slots=True)
+class UserDraft:
+    """One editable non-root account on the selections (the UI edits these in place).
+
+    ``admin`` maps to the wheel group; ``password`` is an in-memory secret that
+    never enters the plan (like root's) — it becomes ``UserSpec.set_password`` and
+    is handed to ``build_registry(user_secrets=…)`` at run time.
+    """
+
+    name: str = ""
+    comment: str = ""
+    shell: str = "/bin/bash"
+    admin: bool = True
+    password: str = ""
+
+
+@dataclass(slots=True)
 class InstallSelections:
     """The installer overview's editable state (mutable; the UI edits it in place).
 
@@ -81,13 +97,9 @@ class InstallSelections:
     # SetTimezoneLocale locale-gen fix lands; only then is en_US.UTF-8 safe as a default.
     keymap: str = "us"
     clock: str = "chrony"             # how the target keeps time (plan.CLOCK_MODES)
-    # user (optional; created in the target when create_user)
-    create_user: bool = False
-    user_name: str = ""
-    user_comment: str = ""
-    user_shell: str = "/bin/bash"
-    user_wheel: bool = True
-    user_password: str = ""           # in-memory only; never in the plan (like root_password)
+    # non-root accounts (0+); each drafted in the UI, created in the target. Passwords
+    # are in-memory only, never in the plan (like root_password).
+    users: list[UserDraft] = field(default_factory=list)
     # target network (the INSTALLED system's netifrc/DNS — not the live env).
     # net_interface blank leaves it default/unconfigured (the step no-ops).
     net_interface: str = ""
@@ -243,23 +255,27 @@ def resolve_stage3(variant: Stage3Variant, *, mirror: str = index.MIRROR) -> Sta
     )
 
 
-def _build_user(sel: InstallSelections) -> UserSpec | None:
-    """The optional non-root user (``None`` unless ``create_user``).
+def _build_users(sel: InstallSelections) -> tuple[UserSpec, ...]:
+    """The non-root accounts to create (``()`` when none are drafted).
 
-    Reuses the shadow-utils name rule from ``users.commands`` — an empty or
-    otherwise invalid name raises rather than assembling a bad plan.
+    Blank drafts are skipped (an unfilled ``+ Add user`` row); each remaining name
+    is checked against the shadow-utils rule from ``users.commands`` — an invalid
+    name raises rather than assembling a bad plan.
     """
-    if not sel.create_user:
-        return None
-    if not valid_user_name(sel.user_name):
-        raise ValueError(f"invalid user name: {sel.user_name!r}")
-    return UserSpec(
-        name=sel.user_name,
-        comment=sel.user_comment,
-        shell=sel.user_shell,
-        wheel=sel.user_wheel,
-        set_password=bool(sel.user_password),
-    )
+    specs: list[UserSpec] = []
+    for draft in sel.users:
+        if not draft.name.strip():
+            continue
+        if not valid_user_name(draft.name):
+            raise ValueError(f"invalid user name: {draft.name!r}")
+        specs.append(UserSpec(
+            name=draft.name,
+            comment=draft.comment,
+            shell=draft.shell,
+            wheel=draft.admin,
+            set_password=bool(draft.password),
+        ))
+    return tuple(specs)
 
 
 def _build_gpu(sel: InstallSelections) -> GpuSpec:
@@ -410,11 +426,11 @@ def assemble_plan(sel: InstallSelections, stage3: Stage3Selection) -> InstallPla
     if sets_root_password(sel.admin_model):
         if not sel.root_password:
             raise ValueError("a root password is required")
-    elif not (sel.create_user and valid_user_name(sel.user_name) and sel.user_wheel):
+    elif not any(valid_user_name(u.name) and u.admin for u in sel.users):
         raise ValueError("a rootless install needs an admin-capable (wheel) user")
     global_use = capabilities.resolve_global_use(sel.capabilities)  # raises on typo
     overrides = tuple(sorted(sel.make_conf_overrides.items()))
-    user = _build_user(sel)
+    users = _build_users(sel)
     network = _build_network(sel)
     # Seamless boot needs plymouth + the HeDE theme, both installed by the desktop
     # step; requesting it without the desktop is a no-op, not a broken install.
@@ -468,7 +484,7 @@ def assemble_plan(sel: InstallSelections, stage3: Stage3Selection) -> InstallPla
         locale=sel.locale,
         keymap=sel.keymap,
         clock=sel.clock,
-        user=user,
+        users=users,
         network=network,
         binary_pref=sel.binary_pref,
         tier2=frozenset(sel.tier2),

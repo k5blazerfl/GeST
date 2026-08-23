@@ -22,7 +22,7 @@ from gest.core.disk import reader as disk_reader
 from gest.core.exec.chroot import ChrootExecutor
 from gest.core.exec.select import choose_executor
 from gest.core.install import assemble
-from gest.core.install.assemble import InstallSelections
+from gest.core.install.assemble import InstallSelections, UserDraft
 from gest.core.install.context import InstallContext, StateStore
 from gest.core.install.engine import run_install
 from gest.core.install.netcheck import check_connectivity
@@ -148,10 +148,10 @@ class InstallOverviewScreen(Screen):
         return "ok"
 
     def _user_value(self) -> str:
-        if not self._sel.create_user or not self._sel.user_name:
+        named = [u for u in self._sel.users if u.name]
+        if not named:
             return "(none)"
-        extra = " · wheel (sudo)" if self._sel.user_wheel else ""
-        return f"{self._sel.user_name}{extra}"
+        return ", ".join(u.name + (" (admin)" if u.admin else "") for u in named)
 
     def _network_value(self) -> str:
         if not self._sel.net_interface:
@@ -314,33 +314,33 @@ class InstallOverviewScreen(Screen):
         self._pick_modal("Console keymap", console_core.list_keymaps(), self._sel.keymap, apply)
 
     def _edit_user(self) -> None:
-        create = urwid.CheckBox("Create a user", state=self._sel.create_user)
-        name = urwid.Edit("Name            : ", self._sel.user_name)
-        comment = urwid.Edit("Full name/comment: ", self._sel.user_comment)
-        shell = urwid.Edit("Shell           : ", self._sel.user_shell)
-        wheel = urwid.CheckBox("Add to wheel (sudo)", state=self._sel.user_wheel)
+        draft = self._sel.users[0] if self._sel.users else UserDraft()
+        name = urwid.Edit("Name            : ", draft.name)
+        comment = urwid.Edit("Full name/comment: ", draft.comment)
+        shell = urwid.Edit("Shell           : ", draft.shell)
+        admin = urwid.CheckBox("Administrator (sudo)", state=draft.admin)
 
         def save():
-            if not create.state:
-                self._sel.create_user = False
+            uname = name.edit_text.strip()
+            if not uname:
+                self._sel.users = []          # blank name → no user
                 self.app.pop()
                 self._render()
                 return
-            uname = name.edit_text.strip()
             if not valid_user_name(uname):
                 self.app.notify("Invalid user name.", error=True)
                 return
-            self._sel.create_user = True
-            self._sel.user_name = uname
-            self._sel.user_comment = comment.edit_text.strip()
-            self._sel.user_shell = shell.edit_text.strip() or "/bin/bash"
-            self._sel.user_wheel = wheel.state
+            draft.name = uname
+            draft.comment = comment.edit_text.strip()
+            draft.shell = shell.edit_text.strip() or "/bin/bash"
+            draft.admin = admin.state
+            self._sel.users = [draft]
             self.app.pop()
             self._render()
 
         modal = Modal(self.app, "User account",
                       [urwid.Text(("hint", "An optional non-root user for the target.")),
-                       urwid.Divider(), create, name, comment, shell, wheel],
+                       urwid.Divider(), name, comment, shell, admin],
                       [("Save", save), ("Cancel", self.app.pop)])
         self.app.push_modal(modal, width=("relative", 70), height=("relative", 60))
 
@@ -808,9 +808,12 @@ class InstallRunScreen(StreamLog, Screen):
             return
 
         secret = self._sel.root_password
-        user_secret = self._sel.user_password
+        # One password callable per named account (captured by value so each closure
+        # keeps its own secret); fed to chpasswd on stdin at run time, never logged.
+        user_secrets = {u.name: (lambda p=u.password: p)
+                        for u in self._sel.users if u.name}
         steps = build_registry(plan, root_secret=lambda: secret,
-                               user_secret=lambda: user_secret)
+                               user_secrets=user_secrets)
         self._labels = [s.label for s in steps]
         self._step_phases = [s.phase for s in steps]
         self._total_steps = len(steps)

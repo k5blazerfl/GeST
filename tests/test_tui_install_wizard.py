@@ -88,21 +88,16 @@ def test_disk_pick_applies_guided_sizes():
 
 
 def test_account_rootless_needs_admin_user():
-    sel = assemble.propose("desktop")                   # rootless
-    sel.create_user = False
+    sel = assemble.propose("desktop")                   # rootless, no users yet
     _app, step, _ = _step(wz.AccountStep, sel)
     assert step.validate() is not None
-    sel.create_user = True
-    sel.user_name = "captain"
-    sel.user_wheel = True
-    sel.user_password = "hunter2"                     # rootless also needs a user password
+    sel.users = [assemble.UserDraft(name="captain", admin=True, password="hunter2")]
     assert step.validate() is None
 
 
 def test_blocker_is_a_popup_without_group_jargon():
     import urwid
     sel = assemble.propose("desktop")                   # rootless, no user → blocks
-    sel.create_user = False
     app, step, _ = _step(wz.AccountStep, sel)
     step.advance()
     top = app._stack[-1]
@@ -110,6 +105,26 @@ def test_blocker_is_a_popup_without_group_jargon():
     out = "\n".join(r.decode() for r in top.render((100, 44), focus=True).text)
     assert "administrator account" in out
     assert "wheel" not in out.lower()                   # no group jargon for users
+
+
+def test_account_lists_users_and_root_disabled_on_rootless():
+    sel = assemble.propose("desktop")                 # rootless → Root disabled
+    sel.users = [assemble.UserDraft(name="captain", admin=True, password="x"),
+                 assemble.UserDraft(name="guest", admin=False, password="y")]
+    _app, step, _ = _step(wz.AccountStep, sel)
+    out = "\n".join(r.decode() for r in step.render((96, 30), focus=True).text)
+    assert "Users" in out
+    assert "captain" in out and "(admin)" in out and "guest" in out
+    assert "+ Add user" in out                        # the roster grows
+    assert "Root" in out and "disabled" in out        # rootless locks root
+    assert "password set" not in out                  # no password flags
+
+
+def test_account_root_enabled_for_traditional():
+    sel = assemble.propose("server")                  # traditional → root has a password
+    _app, step, _ = _step(wz.AccountStep, sel)
+    out = "\n".join(r.decode() for r in step.render((96, 30), focus=True).text)
+    assert "Root" in out and "enabled" in out
 
 
 def test_account_traditional_needs_root_password():
@@ -316,11 +331,8 @@ def test_admin_model_lives_on_base_system_not_account():
 
 def test_rootless_requires_a_user_password():
     sel = assemble.propose("desktop")                 # rootless
-    sel.create_user = True
-    sel.user_name = "captain"
-    sel.user_wheel = True
-    sel.user_password = ""
+    sel.users = [assemble.UserDraft(name="captain", admin=True, password="")]
     _app, step, _ = _step(wz.AccountStep, sel)
     assert step.validate() is not None                # admin user has no password → blocks
-    sel.user_password = "hunter2"
+    sel.users[0].password = "hunter2"
     assert step.validate() is None
