@@ -71,9 +71,9 @@ class ReviewScreen(Screen):
             if not s.root_password:
                 out.append("a root password")
         elif not (s.create_user and valid_user_name(s.user_name) and s.user_wheel):
-            out.append("an admin (wheel) user")
+            out.append("an administrator account")
         elif not s.user_password:
-            out.append("a password for the admin user")
+            out.append("a password for the administrator")
         if not valid_hostname(s.hostname):
             out.append("a valid hostname")
         return out

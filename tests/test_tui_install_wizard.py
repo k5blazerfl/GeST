@@ -47,9 +47,11 @@ def test_welcome_goes_to_get_online_when_offline(monkeypatch):
 
 def test_online_blocks_when_offline(monkeypatch):
     monkeypatch.setattr(wz, "check_connectivity", lambda: (False, "no route"))
+    import urwid
     app, step, _ = _step(wz.OnlineStep)
     step.advance()
-    assert app._stack[-1] is step                       # blocked — did not advance
+    assert isinstance(app._stack[-1], urwid.Overlay)    # blocked → attention pop-up
+    assert step in app._stack                           # did not advance past this gate
     assert step.validate() is not None
 
 
@@ -72,8 +74,10 @@ def test_disk_requires_a_target():
     sel.disk = ""
     app, step, _ = _step(wz.DiskStep, sel)
     assert step.validate() is not None
+    import urwid
     step.advance()
-    assert app._stack[-1] is step                       # blocked
+    assert isinstance(app._stack[-1], urwid.Overlay)    # blocked → attention pop-up
+    assert step in app._stack
 
 
 def test_disk_pick_applies_guided_sizes():
@@ -93,6 +97,19 @@ def test_account_rootless_needs_admin_user():
     sel.user_wheel = True
     sel.user_password = "hunter2"                     # rootless also needs a user password
     assert step.validate() is None
+
+
+def test_blocker_is_a_popup_without_group_jargon():
+    import urwid
+    sel = assemble.propose("desktop")                   # rootless, no user → blocks
+    sel.create_user = False
+    app, step, _ = _step(wz.AccountStep, sel)
+    step.advance()
+    top = app._stack[-1]
+    assert isinstance(top, urwid.Overlay)               # attention pop-up, not a footer line
+    out = "\n".join(r.decode() for r in top.render((100, 44), focus=True).text)
+    assert "administrator account" in out
+    assert "wheel" not in out.lower()                   # no group jargon for users
 
 
 def test_account_traditional_needs_root_password():
@@ -294,7 +311,7 @@ def test_admin_model_lives_on_base_system_not_account():
     acct_out = "\n".join(r.decode() for r in acct.render((96, 30), focus=True).text)
     assert "Admin model" not in acct_out and "Escalator" not in acct_out
     # validation still lives on Account and still honors the model
-    assert acct.validate() is not None                    # rootless w/o wheel user → blocks
+    assert acct.validate() is not None                    # rootless w/o an admin account → blocks
 
 
 def test_rootless_requires_a_user_password():

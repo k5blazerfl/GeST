@@ -71,8 +71,8 @@ _LICENSE_LABELS = {
 }
 _ADMIN_LABELS = {
     "traditional": "Traditional — root password, escalate with su",
-    "sudo-augmented": "Sudo-augmented — root password AND wheel sudo",
-    "rootless": "Rootless — root locked, wheel user escalates with sudo/doas",
+    "sudo-augmented": "Sudo-augmented — root password, plus admins can use sudo",
+    "rootless": "Rootless — no root login; an admin account uses sudo/doas",
 }
 _CLOCK_LABELS = {
     "chrony": "Network — uses Chrony to keep time in sync over the internet (NTP)",
@@ -318,9 +318,17 @@ class WizardStep(Screen):
         """Validate this gate and push the next one (public for tests)."""
         msg = self.validate()
         if msg:
-            self.app.notify(msg, error=True)
+            self._show_blocker(msg)
             return
         self.app.push(self._return_to() if self._return_to else self._next_screen())
+
+    def _show_blocker(self, msg: str) -> None:
+        """Surface a validation blocker as an attention-grabbing pop-up rather than
+        an easy-to-miss red line in the footer."""
+        modal = Modal(self.app, "Before you continue",
+                      [urwid.Text(("error", msg))],
+                      [("OK", self.app.pop)])
+        self.app.push_modal(modal, width=("relative", 62), height=("relative", 40))
 
     def _next_screen(self) -> Screen:
         nxt = _RAIL_KEYS[_RAIL_KEYS.index(self.step_key) + 1]
@@ -732,8 +740,8 @@ class AccountStep(WizardStep):
     def help(self) -> str:
         return ("The machine's hostname and accounts. Whether a root password is\n"
                 "needed depends on the admin model (set on Base System): rootless\n"
-                "locks root and needs an admin (wheel) user; the others set a root\n"
-                "password.")
+                "locks the root account and needs an administrator account; the\n"
+                "others set a root password.")
 
     def setting_rows(self):
         if self.sel.create_user:
@@ -757,7 +765,7 @@ class AccountStep(WizardStep):
         create = urwid.CheckBox("Create a user", state=self.sel.create_user)
         name = urwid.Edit("Name              : ", self.sel.user_name)
         comment = urwid.Edit("Full name/comment : ", self.sel.user_comment)
-        wheel = urwid.CheckBox("Admin (wheel) user", state=self.sel.user_wheel)
+        wheel = urwid.CheckBox("Administrator account", state=self.sel.user_wheel)
         pw = urwid.Edit("Password          : ", self.sel.user_password, mask="*")
         pw2 = urwid.Edit("Confirm           : ", self.sel.user_password, mask="*")
 
@@ -780,8 +788,9 @@ class AccountStep(WizardStep):
             self.app.pop()
             self._render()
         modal = Modal(self.app, "User account",
-                      [urwid.Text(("hint", "An admin user (wheel) for day-to-day use. "
-                                           "A password lets them log in and sudo.")),
+                      [urwid.Text(("hint", "An everyday account with administrator "
+                                           "rights. A password lets them log in and "
+                                           "make system changes.")),
                        urwid.Divider(), create, name, comment, wheel, pw, pw2],
                       [("Save", save), ("Cancel", self.app.pop)])
         self.app.push_modal(modal, width=("relative", 70), height=("relative", 64))
@@ -823,9 +832,12 @@ class AccountStep(WizardStep):
         else:
             if not (self.sel.create_user and valid_user_name(self.sel.user_name)
                     and self.sel.user_wheel):
-                return "Rootless needs an admin (wheel) user — create one."
+                return ("This setup needs an administrator account.\n\n"
+                        "On the User account row, add a user and turn on "
+                        "“Administrator account”.")
             if not self.sel.user_password:
-                return "Rootless: give the admin user a password (needed to log in / sudo)."
+                return ("Give the administrator a password — they'll need it to log "
+                        "in and make system changes.")
         return None
 
 
