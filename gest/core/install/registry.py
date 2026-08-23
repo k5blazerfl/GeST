@@ -407,19 +407,20 @@ class ProvisionDesktop(FuncStep):
         steps = [
             Step("repackage the live system into binpkgs",
                  desktop.quickpkg_argv(pkgdir=f"{root}{desktop.PKGDIR}")),
+            # Always make /var/db/repos so the overlay can be seeded OR git-synced
+            # into it (the CLI path clones the overlay here at install time).
+            Step("prepare the overlay dir", desktop.overlay_parent_argv(root=root)),
         ]
-        # Seed the overlay CONTENT only if the live env actually ships it — the GeSI
-        # ISO can have an empty /var/db/repos. The git-backed repos.conf below is what
-        # lets the installed system `emerge --sync` it later; the --usepkgonly install
-        # needs no ebuild, so a missing overlay must not fail the install.
+        # Seed the overlay CONTENT only if the live env actually ships it — the
+        # barebones CLI ISO has none, and fetches it over the network instead (see
+        # InstallDesktop). The git-backed repos.conf below both enables that fetch
+        # and lets the installed system `emerge --sync` it later.
         if os.path.isdir(desktop.OVERLAY_LOCATION):
-            steps += [
-                Step("prepare the overlay dir", desktop.overlay_parent_argv(root=root)),
-                Step("seed the Amphitheater overlay", desktop.seed_overlay_argv(root=root)),
-            ]
+            steps.append(
+                Step("seed the Amphitheater overlay", desktop.seed_overlay_argv(root=root)))
         else:
-            _emit(on_progress, f"{desktop.OVERLAY_LOCATION} not present — skipping the "
-                  "overlay-content seed (repos.conf still written for day-2 sync)")
+            _emit(on_progress, f"{desktop.OVERLAY_LOCATION} not present — the overlay "
+                  "will be git-synced into the target at desktop-install time")
         await run_steps(steps, ctx.host, on_progress=on_progress)
         write_under_root(
             root, "/etc/portage/repos.conf/amphitheater.conf", desktop.repos_conf())
@@ -464,12 +465,28 @@ class InstallDesktop(ArgvStep):
     def build(self, ctx: InstallContext) -> list[Step]:
         if not ctx.plan.desktop:
             return []
-        return [
-            # Rebuild PKGDIR/Packages so the index matches the fixup binpkgs
-            # ProvisionDesktop swapped in (else --usepkgonly rejects them).
-            Step("refresh the binpkg index", desktop.regen_binhost_argv()),
-            Step("emerge the HeDE desktop", desktop.emerge_desktop_argv()),
-        ]
+        if desktop.has_desktop_binpkg(ctx.root):
+            # Desktop ISO: the quickpkg'd binpkgs are complete → binary-only, offline.
+            return [
+                # Rebuild PKGDIR/Packages so the index matches the fixup binpkgs
+                # ProvisionDesktop swapped in (else --usepkgonly rejects them).
+                Step("refresh the binpkg index", desktop.regen_binhost_argv()),
+                Step("emerge the HeDE desktop", desktop.emerge_desktop_argv()),
+            ]
+        # CLI ISO: no local HeDE binpkgs. Reach gui-apps/hede via the overlay, then
+        # emerge from the binhost (falling back to building from the tree). If the ISO
+        # didn't seed the overlay content, git-sync it first — which needs dev-vcs/git,
+        # absent from the base stage3.
+        steps: list[Step] = []
+        if not desktop.overlay_seeded(ctx.root):
+            steps += [
+                Step("install git for the overlay sync",
+                     desktop.emerge_tool_argv("dev-vcs/git")),
+                Step("sync the Amphitheater overlay", desktop.sync_overlay_argv()),
+            ]
+        steps.append(Step("emerge the HeDE desktop",
+                          desktop.emerge_desktop_argv(binary_only=False)))
+        return steps
 
     async def is_satisfied(self, ctx: InstallContext) -> bool:
         return not ctx.plan.desktop or ctx.state.done(self.key)

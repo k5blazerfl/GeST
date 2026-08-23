@@ -110,10 +110,50 @@ def overlay_parent_argv(*, root: str = "") -> list[str]:
     return ["mkdir", "-p", f"{root}/var/db/repos"]
 
 
-def emerge_desktop_argv(*, atoms: tuple[str, ...] = DESKTOP_ATOMS) -> list[str]:
-    """``emerge --usepkgonly`` the desktop: binary-only, so the install is offline,
-    needs no ebuild tree, and never recompiles. Recorded in @world (no --oneshot)."""
-    return ["emerge", "--usepkgonly", "--color", "n", *atoms]
+def has_desktop_binpkg(root: str = "") -> bool:
+    """True if the target PKGDIR already carries a ``gui-apps/hede`` binpkg.
+
+    The desktop ISO quickpkg's the running HeDE system, so this is True and the
+    install goes binary-only + offline. The barebones CLI ISO ships no HeDE, so
+    it's False — and the desktop is fetched from the overlay/binhost instead."""
+    import os
+    d = f"{root}{PKGDIR}/gui-apps"
+    try:
+        return any(name.startswith("hede") for name in os.listdir(d))
+    except OSError:
+        return False
+
+
+def overlay_seeded(root: str = "") -> bool:
+    """True if the Amphitheater overlay content is already in the target (seeded
+    from the ISO) — then gui-apps/hede is reachable with no git sync."""
+    import os
+    return os.path.isdir(f"{root}{OVERLAY_LOCATION}")
+
+
+def sync_overlay_argv() -> list[str]:
+    """Force-sync just the Amphitheater overlay (git) — how the CLI ISO gets the
+    ``gui-apps/hede`` ebuilds when the ISO didn't seed them. ``emaint`` syncs the
+    named repo on demand regardless of its ``auto-sync`` setting."""
+    return ["emaint", "sync", "-r", OVERLAY_NAME]
+
+
+def emerge_tool_argv(atom: str) -> list[str]:
+    """Emerge a single build-time tool into the target (binhost, source fallback) —
+    e.g. dev-vcs/git, which the base stage3 lacks but the git overlay sync needs."""
+    return ["emerge", "--getbinpkg", "--color", "n", atom]
+
+
+def emerge_desktop_argv(*, atoms: tuple[str, ...] = DESKTOP_ATOMS,
+                        binary_only: bool = True) -> list[str]:
+    """Emerge the desktop atoms into the target, recorded in @world (no --oneshot).
+
+    ``binary_only`` (desktop ISO) uses ``--usepkgonly``: install from the quickpkg'd
+    binpkgs — offline, no ebuild tree, never recompiles. Otherwise (CLI ISO) use
+    ``--getbinpkg``: pull from the binhost when one is configured, else build from
+    the synced overlay + tree."""
+    mode = "--usepkgonly" if binary_only else "--getbinpkg"
+    return ["emerge", mode, "--color", "n", *atoms]
 
 
 def cleanup_pkgdir_argv(*, root: str = "") -> list[str]:
