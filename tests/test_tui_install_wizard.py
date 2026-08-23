@@ -153,7 +153,9 @@ def test_welcome_is_a_cover_page_with_gesi_ascii_logo_and_no_rail():
     out = "\n".join(r.decode() for r in step.render((94, 34), focus=True).text)
     assert wz._GESI_LOGO_LINES[-1] in out             # the GESI wordmark (T→I)
     assert "-Gentoo System Installer-" in out
-    assert "Welcome! Let's get started!" in out
+    assert "Let's get started!" in out
+    assert "Welcome!" in out                          # the panel border title
+    assert "Install Gentoo — Welcome" not in out      # no top-bar header on the cover
     assert "Language / Locale" in out
     # cover page: the step-rail (other gates' titles) is NOT shown here
     assert "Get Online" not in out and "System Role" not in out

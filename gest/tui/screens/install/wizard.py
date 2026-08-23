@@ -198,6 +198,10 @@ class WizardStep(Screen):
 
     step_key = ""
     step_title = ""
+    # Top-bar header text. None → the default "Install Gentoo — {step_title}"; a
+    # gate may set "" to show no header (the Welcome cover page does this so the
+    # art stands alone).
+    header_title: str | None = None
 
     def __init__(self, app: App, sel: InstallSelections, *, return_to=None,
                  exit_to_terminal: bool = False) -> None:
@@ -218,8 +222,10 @@ class WizardStep(Screen):
                                else ("Back", self._back))
         self._nav_row = focusable_actions([(back_label, back_cb), ("Continue", self.advance)])
         body, cycle_container, cycle_positions = self._compose_body()
+        header = (self.header_title if self.header_title is not None
+                  else f"Install Gentoo — {self.step_title}")
         super().__init__(
-            app, body, title=f"Install Gentoo — {self.step_title}",
+            app, body, title=header,
             footer_keys=[("Enter", "Select / Edit"),
                          ("Tab", f"{back_label} / Continue"),
                          ("Esc", back_label)],
@@ -326,6 +332,7 @@ class WizardStep(Screen):
 class LocalizationStep(WizardStep):
     step_key = "localization"
     step_title = "Welcome"
+    header_title = ""          # cover page: no top-bar text, let the art stand alone
 
     def __init__(self, app, sel, *, return_to=None, exit_to_terminal=False):
         super().__init__(app, sel, return_to=return_to, exit_to_terminal=exit_to_terminal)
@@ -395,7 +402,7 @@ class LocalizationStep(WizardStep):
             ("pack", logo),
             ("pack", urwid.Divider(" ")),
             ("pack", urwid.Text(("title", "-Gentoo System Installer-"), align="center")),
-            ("pack", urwid.Text(("dim", "Welcome! Let's get started!"), align="center")),
+            ("pack", urwid.Text(("dim", "Let's get started!"), align="center")),
             ("pack", self._time_txt),
             ("pack", urwid.Divider(" ")),
             ("pack", urwid.BoxAdapter(self._list, 4)),   # locale / tz / keyboard / clock
@@ -403,7 +410,7 @@ class LocalizationStep(WizardStep):
             ("pack", self._nav_row),
         ])
         self._list_pos = 7    # 0 div,1 logo,2 div,3 title,4 subtitle,5 time,6 div,7 list
-        panel = boxed(pile, title="Install Gentoo")
+        panel = boxed(pile, title="Welcome!")
         body = urwid.Filler(
             urwid.Padding(panel, align="center", width=("relative", 72),
                           min_width=_GESI_LOGO_W + 6),
