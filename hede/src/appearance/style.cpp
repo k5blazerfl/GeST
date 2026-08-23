@@ -101,7 +101,11 @@ QString styleSheet(bool dark, const QColor &accent) {
         "#HelmPullout QToolButton:hover, #HelmPullout QPushButton:hover {"
         " background: rgba(255,255,255,0.12); }\n"
         // The right rail: a hairline divider from the app list.
-        "#HelmMenuRail { border-left: 1px solid rgba(255,255,255,0.14); }\n")
+        "#HelmMenuRail { border-left: 1px solid rgba(255,255,255,0.14); }\n"
+        // The classic style's vertical caption band down the left edge: accent
+        // fill, ⎈ mark in the light glyph colour; top-left rounds with the pullout.
+        "#HelmClassicCaption { background: %2; border-top-left-radius: 7px; }\n"
+        "#HelmClassicCaption QLabel { color: %1; background: transparent; }\n")
         .arg(glyph, accentFill, accentEdge, acrylicGlass);
 
     // Acrylic toast cards (#HelmToast) — bottom-right notifications. Same acrylic

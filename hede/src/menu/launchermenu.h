@@ -13,10 +13,15 @@ class QListWidgetItem;
 
 namespace helm {
 
-// The Start menu: a Windows-7-style two-pane pullout. Left = Pinned → Recent →
-// "All apps" (or the filtered results while searching), with search at the
-// bottom. Right = a rail: user header, Control Center + Run, and power actions.
-// Esc closes.
+// The Start menu. The layout is a setting (launcher/style, mirroring Open-Shell's
+// Menu Style):
+//   * win7_two_pane (default) — a two-pane pullout: left = Pinned → Recent →
+//     "All apps" (or filtered results while searching) with search at the bottom;
+//     right = a rail (user header, Control Center + Run, power).
+//   * classic — a single dense column with a vertical caption strip; "All
+//     Programs" flies out as a cascading category menu (rather than expanding in
+//     place); power pinned at the bottom.
+// Both share the app model, search, pins/recents, and power actions. Esc closes.
 class LauncherMenu : public QWidget {
     Q_OBJECT
   public:
@@ -36,8 +41,14 @@ class LauncherMenu : public QWidget {
     void showActions(const QPoint &pos); // right-click → pin + jump-list actions
 
   private:
-    QWidget *buildLeftPane();
-    QWidget *buildRightPane();
+    void loadModel();                     // scan apps + $PATH + pins/recents
+    void wireList();                      // connect the list's signals
+    QWidget *buildLeftPane();             // win7: app list + search
+    QWidget *buildRightPane();            // win7: user/system/power rail
+    QWidget *buildPowerRow(QWidget *parent); // the 5 power buttons (shared)
+    QWidget *buildClassicColumn();        // classic: single dense column
+    QWidget *buildCaptionStrip();         // classic: vertical accent caption band
+    void openAllPrograms();               // classic: cascading category fly-out
     void rebuild();                       // repopulate the list for the current state
     void refilter(const QString &);       // search text changed → rebuild
     void addHeader(const QString &text);
@@ -57,6 +68,7 @@ class LauncherMenu : public QWidget {
     QHash<QString, DesktopEntry> m_byId;  // id → entry, for pinned/recent lookup
     LauncherStore m_store;                // pins + usage
     bool m_showAllApps = false;           // "All apps" expanded in the Home view
+    bool m_classic = false;               // launcher/style == "classic"
 };
 
 } // namespace helm
