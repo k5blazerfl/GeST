@@ -20,9 +20,9 @@ def now_string(when: _dt.datetime | None = None) -> str:
     return (when or _dt.datetime.now()).strftime("%Y-%m-%d %H:%M:%S")
 
 
-def clock_line(when: _dt.datetime | None = None) -> str:
-    """Welcome-screen clock: live time first, date second, a star between them."""
-    return (when or _dt.datetime.now()).strftime("%H:%M:%S * %Y-%m-%d")
+def clock_line(when: _dt.datetime | None = None, *, sep: str = "*") -> str:
+    """Welcome-screen clock: live time first, date second, ``sep`` between them."""
+    return (when or _dt.datetime.now()).strftime(f"%H:%M:%S {sep} %Y-%m-%d")
 
 
 def detect_ntp(services) -> tuple[str, bool, bool]:
