@@ -395,7 +395,7 @@ class ProvisionDesktop(FuncStep):
     Gentoo.
     """
 
-    label = "Provision the HeDE desktop"
+    label = "Provision the Helm Desktop Environment"
     phase = Phase.BASE_SYSTEM
     target_aware = True          # writes into the target root from the live host
     key = "provision_desktop"
@@ -457,7 +457,7 @@ class InstallDesktop(ArgvStep):
     ``--usepkgonly`` installs from the quickpkg'd binpkgs — offline, no recompile.
     """
 
-    label = "Install the HeDE desktop"
+    label = "Install the Helm Desktop Environment"
     phase = Phase.BASE_SYSTEM
     chroot = True
     key = "install_desktop"
@@ -524,7 +524,7 @@ class EnableDesktopSession(FuncStep):
     (symlinks), so they need no running systemd.
     """
 
-    label = "Enable the HeDE session"
+    label = "Enable the Helm Desktop Environment session"
     phase = Phase.FINISH
     target_aware = True
     key = "enable_desktop_session"

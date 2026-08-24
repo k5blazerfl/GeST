@@ -108,3 +108,19 @@ def test_repos_conf_is_a_git_backed_amphitheater_entry():
     assert "sync-type = git" in conf
     assert "sync-uri = https://github.com/k5blazerfl/Amphitheater" in conf
     assert "auto-sync = no" in conf          # installed system syncs on the user's terms
+
+
+def test_installer_keyword_list_matches_the_build_keyword_list():
+    # The installer's _DESKTOP_KEYWORDED MUST mirror the live-CD build's
+    # package.accept_keywords: they keyword the same ~arch HeDE closure. Drift is a
+    # real bug — the build keeps compiling hede while the installer masks a new dep
+    # ("dependency required by gui-apps/hede"). This guard keeps them locked.
+    from pathlib import Path
+    build_file = (Path(__file__).resolve().parents[1]
+                  / "packaging/livecd/portage-conf/package.accept_keywords")
+    build_atoms = set()
+    for line in build_file.read_text(encoding="utf-8").splitlines():
+        line = line.split("#", 1)[0].strip()
+        if line:
+            build_atoms.add(line.split()[0])       # "cat/pkg ~amd64" → "cat/pkg"
+    assert set(desktop._DESKTOP_KEYWORDED) == build_atoms

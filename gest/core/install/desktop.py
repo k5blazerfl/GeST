@@ -61,7 +61,8 @@ ACCEPT_KEYWORDS = "/etc/portage/package.accept_keywords/gest-hede"
 _DESKTOP_KEYWORDED = (
     "app-admin/gest", "gui-apps/hede", "gui-libs/greetd",
     "dev-libs/wayland", "dev-util/glslang", "dev-util/spirv-tools",
-    "media-libs/vulkan-loader", "gui-wm/labwc",
+    "media-libs/vulkan-loader", "gui-wm/labwc", "gui-libs/wlroots",
+    "gui-apps/foot", "gui-apps/swaylock", "kde-frameworks/layer-shell-qt",
     "dev-util/wayland-scanner", "dev-util/vulkan-headers", "dev-util/spirv-headers",
 )
 
