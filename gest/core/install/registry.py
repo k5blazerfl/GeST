@@ -583,6 +583,12 @@ class SetTimezoneLocale(FuncStep):
             raise ValueError(f"invalid locale: {lang!r}")
         write_under_root(ctx.root, "/etc/env.d/02locale", f'LANG="{lang}"\n')
         write_under_root(ctx.root, "/etc/locale.conf", f"LANG={lang}\n")
+        # Enable the locale in /etc/locale.gen so GenerateLocale can compile it — a
+        # fresh stage3 only has C/POSIX/C.UTF-8, so LANG=en_US.UTF-8 would otherwise
+        # fall back to C at runtime. Built-ins (C.UTF-8) need no entry.
+        gen = sys_locale.locale_gen_line(lang)
+        if gen:
+            write_under_root(ctx.root, "/etc/locale.gen", gen + "\n")
         _emit(on_progress, f"timezone {zone}, locale {lang}")
 
     async def is_satisfied(self, ctx: InstallContext) -> bool:
@@ -594,6 +600,23 @@ class SetTimezoneLocale(FuncStep):
         except OSError:
             return False
         return zone_ok and os.path.exists(lcp)
+
+
+class GenerateLocale(ArgvStep):
+    """``locale-gen`` in the target — compile the locale SetTimezoneLocale enabled
+    in /etc/locale.gen, so the chosen LANG actually exists at runtime instead of
+    falling back to C. Idempotent (a no-op when only built-ins are enabled)."""
+
+    label = "Generate the locale"
+    phase = Phase.CONFIGURE
+    chroot = True
+    key = "generate_locale"
+
+    def build(self, ctx: InstallContext) -> list[Step]:
+        return [Step("locale-gen", ["locale-gen"])]
+
+    async def is_satisfied(self, ctx: InstallContext) -> bool:
+        return ctx.state.done(self.key)
 
 
 class SetHostname(FuncStep):
@@ -962,44 +985,81 @@ class SetUserPassword(ArgvStep):
 
 
 class ConfigureNetwork(FuncStep):
-    """Write netifrc ``/etc/conf.d/net``, ``/etc/resolv.conf`` and ``/etc/hosts``."""
+    """Give the installed **systemd** system a working network + /etc/hosts.
+
+    The old netifrc ``/etc/conf.d/net`` is inert under systemd, so the machine
+    booted with no link. A desktop gets **NetworkManager** (the project's standard;
+    GUI/nm-applet); a headless/base system gets built-in **systemd-networkd +
+    systemd-resolved**. Both bring up DHCP (or the requested static address) and
+    DNS. Also writes /etc/hosts with the machine's own name.
+    """
 
     label = "Configure the network"
     phase = Phase.USERS_NETWORK
     target_aware = True
+    key = "configure_network"
 
     async def run(self, ctx: InstallContext, on_progress: OnProgress | None = None) -> None:
         net = ctx.plan.network
-        if net.interface:
-            method = "dhcp" if net.dhcp else "static"
-            cfg = netifrc.InterfaceConfig(
-                net.interface, method=method, address=net.address, gateway=net.gateway)
-            if method == "static":
-                if not netifrc.valid_address(net.address):
-                    raise ValueError(f"invalid interface address: {net.address!r}")
-                if not netifrc.valid_gateway(net.gateway):
-                    raise ValueError(f"invalid gateway: {net.gateway!r}")
-            path = rootpath.resolve(ctx.root, "/etc/conf.d/net")
-            try:
-                with open(path, encoding="utf-8") as fh:
-                    text = fh.read()
-            except OSError:
-                text = ""
-            write_under_root(ctx.root, "/etc/conf.d/net", netifrc.render_conf_net(text, cfg))
+        static = bool(net.interface) and not net.dhcp
+        if static:
+            if not netifrc.valid_address(net.address):
+                raise ValueError(f"invalid interface address: {net.address!r}")
+            if not netifrc.valid_gateway(net.gateway):
+                raise ValueError(f"invalid gateway: {net.gateway!r}")
 
-        if net.nameservers:
-            servers = list(net.nameservers)
-            if not net_resolv.valid_resolv(servers, []):
-                raise ValueError("invalid nameservers")
-            write_under_root(ctx.root, "/etc/resolv.conf",
-                             net_resolv.render_resolv(servers, []))
-
+        # The machine's own name resolvable before the network is up.
         write_under_root(ctx.root, "/etc/hosts",
-                         net_hosts.render_hosts(net_hosts.default_hosts()))
-        _emit(on_progress, "network configuration written")
+                         net_hosts.render_hosts(net_hosts.default_hosts(ctx.plan.hostname)))
+
+        steps = (self._networkmanager(ctx, net, static) if ctx.plan.desktop
+                 else self._networkd(ctx, net, static))
+        await run_steps(steps, ctx.target, on_progress=on_progress)
+        _emit(on_progress, "network configured ("
+              + ("NetworkManager" if ctx.plan.desktop else "systemd-networkd") + ")")
+        ctx.state.mark(self)
+
+    def _networkmanager(self, ctx, net, static) -> list:
+        # NetworkManager auto-connects wired links via DHCP with no config; a static
+        # request gets a keyfile connection (mode 0600 — NM refuses world-readable).
+        if static:
+            iface = net.interface
+            conn = ("[connection]\n"
+                    f"id={iface}\ntype=ethernet\ninterface-name={iface}\n\n"
+                    "[ipv4]\nmethod=manual\n"
+                    f"address1={net.address},{net.gateway}\n"
+                    + ("dns=" + ";".join(net.nameservers) + ";\n" if net.nameservers else "")
+                    + "\n[ipv6]\nmethod=auto\n")
+            p = write_under_root(
+                ctx.root, f"/etc/NetworkManager/system-connections/{iface}.nmconnection", conn)
+            with contextlib.suppress(OSError):
+                os.chmod(p, 0o600)
+        return [
+            Step("emerge NetworkManager", _emerge_argv(ctx.plan, "net-misc/networkmanager")),
+            Step("enable NetworkManager", ["systemctl", "enable", "NetworkManager"]),
+        ]
+
+    def _networkd(self, ctx, net, static) -> list:
+        # Built into systemd — no emerge. resolv.conf → the resolved stub so DNS works.
+        if static:
+            body = (f"[Match]\nName={net.interface}\n\n[Network]\n"
+                    f"Address={net.address}\nGateway={net.gateway}\n"
+                    + "".join(f"DNS={s}\n" for s in net.nameservers))
+        else:
+            body = "[Match]\nName=en* eth*\n\n[Network]\nDHCP=yes\n"
+        write_under_root(ctx.root, "/etc/systemd/network/20-gest.network", body)
+        link = rootpath.resolve(ctx.root, "/etc/resolv.conf")
+        os.makedirs(os.path.dirname(link), exist_ok=True)
+        with contextlib.suppress(OSError):
+            os.remove(link)
+        os.symlink("/run/systemd/resolve/stub-resolv.conf", link)
+        return [
+            Step("enable systemd-networkd", ["systemctl", "enable", "systemd-networkd"]),
+            Step("enable systemd-resolved", ["systemctl", "enable", "systemd-resolved"]),
+        ]
 
     async def is_satisfied(self, ctx: InstallContext) -> bool:
-        return os.path.exists(rootpath.resolve(ctx.root, "/etc/hosts"))
+        return ctx.state.done(self.key)
 
 
 # --- phase 6: finish (tier-2 opt-in) ----------------------------------------
@@ -1086,7 +1146,10 @@ def _tier2_module_steps(plan: InstallPlan, key: str) -> list[InstallStep]:
         return [
             ChrootCmdStep("Emerge nftables", "tier2_nftables",
                           _emerge_argv(plan, "net-firewall/nftables")),
-            WriteConfigStep("Configure the firewall", fw_nft.NFT_PATH,
+            # systemd's nftables.service loads /etc/nftables.conf — NOT the OpenRC
+            # default (fw_nft.NFT_PATH = /etc/nftables.nft), which it would ignore,
+            # leaving the enabled firewall empty. The target is systemd.
+            WriteConfigStep("Configure the firewall", "/etc/nftables.conf",
                             lambda: fw_nft.render_ruleset(_default_firewall())),
             ChrootCmdStep("Enable nftables at boot", "tier2_nftables_enable",
                           ["systemctl", "enable", "nftables"]),
@@ -1236,6 +1299,7 @@ def build_registry(plan: InstallPlan, *, root_secret: Secret | None = None,
         InstallDesktop(),
         CleanupDesktopBinpkgs(),
         SetTimezoneLocale(),
+        GenerateLocale(),
         SetHostname(),
         SetConsole(),
         InstallKernelSources(),

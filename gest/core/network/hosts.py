@@ -72,9 +72,14 @@ def render_hosts(entries: list[HostsEntry]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def default_hosts() -> list[HostsEntry]:
-    """The Handbook's baseline: loopback mapped to ``localhost`` (v4 + v6)."""
-    return [HostsEntry("127.0.0.1", ["localhost"]), HostsEntry("::1", ["localhost"])]
+def default_hosts(hostname: str = "") -> list[HostsEntry]:
+    """The Handbook's baseline: loopback → ``localhost`` (v4 + v6), plus the host's
+    own name on ``127.0.1.1`` (the Debian/systemd convention) when given, so the
+    machine resolves its own name even before the network is up."""
+    entries = [HostsEntry("127.0.0.1", ["localhost"]), HostsEntry("::1", ["localhost"])]
+    if hostname and valid_host_name(hostname):
+        entries.append(HostsEntry("127.0.1.1", [hostname]))
+    return entries
 
 
 def current_hosts(path: str = HOSTS_PATH) -> list[HostsEntry]:

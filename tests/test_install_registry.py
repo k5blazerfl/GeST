@@ -49,6 +49,7 @@ _EXPECTED_LABELS = [
     "Install the Helm Desktop Environment",
     "Clean up desktop binpkgs",
     "Set timezone and locale",
+    "Generate the locale",
     "Set the hostname",
     "Set the console keymap",
     "Install kernel sources",
@@ -74,18 +75,20 @@ _MARKER_KEYS = {
     "Provision the Helm Desktop Environment": "provision_desktop",
     "Install the Helm Desktop Environment": "install_desktop",
     "Clean up desktop binpkgs": "cleanup_desktop_binpkgs",
+    "Generate the locale": "generate_locale",
     "Install kernel sources": "install_kernel_sources",
     "Stage the kernel config": "stage_kernel_config",
     "Build the kernel": "build_kernel",
     "Install GPU drivers & firmware": "install_gpu_drivers",
     "Install the bootloader": "install_bootloader",
     "Install the m1n1 boot stub": "install_boot_stub",
+    "Configure the network": "configure_network",
     "Enable the Helm Desktop Environment session": "enable_desktop_session",
     "Configure the clock": "configure_clock",
 }
 _CHROOT_LABELS = {
     "Sync the Portage tree", "Select the profile", "Emerge @world",
-    "Install the Helm Desktop Environment",
+    "Install the Helm Desktop Environment", "Generate the locale",
     "Install kernel sources", "Build the kernel", "Install the bootloader",
     "Install the m1n1 boot stub",
     "Set the root password", "Create user accounts", "Set user passwords",
@@ -186,11 +189,11 @@ def test_registry_phases_are_non_decreasing():
     # the exact phase grouping
     assert [s.phase for s in reg[:3]] == [Phase.PREPARE_DISK] * 3
     assert [s.phase for s in reg[3:13]] == [Phase.BASE_SYSTEM] * 10  # +HeDE desktop (x3)
-    assert [s.phase for s in reg[13:16]] == [Phase.CONFIGURE] * 3
+    assert [s.phase for s in reg[13:17]] == [Phase.CONFIGURE] * 4    # +Generate the locale
     # KERNEL_BOOT: sources, stage-config, build, gpu-drivers, bootloader, m1n1
-    assert [s.phase for s in reg[16:22]] == [Phase.KERNEL_BOOT] * 6
-    assert [s.phase for s in reg[22:26]] == [Phase.USERS_NETWORK] * 4  # +user password
-    assert [s.phase for s in reg[26:28]] == [Phase.FINISH] * 2       # HeDE session + clock
+    assert [s.phase for s in reg[17:23]] == [Phase.KERNEL_BOOT] * 6
+    assert [s.phase for s in reg[23:27]] == [Phase.USERS_NETWORK] * 4  # +user password
+    assert [s.phase for s in reg[27:29]] == [Phase.FINISH] * 2       # HeDE session + clock
 
 
 def test_registry_chroot_and_opens_chroot_flags():
@@ -209,7 +212,7 @@ def test_registry_marker_keys():
 def test_tier2_default_empty():
     # base rows + 3 HeDE desktop steps + kernel-sources + stage-kernel-config +
     # gpu-drivers + enable-session + configure-clock + the arm64-gated m1n1 boot stub
-    assert len(build_registry(_plan())) == 28
+    assert len(build_registry(_plan())) == 29
 
 
 def test_boot_stub_step_is_arm64_gated():
@@ -308,6 +311,34 @@ def test_desktop_steps_are_gated_on_plan_desktop():
         assert asyncio.run(step.is_satisfied(base)) is True
 
 
+def test_configure_network_desktop_installs_and_enables_networkmanager(tmp_path):
+    from gest.core.install.registry import ConfigureNetwork
+    ex = FakeExecutor(lambda _a: 0)
+    ctx = _ctx(ex, root=str(tmp_path), plan=_desktop_plan())   # hostname "gentoo"
+    asyncio.run(ConfigureNetwork().run(ctx))
+    cmds = [" ".join(c) for c in ex.calls]
+    assert any("emerge" in c and "net-misc/networkmanager" in c for c in cmds)
+    assert any("systemctl enable NetworkManager" in c for c in cmds)
+    # /etc/hosts carries the machine's own name (no more netifrc)
+    hosts_txt = (tmp_path / "etc/hosts").read_text()
+    assert "127.0.1.1\tgentoo" in hosts_txt
+    assert not (tmp_path / "etc/conf.d/net").exists()
+
+
+def test_configure_network_base_uses_systemd_networkd(tmp_path):
+    from gest.core.install.registry import ConfigureNetwork
+    ex = FakeExecutor(lambda _a: 0)
+    ctx = _ctx(ex, root=str(tmp_path), plan=_plan())           # desktop=False
+    asyncio.run(ConfigureNetwork().run(ctx))
+    cmds = [" ".join(c) for c in ex.calls]
+    assert any("systemctl enable systemd-networkd" in c for c in cmds)
+    assert any("systemctl enable systemd-resolved" in c for c in cmds)
+    assert "DHCP=yes" in (tmp_path / "etc/systemd/network/20-gest.network").read_text()
+    assert os.readlink(tmp_path / "etc/resolv.conf") == \
+        "/run/systemd/resolve/stub-resolv.conf"
+    assert not any("networkmanager" in c for c in cmds)         # no NM on a base install
+
+
 def test_install_desktop_uses_binpkgs_when_present(tmp_path):
     from gest.core.install.desktop import DESKTOP_ATOMS
     from gest.core.install.registry import InstallDesktop
@@ -332,7 +363,8 @@ def test_install_desktop_git_syncs_overlay_when_unseeded_and_no_binpkgs(tmp_path
     assert [s.argv for s in steps] == [
         ["emerge", "--getbinpkg", "--color", "n", "dev-vcs/git"],
         ["emaint", "sync", "-r", "amphitheater"],
-        ["emerge", "--getbinpkg", "--color", "n", *DESKTOP_ATOMS]]
+        ["emerge", "--getbinpkg", "--update", "--deep", "--newuse", "--color", "n",
+         *DESKTOP_ATOMS]]
 
 
 def test_install_desktop_skips_sync_when_overlay_seeded_but_no_binpkgs(tmp_path):
@@ -343,7 +375,8 @@ def test_install_desktop_skips_sync_when_overlay_seeded_but_no_binpkgs(tmp_path)
     desk = _ctx(FakeExecutor(), root=str(tmp_path), plan=_desktop_plan())
     steps = InstallDesktop().build(desk)
     assert [s.argv for s in steps] == [
-        ["emerge", "--getbinpkg", "--color", "n", *DESKTOP_ATOMS]]
+        ["emerge", "--getbinpkg", "--update", "--deep", "--newuse", "--color", "n",
+         *DESKTOP_ATOMS]]
 
 
 def test_cleanup_desktop_binpkgs_removes_target_pkgdir_when_enabled():

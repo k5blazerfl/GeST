@@ -56,6 +56,18 @@ def match_in(name: str, choices: list[str]) -> str:
     return name
 
 
+def locale_gen_line(name: str) -> str | None:
+    """The ``/etc/locale.gen`` entry (``"<locale> <charmap>"``) needed to generate
+    ``name``, or ``None`` for glibc built-ins (C/POSIX and C.UTF-8) that are always
+    present and need no generation. ``en_US.utf8`` and ``en_US.UTF-8`` both →
+    ``"en_US.UTF-8 UTF-8"``."""
+    base, _, enc = name.partition(".")
+    if base in ("C", "POSIX") or not enc:
+        return None
+    charmap = "UTF-8" if enc.lower().replace("-", "") == "utf8" else enc.upper()
+    return f"{base}.{charmap} {charmap}"
+
+
 def current_locale(paths=("/etc/env.d/02locale", "/etc/locale.conf")) -> str:
     for path in paths:
         try:

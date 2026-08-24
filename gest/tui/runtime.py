@@ -419,6 +419,10 @@ class Modal(urwid.WidgetWrap):
     def __init__(self, app: App, title: str, rows: list, buttons: list,
                  *, button_width: int = 16):
         self.app = app
+        # The first button is the primary action (Save/Accept); Enter on a field
+        # fires it, so single-field dialogs (hostname, a size, a password) submit
+        # without Tab-ing to the button (see keypress).
+        self._primary = buttons[0][1] if buttons else None
         button_widgets = [
             urwid.AttrMap(urwid.Button(label, on_press=lambda _b, cb=cb: cb()),
                           None, focus_map="focus")
@@ -456,6 +460,11 @@ class Modal(urwid.WidgetWrap):
             return None
         if key in ("tab", "shift tab"):
             self._cycle_focus(1 if key == "tab" else -1)
+            return None
+        # Enter on a field (a button/list would have consumed it above) submits via
+        # the primary button — no need to Tab to Save.
+        if key == "enter" and self._primary is not None:
+            self._primary()
             return None
         return key
 

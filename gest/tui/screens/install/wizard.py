@@ -108,6 +108,13 @@ def _detect_ram_bytes() -> int:
         return 8 * 1024 ** 3
 
 
+def _detect_firmware() -> str:
+    """"uefi" if the kernel booted via EFI (``/sys/firmware/efi`` present), else
+    "bios". A legacy-BIOS machine must get a BIOS-boot layout, not an ESP/UEFI one
+    that grub-install refuses and that won't boot."""
+    return "uefi" if os.path.isdir("/sys/firmware/efi") else "bios"
+
+
 _SIZE_UNITS = {"K": 1024, "M": 1024 ** 2, "G": 1024 ** 3, "T": 1024 ** 4, "P": 1024 ** 5}
 
 
@@ -998,6 +1005,11 @@ class DiskStep(WizardStep):
         if self.sel.separate_home and (not self.sel.root_size
                                        or self.sel.root_size == "rest"):
             return "Set a fixed root size for the separate /home layout."
+        # Catch unparseable sizes here — else a bad ESP/swap/root value sails through
+        # Review and only blows up (raw ValueError) after you type the disk name to
+        # confirm the wipe. _build_plan() returns None when a size won't parse.
+        if self._build_plan() is None:
+            return "A size isn't valid — check the ESP, swap, and root sizes."
         return None
 
 
@@ -1314,5 +1326,6 @@ def start(app: App, *, exit_to_terminal: bool = False) -> Screen:
     quits to the shell. False when launched from the GeST menu, where it stays a
     "Back" that returns to the menu.
     """
-    return LocalizationStep(app, assemble.propose("desktop"),
-                            exit_to_terminal=exit_to_terminal)
+    sel = assemble.propose("desktop")
+    sel.firmware = _detect_firmware()      # UEFI vs BIOS — governs the disk layout
+    return LocalizationStep(app, sel, exit_to_terminal=exit_to_terminal)

@@ -55,6 +55,17 @@ def test_list_locales_with_runner():
     assert out == ["C", "en_US.utf8"]
 
 
+def test_locale_gen_line():
+    # /etc/locale.gen entry to compile a chosen LANG; None for glibc built-ins.
+    assert locale.locale_gen_line("en_US.UTF-8") == "en_US.UTF-8 UTF-8"
+    assert locale.locale_gen_line("en_US.utf8") == "en_US.UTF-8 UTF-8"   # glibc form
+    assert locale.locale_gen_line("de_DE.ISO-8859-15") == "de_DE.ISO-8859-15 ISO-8859-15"
+    assert locale.locale_gen_line("C.UTF-8") is None          # built-in
+    assert locale.locale_gen_line("C") is None
+    assert locale.locale_gen_line("POSIX") is None
+    assert locale.locale_gen_line("de_DE") is None            # no charset → skip
+
+
 def test_locale_match_in_bridges_utf8_notation():
     # `locale -a` emits glibc's `.utf8`; stored/default locales use `.UTF-8`. The
     # two denote the same locale — match_in resolves across the notation so a picker
