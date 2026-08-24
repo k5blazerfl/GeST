@@ -112,7 +112,8 @@ class ReviewScreen(Screen):
             ("System", [
                 ("Role", s.role, "ok", "role"),
                 ("Stage3", f"{s.variant.arch}/{s.variant.flavor}", "derived", None),
-                ("Profile", assemble.profile_name(s.variant.arch, s.variant.flavor),
+                ("Profile", assemble.profile_name(s.variant.arch, s.variant.flavor,
+                                                  desktop=s.install_desktop),
                  "derived", None),
                 ("Desktop (HeDE)", "yes" if s.install_desktop else "no",
                  "ok", "role"),
