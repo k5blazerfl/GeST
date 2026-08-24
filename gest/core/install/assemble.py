@@ -370,11 +370,18 @@ def _build_network(sel: InstallSelections) -> NetworkSpec:
 PROFILE_VERSION = "23.0"
 
 
-def profile_name(arch: str, flavor: str) -> str:
-    """The ``eselect profile`` target for ``arch`` + stage3 ``flavor``. A systemd
-    stage3 (flavor ends in ``systemd``) → the ``/systemd`` profile so USE=systemd
-    etc. stay set; OpenRC flavors → the base ``23.0`` profile."""
+def profile_name(arch: str, flavor: str, *, desktop: bool = False) -> str:
+    """The ``eselect profile`` target for ``arch`` + stage3 ``flavor``.
+
+    A systemd stage3 (flavor ends in ``systemd``) → a ``/systemd`` profile so
+    USE=systemd etc. stay set; OpenRC flavors → the base ``23.0`` profile. A
+    ``desktop`` install uses the ``/desktop`` sub-profile so the graphical USE
+    stack (X, opengl, wayland, …) is on by default — the HeDE/Qt closure needs it,
+    and this mirrors the live-CD build's PROFILE. Without it the base profile
+    leaves those off and packages like dev-qt/qtbase fail REQUIRED_USE."""
     base = f"default/linux/{arch}/{PROFILE_VERSION}"
+    if desktop:
+        base = f"{base}/desktop"
     return f"{base}/systemd" if flavor.endswith("systemd") else base
 
 
@@ -435,7 +442,7 @@ def assemble_plan(sel: InstallSelections, stage3: Stage3Selection) -> InstallPla
     # Seamless boot needs plymouth + the HeDE theme, both installed by the desktop
     # step; requesting it without the desktop is a no-op, not a broken install.
     use_seamless = sel.seamless and sel.install_desktop
-    profile = profile_name(arch, sel.variant.flavor)
+    profile = profile_name(arch, sel.variant.flavor, desktop=sel.install_desktop)
     # BIOS installs need a GPT layout with a BIOS-boot partition (no ESP); UEFI
     # needs the ESP. The bootloader step branches on firmware to match this layout.
     home_fs = sel.home_fs if sel.separate_home else None

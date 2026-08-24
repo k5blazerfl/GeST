@@ -38,7 +38,8 @@ def test_assemble_builds_a_full_plan():
     assert plan.mount.root == "/mnt/gentoo"
     assert plan.stage3 is _S3
     assert plan.kernel.method == "genkernel"                    # auto-config source build
-    assert plan.profile == "default/linux/amd64/23.0/systemd"   # systemd default
+    # default selection installs HeDE → the /desktop/systemd profile
+    assert plan.profile == "default/linux/amd64/23.0/desktop/systemd"
     assert plan.bootloader.firmware == "uefi"
     assert plan.hostname == "gentoo" and plan.timezone == "America/New_York"  # US Eastern default
     assert plan.binary_pref is True
@@ -92,10 +93,33 @@ def test_profile_name_is_systemd_for_systemd_flavors():
     assert profile_name("arm64", "systemd") == "default/linux/arm64/23.0/systemd"
 
 
+def test_profile_name_desktop_uses_the_desktop_subprofile():
+    # A HeDE (desktop) install must use the /desktop profile so the graphical USE
+    # stack (X, opengl, wayland) is on by default — else dev-qt/qtbase and the rest
+    # of the closure fail REQUIRED_USE. Mirrors the live-CD build's PROFILE.
+    from gest.core.install.assemble import profile_name
+    assert profile_name("amd64", "systemd", desktop=True) == \
+        "default/linux/amd64/23.0/desktop/systemd"
+    assert profile_name("amd64", "openrc", desktop=True) == \
+        "default/linux/amd64/23.0/desktop"
+    assert profile_name("arm64", "systemd", desktop=True) == \
+        "default/linux/arm64/23.0/desktop/systemd"
+
+
+def test_assembled_plan_picks_the_desktop_profile_when_installing_hede():
+    assert assemble_plan(_ok_selection(install_desktop=True), _S3).profile == \
+        "default/linux/amd64/23.0/desktop/systemd"
+    # a non-desktop install stays on the base profile
+    assert assemble_plan(_ok_selection(install_desktop=False), _S3).profile == \
+        "default/linux/amd64/23.0/systemd"
+
+
 def test_assemble_profile_follows_the_stage3_flavor():
     from gest.core.stage3.model import VARIANTS
     openrc = next(v for v in VARIANTS if v.flavor == "openrc")
-    assert assemble_plan(_ok_selection(variant=openrc), _S3).profile == "default/linux/amd64/23.0"
+    # isolate the flavor→systemd/base mapping from the desktop sub-profile
+    assert assemble_plan(_ok_selection(variant=openrc, install_desktop=False),
+                         _S3).profile == "default/linux/amd64/23.0"
 
 
 # --- target arch (Apple Silicon / Asahi groundwork) -------------------------
