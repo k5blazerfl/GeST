@@ -27,6 +27,8 @@ PACKAGE_USE = "/etc/portage/package.use/gest-gpu"
 #: package.unmask fragment GeST owns — unmasks a legacy nvidia-drivers SLOT (0/470,
 #: 0/390) which the Gentoo profile masks by default.
 PACKAGE_UNMASK = "/etc/portage/package.unmask/gest-gpu"
+#: package.accept_keywords fragment GeST owns for GPU/firmware atoms.
+PACKAGE_ACCEPT_KEYWORDS = "/etc/portage/package.accept_keywords/gest-gpu"
 
 #: linux-firmware carries NVIDIA GSP blobs + most Wi-Fi/other firmware; a fresh
 #: stage3 ships none, so we always install it.
@@ -56,6 +58,20 @@ def driver_atoms(gpu: GpuSpec) -> list[str]:
     if gpu.nvidia_proprietary:
         atoms.append(nvidia_atom(gpu))
     return atoms
+
+
+def package_accept_keywords(gpu: GpuSpec, arch: str) -> str:
+    """The ``package.accept_keywords`` body for the GPU/firmware atoms.
+
+    sys-kernel/linux-firmware's newest snapshots are ``~arch``, and a current
+    nvidia-drivers pins a linux-firmware newer than the stable one (its GSP blobs
+    need it) — so the firmware ends up masked at the GPU step and the emerge dies
+    naming the live ``99999999`` ebuild. Accept ``~arch`` for firmware always, and
+    for the nvidia driver atom when the proprietary stack is requested."""
+    lines = [f"{FIRMWARE_ATOM} ~{arch}"]
+    if gpu.nvidia_proprietary:
+        lines.append(f"{nvidia_atom(gpu)} ~{arch}")
+    return "".join(f"{line}\n" for line in lines)
 
 
 def package_unmask(gpu: GpuSpec) -> str:

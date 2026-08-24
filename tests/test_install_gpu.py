@@ -68,6 +68,23 @@ def test_driver_atoms_add_nvidia_when_proprietary():
     assert gpu.driver_atoms(spec) == ["sys-kernel/linux-firmware", "x11-drivers/nvidia-drivers"]
 
 
+def test_package_accept_keywords_firmware_always_nvidia_when_proprietary():
+    # linux-firmware's newest snapshots are ~arch (a current nvidia-drivers needs
+    # one newer than stable) → firmware must be keyworded, else the emerge masks it
+    # and dies naming the live 99999999 ebuild.
+    base = gpu.package_accept_keywords(GpuSpec(video_cards=("amdgpu",)), "amd64")
+    assert base == "sys-kernel/linux-firmware ~amd64\n"           # firmware always
+    nv = gpu.package_accept_keywords(
+        GpuSpec(video_cards=("nvidia",), nvidia_proprietary=True), "amd64")
+    assert "sys-kernel/linux-firmware ~amd64" in nv
+    assert "x11-drivers/nvidia-drivers ~amd64" in nv             # driver too
+    # a legacy slot keeps its slot atom
+    leg = gpu.package_accept_keywords(
+        GpuSpec(video_cards=("nvidia",), nvidia_proprietary=True, nvidia_slot="0/470"),
+        "amd64")
+    assert "x11-drivers/nvidia-drivers:0/470 ~amd64" in leg
+
+
 def test_package_use_kernel_open_only_for_nvidia():
     on = gpu.package_use(
         GpuSpec(video_cards=("nvidia",), nvidia_proprietary=True, kernel_open=True))

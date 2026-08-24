@@ -787,6 +787,12 @@ class InstallGpuDrivers(FuncStep):
         # else the emerge is license-masked (linux-fw-redistributable / NVIDIA-r2).
         lic = write_under_root(ctx.root, gpu.PACKAGE_LICENSE, gpu.package_license(spec))
         _emit(on_progress, f"wrote {lic}")
+        # Accept ~arch for firmware (its newest snapshots are testing; a current
+        # nvidia-drivers pins one newer than stable) and the nvidia atom — else the
+        # emerge is keyword-masked and dies naming the live 99999999 firmware ebuild.
+        kw = write_under_root(ctx.root, gpu.PACKAGE_ACCEPT_KEYWORDS,
+                              gpu.package_accept_keywords(spec, ctx.plan.arch))
+        _emit(on_progress, f"wrote {kw}")
         # USE flags (e.g. nvidia-drivers[kernel-open]) must be set before the emerge.
         use = gpu.package_use(spec)
         if use:
