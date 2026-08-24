@@ -124,3 +124,27 @@ def test_installer_keyword_list_matches_the_build_keyword_list():
         if line:
             build_atoms.add(line.split()[0])       # "cat/pkg ~amd64" → "cat/pkg"
     assert set(desktop._DESKTOP_KEYWORDED) == build_atoms
+
+
+def _build_package_use_line(atom_prefix: str) -> str:
+    from pathlib import Path
+    f = (Path(__file__).resolve().parents[1]
+         / "packaging/livecd/portage-conf/package.use")
+    for line in f.read_text(encoding="utf-8").splitlines():
+        line = line.split("#", 1)[0].strip()
+        if line.startswith(atom_prefix):
+            return line
+    return ""
+
+
+def test_installer_writes_qtbase_use_matching_the_build():
+    # gui-apps/hede DEPENDs dev-qt/qtbase:6[dbus,widgets,wayland]; the installer must
+    # write the same package.use the live-CD build uses, or the desktop emerge fails a
+    # USE check. Lock the qtbase line to the build file so it can't drift (the sibling
+    # bug to the keyword drift).
+    use = desktop.package_use()
+    assert "dev-qt/qtbase:6" in use
+    for flag in ("wayland", "widgets", "dbus"):
+        assert flag in use
+    assert "dev-qt/qtbase:6 dbus gui opengl wayland widgets" in use
+    assert _build_package_use_line("dev-qt/qtbase:6") in use   # == the build's line

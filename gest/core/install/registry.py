@@ -427,7 +427,10 @@ class ProvisionDesktop(FuncStep):
         # Accept the ~arch keyword for gest/hede so --usepkgonly can install them.
         kw = write_under_root(
             root, desktop.ACCEPT_KEYWORDS, desktop.accept_keywords(ctx.plan.arch))
-        _emit(on_progress, f"wrote repos.conf + {kw}")
+        # …and the USE the closure needs (qtbase[wayland,widgets] is a hard hede
+        # DEPEND; gest[qt] for the Control Center) — mirrors the build's package.use.
+        pu = write_under_root(root, desktop.PACKAGE_USE, desktop.package_use())
+        _emit(on_progress, f"wrote repos.conf + {kw} + {pu}")
         # Replace quickpkg's broken binpkgs for image-mutating packages (e.g.
         # xkeyboard-config — see desktop.BINPKG_FIXUP_DIR) with the real,
         # source-built binpkgs the ISO ships. No-op if the image ships no fixups.
