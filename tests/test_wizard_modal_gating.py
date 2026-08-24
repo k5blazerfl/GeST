@@ -66,6 +66,45 @@ def test_pick_modal_list_stages_accept_commits():
     assert app._stack[-1] is not top    # modal closed
 
 
+def _list_row_texts(modal):
+    for w, _o in modal._pile.contents:
+        if isinstance(w, urwid.BoxAdapter):
+            return [r.original_widget.text for r in w.original_widget.body]
+    return []
+
+
+def test_choice_marker_follows_focus_even_with_no_current():
+    # Regression: in the Target-disk picker (no prior selection), highlighting a
+    # disk showed nothing until Accept+reopen. The ◉ now follows the focus, so the
+    # staged row is always marked — including the first row on open.
+    app = _app()
+    wz._choice_modal(app, "Target disk",
+                     [("sda", "sda"), ("sdb", "sdb"), ("nvme0n1", "nvme0n1")], "",
+                     lambda v: None, lambda: None)
+    top = app._stack[-1]
+    rows = _list_row_texts(_modal(app))
+    assert rows[0].startswith("◉ ") and rows[1].startswith("○ ")   # staged on open
+    top.keypress(_SIZE, "down")
+    rows = _list_row_texts(_modal(app))
+    assert rows[1].startswith("◉ ") and rows[0].startswith("○ ")   # moved with focus
+    assert sum(t.startswith("◉") for t in rows) == 1               # exactly one
+
+
+def test_pick_marker_follows_focus(monkeypatch):
+    from gest.core.system import locale as loc
+    monkeypatch.setattr(loc, "list_locales", lambda: ["C", "C.utf8", "en_US.utf8"])
+    app = _app()
+    app._stack[-1].sel.locale = "C.UTF-8"
+    app._stack[-1]._edit_locale()
+    top = app._stack[-1]
+    rows = _list_row_texts(_modal(app))
+    assert [t for t in rows if t.startswith("▸ ")] == ["▸ C.utf8"]   # current, on open
+    top.keypress(_SIZE, "tab")        # search → list
+    top.keypress(_SIZE, "down")       # stage the next row
+    rows = _list_row_texts(_modal(app))
+    assert [t for t in rows if t.startswith("▸ ")] == ["▸ en_US.utf8"]
+
+
 def test_locale_picker_marks_the_current_value(monkeypatch):
     # Regression: the Language/Locale submenu showed no selection because sel.locale
     # ("C.UTF-8") never string-matched `locale -a`'s "C.utf8". _edit_locale now

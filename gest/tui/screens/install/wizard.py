@@ -165,10 +165,23 @@ def _choice_modal(app: App, title: str, options: list[tuple[str, str]],
     keeps a filled ``◉`` (the rest ``○``) so the current value stays visible even
     without the focus highlight — e.g. the plain framebuffer console (nomodeset)."""
     keys = [k for k, _ in options]
-    walker = urwid.SimpleFocusListWalker(
-        [_row(("◉ " if k == current else "○ ") + lbl) for k, lbl in options])
-    if current in keys:
-        walker.set_focus(keys.index(current))
+    labels = [lbl for _, lbl in options]
+    rows = [_row("○ " + lbl) for lbl in labels]
+    walker = urwid.SimpleFocusListWalker(rows)
+
+    def restyle(pos):
+        # ◉ follows the focus so the *staged* choice is visible as you navigate —
+        # even where the focus highlight isn't (nomodeset) — and it stays put when
+        # you Tab to Accept. On open the focus sits on the current value, so that's
+        # what's marked.
+        for i, row in enumerate(rows):
+            row.original_widget.set_text(("◉ " if i == pos else "○ ") + labels[i])
+
+    if rows:
+        walker.set_focus_changed_callback(restyle)
+        start = keys.index(current) if current in keys else 0
+        walker.set_focus(start)
+        restyle(start)
 
     def accept(_w=None):
         pos = walker.get_focus()[1]
@@ -190,22 +203,28 @@ def _pick_modal(app: App, title: str, choices: list[str], current: str,
     walker = urwid.SimpleFocusListWalker([])
     visible = list(choices)
 
+    def restyle(pos):
+        # ▸ follows the focus so the staged row is visible as you arrow/filter,
+        # even where the focus highlight isn't (nomodeset); others get a matching
+        # indent so the column stays aligned. On open it sits on the current value.
+        for i in range(len(walker)):
+            icon = getattr(walker[i], "original_widget", None)
+            if icon is not None and i < len(visible):
+                icon.set_text(("▸ " if i == pos else "  ") + visible[i])
+
     def fill(items):
         nonlocal visible
         visible = items
-        # A ▸ marks the current value; others get a matching indent so the column
-        # stays aligned (visible without relying on the focus highlight).
-        walker[:] = [_row(("▸ " if c == current else "  ") + c) for c in items] \
-            or [urwid.Text(" (no matches)")]
-        if items and current in items:
-            walker.set_focus(items.index(current))
-        elif items:
-            walker.set_focus(0)
+        walker[:] = [_row("  " + c) for c in items] or [urwid.Text(" (no matches)")]
+        if items:
+            walker.set_focus(items.index(current) if current in items else 0)
+            restyle(walker.get_focus()[1])
 
     filt = urwid.Edit("Filter: ")
     urwid.connect_signal(
         filt, "change",
         lambda _e, text: fill([c for c in choices if text.strip().lower() in c.lower()]))
+    walker.set_focus_changed_callback(restyle)
     fill(choices)
 
     def accept(_w=None):
