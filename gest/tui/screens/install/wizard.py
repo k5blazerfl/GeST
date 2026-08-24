@@ -712,84 +712,96 @@ class DiskStep(WizardStep):
         return f"{self.sel.disk} ({size})" if size else self.sel.disk
 
     # -- detail panel ---------------------------------------------------------
-    # Per-row help for the bottom panel. Each entry leads with what the control
-    # is for (an instruction, not a data dump), then how to think about it and a
-    # recommended value — so a newcomer can choose without leaving the screen.
+    # Per-row copy for the bottom panel: teach the choice — what it is, why it
+    # matters, and where the recommendation comes from — in plain language, so a
+    # first-time installer can decide without a second screen or the Handbook.
+    # Strings flow as one paragraph each (no hard line breaks mid-sentence) so
+    # urwid word-wraps them to the panel's real width; \n\n marks a real break.
     _FS_DETAIL = {
-        "ext4": "ext4 is the default and the safe choice: rock-solid, universally\n"
-                "supported, and a strong all-rounder. Pick this if unsure.",
-        "xfs": "xfs is a high-throughput journaling filesystem, strong with large\n"
-               "files and parallel I/O. Note: it cannot be shrunk once created.",
-        "btrfs": "btrfs adds copy-on-write snapshots, checksums, and transparent\n"
-                 "compression — flexible, but with more moving parts than ext4.",
-        "f2fs": "f2fs is a flash-friendly, log-structured filesystem tuned for SSDs\n"
-                "and eMMC. Niche; ext4 is the safer default on most disks.",
-        "ext3": "ext3 is the older ext-family filesystem. Prefer ext4 unless you\n"
-                "specifically need ext3 compatibility.",
+        "ext4": "ext4 is the dependable default: mature, quick enough for anything, "
+                "and understood by every tool and rescue disk out there. With no "
+                "reason to prefer something else, this is the one.",
+        "xfs": "xfs shines with large files and heavy parallel I/O — a favourite on "
+               "servers and media stores. One thing to know: an xfs partition can "
+               "grow later, but can never be shrunk.",
+        "btrfs": "btrfs is a modern copy-on-write filesystem: point-in-time snapshots, "
+                 "self-checksumming against silent corruption, and transparent "
+                 "compression. More power, and a little more to learn.",
+        "f2fs": "f2fs is built for flash — SSDs, eMMC, SD cards — laying data out to "
+                "spread wear. A specialist pick; on an ordinary SSD, ext4 is just as "
+                "happy and far more widely supported.",
+        "ext3": "ext3 is ext4's predecessor, without extents or modern speed-ups. "
+                "There's no reason to choose it today unless you're matching an older "
+                "system that specifically needs it.",
     }
 
     def row_detail(self, label, value):
         if label == "Target disk":
             return self._disk_detail()
         if label == "ESP size":
-            return ("Set the size of the EFI System Partition — a small vfat\n"
-                    "partition (mounted at /boot/efi) that UEFI firmware reads the\n"
-                    "bootloader and kernels from directly.\n\n"
-                    f"Recommended 512M–1G; the proposal uses {self.sel.esp_size}.\n"
-                    "(On legacy BIOS this is a tiny raw BIOS-boot partition, and\n"
-                    "the size doesn't matter.)")
+            return ("The EFI System Partition is the first place UEFI firmware looks "
+                    "at boot — a small FAT volume at /boot/efi holding the bootloader "
+                    "and your kernels. Only a handful of kernels ever live here, so it "
+                    f"stays small: 512M works, 1G leaves easy headroom (proposal: "
+                    f"{self.sel.esp_size}). On legacy BIOS this becomes a tiny boot "
+                    "partition and the size doesn't matter.")
         if label == "Swap size":
-            return ("Set how much swap to create — disk space the kernel falls\n"
-                    "back on when RAM is full, and where a hibernated session is\n"
-                    "saved.\n\n"
-                    "Recommended about your RAM size so you can hibernate (capped\n"
-                    f"at 16G); the proposal uses {self.sel.swap_size or '(none)'}.\n"
-                    "Leave blank for no swap.")
+            return ("Swap is spillover space on disk for when RAM runs low, and where "
+                    "memory is parked if you hibernate. To keep hibernate working it "
+                    "needs to be at least your RAM size — which is why the proposal "
+                    f"matches your installed memory, capped at 16G ({self.sel.swap_size or 'none'} "
+                    "here). With plenty of RAM and no hibernate, a few gigs — or none "
+                    "— is fine.")
         if label == "Root filesystem":
-            return ("Choose the filesystem for the root partition (/) — where the\n"
-                    "whole system, and your home unless you split it out, lives.\n\n"
+            return ("This formats root (/), the partition that carries the operating "
+                    "system itself — and your home directory too, unless you split it "
+                    "off below.\n\n"
                     + self._FS_DETAIL.get(value, f"{value} — a root filesystem."))
         if label == "/home filesystem":
-            return ("Choose the filesystem for the separate /home partition —\n"
-                    "where your personal files live.\n\n"
+            return ("This formats the separate /home partition — your documents, "
+                    "downloads, and per-user settings.\n\n"
                     + self._FS_DETAIL.get(value, f"{value} — a filesystem."))
         if label == "Separate /home":
-            return ("Give /home its own partition instead of keeping it inside\n"
-                    "root.\n\n"
-                    "Enabling this is helpful because it keeps your personal files\n"
-                    "apart from the system: you can reinstall or reformat the OS\n"
-                    "and keep /home intact, and a runaway system log can't eat the\n"
-                    "space your data needs. 'No' keeps one root partition that\n"
-                    "fills the disk — simpler, and fine for most desktops.")
+            return ("By default your files share a partition with the system. "
+                    "Splitting /home onto its own partition draws a line between the "
+                    "two: you can wipe and reinstall Gentoo without touching your "
+                    "data, and a system that fills with logs or packages can't crowd "
+                    "out your files. The cost is committing to a fixed root size now. "
+                    "For a single-user desktop, one combined partition is perfectly "
+                    "fine.")
         if label == "Root size":
-            return ("Set a fixed size for root (/); with a separate /home, /home\n"
-                    "then takes the remaining space.\n\n"
-                    "30–60G is comfortable for a desktop (system + installed\n"
-                    "packages); allow more if you compile a lot from source or\n"
-                    "install large software.")
+            return ("With /home split off, root gets a fixed budget and /home takes "
+                    "the rest. Root only holds the OS, installed packages and caches, "
+                    "so it needn't be large — 30–60G suits most desktops. Give it more "
+                    "if you compile heavily from source or install big toolchains, "
+                    "which pile up under /var and /usr.")
         return super().row_detail(label, value)
 
     def _disk_detail(self):
-        """Target-disk help: the instruction to choose a disk, then a live view of
-        what's on the chosen one (all erased) so you can confirm it's the right one."""
-        lead = "Select the target disk you would like to install onto."
+        """Target-disk copy: what choosing a disk means, then a live look at what's
+        already on the chosen one (all of it erased) to confirm it's the right drive."""
         if not self.sel.disk:
-            return (lead + "\n\nThe whole disk is repartitioned, so everything\n"
-                    "currently on it is erased.")
+            return ("The whole install lands on a single disk. Choose it here — GeSI "
+                    "wipes it and writes a fresh partition table, so make sure you're "
+                    "pointing at the drive you mean, not a disk with data you want to "
+                    "keep.")
         dev = next((d for d in disk_reader.list_block_devices()
                     if d.name == self.sel.disk), None)
         if dev is None:
-            return lead
+            return ("The whole install lands on a single disk. GeSI wipes it and "
+                    "writes a fresh partition table — make sure it's the drive you "
+                    "mean.")
         if dev.children:
-            table = "\n".join(
+            tail = "\n".join(
                 f"  {c.name:<12} {c.size:>8}  {c.fstype or '—'}"
                 + (f"  {c.mountpoint}" if c.mountpoint else "")
                 for c in dev.children)
         else:
-            table = "  (no partitions — empty or unformatted)"
-        return [lead + "\n\n",
-                ("error", f"Everything on {dev.name} is erased at install:\n"),
-                table]
+            tail = "  (nothing partitioned — the disk looks empty)"
+        return ["The whole install lands on this disk. Check it's the right one — all "
+                "of the below is erased when you install.\n\n",
+                ("error", f"On {dev.name} ({dev.size}) right now:\n"),
+                tail]
 
     def _build_plan(self):
         """The :class:`DiskPlan` the current selections would create, or ``None``
