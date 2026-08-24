@@ -100,6 +100,18 @@ the rest of the rung's coverage is available but de-emphasised. This turns the a
 rung into a concrete "here's what your machine needs, and your rung covers it (or
 doesn't)" statement.
 
+**Worked example — Intel/AMD box, Full rung.** `plan.gpu.nvidia_proprietary` is
+`False` (no NVIDIA detected), so `driver_atoms` yields firmware only and
+`package_license` accepts `linux-fw-redistributable` and *not* `NVIDIA-r2`. The gate
+therefore marks **firmware** `● required by this install` and shows **NVIDIA driver**
+de-emphasised as *"covered by Full, but your hardware doesn't use it."* The `@EULA`
+pile is likewise unmarked unless a selected package pulls a specific EULA. So Full on
+an AMD/Intel machine asks the user to accept exactly the firmware terms the install
+exercises — the broad `@BINARY-REDISTRIBUTABLE @EULA` policy still *covers* NVIDIA-r2,
+but nothing installs it, so it's never surfaced as something to read. This is the
+"pull only the applicable agreements" behaviour: relevance is computed from the
+detected plan, not from the rung's static coverage.
+
 ## Declining / incompatible choices
 
 Because the accept step is explicit, the gate can catch the exact trap that motivated
