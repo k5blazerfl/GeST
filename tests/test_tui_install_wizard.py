@@ -271,15 +271,20 @@ def test_role_cards_nudge_hede_and_omit_admin_style():
         assert term not in blob, f"role cards should not mention {term!r}"
 
 
-def test_picker_enter_selects_the_focused_row():
+def test_picklist_enter_stages_and_advances_not_selects():
+    # The picker list is gated: Enter does NOT select-and-exit; it advances to the
+    # Accept button (on_enter). Highlighting alone stages the choice.
     import urwid
-    fired = []
+    advanced = []
     walker = urwid.SimpleFocusListWalker([wz._row("sda"), wz._row("sdb")])
-    lst = wz._EnterList(walker, lambda: fired.append(walker.get_focus()[1]))
+    lst = wz._PickList(walker)
+    lst.on_enter = lambda: advanced.append(True)
     lst.render((20, 5), focus=True)          # ListBox needs a render before keypress
     walker.set_focus(1)
     assert lst.keypress((20, 5), "enter") is None   # consumed
-    assert fired == [1]                              # Enter fired select on the focused row
+    assert advanced == [True]                        # Enter advanced to Accept, did not commit
+    lst.on_enter = None                              # unwired → Enter just passes through
+    assert lst.keypress((20, 5), "enter") == "enter"
 
 
 def test_modal_tab_cycles_focus_between_body_and_buttons():

@@ -84,18 +84,19 @@ def _row(text: str) -> urwid.Widget:
     return urwid.AttrMap(urwid.SelectableIcon(text, 0), None, focus_map="focus")
 
 
-class _EnterList(urwid.ListBox):
-    """A ListBox where Enter on the focused row fires a callback — so picking a
-    disk/timezone is just highlight + Enter, not 'reach the Select button'."""
+class _PickList(urwid.ListBox):
+    """A modal picker list where the highlight is a *staged* selection, not an
+    action: arrow keys move it, and Enter advances to the Accept button
+    (``on_enter``) rather than committing and closing. Nothing is applied until
+    you accept — the same Back/Continue gating the wizard uses everywhere else.
+    ``on_enter`` is wired to the owning modal's ``focus_buttons`` after it's built."""
 
-    def __init__(self, body, on_enter):
-        super().__init__(body)
-        self._on_enter = on_enter
+    on_enter = None
 
     def keypress(self, size, key):
         key = super().keypress(size, key)
-        if key == "enter":
-            self._on_enter()
+        if key == "enter" and self.on_enter is not None:
+            self.on_enter()
             return None
         return key
 
@@ -158,25 +159,28 @@ def _rail_widget(current: str) -> urwid.Widget:
 
 def _choice_modal(app: App, title: str, options: list[tuple[str, str]],
                   current: str, apply, done) -> None:
-    """A small single-choice picker: ``options`` are (key, label) rows; Enter (or
-    Select) applies the focused key. The active choice carries a filled ``◉``
-    marker (the rest ``○``) so the selection is visible even where the focus
-    highlight isn't — e.g. the plain framebuffer console under ``nomodeset``."""
+    """A small single-choice picker, gated: arrow to a row to *stage* it, then
+    Accept commits it (Enter on the list advances to Accept, it doesn't fire).
+    Tab/Shift-Tab cycle the list and the Accept/Cancel buttons. The active choice
+    keeps a filled ``◉`` (the rest ``○``) so the current value stays visible even
+    without the focus highlight — e.g. the plain framebuffer console (nomodeset)."""
     keys = [k for k, _ in options]
     walker = urwid.SimpleFocusListWalker(
         [_row(("◉ " if k == current else "○ ") + lbl) for k, lbl in options])
     if current in keys:
         walker.set_focus(keys.index(current))
 
-    def select(_w=None):
+    def accept(_w=None):
         pos = walker.get_focus()[1]
         if pos is not None:
             apply(keys[pos])
             app.pop()
             done()
 
-    body = urwid.BoxAdapter(_EnterList(walker, select), min(len(options) + 1, 8))
-    modal = Modal(app, title, [body], [("Select", select), ("Cancel", app.pop)])
+    listbox = _PickList(walker)
+    body = urwid.BoxAdapter(listbox, min(len(options) + 1, 8))
+    modal = Modal(app, title, [body], [("Accept", accept), ("Cancel", app.pop)])
+    listbox.on_enter = modal.focus_buttons
     app.push_modal(modal, width=("relative", 66), height=("relative", 50))
 
 
@@ -204,19 +208,23 @@ def _pick_modal(app: App, title: str, choices: list[str], current: str,
         lambda _e, text: fill([c for c in choices if text.strip().lower() in c.lower()]))
     fill(choices)
 
-    def select(_w=None):
+    def accept(_w=None):
         if visible and walker.focus is not None:
             apply(visible[walker.get_focus()[1]])
             app.pop()
             done()
 
-    body = urwid.Pile([
-        ("pack", urwid.Text(("hint", "Type to filter · ↓ into the list · Select."))),
-        ("pack", filt),
-        ("pack", urwid.Divider()),
-        ("weight", 1, urwid.BoxAdapter(_EnterList(walker, select), 10)),
-    ])
-    modal = Modal(app, title, [body], [("Select", select), ("Cancel", app.pop)])
+    listbox = _PickList(walker)
+    # Rows are top-level modal rows (not wrapped in one Pile) so Tab/Shift-Tab stop
+    # on the search field, the list, and the buttons in turn — not "body ↔ buttons".
+    rows = [
+        urwid.Text(("hint", "Type to filter · Tab or ↓ to the list · Accept to apply.")),
+        filt,
+        urwid.Divider(),
+        urwid.BoxAdapter(listbox, 10),
+    ]
+    modal = Modal(app, title, rows, [("Accept", accept), ("Cancel", app.pop)])
+    listbox.on_enter = modal.focus_buttons
     app.push_modal(modal, width=("relative", 62), height=("relative", 74))
 
 

@@ -433,7 +433,9 @@ class Modal(urwid.WidgetWrap):
         super().__init__(urwid.Filler(self._pile, valign="top"))
 
     def _cycle_focus(self, step: int) -> None:
-        """Tab/Shift-Tab across the modal's focusable widgets (body ↔ buttons)."""
+        """Tab/Shift-Tab across the modal's focusable widgets — each selectable
+        row (a field, a list) and the button row are separate stops, so a form
+        with a search box + list + buttons cycles through all three."""
         positions = [i for i, (w, _o) in enumerate(self._pile.contents)
                      if w.selectable()]
         if not positions:
@@ -441,6 +443,11 @@ class Modal(urwid.WidgetWrap):
         cur = self._pile.focus_position
         idx = positions.index(cur) if cur in positions else 0
         self._pile.focus_position = positions[(idx + step) % len(positions)]
+
+    def focus_buttons(self) -> None:
+        """Move focus to the button row (Accept/Cancel). List pickers wire this to
+        Enter, so staging a choice advances to the Accept gate instead of firing."""
+        self._pile.focus_position = len(self._pile.contents) - 1
 
     def keypress(self, size, key):
         key = super().keypress(size, key)
