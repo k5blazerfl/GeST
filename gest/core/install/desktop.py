@@ -67,6 +67,26 @@ _DESKTOP_KEYWORDED = (
 )
 
 
+PACKAGE_USE = "/etc/portage/package.use/gest-hede"
+
+
+# USE the HeDE closure needs, mirrored from the live CD build's package.use
+# (packaging/livecd/portage-conf/package.use). qtbase[wayland,widgets] is a HARD
+# dev-qt requirement of gui-apps/hede — without it the desktop emerge fails a USE
+# check ("necessary USE change"), the drift-sibling of the keyword list above; and
+# gest[qt] builds the Qt Control Center the desktop fronts. The guard test in
+# tests/test_install_desktop.py keeps the qtbase line locked to the build file.
+_DESKTOP_USE = (
+    "dev-qt/qtbase:6 dbus gui opengl wayland widgets",
+    "app-admin/gest qt",
+)
+
+
+def package_use() -> str:
+    """The target's ``package.use`` for the HeDE desktop closure (see _DESKTOP_USE)."""
+    return "".join(f"{line}\n" for line in _DESKTOP_USE)
+
+
 def accept_keywords(arch: str) -> str:
     """The target's ``package.accept_keywords`` for the HeDE desktop: accept
     ``~<arch>`` for the (curated) desktop closure so ``--usepkgonly`` can install
