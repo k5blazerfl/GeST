@@ -105,6 +105,26 @@ def test_pick_marker_follows_focus(monkeypatch):
     assert [t for t in rows if t.startswith("▸ ")] == ["▸ en_US.utf8"]
 
 
+def test_disk_picker_has_a_none_row_marked_when_unset(monkeypatch):
+    # With no disk chosen, the follow-focus ◉ would otherwise land on the first real
+    # disk and read as pre-selected. A "None" row at the top holds the marker until
+    # you pick a disk, so nothing looks set when nothing is.
+    from types import SimpleNamespace as NS
+
+    from gest.core.disk import reader as dr
+    disks = [NS(name="sda", size="238G", type="disk"),
+             NS(name="sdb", size="1T", type="disk")]
+    monkeypatch.setattr(dr, "list_block_devices", lambda: disks)
+    app = App()
+    step = wz.DiskStep(app, assemble.propose("desktop"))
+    app._stack.append(step)
+    assert step.sel.disk == ""                      # nothing selected on entry
+    step._pick_disk(disks)
+    rows = _list_row_texts(_modal(app))
+    assert rows[0].startswith("◉ None")             # marker on None, not a disk
+    assert not any(r.startswith("◉ sd") for r in rows)
+
+
 def test_locale_picker_marks_the_current_value(monkeypatch):
     # Regression: the Language/Locale submenu showed no selection because sel.locale
     # ("C.UTF-8") never string-matched `locale -a`'s "C.utf8". _edit_locale now

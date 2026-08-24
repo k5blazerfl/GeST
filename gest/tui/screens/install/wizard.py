@@ -925,8 +925,14 @@ class DiskStep(WizardStep):
             disk_bytes, _detect_ram_bytes(), self.sel.firmware)
 
     def _pick_disk(self, disks):
-        opts = [(d.name, f"{d.name}  {getattr(d, 'size', '')}") for d in disks] \
-            or [("", "(no disks detected)")]
+        if not disks:
+            opts = [("", "(no disks detected)")]
+        else:
+            # A "None" row (key "") so nothing reads as pre-selected on open: with no
+            # disk set the marker sits here, not on the first real disk. Selecting it
+            # clears the target (_on_disk("")).
+            opts = [("", "None — no target disk selected")] \
+                + [(d.name, f"{d.name}  {getattr(d, 'size', '')}") for d in disks]
         _choice_modal(self.app, "Target disk", opts, self.sel.disk,
                       self._on_disk, self._render)
 
