@@ -84,9 +84,12 @@ class ReviewScreen(Screen):
         s = self.sel
         chg = lambda f: " •changed" if self._changed(f) else ""  # noqa: E731
         disk_val = (f"/dev/{s.disk}" if s.disk else "(required)")
+        # Reflect a split /home (root size + the /home partition) — else the final
+        # confirmation shows a whole-disk layout even when the user split /home.
+        root_part = (f"root ({s.root_fs}, {s.root_size}) + /home ({s.home_fs}, rest)"
+                     if s.separate_home else f"root ({s.root_fs})")
         layout = ("" if s.firmware == "bios" else f"ESP {s.esp_size} + ") + \
-                 (f"swap {s.swap_size} + " if s.swap_size else "") + \
-                 f"root ({s.root_fs})"
+                 (f"swap {s.swap_size} + " if s.swap_size else "") + root_part
         build = "binary packages" if s.binary_pref else "compile from source"
         feats = ", ".join(sorted(s.capabilities)) or "(none)"
         named = [u for u in s.users if u.name]
