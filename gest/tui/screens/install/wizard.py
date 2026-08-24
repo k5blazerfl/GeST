@@ -246,6 +246,12 @@ class WizardStep(Screen):
         self._return_to = return_to
         self._walker = urwid.SimpleFocusListWalker([])
         self._list = urwid.ListBox(self._walker)
+        # The detail panel — the bottom 40% of the right pane (see _compose_body).
+        # It shows rich, per-row context for whatever setting is focused above,
+        # refreshed on every focus change via the walker's focus callback.
+        self._detail_text = urwid.Text("")
+        self._row_meta: list = []
+        self._walker.set_focus_changed_callback(self._sync_detail)
         # Back + Continue are right-aligned action buttons at the bottom (GeST's
         # ActionRow convention), not in-list rows — Tab reaches them, Enter fires.
         # At the root Welcome gate (exit_to_terminal), "Back" becomes "Exit to
@@ -273,9 +279,16 @@ class WizardStep(Screen):
         for Tab pane-cycling. The default is the standard gate — a left step-rail
         beside the settings list; a gate can override this (e.g. the Welcome
         cover page). ``self._list`` and ``self._nav_row`` are already built."""
+        # Right side is split 60/40: the settings list on top, a detail panel
+        # below that explains the focused row. The Filler makes the (flow) Text a
+        # box widget; valign="top" so short detail sits at the top, not centred.
+        right = urwid.Pile([
+            ("weight", 3, boxed(self._list, title=self.step_title)),
+            ("weight", 2, boxed(urwid.Filler(self._detail_text, valign="top"),
+                                title="Details")),
+        ])
         cols = urwid.Columns(
-            [(20, _rail_widget(self.step_key)),
-             boxed(self._list, title=self.step_title)],
+            [(20, _rail_widget(self.step_key)), right],
             dividechars=1, focus_column=1)
         body = NavPile([("weight", 1, cols), ("pack", self._nav_row)])
         return body, body, [0]
@@ -301,10 +314,12 @@ class WizardStep(Screen):
     def _render(self) -> None:
         items: list[urwid.Widget] = []
         self._actions: list = []
+        self._row_meta = []
         for entry in self.setting_rows():
             if entry is None:
                 items.append(urwid.Divider())
                 self._actions.append(None)
+                self._row_meta.append(None)
                 continue
             label, value, action = entry
             text = label if value is None else f"{label:<24}: {value}"
@@ -314,8 +329,34 @@ class WizardStep(Screen):
             # something there's nothing to do with.
             items.append(_row(text) if action is not None else urwid.Text(text))
             self._actions.append(action)
+            # Only actionable rows key the detail panel; info rows keep it as-is.
+            self._row_meta.append((label, value) if action is not None else None)
         self._walker[:] = items
         self._focus_first()
+        pos = self._walker.get_focus()[1]
+        if pos is not None:
+            self._sync_detail(pos)
+
+    def _sync_detail(self, position) -> None:
+        """Refresh the bottom detail panel for the row now in focus. Wired to the
+        walker's focus-changed callback, so it fires on every up/down move."""
+        detail = getattr(self, "_detail_text", None)
+        if detail is None:                      # a gate that skips the panel
+            return
+        meta = None
+        if position is not None and 0 <= position < len(self._row_meta):
+            meta = self._row_meta[position]
+        if meta is None:
+            detail.set_text(self.help())        # fallback: the whole-step help
+            return
+        label, value = meta
+        detail.set_text(self.row_detail(label, value))
+
+    def row_detail(self, label, value):
+        """Detail-panel content for the focused row. Subclasses override to give
+        per-row context; the default is the step's own help text so the panel is
+        never empty."""
+        return self.help()
 
     def _selectable_positions(self) -> list[int]:
         return [i for i, a in enumerate(self._actions) if a is not None]
@@ -669,6 +710,67 @@ class DiskStep(WizardStep):
             return "(none — required)"
         size = next((d.size for d in disks if d.name == self.sel.disk), "")
         return f"{self.sel.disk} ({size})" if size else self.sel.disk
+
+    # -- detail panel ---------------------------------------------------------
+    _FS_DETAIL = {
+        "ext4": "ext4 — the default. Rock-solid, universally supported, and a\n"
+                "strong all-rounder. Choose this if you're unsure.",
+        "xfs": "xfs — high-throughput journaling filesystem, strong with large\n"
+               "files and parallel I/O. Cannot be shrunk once created.",
+        "btrfs": "btrfs — copy-on-write with snapshots, checksums, and built-in\n"
+                 "compression. Flexible, but more moving parts than ext4.",
+        "f2fs": "f2fs — flash-friendly, log-structured filesystem tuned for SSDs\n"
+                "and eMMC. Niche; ext4 is the safer default on most disks.",
+        "ext3": "ext3 — the older ext-family filesystem. Prefer ext4 unless you\n"
+                "specifically need ext3 compatibility.",
+    }
+
+    def row_detail(self, label, value):
+        if label == "Target disk":
+            return self._disk_detail()
+        if label == "ESP size":
+            return ("EFI System Partition (/boot/efi, vfat). UEFI firmware reads\n"
+                    "the bootloader and kernels straight from here — 512M–1G is\n"
+                    f"plenty. Proposed: {self.sel.esp_size}. (On legacy BIOS this\n"
+                    "is a tiny raw BIOS-boot partition instead.)")
+        if label == "Swap size":
+            return ("Paging space for when RAM fills, and the store for\n"
+                    "hibernation (suspend-to-disk). Proposed = your RAM size so\n"
+                    "you can hibernate, capped at 16G. Blank = no swap.\n"
+                    f"Proposed: {self.sel.swap_size or '(none)'}.")
+        if label in ("Root filesystem", "/home filesystem"):
+            return self._FS_DETAIL.get(value, f"{value} — filesystem.")
+        if label == "Separate /home":
+            return ("Put /home on its own partition, apart from root. Keeps your\n"
+                    "data separate from the system, so a reinstall can reformat\n"
+                    "root and leave /home untouched. 'No' = a single root\n"
+                    "partition that fills the disk (simpler; fine for most).")
+        if label == "Root size":
+            return ("Fixed size for the root (/) partition when /home is split\n"
+                    "out; /home then takes the remaining space. 30–60G is\n"
+                    "comfortable for a desktop system.")
+        return super().row_detail(label, value)
+
+    def _disk_detail(self):
+        """Live view of the focused target disk: its current partitions — all of
+        which the install erases — so you can confirm you picked the right one."""
+        if not self.sel.disk:
+            return ("Pick the disk GeSI installs onto. The whole disk is\n"
+                    "repartitioned, so its current contents are erased.")
+        dev = next((d for d in disk_reader.list_block_devices()
+                    if d.name == self.sel.disk), None)
+        if dev is None:
+            return f"{self.sel.disk}: selected install target."
+        if dev.children:
+            table = "\n".join(
+                f"  {c.name:<12} {c.size:>8}  {c.fstype or '—'}"
+                + (f"  {c.mountpoint}" if c.mountpoint else "")
+                for c in dev.children)
+        else:
+            table = "  (no partitions — empty or unformatted)"
+        return [f"{dev.name} — {dev.size}\n\n",
+                ("error", "Everything on this disk is erased at Install:\n"),
+                table]
 
     def _build_plan(self):
         """The :class:`DiskPlan` the current selections would create, or ``None``
