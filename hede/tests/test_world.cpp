@@ -87,6 +87,19 @@ private slots:
         QVERIFY(!w.valid());
     }
 
+    // The shipped Slate world must keep its professional intent: a solid (opaque)
+    // bar and NO painterly frame, so it stays office/screen-share appropriate.
+    void slateWorldIsProfessional() {
+        QFile f(QStringLiteral(HELM_SLATE_THEME));
+        QVERIFY(f.open(QIODevice::ReadOnly | QIODevice::Text));
+        const helm::World w = helm::parseWorldYaml(QString::fromUtf8(f.readAll()));
+        QVERIFY(w.valid());
+        QCOMPARE(w.id, QStringLiteral("slate"));
+        QCOMPARE(w.barStyle, QStringLiteral("solid")); // opaque, legible for work
+        QVERIFY(!w.accent.isEmpty());
+        QVERIFY(w.frameImage.isEmpty()); // plain titlebars — no painterly frame
+    }
+
     void listWorldsSortedByName() {
         QTemporaryDir worlds;
         auto make = [&](const QString &id, const QString &name) {

@@ -1,0 +1,21 @@
+schema: helm.world/0.1
+id: slate
+name: Slate
+# A neutral, professional world for work / business environments — when a
+# painterly fantasy scene behind a spreadsheet or on a screen-share isn't the
+# move. Sober steel accent, a solid (opaque) bar for maximum legibility, and a
+# quiet slate gradient wallpaper. Deliberately NO decoration_art, so window
+# titlebars stay plain (labwc's solid bar) rather than a painterly frame.
+#
+# This is the one world that ships without generated art — it's defined almost
+# entirely by tokens. The fantasy worlds remain the out-of-box default; Slate is
+# an added, opt-in professional option.
+accent: '#5f7d9c'
+bar:
+  style: solid
+  tint: cool
+wallpaper_art:
+  image: wallpaper.png
+  fit: cover
+credit:
+  art: Solid-neutral gradient — no generated art (professional theme)
