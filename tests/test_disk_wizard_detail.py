@@ -48,11 +48,11 @@ def test_right_pane_is_split_list_over_detail(monkeypatch):
     assert weights == [3, 2]            # 60/40
 
 
-def test_target_disk_detail_lists_current_partitions_and_erase_note(monkeypatch):
+def test_target_disk_detail_leads_with_instruction_and_lists_partitions(monkeypatch):
     step = _disk_step(monkeypatch)
     # Focus starts on the first actionable row — "Target disk".
     text = _panel_text(step)
-    assert "sda — 238.5G" in text
+    assert text.startswith("Select the target disk you would like to install onto.")
     assert "sda1" in text and "sda2" in text and "ext4" in text
     assert "erased" in text.lower()
     # The erase note carries the red `error` attribute.
@@ -62,15 +62,15 @@ def test_target_disk_detail_lists_current_partitions_and_erase_note(monkeypatch)
 
 def test_detail_tracks_focus_movement(monkeypatch):
     step = _disk_step(monkeypatch)
-    assert "238.5G" in _panel_text(step)          # Target disk detail
-    step.handle_key("down")                        # → next actionable row
+    assert "Select the target disk" in _panel_text(step)   # Target disk detail
+    step.handle_key("down")                                 # → next actionable row
     moved = _panel_text(step)
-    assert "238.5G" not in moved                   # panel changed with focus
-    # The next actionable rows are ESP/Swap/root-fs — each has its own blurb.
-    assert any(w in moved for w in ("EFI System Partition", "Paging space",
-                                    "filesystem", "/home"))
+    assert "Select the target disk" not in moved            # panel changed with focus
+    # The next actionable row (ESP on UEFI) carries its own instruction.
+    assert "EFI System Partition" in moved
 
 
 def test_no_disk_prompts_to_pick(monkeypatch):
     step = _disk_step(monkeypatch, disk="")
-    assert "pick the disk" in _panel_text(step).lower()
+    text = _panel_text(step).lower()
+    assert "select the target disk you would like to install onto" in text

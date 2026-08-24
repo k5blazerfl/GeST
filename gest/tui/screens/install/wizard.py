@@ -712,16 +712,19 @@ class DiskStep(WizardStep):
         return f"{self.sel.disk} ({size})" if size else self.sel.disk
 
     # -- detail panel ---------------------------------------------------------
+    # Per-row help for the bottom panel. Each entry leads with what the control
+    # is for (an instruction, not a data dump), then how to think about it and a
+    # recommended value — so a newcomer can choose without leaving the screen.
     _FS_DETAIL = {
-        "ext4": "ext4 — the default. Rock-solid, universally supported, and a\n"
-                "strong all-rounder. Choose this if you're unsure.",
-        "xfs": "xfs — high-throughput journaling filesystem, strong with large\n"
-               "files and parallel I/O. Cannot be shrunk once created.",
-        "btrfs": "btrfs — copy-on-write with snapshots, checksums, and built-in\n"
-                 "compression. Flexible, but more moving parts than ext4.",
-        "f2fs": "f2fs — flash-friendly, log-structured filesystem tuned for SSDs\n"
+        "ext4": "ext4 is the default and the safe choice: rock-solid, universally\n"
+                "supported, and a strong all-rounder. Pick this if unsure.",
+        "xfs": "xfs is a high-throughput journaling filesystem, strong with large\n"
+               "files and parallel I/O. Note: it cannot be shrunk once created.",
+        "btrfs": "btrfs adds copy-on-write snapshots, checksums, and transparent\n"
+                 "compression — flexible, but with more moving parts than ext4.",
+        "f2fs": "f2fs is a flash-friendly, log-structured filesystem tuned for SSDs\n"
                 "and eMMC. Niche; ext4 is the safer default on most disks.",
-        "ext3": "ext3 — the older ext-family filesystem. Prefer ext4 unless you\n"
+        "ext3": "ext3 is the older ext-family filesystem. Prefer ext4 unless you\n"
                 "specifically need ext3 compatibility.",
     }
 
@@ -729,38 +732,54 @@ class DiskStep(WizardStep):
         if label == "Target disk":
             return self._disk_detail()
         if label == "ESP size":
-            return ("EFI System Partition (/boot/efi, vfat). UEFI firmware reads\n"
-                    "the bootloader and kernels straight from here — 512M–1G is\n"
-                    f"plenty. Proposed: {self.sel.esp_size}. (On legacy BIOS this\n"
-                    "is a tiny raw BIOS-boot partition instead.)")
+            return ("Set the size of the EFI System Partition — a small vfat\n"
+                    "partition (mounted at /boot/efi) that UEFI firmware reads the\n"
+                    "bootloader and kernels from directly.\n\n"
+                    f"Recommended 512M–1G; the proposal uses {self.sel.esp_size}.\n"
+                    "(On legacy BIOS this is a tiny raw BIOS-boot partition, and\n"
+                    "the size doesn't matter.)")
         if label == "Swap size":
-            return ("Paging space for when RAM fills, and the store for\n"
-                    "hibernation (suspend-to-disk). Proposed = your RAM size so\n"
-                    "you can hibernate, capped at 16G. Blank = no swap.\n"
-                    f"Proposed: {self.sel.swap_size or '(none)'}.")
-        if label in ("Root filesystem", "/home filesystem"):
-            return self._FS_DETAIL.get(value, f"{value} — filesystem.")
+            return ("Set how much swap to create — disk space the kernel falls\n"
+                    "back on when RAM is full, and where a hibernated session is\n"
+                    "saved.\n\n"
+                    "Recommended about your RAM size so you can hibernate (capped\n"
+                    f"at 16G); the proposal uses {self.sel.swap_size or '(none)'}.\n"
+                    "Leave blank for no swap.")
+        if label == "Root filesystem":
+            return ("Choose the filesystem for the root partition (/) — where the\n"
+                    "whole system, and your home unless you split it out, lives.\n\n"
+                    + self._FS_DETAIL.get(value, f"{value} — a root filesystem."))
+        if label == "/home filesystem":
+            return ("Choose the filesystem for the separate /home partition —\n"
+                    "where your personal files live.\n\n"
+                    + self._FS_DETAIL.get(value, f"{value} — a filesystem."))
         if label == "Separate /home":
-            return ("Put /home on its own partition, apart from root. Keeps your\n"
-                    "data separate from the system, so a reinstall can reformat\n"
-                    "root and leave /home untouched. 'No' = a single root\n"
-                    "partition that fills the disk (simpler; fine for most).")
+            return ("Give /home its own partition instead of keeping it inside\n"
+                    "root.\n\n"
+                    "Enabling this is helpful because it keeps your personal files\n"
+                    "apart from the system: you can reinstall or reformat the OS\n"
+                    "and keep /home intact, and a runaway system log can't eat the\n"
+                    "space your data needs. 'No' keeps one root partition that\n"
+                    "fills the disk — simpler, and fine for most desktops.")
         if label == "Root size":
-            return ("Fixed size for the root (/) partition when /home is split\n"
-                    "out; /home then takes the remaining space. 30–60G is\n"
-                    "comfortable for a desktop system.")
+            return ("Set a fixed size for root (/); with a separate /home, /home\n"
+                    "then takes the remaining space.\n\n"
+                    "30–60G is comfortable for a desktop (system + installed\n"
+                    "packages); allow more if you compile a lot from source or\n"
+                    "install large software.")
         return super().row_detail(label, value)
 
     def _disk_detail(self):
-        """Live view of the focused target disk: its current partitions — all of
-        which the install erases — so you can confirm you picked the right one."""
+        """Target-disk help: the instruction to choose a disk, then a live view of
+        what's on the chosen one (all erased) so you can confirm it's the right one."""
+        lead = "Select the target disk you would like to install onto."
         if not self.sel.disk:
-            return ("Pick the disk GeSI installs onto. The whole disk is\n"
-                    "repartitioned, so its current contents are erased.")
+            return (lead + "\n\nThe whole disk is repartitioned, so everything\n"
+                    "currently on it is erased.")
         dev = next((d for d in disk_reader.list_block_devices()
                     if d.name == self.sel.disk), None)
         if dev is None:
-            return f"{self.sel.disk}: selected install target."
+            return lead
         if dev.children:
             table = "\n".join(
                 f"  {c.name:<12} {c.size:>8}  {c.fstype or '—'}"
@@ -768,8 +787,8 @@ class DiskStep(WizardStep):
                 for c in dev.children)
         else:
             table = "  (no partitions — empty or unformatted)"
-        return [f"{dev.name} — {dev.size}\n\n",
-                ("error", "Everything on this disk is erased at Install:\n"),
+        return [lead + "\n\n",
+                ("error", f"Everything on {dev.name} is erased at install:\n"),
                 table]
 
     def _build_plan(self):
