@@ -55,6 +55,19 @@ def test_list_locales_with_runner():
     assert out == ["C", "en_US.utf8"]
 
 
+def test_locale_match_in_bridges_utf8_notation():
+    # `locale -a` emits glibc's `.utf8`; stored/default locales use `.UTF-8`. The
+    # two denote the same locale — match_in resolves across the notation so a picker
+    # can highlight the current value (the Language/Locale submenu regression).
+    choices = ["C", "C.utf8", "POSIX", "en_US.utf8"]
+    assert locale.match_in("C.UTF-8", choices) == "C.utf8"
+    assert locale.match_in("en_US.UTF-8", choices) == "en_US.utf8"
+    assert locale.match_in("C.utf8", choices) == "C.utf8"        # already-listed form
+    assert locale.match_in("POSIX", choices) == "POSIX"          # no encoding suffix
+    assert locale.match_in("de_DE.UTF-8", choices) == "de_DE.UTF-8"  # absent → unchanged
+    assert locale.canonical_key("C.UTF-8") == locale.canonical_key("C.utf8")
+
+
 def test_current_locale_reads_first_present(tmp_path):
     f = tmp_path / "02locale"
     f.write_text('LANG="fr_FR.UTF-8"\n')

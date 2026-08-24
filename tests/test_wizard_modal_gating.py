@@ -66,6 +66,24 @@ def test_pick_modal_list_stages_accept_commits():
     assert app._stack[-1] is not top    # modal closed
 
 
+def test_locale_picker_marks_the_current_value(monkeypatch):
+    # Regression: the Language/Locale submenu showed no selection because sel.locale
+    # ("C.UTF-8") never string-matched `locale -a`'s "C.utf8". _edit_locale now
+    # resolves the notation, so the current row carries the ▸ marker.
+    from gest.core.system import locale as loc
+    monkeypatch.setattr(loc, "list_locales", lambda: ["C", "C.utf8", "POSIX", "en_US.utf8"])
+    app = _app()
+    step = app._stack[-1]
+    step.sel.locale = "C.UTF-8"
+    step._edit_locale()
+    modal = _modal(app)
+    # find the listbox (last selectable pile row) and read its rows' text
+    listbox = modal._pile.contents[-3][0].original_widget      # BoxAdapter → ListBox
+    texts = [w.original_widget.text for w in listbox.body]
+    assert any(t.startswith("▸ C.utf8") for t in texts)        # current is marked
+    assert sum(t.startswith("▸") for t in texts) == 1          # exactly one
+
+
 def test_choice_modal_gated_accept():
     app = _app()
     applied = []

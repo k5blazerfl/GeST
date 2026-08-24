@@ -35,6 +35,27 @@ def list_locales(runner: Runner | None = None) -> list[str]:
     return sorted(set(seen))
 
 
+def canonical_key(name: str) -> tuple[str, str]:
+    """A comparison key that treats encoding notations as equal: ``C.UTF-8`` and
+    glibc's ``locale -a`` form ``C.utf8`` map to the same key. The base name is
+    kept verbatim; the charset after the first ``.`` is lowercased with ``-``/``_``
+    stripped (so ``UTF-8`` == ``utf8``)."""
+    base, _, enc = name.partition(".")
+    return base, enc.lower().replace("-", "").replace("_", "")
+
+
+def match_in(name: str, choices: list[str]) -> str:
+    """The entry in ``choices`` denoting the same locale as ``name`` (notation-
+    insensitive via :func:`canonical_key`), or ``name`` unchanged if none. Lets a
+    picker highlight the current value even when it's stored ``C.UTF-8`` but listed
+    ``C.utf8``."""
+    key = canonical_key(name)
+    for choice in choices:
+        if canonical_key(choice) == key:
+            return choice
+    return name
+
+
 def current_locale(paths=("/etc/env.d/02locale", "/etc/locale.conf")) -> str:
     for path in paths:
         try:

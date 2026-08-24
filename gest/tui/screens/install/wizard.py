@@ -530,8 +530,12 @@ class LocalizationStep(WizardStep):
                     self.sel.timezone, self._set("timezone"), self._render)
 
     def _edit_locale(self):
-        _pick_modal(self.app, "Language / Locale", locale_core.list_locales(),
-                    self.sel.locale, self._set("locale"), self._render)
+        # `locale -a` lists glibc's `C.utf8` form; sel.locale may be `C.UTF-8`.
+        # Resolve to the list entry so the picker highlights the current value.
+        choices = locale_core.list_locales()
+        current = locale_core.match_in(self.sel.locale, choices)
+        _pick_modal(self.app, "Language / Locale", choices, current,
+                    self._set("locale"), self._render)
 
     def _edit_keymap(self):
         _pick_modal(self.app, "Console keymap", console_core.list_keymaps(),
