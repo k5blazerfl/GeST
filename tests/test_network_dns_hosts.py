@@ -98,6 +98,15 @@ def test_default_hosts_is_loopback():
     assert hosts.valid_hosts(hosts.default_hosts())
 
 
+def test_default_hosts_adds_the_hostname():
+    entries = {e.address: e.names for e in hosts.default_hosts("workshop")}
+    assert entries["127.0.0.1"] == ["localhost"]
+    assert entries["127.0.1.1"] == ["workshop"]              # self-resolution
+    # no 127.0.1.1 row without a name, and an invalid name is ignored
+    assert all(e.address != "127.0.1.1" for e in hosts.default_hosts())
+    assert all(e.address != "127.0.1.1" for e in hosts.default_hosts("bad host!"))
+
+
 def test_current_hosts_reads_file(tmp_path):
     p = tmp_path / "hosts"
     p.write_text("127.0.0.1 localhost\n")

@@ -121,7 +121,8 @@ def test_minimal_is_a_strict_subset_of_the_full_registry():
         "Provision the Helm Desktop Environment", "Install the Helm Desktop Environment",
         "Clean up desktop binpkgs", "Enable the Helm Desktop Environment session",
         "Install GPU drivers & firmware",
-        "Set timezone and locale", "Set the hostname", "Set the console keymap",
+        "Set timezone and locale", "Generate the locale",
+        "Set the hostname", "Set the console keymap",
         "Create user accounts", "Set user passwords",
         "Configure the network", "Configure the clock",
     }
