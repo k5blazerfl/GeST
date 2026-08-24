@@ -703,12 +703,15 @@ class InstallKernelSources(ArgvStep):
             Step("emerge gentoo-sources", _emerge_argv(ctx.plan, "sys-kernel/gentoo-sources")),
         ]
         if ctx.plan.kernel.method == "genkernel":
-            # A fresh stage3/@world has no genkernel; the build step needs it in the
-            # target. linux-firmware is now license-permitted (ACCEPT_LICENSE covers
-            # @BINARY-REDISTRIBUTABLE) so genkernel pulls it normally — the target
-            # gets firmware for real hardware instead of the old USE=-firmware skip.
+            # A fresh stage3/@world has no genkernel; the build step needs it. genkernel
+            # pulls sys-kernel/linux-firmware via its default +firmware USE — fine under
+            # Redistributable/Full (ACCEPT_LICENSE covers @BINARY-REDISTRIBUTABLE), but
+            # under Libre (@FREE) that firmware is license-masked and the emerge dies.
+            # Build genkernel WITHOUT firmware there (a firmware-free kernel, matching
+            # the libre choice) instead of hard-failing on a masked package.
+            gk_env = {"USE": "-firmware"} if ctx.plan.license == "libre" else None
             steps.append(Step("emerge genkernel",
-                              _emerge_argv(ctx.plan, "sys-kernel/genkernel")))
+                              _emerge_argv(ctx.plan, "sys-kernel/genkernel", env=gk_env)))
         steps.append(Step("select /usr/src/linux", set_argv("kernel", 1)))
         return steps
 
@@ -783,6 +786,14 @@ class InstallGpuDrivers(FuncStep):
 
     async def run(self, ctx: InstallContext, on_progress: OnProgress | None = None) -> None:
         spec = ctx.plan.gpu
+        if ctx.plan.license == "libre":
+            # Libre (@FREE) forbids linux-firmware and the NVIDIA driver. Skip them
+            # rather than license-mask and abort: the system runs on the in-tree
+            # drivers (nouveau/amdgpu/i915) with no proprietary firmware — the free-only
+            # choice, honoured instead of a hard failure.
+            _emit(on_progress, "Libre license — skipping firmware + proprietary drivers")
+            ctx.state.mark(self)
+            return
         # Accept the licenses the driver/firmware atoms need BEFORE emerging them,
         # else the emerge is license-masked (linux-fw-redistributable / NVIDIA-r2).
         lic = write_under_root(ctx.root, gpu.PACKAGE_LICENSE, gpu.package_license(spec))
