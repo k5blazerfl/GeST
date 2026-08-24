@@ -604,6 +604,25 @@ class OnlineStep(WizardStep):
             return "No usable network devices — the install needs a connection."
         return "Not connected yet — bring a link up (or set up Wi-Fi), then Continue."
 
+    def row_detail(self, label, value):
+        if "(wired)" in label or "(Wi-Fi)" in label:
+            return ("A network interface found on this machine, with its current "
+                    "state and address. A wired link usually just needs DHCP; Wi-Fi "
+                    "needs you to pick a network and enter its password.")
+        if label.startswith("Bring up wired"):
+            return ("Ask the wired interface to grab an address automatically over "
+                    "DHCP — the usual case when a cable is plugged in. This runs "
+                    "dhcpcd and then re-checks connectivity.")
+        if label.startswith("Set up Wi-Fi"):
+            return ("Open the Wi-Fi module to scan for networks and connect (pick an "
+                    "SSID, enter the password). It returns here so you can re-check "
+                    "once the link has associated.")
+        if label.startswith("Re-check"):
+            return ("Probe the network again after bringing a link up. Once this "
+                    "reads 'connected', the install has everything it needs and you "
+                    "can Continue.")
+        return super().row_detail(label, value)
+
 
 class RoleStep(WizardStep):
     step_key = "role"
@@ -630,6 +649,28 @@ class RoleStep(WizardStep):
             mark = "◉" if key == self.sel.role else "○"
             out.append((f"{mark} {label}", None, self._choose(key)))
         return out
+
+    _ROLE_DETAIL = {
+        "desktop": "HeDE — our Helm Desktop — set up as a ready-to-use graphical "
+                   "workstation: a Wayland session, everyday apps, and binary "
+                   "packages so it comes up fast. The pick for a daily-driver laptop "
+                   "or workstation.",
+        "server": "A headless machine, no desktop — SSH and a firewall enabled, ready "
+                  "to administer over the network. For a box that lives in a closet or "
+                  "the cloud and quietly serves things.",
+        "minimal": "Just base Gentoo, compiled from source, with no desktop and few "
+                   "assumptions baked in. A clean foundation to build exactly what you "
+                   "want on top of — or to learn the system from the ground up.",
+        "custom": "Starts from the Desktop proposal but hands you the wheel: every "
+                  "later gate is yours to reconfigure. Choose this when none of the "
+                  "presets quite fit what you're after.",
+    }
+
+    def row_detail(self, label, value):
+        for key, lbl in self._ROLES:
+            if lbl in label:
+                return self._ROLE_DETAIL[key]
+        return super().row_detail(label, value)
 
     def _choose(self, role):
         def apply():
@@ -940,6 +981,59 @@ class BaseSystemStep(WizardStep):
             rows.append(("Escalator", self.sel.escalator, self._edit_escalator))
         return rows
 
+    # Detail keyed off the *currently selected* option, so the panel explains what
+    # you have set (and how it differs from the alternatives) as you change it.
+    _LICENSE_DETAIL = {
+        "libre": "Accept only free/open-source licenses (@FREE). The most principled "
+                 "choice, but you'll go without binary firmware and drivers like "
+                 "NVIDIA's — some hardware won't work fully.",
+        "redistributable": "Also accept licenses that are free to redistribute — "
+                           "notably binary firmware and the NVIDIA driver — while "
+                           "still refusing click-through EULAs. A practical middle "
+                           "ground; the right default for most real hardware.",
+        "full": "Accept everything, including click-through EULAs (some fonts, Steam, "
+                "and the like). Maximum compatibility and the least fuss, with the "
+                "least restrictive stance on licensing.",
+    }
+    _ADMIN_DETAIL = {
+        "traditional": "The classic Unix setup: root has its own password and you "
+                       "become root with su. Simple and familiar, but every admin "
+                       "shares that one root password.",
+        "sudo-augmented": "Root still has a password, and on top of that, administrator "
+                          "users can run individual commands with sudo — so you rarely "
+                          "need a full root shell. A comfortable balance.",
+        "rootless": "The root account is locked — no direct root login. An administrator "
+                    "account does all system work through sudo/doas, the model Ubuntu "
+                    "and macOS use. You must create an admin user on the next gate.",
+    }
+
+    def row_detail(self, label, value):
+        if label == "Build strategy":
+            if self.sel.binary_pref:
+                return ("Install prebuilt binary packages from a binhost — fast, easy "
+                        "on the CPU, and the quickest route to a working system. You "
+                        "can still compile individual packages later. Best on modest "
+                        "hardware, or when you just want it up and running.")
+            return ("Compile every package from source, tuned to your exact CPU and "
+                    "USE flags — the classic Gentoo way. Slower (sometimes hours) but "
+                    "maximally tailored. Best with capable hardware and some patience.")
+        if label == "License policy":
+            return self._LICENSE_DETAIL.get(self.sel.license, value)
+        if label == "Features (USE)":
+            return ("Features are high-level toggles that map to system-wide USE flags "
+                    "— the switches that decide which optional support gets compiled "
+                    "in (Bluetooth, printing, media codecs, and so on). Turning one on "
+                    "enables it everywhere it applies. Your role has preselected a "
+                    "sensible set; add or remove to taste.")
+        if label == "Admin model":
+            return self._ADMIN_DETAIL.get(self.sel.admin_model, value)
+        if label == "Escalator":
+            return ("How an administrator runs commands as root. sudo is the ubiquitous, "
+                    "full-featured choice everyone knows. doas (from OpenBSD) is a much "
+                    "smaller, simpler alternative with an easy config and less to go "
+                    "wrong — plenty for a single-admin desktop.")
+        return super().row_detail(label, value)
+
     def _edit_admin(self):
         opts = [(k, _ADMIN_LABELS[k]) for k in ADMIN_MODELS]
         _choice_modal(self.app, "Admin model", opts, self.sel.admin_model,
@@ -1012,6 +1106,30 @@ class AccountStep(WizardStep):
         rows.append(("Root", "enabled" if enabled else "disabled",
                      self._edit_rootpw if enabled else None))
         return rows
+
+    def row_detail(self, label, value):
+        if label == "Hostname":
+            return ("The name this machine goes by — on the network and at the shell "
+                    "prompt. Use lowercase letters, digits and hyphens, no spaces. "
+                    "Pick something memorable, like 'workshop' or 'nimbus'.")
+        if label.strip().startswith("+ Add user"):
+            return ("Create a login account. You'll set its name and password, and can "
+                    "mark it an administrator. On the rootless admin model that admin "
+                    "account is how you do system tasks (via sudo/doas), so you need at "
+                    "least one.")
+        if label.startswith("   "):        # an existing user row
+            return ("A login account you've defined. Press Enter to edit its name, "
+                    "password, or admin flag. '(admin)' means it can perform system "
+                    "administration through sudo/doas.")
+        if label == "Root":
+            if sets_root_password(self.sel.admin_model):
+                return ("The superuser account. Under this admin model root has a "
+                        "password — set it here — and you become root with su (or "
+                        "sudo). Keep it strong: root can do anything on the system.")
+            return ("This admin model (rootless) locks the root account — there's no "
+                    "direct root login. System tasks go through an administrator "
+                    "account with sudo/doas instead, so be sure you added one above.")
+        return super().row_detail(label, value)
 
     def _edit_hostname(self):
         self._edit_text("Hostname", "hostname")
