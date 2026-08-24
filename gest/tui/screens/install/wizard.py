@@ -663,10 +663,14 @@ class RoleStep(WizardStep):
         return out
 
     _ROLE_DETAIL = {
-        "desktop": "HeDE — our Helm Desktop — set up as a ready-to-use graphical "
-                   "workstation: a Wayland session, everyday apps, and binary "
-                   "packages so it comes up fast. The pick for a daily-driver laptop "
-                   "or workstation.",
+        "desktop": "Helm — the Helm Desktop Environment — is our own graphical "
+                   "desktop, built here rather than borrowed from GNOME or KDE. A "
+                   "modern Wayland session laid out the Windows-familiar way on "
+                   "purpose, so your muscle memory carries over from the first login, "
+                   "with GeST built in as the Control Center — you steer the whole "
+                   "system from the desktop, not a terminal. Installs ready-to-run "
+                   "from binary packages, and it's the default for a daily-driver "
+                   "laptop or workstation.",
         "server": "A headless machine, no desktop — SSH and a firewall enabled, ready "
                   "to administer over the network. For a box that lives in a closet or "
                   "the cloud and quietly serves things.",
