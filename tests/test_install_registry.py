@@ -363,7 +363,8 @@ def test_install_desktop_git_syncs_overlay_when_unseeded_and_no_binpkgs(tmp_path
     assert [s.argv for s in steps] == [
         ["emerge", "--getbinpkg", "--color", "n", "dev-vcs/git"],
         ["emaint", "sync", "-r", "amphitheater"],
-        ["emerge", "--getbinpkg", "--color", "n", *DESKTOP_ATOMS]]
+        ["emerge", "--getbinpkg", "--update", "--deep", "--newuse", "--color", "n",
+         *DESKTOP_ATOMS]]
 
 
 def test_install_desktop_skips_sync_when_overlay_seeded_but_no_binpkgs(tmp_path):
@@ -374,7 +375,8 @@ def test_install_desktop_skips_sync_when_overlay_seeded_but_no_binpkgs(tmp_path)
     desk = _ctx(FakeExecutor(), root=str(tmp_path), plan=_desktop_plan())
     steps = InstallDesktop().build(desk)
     assert [s.argv for s in steps] == [
-        ["emerge", "--getbinpkg", "--color", "n", *DESKTOP_ATOMS]]
+        ["emerge", "--getbinpkg", "--update", "--deep", "--newuse", "--color", "n",
+         *DESKTOP_ATOMS]]
 
 
 def test_cleanup_desktop_binpkgs_removes_target_pkgdir_when_enabled():

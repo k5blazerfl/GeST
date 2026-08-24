@@ -43,9 +43,11 @@ def test_emerge_desktop_is_binary_only():
 
 
 def test_emerge_desktop_network_mode_uses_getbinpkg():
-    # CLI ISO path: no local binpkgs → --getbinpkg (binhost, source fallback)
+    # CLI ISO path: no local binpkgs → --getbinpkg (binhost, source fallback), and
+    # --update --deep --newuse so the desktop closure reconciles with base @world
+    # (e.g. upgrades dev-libs/wayland to match dev-util/wayland-scanner).
     assert desktop.emerge_desktop_argv(binary_only=False) == [
-        "emerge", "--getbinpkg", "--color", "n",
+        "emerge", "--getbinpkg", "--update", "--deep", "--newuse", "--color", "n",
         "gui-apps/hede", "sys-boot/plymouth", "gui-libs/greetd"]
 
 

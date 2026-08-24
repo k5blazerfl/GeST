@@ -170,11 +170,17 @@ def emerge_desktop_argv(*, atoms: tuple[str, ...] = DESKTOP_ATOMS,
     """Emerge the desktop atoms into the target, recorded in @world (no --oneshot).
 
     ``binary_only`` (desktop ISO) uses ``--usepkgonly``: install from the quickpkg'd
-    binpkgs — offline, no ebuild tree, never recompiles. Otherwise (CLI ISO) use
-    ``--getbinpkg``: pull from the binhost when one is configured, else build from
-    the synced overlay + tree."""
-    mode = "--usepkgonly" if binary_only else "--getbinpkg"
-    return ["emerge", mode, "--color", "n", *atoms]
+    binpkgs — offline, no ebuild tree, never recompiles; the closure is complete so
+    it needs no updates. Otherwise (CLI ISO) use ``--getbinpkg`` **with
+    ``--update --deep --newuse``** so the desktop closure reconciles with the base
+    @world already installed — notably upgrading version-locked deps like
+    dev-libs/wayland to match dev-util/wayland-scanner (else the split-package
+    blocker aborts the emerge). Mirrors the live-CD build's emerge flags."""
+    if binary_only:
+        mode = ["--usepkgonly"]
+    else:
+        mode = ["--getbinpkg", "--update", "--deep", "--newuse"]
+    return ["emerge", *mode, "--color", "n", *atoms]
 
 
 def cleanup_pkgdir_argv(*, root: str = "") -> list[str]:
