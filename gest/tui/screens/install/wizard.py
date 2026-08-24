@@ -826,20 +826,19 @@ class DiskStep(WizardStep):
                     "which pile up under /var and /usr.")
         return super().row_detail(label, value)
 
+    # The Target-disk note — the data-loss caution, verbatim. When a disk is
+    # picked we append its current contents so you can confirm it's the right one.
+    _DISK_NOTE = ("Your install is written to the selected disk. Make sure you have "
+                  "the correct disk selected, a mistake here can be painful and "
+                  "result in lost data.")
+
     def _disk_detail(self):
-        """Target-disk copy: what choosing a disk means, then a live look at what's
-        already on the chosen one (all of it erased) to confirm it's the right drive."""
         if not self.sel.disk:
-            return ("The whole install lands on a single disk. Choose it here — GeSI "
-                    "wipes it and writes a fresh partition table, so make sure you're "
-                    "pointing at the drive you mean, not a disk with data you want to "
-                    "keep.")
+            return self._DISK_NOTE
         dev = next((d for d in disk_reader.list_block_devices()
                     if d.name == self.sel.disk), None)
         if dev is None:
-            return ("The whole install lands on a single disk. GeSI wipes it and "
-                    "writes a fresh partition table — make sure it's the drive you "
-                    "mean.")
+            return self._DISK_NOTE
         if dev.children:
             tail = "\n".join(
                 f"  {c.name:<12} {c.size:>8}  {c.fstype or '—'}"
@@ -847,9 +846,8 @@ class DiskStep(WizardStep):
                 for c in dev.children)
         else:
             tail = "  (nothing partitioned — the disk looks empty)"
-        return ["The whole install lands on this disk. Check it's the right one — all "
-                "of the below is erased when you install.\n\n",
-                ("error", f"On {dev.name} ({dev.size}) right now:\n"),
+        return [self._DISK_NOTE + "\n\n",
+                ("error", f"On {dev.name} ({dev.size}) right now — all of it erased:\n"),
                 tail]
 
     def _build_plan(self):

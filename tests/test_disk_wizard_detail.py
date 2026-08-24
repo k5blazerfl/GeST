@@ -72,4 +72,4 @@ def test_detail_tracks_focus_movement(monkeypatch):
 def test_no_disk_prompts_to_pick(monkeypatch):
     step = _disk_step(monkeypatch, disk="")
     text = _panel_text(step).lower()
-    assert "single disk" in text and "wipes" in text
+    assert "correct disk" in text and "lost data" in text
