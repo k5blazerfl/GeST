@@ -105,6 +105,30 @@ def test_pick_marker_follows_focus(monkeypatch):
     assert [t for t in rows if t.startswith("▸ ")] == ["▸ en_US.utf8"]
 
 
+def test_root_password_mismatch_warns_inside_the_modal():
+    # A failed password check must show IN the modal — app.notify lands on the
+    # status line the modal hides, so the old code gave no visible feedback.
+    app = App()
+    step = wz.AccountStep(app, assemble.propose("desktop"))
+    app._stack.append(step)
+    step.sel.admin_model = "traditional"          # root has a password
+    step._edit_rootpw()
+    top = app._stack[-1]
+    m = _modal(app)
+    pw, pw2, warn = (m._pile.contents[2][0], m._pile.contents[3][0],
+                     m._pile.contents[5][0])
+    pw.set_edit_text("secret1")
+    pw2.set_edit_text("secret2")                  # mismatch
+    m.focus_buttons()
+    top.keypress(_SIZE, "enter")                  # Save
+    assert "do not match" in warn.get_text()[0].lower()   # warning shown in-modal
+    assert app._stack[-1] is top                          # modal stays open
+    assert step.sel.root_password == ""                   # not applied
+    pw2.set_edit_text("secret1")                  # fix it
+    top.keypress(_SIZE, "enter")
+    assert app._stack[-1] is not top and step.sel.root_password == "secret1"
+
+
 def test_disk_picker_has_a_none_row_marked_when_unset(monkeypatch):
     # With no disk chosen, the follow-focus ◉ would otherwise land on the first real
     # disk and read as pre-selected. A "None" row at the top holds the marker until

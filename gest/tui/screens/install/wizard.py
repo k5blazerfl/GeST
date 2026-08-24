@@ -1188,6 +1188,9 @@ class AccountStep(WizardStep):
         admin = urwid.CheckBox("Administrator account", state=draft.admin)
         pw = urwid.Edit("Password          : ", draft.password, mask="*")
         pw2 = urwid.Edit("Confirm           : ", draft.password, mask="*")
+        # Inline warning — a failed check must show IN the modal (app.notify lands on
+        # the status line the modal hides). Red `!`, same idiom as the disk gate.
+        warn = urwid.Text("")
 
         def save():
             uname = name.edit_text.strip()
@@ -1198,10 +1201,11 @@ class AccountStep(WizardStep):
                 self._render()
                 return
             if not valid_user_name(uname):
-                self.app.notify("Invalid user name.", error=True)
+                warn.set_text(("error", " !  Invalid user name (lowercase letters, "
+                                        "digits, - and _; start with a letter)."))
                 return
             if pw.edit_text != pw2.edit_text:
-                self.app.notify("Passwords do not match.", error=True)
+                warn.set_text(("error", " !  Passwords do not match — retype them."))
                 return
             draft.name = uname
             draft.comment = comment.edit_text.strip()
@@ -1226,25 +1230,30 @@ class AccountStep(WizardStep):
                       [urwid.Text(("hint", "An everyday account. Turn on Administrator "
                                            "to let it install software and change "
                                            "settings; a password lets it log in.")),
-                       urwid.Divider(), name, comment, admin, pw, pw2],
+                       urwid.Divider(), name, comment, admin, pw, pw2,
+                       urwid.Divider(), warn],
                       buttons)
         self.app.push_modal(modal, width=("relative", 70), height=("relative", 66))
 
     def _edit_rootpw(self):
         pw = urwid.Edit("Root password: ", mask="*")
         pw2 = urwid.Edit("Confirm      : ", mask="*")
+        # Inline warning INSIDE the modal — app.notify writes to the underlying
+        # screen's status line, which the modal hides, so a failed check would give
+        # no visible feedback. Red `!` matches the disk gate's warning idiom.
+        warn = urwid.Text("")
 
         def save():
-            if pw.edit_text != pw2.edit_text:
-                self.app.notify("Passwords do not match.", error=True)
-                return
             if not pw.edit_text:
-                self.app.notify("Empty password.", error=True)
+                warn.set_text(("error", " !  Enter a password."))
+                return
+            if pw.edit_text != pw2.edit_text:
+                warn.set_text(("error", " !  Passwords do not match — retype them."))
                 return
             self.sel.root_password = pw.edit_text
             self.app.pop()
             self._render()
-        modal = Modal(self.app, "Root password", [pw, pw2],
+        modal = Modal(self.app, "Root password", [pw, pw2, urwid.Divider(), warn],
                       [("Save", save), ("Cancel", self.app.pop)])
         self.app.push_modal(modal, width=("relative", 60))
 
