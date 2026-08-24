@@ -873,8 +873,13 @@ class DiskStep(WizardStep):
                 for c in dev.children)
         else:
             tail = "  (nothing partitioned — the disk looks empty)"
-        return [self._DISK_NOTE + "\n\n",
-                ("error", f"On {dev.name} ({dev.size}) right now — all of it erased:\n"),
+        # White lead, the target + size in Gentoo purple, the data-loss warning in
+        # red — so the disk you're about to wipe is unmistakable.
+        return ["Your current target is ",
+                ("title", f"{dev.name} ({dev.size})"),
+                " — ",
+                ("error", "BE AWARE! All data will be erased on this disk!"),
+                "\n\nCurrently on it:\n",
                 tail]
 
     def _build_plan(self):
@@ -925,8 +930,14 @@ class DiskStep(WizardStep):
             disk_bytes, _detect_ram_bytes(), self.sel.firmware)
 
     def _pick_disk(self, disks):
-        opts = [(d.name, f"{d.name}  {getattr(d, 'size', '')}") for d in disks] \
-            or [("", "(no disks detected)")]
+        if not disks:
+            opts = [("", "(no disks detected)")]
+        else:
+            # A "None" row (key "") so nothing reads as pre-selected on open: with no
+            # disk set the marker sits here, not on the first real disk. Selecting it
+            # clears the target (_on_disk("")).
+            opts = [("", "None — no target disk selected")] \
+                + [(d.name, f"{d.name}  {getattr(d, 'size', '')}") for d in disks]
         _choice_modal(self.app, "Target disk", opts, self.sel.disk,
                       self._on_disk, self._render)
 
@@ -1177,6 +1188,9 @@ class AccountStep(WizardStep):
         admin = urwid.CheckBox("Administrator account", state=draft.admin)
         pw = urwid.Edit("Password          : ", draft.password, mask="*")
         pw2 = urwid.Edit("Confirm           : ", draft.password, mask="*")
+        # Inline warning — a failed check must show IN the modal (app.notify lands on
+        # the status line the modal hides). Red `!`, same idiom as the disk gate.
+        warn = urwid.Text("")
 
         def save():
             uname = name.edit_text.strip()
@@ -1187,10 +1201,11 @@ class AccountStep(WizardStep):
                 self._render()
                 return
             if not valid_user_name(uname):
-                self.app.notify("Invalid user name.", error=True)
+                warn.set_text(("error", " !  Invalid user name (lowercase letters, "
+                                        "digits, - and _; start with a letter)."))
                 return
             if pw.edit_text != pw2.edit_text:
-                self.app.notify("Passwords do not match.", error=True)
+                warn.set_text(("error", " !  Passwords do not match — retype them."))
                 return
             draft.name = uname
             draft.comment = comment.edit_text.strip()
@@ -1215,25 +1230,30 @@ class AccountStep(WizardStep):
                       [urwid.Text(("hint", "An everyday account. Turn on Administrator "
                                            "to let it install software and change "
                                            "settings; a password lets it log in.")),
-                       urwid.Divider(), name, comment, admin, pw, pw2],
+                       urwid.Divider(), name, comment, admin, pw, pw2,
+                       urwid.Divider(), warn],
                       buttons)
         self.app.push_modal(modal, width=("relative", 70), height=("relative", 66))
 
     def _edit_rootpw(self):
         pw = urwid.Edit("Root password: ", mask="*")
         pw2 = urwid.Edit("Confirm      : ", mask="*")
+        # Inline warning INSIDE the modal — app.notify writes to the underlying
+        # screen's status line, which the modal hides, so a failed check would give
+        # no visible feedback. Red `!` matches the disk gate's warning idiom.
+        warn = urwid.Text("")
 
         def save():
-            if pw.edit_text != pw2.edit_text:
-                self.app.notify("Passwords do not match.", error=True)
-                return
             if not pw.edit_text:
-                self.app.notify("Empty password.", error=True)
+                warn.set_text(("error", " !  Enter a password."))
+                return
+            if pw.edit_text != pw2.edit_text:
+                warn.set_text(("error", " !  Passwords do not match — retype them."))
                 return
             self.sel.root_password = pw.edit_text
             self.app.pop()
             self._render()
-        modal = Modal(self.app, "Root password", [pw, pw2],
+        modal = Modal(self.app, "Root password", [pw, pw2, urwid.Divider(), warn],
                       [("Save", save), ("Cancel", self.app.pop)])
         self.app.push_modal(modal, width=("relative", 60))
 
