@@ -107,6 +107,40 @@ def _detect_ram_bytes() -> int:
         return 8 * 1024 ** 3
 
 
+_SIZE_UNITS = {"K": 1024, "M": 1024 ** 2, "G": 1024 ** 3, "T": 1024 ** 4, "P": 1024 ** 5}
+
+
+def _size_to_bytes(text: str) -> int:
+    """Parse an lsblk human size ("238.5G", "512M", "1.8T") to bytes; 0 if unknown.
+
+    lsblk's SIZE is 1024-based (a "G" is a GiB), matching :data:`_SIZE_UNITS`.
+    """
+    text = (text or "").strip().upper().rstrip("B")
+    if not text:
+        return 0
+    if text[-1] in _SIZE_UNITS:
+        try:
+            return int(float(text[:-1]) * _SIZE_UNITS[text[-1]])
+        except ValueError:
+            return 0
+    try:
+        return int(float(text))
+    except ValueError:
+        return 0
+
+
+# Mount point + one-line purpose per partition label (the labels uefi_plan /
+# bios_plan stamp onto each Partition). Drives the on-screen layout breakdown so
+# it reads like the Gentoo Handbook's partition table.
+_PART_PURPOSE = {
+    "ESP": ("/boot/efi", "bootloader + kernels"),
+    "BIOS": ("(raw)", "GRUB boot code"),
+    "swap": ("swap", "paging + hibernate"),
+    "root": ("/", "the whole system"),
+    "home": ("/home", "your files, separate"),
+}
+
+
 def _rail_widget(current: str) -> urwid.Widget:
     rows = []
     cur_i = _RAIL_KEYS.index(current)
@@ -212,6 +246,12 @@ class WizardStep(Screen):
         self._return_to = return_to
         self._walker = urwid.SimpleFocusListWalker([])
         self._list = urwid.ListBox(self._walker)
+        # The detail panel — the bottom 40% of the right pane (see _compose_body).
+        # It shows rich, per-row context for whatever setting is focused above,
+        # refreshed on every focus change via the walker's focus callback.
+        self._detail_text = urwid.Text("")
+        self._row_meta: list = []
+        self._walker.set_focus_changed_callback(self._sync_detail)
         # Back + Continue are right-aligned action buttons at the bottom (GeST's
         # ActionRow convention), not in-list rows — Tab reaches them, Enter fires.
         # At the root Welcome gate (exit_to_terminal), "Back" becomes "Exit to
@@ -239,9 +279,16 @@ class WizardStep(Screen):
         for Tab pane-cycling. The default is the standard gate — a left step-rail
         beside the settings list; a gate can override this (e.g. the Welcome
         cover page). ``self._list`` and ``self._nav_row`` are already built."""
+        # Right side is split 60/40: the settings list on top, a detail panel
+        # below that explains the focused row. The Filler makes the (flow) Text a
+        # box widget; valign="top" so short detail sits at the top, not centred.
+        right = urwid.Pile([
+            ("weight", 3, boxed(self._list, title=self.step_title)),
+            ("weight", 2, boxed(urwid.Filler(self._detail_text, valign="top"),
+                                title="Details")),
+        ])
         cols = urwid.Columns(
-            [(20, _rail_widget(self.step_key)),
-             boxed(self._list, title=self.step_title)],
+            [(20, _rail_widget(self.step_key)), right],
             dividechars=1, focus_column=1)
         body = NavPile([("weight", 1, cols), ("pack", self._nav_row)])
         return body, body, [0]
@@ -267,17 +314,49 @@ class WizardStep(Screen):
     def _render(self) -> None:
         items: list[urwid.Widget] = []
         self._actions: list = []
+        self._row_meta = []
         for entry in self.setting_rows():
             if entry is None:
                 items.append(urwid.Divider())
                 self._actions.append(None)
+                self._row_meta.append(None)
                 continue
             label, value, action = entry
             text = label if value is None else f"{label:<24}: {value}"
-            items.append(_row(text))
+            # Actionable rows are focusable (Enter edits); pure informational rows
+            # (a heading, the proposed-partition table, the data-loss warning)
+            # render as plain Text so the cursor can't land on — or highlight —
+            # something there's nothing to do with.
+            items.append(_row(text) if action is not None else urwid.Text(text))
             self._actions.append(action)
+            # Only actionable rows key the detail panel; info rows keep it as-is.
+            self._row_meta.append((label, value) if action is not None else None)
         self._walker[:] = items
         self._focus_first()
+        pos = self._walker.get_focus()[1]
+        if pos is not None:
+            self._sync_detail(pos)
+
+    def _sync_detail(self, position) -> None:
+        """Refresh the bottom detail panel for the row now in focus. Wired to the
+        walker's focus-changed callback, so it fires on every up/down move."""
+        detail = getattr(self, "_detail_text", None)
+        if detail is None:                      # a gate that skips the panel
+            return
+        meta = None
+        if position is not None and 0 <= position < len(self._row_meta):
+            meta = self._row_meta[position]
+        if meta is None:
+            detail.set_text(self.help())        # fallback: the whole-step help
+            return
+        label, value = meta
+        detail.set_text(self.row_detail(label, value))
+
+    def row_detail(self, label, value):
+        """Detail-panel content for the focused row. Subclasses override to give
+        per-row context; the default is the step's own help text so the panel is
+        never empty."""
+        return self.help()
 
     def _selectable_positions(self) -> list[int]:
         return [i for i, a in enumerate(self._actions) if a is not None]
@@ -525,6 +604,25 @@ class OnlineStep(WizardStep):
             return "No usable network devices — the install needs a connection."
         return "Not connected yet — bring a link up (or set up Wi-Fi), then Continue."
 
+    def row_detail(self, label, value):
+        if "(wired)" in label or "(Wi-Fi)" in label:
+            return ("A network interface found on this machine, with its current "
+                    "state and address. A wired link usually just needs DHCP; Wi-Fi "
+                    "needs you to pick a network and enter its password.")
+        if label.startswith("Bring up wired"):
+            return ("Ask the wired interface to grab an address automatically over "
+                    "DHCP — the usual case when a cable is plugged in. This runs "
+                    "dhcpcd and then re-checks connectivity.")
+        if label.startswith("Set up Wi-Fi"):
+            return ("Open the Wi-Fi module to scan for networks and connect (pick an "
+                    "SSID, enter the password). It returns here so you can re-check "
+                    "once the link has associated.")
+        if label.startswith("Re-check"):
+            return ("Probe the network again after bringing a link up. Once this "
+                    "reads 'connected', the install has everything it needs and you "
+                    "can Continue.")
+        return super().row_detail(label, value)
+
 
 class RoleStep(WizardStep):
     step_key = "role"
@@ -552,6 +650,28 @@ class RoleStep(WizardStep):
             out.append((f"{mark} {label}", None, self._choose(key)))
         return out
 
+    _ROLE_DETAIL = {
+        "desktop": "HeDE — our Helm Desktop — set up as a ready-to-use graphical "
+                   "workstation: a Wayland session, everyday apps, and binary "
+                   "packages so it comes up fast. The pick for a daily-driver laptop "
+                   "or workstation.",
+        "server": "A headless machine, no desktop — SSH and a firewall enabled, ready "
+                  "to administer over the network. For a box that lives in a closet or "
+                  "the cloud and quietly serves things.",
+        "minimal": "Just base Gentoo, compiled from source, with no desktop and few "
+                   "assumptions baked in. A clean foundation to build exactly what you "
+                   "want on top of — or to learn the system from the ground up.",
+        "custom": "Starts from the Desktop proposal but hands you the wheel: every "
+                  "later gate is yours to reconfigure. Choose this when none of the "
+                  "presets quite fit what you're after.",
+    }
+
+    def row_detail(self, label, value):
+        for key, lbl in self._ROLES:
+            if lbl in label:
+                return self._ROLE_DETAIL[key]
+        return super().row_detail(label, value)
+
     def _choose(self, role):
         def apply():
             assemble.apply_role(self.sel, role)
@@ -565,22 +685,59 @@ class DiskStep(WizardStep):
     step_title = "Disk"
 
     def help(self) -> str:
-        return ("Choose the target disk. A guided layout is proposed (ESP + RAM-sized\n"
-                "swap + root); you can adjust the sizes and root filesystem. The disk\n"
-                "is only wiped after you confirm at the Review step — nothing yet.")
+        return (
+            "GeSI proposes a whole-disk layout — like the Gentoo Handbook's\n"
+            "example, but sized for this machine. Nothing is written now; the\n"
+            "disk is partitioned and formatted only at the Install step, after\n"
+            "you confirm at Review.\n"
+            "\n"
+            "The partitions it proposes:\n"
+            "  • ESP (/boot/efi, vfat) — the EFI System Partition holds the\n"
+            "    bootloader and kernels; UEFI firmware reads it directly. On\n"
+            "    legacy BIOS you get a tiny raw BIOS-boot partition instead.\n"
+            "  • swap — paging space for when RAM fills, and the store for\n"
+            "    hibernation. Proposed = your RAM size (so you can hibernate),\n"
+            "    up to 8 GiB; above that it's capped at 16 GiB, since past\n"
+            "    8 GiB swap is overflow insurance, not hibernation-sized.\n"
+            "  • root (/) — fills the rest: the whole system (/usr, /etc, and\n"
+            "    your home, unless you split /home onto its own partition).\n"
+            "\n"
+            "You can edit any size or filesystem below. Installing ERASES\n"
+            "EVERYTHING on the target disk — back up anything you need first.")
 
     def setting_rows(self):
         disks = [d for d in disk_reader.list_block_devices() if d.type == "disk"]
         rows = [
-            ("Target disk", self.sel.disk or "(none — required)", lambda: self._pick_disk(disks)),
-            None,
-            ("Proposed layout", self._layout_summary(), None),
-            ("ESP size", self.sel.esp_size, self._edit_esp),
-            ("Swap size", self.sel.swap_size or "(none)", self._edit_swap),
-            ("Root filesystem", self.sel.root_fs, self._edit_root_fs),
-            ("Separate /home", "yes" if self.sel.separate_home else "no",
-             self._edit_separate_home),
+            ("Target disk", self._target_label(disks),
+             lambda: self._pick_disk(disks)),
         ]
+        if self.sel.disk:
+            # Handbook-style context: the data-loss warning, then the concrete
+            # partition table this proposal would create (derived from the real
+            # DiskPlan so it can't drift from what actually gets written).
+            rows.append(None)
+            # `!` not `⚠`: the warning-sign glyph is missing from the plain
+            # framebuffer console font (nomodeset), where it renders as a tofu
+            # square. The `!` and the words carry the red `error` attr so the
+            # data-loss line stands out; the rest of the sentence stays default.
+            rows.append(([("error", "!"), "  Installing ",
+                          ("error", "ERASES ALL DATA"),
+                          f" on {self._target_label(disks)} — done at Install, "
+                          "after you confirm at Review"], None, None))
+            rows.append(None)
+            rows.append(("Proposed layout:", None, None))
+            rows.extend(self._partition_rows())
+            warn = self._space_warning(disks)
+            if warn:
+                # Same nomodeset-safe `!` (red) instead of the ⚠ tofu square.
+                rows.append(([("error", "  !  "), warn], None, None))
+        rows.append(None)
+        if self.sel.firmware != "bios":
+            rows.append(("ESP size", self.sel.esp_size, self._edit_esp))
+        rows.append(("Swap size", self.sel.swap_size or "(none)", self._edit_swap))
+        rows.append(("Root filesystem", self.sel.root_fs, self._edit_root_fs))
+        rows.append(("Separate /home", "yes" if self.sel.separate_home else "no",
+                     self._edit_separate_home))
         if self.sel.separate_home:
             rows.append(("Root size", self.sel.root_size, self._edit_root_size))
             rows.append(("/home filesystem", self.sel.home_fs, self._edit_home_fs))
@@ -588,15 +745,151 @@ class DiskStep(WizardStep):
         # (docs/design/gesi-disk-phase.md — its own session).
         return rows
 
-    def _layout_summary(self) -> str:
+    def _target_label(self, disks) -> str:
+        """The target disk with its size (``sda (238.5G)``), or the required-hint."""
         if not self.sel.disk:
-            return "(pick a disk)"
-        esp = "" if self.sel.firmware == "bios" else f"ESP {self.sel.esp_size} + "
-        swap = f"swap {self.sel.swap_size} + " if self.sel.swap_size else ""
-        if self.sel.separate_home:
-            return (f"{esp}{swap}root ({self.sel.root_fs}, {self.sel.root_size}) "
-                    f"+ /home ({self.sel.home_fs}, rest)")
-        return f"{esp}{swap}root ({self.sel.root_fs}, rest)"
+            return "(none — required)"
+        size = next((d.size for d in disks if d.name == self.sel.disk), "")
+        return f"{self.sel.disk} ({size})" if size else self.sel.disk
+
+    # -- detail panel ---------------------------------------------------------
+    # Per-row copy for the bottom panel: teach the choice — what it is, why it
+    # matters, and where the recommendation comes from — in plain language, so a
+    # first-time installer can decide without a second screen or the Handbook.
+    # Strings flow as one paragraph each (no hard line breaks mid-sentence) so
+    # urwid word-wraps them to the panel's real width; \n\n marks a real break.
+    _FS_DETAIL = {
+        "ext4": "ext4 is the dependable default: mature, quick enough for anything, "
+                "and understood by every tool and rescue disk out there. With no "
+                "reason to prefer something else, this is the one.",
+        "xfs": "xfs shines with large files and heavy parallel I/O — a favourite on "
+               "servers and media stores. One thing to know: an xfs partition can "
+               "grow later, but can never be shrunk.",
+        "btrfs": "btrfs is a modern copy-on-write filesystem: point-in-time snapshots, "
+                 "self-checksumming against silent corruption, and transparent "
+                 "compression. More power, and a little more to learn.",
+        "f2fs": "f2fs is built for flash — SSDs, eMMC, SD cards — laying data out to "
+                "spread wear. A specialist pick; on an ordinary SSD, ext4 is just as "
+                "happy and far more widely supported.",
+        "ext3": "ext3 is ext4's predecessor, without extents or modern speed-ups. "
+                "There's no reason to choose it today unless you're matching an older "
+                "system that specifically needs it.",
+    }
+
+    def row_detail(self, label, value):
+        if label == "Target disk":
+            return self._disk_detail()
+        if label == "ESP size":
+            return ("The EFI System Partition is the first place UEFI firmware looks "
+                    "at boot — a small FAT volume at /boot/efi holding the bootloader "
+                    "and your kernels. Only a handful of kernels ever live here, so it "
+                    f"stays small: 512M works, 1G leaves easy headroom (proposal: "
+                    f"{self.sel.esp_size}). On legacy BIOS this becomes a tiny boot "
+                    "partition and the size doesn't matter.")
+        if label == "Swap size":
+            return ("Swap is spillover space on disk for when RAM runs low, and where "
+                    "memory is parked if you hibernate. To keep hibernate working it "
+                    "needs to be at least your RAM size — which is why the proposal "
+                    f"matches your installed memory, capped at 16G ({self.sel.swap_size or 'none'} "
+                    "here). With plenty of RAM and no hibernate, a few gigs — or none "
+                    "— is fine.")
+        if label == "Root filesystem":
+            return ("This formats root (/), the partition that carries the operating "
+                    "system itself — and your home directory too, unless you split it "
+                    "off below.\n\n"
+                    + self._FS_DETAIL.get(value, f"{value} — a root filesystem."))
+        if label == "/home filesystem":
+            return ("This formats the separate /home partition — your documents, "
+                    "downloads, and per-user settings.\n\n"
+                    + self._FS_DETAIL.get(value, f"{value} — a filesystem."))
+        if label == "Separate /home":
+            return ("By default your files share a partition with the system. "
+                    "Splitting /home onto its own partition draws a line between the "
+                    "two: you can wipe and reinstall Gentoo without touching your "
+                    "data, and a system that fills with logs or packages can't crowd "
+                    "out your files. The cost is committing to a fixed root size now. "
+                    "For a single-user desktop, one combined partition is perfectly "
+                    "fine.")
+        if label == "Root size":
+            return ("With /home split off, root gets a fixed budget and /home takes "
+                    "the rest. Root only holds the OS, installed packages and caches, "
+                    "so it needn't be large — 30–60G suits most desktops. Give it more "
+                    "if you compile heavily from source or install big toolchains, "
+                    "which pile up under /var and /usr.")
+        return super().row_detail(label, value)
+
+    def _disk_detail(self):
+        """Target-disk copy: what choosing a disk means, then a live look at what's
+        already on the chosen one (all of it erased) to confirm it's the right drive."""
+        if not self.sel.disk:
+            return ("The whole install lands on a single disk. Choose it here — GeSI "
+                    "wipes it and writes a fresh partition table, so make sure you're "
+                    "pointing at the drive you mean, not a disk with data you want to "
+                    "keep.")
+        dev = next((d for d in disk_reader.list_block_devices()
+                    if d.name == self.sel.disk), None)
+        if dev is None:
+            return ("The whole install lands on a single disk. GeSI wipes it and "
+                    "writes a fresh partition table — make sure it's the drive you "
+                    "mean.")
+        if dev.children:
+            tail = "\n".join(
+                f"  {c.name:<12} {c.size:>8}  {c.fstype or '—'}"
+                + (f"  {c.mountpoint}" if c.mountpoint else "")
+                for c in dev.children)
+        else:
+            tail = "  (nothing partitioned — the disk looks empty)"
+        return ["The whole install lands on this disk. Check it's the right one — all "
+                "of the below is erased when you install.\n\n",
+                ("error", f"On {dev.name} ({dev.size}) right now:\n"),
+                tail]
+
+    def _build_plan(self):
+        """The :class:`DiskPlan` the current selections would create, or ``None``
+        if they're not yet valid (e.g. a bad size or a separate /home without a
+        fixed root size) — so the breakdown mirrors exactly what gets written."""
+        home_fs = self.sel.home_fs if self.sel.separate_home else None
+        root_size = self.sel.root_size if self.sel.separate_home else "rest"
+        try:
+            if self.sel.firmware == "bios":
+                return provision.bios_plan(
+                    self.sel.disk, self.sel.swap_size, self.sel.root_fs,
+                    root_size=root_size, home_fs=home_fs)
+            return provision.uefi_plan(
+                self.sel.disk, self.sel.esp_size, self.sel.swap_size,
+                self.sel.root_fs, root_size=root_size, home_fs=home_fs)
+        except ValueError:
+            return None
+
+    def _partition_rows(self):
+        """One read-only row per proposed partition: number, mount, size, fs, why.
+
+        Rendered verbatim (``value=None``) with compact self-aligned columns so it
+        reads as a table even on a narrow (80-col) install console, instead of
+        wasting the base row's 24-col label padding.
+        """
+        plan = self._build_plan()
+        if plan is None:
+            return [("  (adjust the sizes / filesystem below to see the layout)",
+                     None, None)]
+        fs_by_label = {f.label: f.kind for f in plan.filesystems}
+        rows = []
+        for p in plan.partitions:
+            mount, purpose = _PART_PURPOSE.get(p.label, (p.label or "", ""))
+            kind = fs_by_label.get(p.label, "—")
+            size = "rest" if p.size == "rest" else p.size
+            rows.append((f"  {p.number}. {mount:<10}{size:<6}{kind:<6}{purpose}",
+                         None, None))
+        return rows
+
+    def _space_warning(self, disks) -> str | None:
+        """The provision layer's too-small-root warning for this disk, or None."""
+        disk_bytes = _size_to_bytes(
+            next((d.size for d in disks if d.name == self.sel.disk), ""))
+        if not disk_bytes:
+            return None
+        return provision.layout_warning(
+            disk_bytes, _detect_ram_bytes(), self.sel.firmware)
 
     def _pick_disk(self, disks):
         opts = [(d.name, f"{d.name}  {getattr(d, 'size', '')}") for d in disks] \
@@ -688,6 +981,59 @@ class BaseSystemStep(WizardStep):
             rows.append(("Escalator", self.sel.escalator, self._edit_escalator))
         return rows
 
+    # Detail keyed off the *currently selected* option, so the panel explains what
+    # you have set (and how it differs from the alternatives) as you change it.
+    _LICENSE_DETAIL = {
+        "libre": "Accept only free/open-source licenses (@FREE). The most principled "
+                 "choice, but you'll go without binary firmware and drivers like "
+                 "NVIDIA's — some hardware won't work fully.",
+        "redistributable": "Also accept licenses that are free to redistribute — "
+                           "notably binary firmware and the NVIDIA driver — while "
+                           "still refusing click-through EULAs. A practical middle "
+                           "ground; the right default for most real hardware.",
+        "full": "Accept everything, including click-through EULAs (some fonts, Steam, "
+                "and the like). Maximum compatibility and the least fuss, with the "
+                "least restrictive stance on licensing.",
+    }
+    _ADMIN_DETAIL = {
+        "traditional": "The classic Unix setup: root has its own password and you "
+                       "become root with su. Simple and familiar, but every admin "
+                       "shares that one root password.",
+        "sudo-augmented": "Root still has a password, and on top of that, administrator "
+                          "users can run individual commands with sudo — so you rarely "
+                          "need a full root shell. A comfortable balance.",
+        "rootless": "The root account is locked — no direct root login. An administrator "
+                    "account does all system work through sudo/doas, the model Ubuntu "
+                    "and macOS use. You must create an admin user on the next gate.",
+    }
+
+    def row_detail(self, label, value):
+        if label == "Build strategy":
+            if self.sel.binary_pref:
+                return ("Install prebuilt binary packages from a binhost — fast, easy "
+                        "on the CPU, and the quickest route to a working system. You "
+                        "can still compile individual packages later. Best on modest "
+                        "hardware, or when you just want it up and running.")
+            return ("Compile every package from source, tuned to your exact CPU and "
+                    "USE flags — the classic Gentoo way. Slower (sometimes hours) but "
+                    "maximally tailored. Best with capable hardware and some patience.")
+        if label == "License policy":
+            return self._LICENSE_DETAIL.get(self.sel.license, value)
+        if label == "Features (USE)":
+            return ("Features are high-level toggles that map to system-wide USE flags "
+                    "— the switches that decide which optional support gets compiled "
+                    "in (Bluetooth, printing, media codecs, and so on). Turning one on "
+                    "enables it everywhere it applies. Your role has preselected a "
+                    "sensible set; add or remove to taste.")
+        if label == "Admin model":
+            return self._ADMIN_DETAIL.get(self.sel.admin_model, value)
+        if label == "Escalator":
+            return ("How an administrator runs commands as root. sudo is the ubiquitous, "
+                    "full-featured choice everyone knows. doas (from OpenBSD) is a much "
+                    "smaller, simpler alternative with an easy config and less to go "
+                    "wrong — plenty for a single-admin desktop.")
+        return super().row_detail(label, value)
+
     def _edit_admin(self):
         opts = [(k, _ADMIN_LABELS[k]) for k in ADMIN_MODELS]
         _choice_modal(self.app, "Admin model", opts, self.sel.admin_model,
@@ -760,6 +1106,30 @@ class AccountStep(WizardStep):
         rows.append(("Root", "enabled" if enabled else "disabled",
                      self._edit_rootpw if enabled else None))
         return rows
+
+    def row_detail(self, label, value):
+        if label == "Hostname":
+            return ("The name this machine goes by — on the network and at the shell "
+                    "prompt. Use lowercase letters, digits and hyphens, no spaces. "
+                    "Pick something memorable, like 'workshop' or 'nimbus'.")
+        if label.strip().startswith("+ Add user"):
+            return ("Create a login account. You'll set its name and password, and can "
+                    "mark it an administrator. On the rootless admin model that admin "
+                    "account is how you do system tasks (via sudo/doas), so you need at "
+                    "least one.")
+        if label.startswith("   "):        # an existing user row
+            return ("A login account you've defined. Press Enter to edit its name, "
+                    "password, or admin flag. '(admin)' means it can perform system "
+                    "administration through sudo/doas.")
+        if label == "Root":
+            if sets_root_password(self.sel.admin_model):
+                return ("The superuser account. Under this admin model root has a "
+                        "password — set it here — and you become root with su (or "
+                        "sudo). Keep it strong: root can do anything on the system.")
+            return ("This admin model (rootless) locks the root account — there's no "
+                    "direct root login. System tasks go through an administrator "
+                    "account with sudo/doas instead, so be sure you added one above.")
+        return super().row_detail(label, value)
 
     def _edit_hostname(self):
         self._edit_text("Hostname", "hostname")
