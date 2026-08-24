@@ -873,8 +873,13 @@ class DiskStep(WizardStep):
                 for c in dev.children)
         else:
             tail = "  (nothing partitioned — the disk looks empty)"
-        return [self._DISK_NOTE + "\n\n",
-                ("error", f"On {dev.name} ({dev.size}) right now — all of it erased:\n"),
+        # White lead, the target + size in Gentoo purple, the data-loss warning in
+        # red — so the disk you're about to wipe is unmistakable.
+        return ["Your current target is ",
+                ("title", f"{dev.name} ({dev.size})"),
+                " — ",
+                ("error", "BE AWARE! All data will be erased on this disk!"),
+                "\n\nCurrently on it:\n",
                 tail]
 
     def _build_plan(self):
