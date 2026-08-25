@@ -56,6 +56,7 @@ from gest.core.install.step import ArgvStep, FuncStep, InstallStep
 from gest.core.install.write import write_under_root
 from gest.core.kernel import config as kconfig
 from gest.core.kernel.build import build_steps
+from gest.core.kernel.commands import genkernel_argv
 from gest.core.network import hosts as net_hosts
 from gest.core.network import netifrc
 from gest.core.portage import mirrors, paths
@@ -859,6 +860,17 @@ class InstallGpuDrivers(FuncStep):
         if spec.nvidia_proprietary:
             path = write_under_root(ctx.root, gpu.MODPROBE_CONF, gpu.modprobe_conf())
             _emit(on_progress, f"wrote {path} (nvidia_drm KMS + nouveau blacklist)")
+            # BuildKernel baked the initramfs BEFORE nvidia-drivers existed, so it has
+            # no nvidia_drm module — no KMS framebuffer at early boot, so Plymouth can't
+            # draw and the firmware/OEM logo shows through the whole splash. Re-bake the
+            # initramfs now that the module + modprobe.d (modeset=1) are present, so
+            # early KMS comes up and (when seamless) the HeDE splash renders on NVIDIA.
+            # plymouth= mirrors the kernel build: a non-seamless install still gains
+            # early KMS, just without the splash.
+            await run_steps(
+                [Step("re-bake the initramfs with the NVIDIA module (early KMS)",
+                      genkernel_argv(plymouth=ctx.plan.kernel.plymouth, action="initramfs"))],
+                ctx.target, on_progress=on_progress)
         # Also put the blacklist + modeset on the kernel cmdline: genkernel built the
         # initramfs before this step, so a modprobe.d file alone can't stop nouveau
         # binding during early boot. Merged into /etc/default/grub now, before
