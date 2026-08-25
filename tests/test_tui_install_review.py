@@ -27,6 +27,7 @@ def _ready_desktop():
     sel.disk = "vda"
     # rootless needs an admin user with a password
     sel.users = [assemble.UserDraft(name="captain", admin=True, password="hunter2")]
+    sel.licenses_accepted = True                 # the pre-flight license gate was accepted
     return sel
 
 

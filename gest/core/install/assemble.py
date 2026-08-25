@@ -150,6 +150,11 @@ class InstallSelections:
     # is the authoritative per-role setter the wizard calls when a role is picked.
     role: str = "desktop"             # desktop | server | minimal | custom
     license: str = "full"             # ACCEPT_LICENSE rung (plan.LICENSE_POLICIES key)
+    # The user viewed + explicitly accepted the license agreements the rung entails
+    # (the pre-flight license gate). UI-only, not a plan field; reset whenever the
+    # rung (or the role that sets it) changes, so acceptance is always of the CURRENT
+    # rung. The Base System gate refuses Continue until this is set.
+    licenses_accepted: bool = False
     # Features checklist → system-wide USE (capabilities keys). Desktop pre-checks
     # the common ones; resolve_global_use turns this into the make.conf USE tokens.
     capabilities: set[str] = field(
@@ -234,6 +239,9 @@ def apply_role(sel: InstallSelections, role: str) -> None:
     proposed = propose(role)
     for attr in _ROLE_OWNED:
         setattr(sel, attr, getattr(proposed, attr))
+    # The role sets the license rung, so a role switch invalidates any prior
+    # acceptance — the user must re-view + accept the new rung's agreements.
+    sel.licenses_accepted = False
 
 
 def resolve_stage3(variant: Stage3Variant, *, mirror: str = index.MIRROR) -> Stage3Selection:

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import urwid
 
-from gest.core.install import assemble
+from gest.core.install import assemble, licensing
 from gest.core.install.assemble import InstallSelections
 from gest.core.install.netcheck import check_connectivity
 from gest.core.install.plan import sets_root_password
@@ -60,11 +60,30 @@ class ReviewScreen(Screen):
     def _changed(self, field: str) -> bool:
         return getattr(self.sel, field) != getattr(self._proposed(), field)
 
+    def _license_review(self) -> licensing.LicenseReview:
+        """The license review for the current selection — mirrors the Base System
+        gate's relevance (NVIDIA detected when the GPU is auto), so Review re-blocks
+        if the plan drifted into an incompatible/unaccepted rung."""
+        s = self.sel
+        nvidia = s.nvidia_proprietary
+        if s.gpu_auto and not nvidia:
+            cached = getattr(self, "_nvidia_auto", None)
+            if cached is None:
+                cached = assemble.resolve_gpu().nvidia_proprietary
+                self._nvidia_auto = cached
+            nvidia = cached
+        return licensing.review_licenses(s.license, nvidia=nvidia)
+
     def _blockers(self) -> list[str]:
         s = self.sel
         out = []
         if not s.disk:
             out.append("a target disk")
+        lic = self._license_review()
+        if lic.blockers:
+            out.append("a compatible license rung")
+        elif not s.licenses_accepted:
+            out.append("license-agreement acceptance")
         if not self._online:
             out.append("a network connection")
         admins = [u for u in s.users if valid_user_name(u.name) and u.admin]
@@ -92,6 +111,16 @@ class ReviewScreen(Screen):
                  (f"swap {s.swap_size} + " if s.swap_size else "") + root_part
         build = "binary packages" if s.binary_pref else "compile from source"
         feats = ", ".join(sorted(s.capabilities)) or "(none)"
+        # License reflects the pre-flight gate: incompatible rung or un-accepted
+        # agreements are blockers here too (re-checked in case the plan drifted).
+        lic = self._license_review()
+        if lic.blockers:
+            lic_val, lic_state = s.license + " — incompatible for this hardware", "blocker"
+        elif not s.licenses_accepted:
+            lic_val, lic_state = s.license + " — agreements not accepted", "blocker"
+        else:
+            lic_val, lic_state = s.license + f" — accepted ({len(lic.required)})", "ok"
+        lic_val += chg("license")
         named = [u for u in s.users if u.name]
         user = (", ".join(u.name + (" (admin)" if u.admin else "") for u in named)
                 if named else "(none)")
@@ -127,7 +156,7 @@ class ReviewScreen(Screen):
             ]),
             ("Base System", [
                 ("Build strategy", build + chg("binary_pref"), "ok", "base"),
-                ("License", s.license + chg("license"), "ok", "base"),
+                ("License", lic_val, lic_state, "base"),
                 ("Features", feats + chg("capabilities"), "ok", "base"),
                 ("Admin model", s.admin_model + chg("admin_model"), "ok", "base"),
             ]),
