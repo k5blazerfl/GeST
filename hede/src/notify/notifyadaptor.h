@@ -42,9 +42,16 @@ class HedeNotifyAdaptor : public QDBusAbstractAdaptor {
 
   public slots: // NOLINT
     void SetDoNotDisturb(bool on);
+    // Lantern history: a JSON array of past notifications, newest first (the
+    // client parses it with helm::deserializeHistory). JSON keeps the wire
+    // simple — no custom D-Bus struct marshalling for a same-project client.
+    QString GetHistory();
+    void ClearHistory();
 
   signals:
     void DoNotDisturbChanged(bool on);
+    void NotificationAdded(const QString &json); // the newly-arrived notification, as JSON
+    void HistoryCleared();
 
   private:
     NotifyService *m_service;

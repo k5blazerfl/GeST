@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QDateTime>
 #include <QString>
 #include <QStringList>
 #include <QVector>
@@ -9,16 +10,21 @@ namespace helm {
 // fdo urgency levels (the "urgency" hint).
 enum { UrgencyLow = 0, UrgencyNormal = 1, UrgencyCritical = 2 };
 
-// A live notification (the subset the daemon renders + tracks).
+// A notification the daemon renders + tracks. The trailing fields (received,
+// seen) exist for Lantern's history (docs/design/lantern.md): the toast path
+// ignores them, but the history store stamps `received` on arrival and the
+// viewer flips `seen` once the drawer has shown it.
 struct Notification {
     uint id = 0;
     QString app;
     QString icon;
     QString summary;
     QString body;
-    QStringList actions; // (key, label) pairs, flattened per the fdo spec
-    int timeoutMs = 0;   // resolved: 0 = persist, >0 = auto-close after ms
+    QStringList actions;    // (key, label) pairs, flattened per the fdo spec
+    int timeoutMs = 0;      // resolved: 0 = persist, >0 = auto-close after ms
     int urgency = UrgencyNormal;
+    QDateTime received;     // when the daemon received it (history only)
+    bool seen = false;      // has the Lantern drawer shown it since arrival
 };
 
 // Whether a toast should be shown: suppressed under do-not-disturb, unless the

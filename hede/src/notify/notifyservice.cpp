@@ -1,17 +1,25 @@
 #include "notifyservice.h"
 
+#include "history.h"
 #include "toast.h"
+
+#include <QDateTime>
 
 namespace helm {
 
-NotifyService::NotifyService(ToastStack *toasts, QObject *parent)
-    : QObject(parent), m_toasts(toasts) {
-    // When a toast expires or is clicked, forget it and relay the D-Bus signals.
-    connect(m_toasts, &ToastStack::dismissed, this, [this](uint id, uint reason) {
-        dropNotification(m_store, id);
-        emit closed(id, reason);
-    });
-    connect(m_toasts, &ToastStack::actionInvoked, this, &NotifyService::actionInvoked);
+NotifyService::NotifyService(ToastStack *toasts, QObject *parent, const QString &historyPath)
+    : QObject(parent), m_toasts(toasts),
+      m_historyPath(historyPath.isEmpty() ? defaultHistoryPath() : historyPath) {
+    m_history = loadHistory(m_historyPath); // restore the log across restarts
+    if (m_toasts) {
+        // When a toast expires or is clicked, forget it from the ACTIVE store
+        // (the history keeps it) and relay the D-Bus signals.
+        connect(m_toasts, &ToastStack::dismissed, this, [this](uint id, uint reason) {
+            dropNotification(m_store, id);
+            emit closed(id, reason);
+        });
+        connect(m_toasts, &ToastStack::actionInvoked, this, &NotifyService::actionInvoked);
+    }
 }
 
 uint NotifyService::notify(const QString &app, uint replacesId, const QString &icon,
@@ -26,13 +34,29 @@ uint NotifyService::notify(const QString &app, uint replacesId, const QString &i
     n.actions = actions;
     n.timeoutMs = resolveTimeout(expireTimeout, kDefaultTimeoutMs);
     n.urgency = urgency;
+    n.received = QDateTime::currentDateTime();
 
-    putNotification(m_store, n); // always tracked (history), even under DND
-    if (shouldShowToast(m_dnd, urgency))
-        m_toasts->showNotification(n);
-    else
+    putNotification(m_store, n); // the active set (drives toasts, drops on dismiss)
+
+    // The durable log — kept even under DND and past the toast's life. Persist so
+    // it survives a daemon restart, then let clients (Lantern) know it grew.
+    appendHistory(m_history, n, kHistoryCap);
+    saveHistory(m_historyPath, m_history);
+    emit added(n);
+
+    if (shouldShowToast(m_dnd, urgency)) {
+        if (m_toasts)
+            m_toasts->showNotification(n);
+    } else if (m_toasts) {
         m_toasts->closeNotification(n.id); // if it was showing (e.g. replaces_id)
+    }
     return n.id;
+}
+
+void NotifyService::clearHistory() {
+    m_history.clear();
+    saveHistory(m_historyPath, m_history);
+    emit historyCleared();
 }
 
 void NotifyService::setDoNotDisturb(bool on) {
@@ -46,7 +70,8 @@ void NotifyService::closeNotification(uint id, uint reason) {
     if (indexOfId(m_store, id) < 0)
         return;
     dropNotification(m_store, id);
-    m_toasts->closeNotification(id);
+    if (m_toasts)
+        m_toasts->closeNotification(id);
     emit closed(id, reason);
 }
 
