@@ -21,7 +21,7 @@ import urwid
 from gest.core.datetime import reader as dt_reader
 from gest.core.disk import provision
 from gest.core.disk import reader as disk_reader
-from gest.core.install import assemble, capabilities
+from gest.core.install import assemble, capabilities, licensing
 from gest.core.install.assemble import InstallSelections, UserDraft
 from gest.core.install.netcheck import check_connectivity
 from gest.core.install.plan import ADMIN_MODELS, LICENSE_POLICIES, sets_root_password
@@ -82,6 +82,13 @@ _CLOCK_LABELS = {
 
 def _row(text: str) -> urwid.Widget:
     return urwid.AttrMap(urwid.SelectableIcon(text, 0), None, focus_map="focus")
+
+
+def _button(label: str, cb) -> urwid.Widget:
+    """A small inline action button (focus-highlighted), for use inside modals —
+    the license gate's ``Change rung…`` / per-agreement ``View`` actions."""
+    return urwid.AttrMap(urwid.Button(label, on_press=lambda _b: cb()),
+                         None, focus_map="focus")
 
 
 class _PickList(urwid.ListBox):
@@ -1029,7 +1036,7 @@ class BaseSystemStep(WizardStep):
         feats = ", ".join(sorted(self.sel.capabilities)) or "(none)"
         rows = [
             ("Build strategy", build, self._edit_build),
-            ("License policy", _LICENSE_LABELS[self.sel.license], self._edit_license),
+            ("License policy", self._license_row_value(), self._edit_license),
             ("Features (USE)", feats, self._edit_features),
             ("Admin model", _ADMIN_LABELS[self.sel.admin_model], self._edit_admin),
         ]
@@ -1077,7 +1084,8 @@ class BaseSystemStep(WizardStep):
                     "USE flags — the classic Gentoo way. Slower (sometimes hours) but "
                     "maximally tailored. Best with capable hardware and some patience.")
         if label == "License policy":
-            return self._LICENSE_DETAIL.get(self.sel.license, value)
+            base = self._LICENSE_DETAIL.get(self.sel.license, "")
+            return f"{base}\n\n{self._license_detail_tail(self._current_review())}"
         if label == "Features (USE)":
             return ("Features are high-level toggles that map to system-wide USE flags "
                     "— the switches that decide which optional support gets compiled "
@@ -1111,10 +1119,121 @@ class BaseSystemStep(WizardStep):
                       lambda k: setattr(self.sel, "binary_pref", k == "binary"),
                       self._render)
 
+    # -- license gate: pick a rung, see the agreements it entails for THIS machine,
+    #    and explicitly accept them (docs/design/gesi-license-gate.md) ------------
+    _RUNG_NAMES = {"libre": "Libre", "redistributable": "Redistributable", "full": "Full"}
+
+    def _nvidia_planned(self) -> bool:
+        """Whether the proprietary NVIDIA driver is planned — the relevance input.
+        When the GPU is auto-detected (gpu_auto), probe the real hardware once
+        (lspci) so an auto NVIDIA card counts; otherwise honour the explicit choice."""
+        if not self.sel.gpu_auto:
+            return self.sel.nvidia_proprietary
+        cached = getattr(self, "_nvidia_auto", None)
+        if cached is None:
+            cached = assemble.resolve_gpu().nvidia_proprietary
+            self._nvidia_auto = cached
+        return cached
+
+    def _current_review(self) -> licensing.LicenseReview:
+        return licensing.review_licenses(self.sel.license, nvidia=self._nvidia_planned())
+
+    def _license_row_value(self) -> str:
+        review = self._current_review()
+        base = self._RUNG_NAMES[self.sel.license]
+        if review.blockers:
+            return f"{base}   ⚠ incompatible — open to fix"
+        if not self.sel.licenses_accepted:
+            return f"{base}   (not yet accepted)"
+        n = len(review.required)
+        return f"{base}   ✓ accepted · {n} agreement{'' if n == 1 else 's'}"
+
+    def _license_detail_tail(self, review) -> str:
+        if review.blockers:
+            return "⚠ " + review.blockers[0] + "\n\nOpen this row to change the rung."
+        req = ", ".join(a.label for a in review.required) or "none"
+        status = ("accepted" if self.sel.licenses_accepted
+                  else "NOT yet accepted — open this row to review and accept")
+        line = f"Agreements that apply to this machine: {req}. Status: {status}."
+        if review.warnings:
+            line += "\n\n⚠ " + review.warnings[0]
+        return line
+
     def _edit_license(self):
+        self._open_license_gate()
+
+    def _open_license_gate(self):
+        review = self._current_review()
+        rows = [
+            urwid.Text(("hint", "Review the licenses this rung accepts for THIS "
+                        "machine, then accept to continue.")),
+            urwid.Text([("field", "Rung: "), self._RUNG_NAMES[self.sel.license],
+                        ("dim", f"   ({review.accept_value})")]),
+            _button("Change rung…", self._change_rung),
+            urwid.Divider(),
+        ]
+        if review.entails:
+            rows.append(urwid.Text(("hint", "Agreements ( ● used by this install ):")))
+            for a in review.entails:
+                mark, attr = ("●", "ok") if a.required_by_this_install else ("○", "dim")
+                rows.append(urwid.Columns([
+                    ("weight", 1, urwid.Text((attr, f" {mark} {a.label} — {a.one_line}"))),
+                    (10, _button("View", lambda a=a: self._view_license(a))),
+                ], dividechars=1))
+        else:
+            rows.append(urwid.Text(("dim",
+                        " This rung entails no binary-firmware or EULA agreements.")))
+        for b in review.blockers:
+            rows.append(urwid.Text(("error", f" ✗ {b}")))
+        for w in review.warnings:
+            rows.append(urwid.Text(("hint", f" ⚠ {w}")))
+        rows.append(urwid.Divider())
+        accept_box = urwid.CheckBox("I have read and accept these agreements",
+                                    state=self.sel.licenses_accepted)
+        rows.append(accept_box)
+
+        def do_accept():
+            if review.blockers:
+                self.app.notify("This rung can't cover a required license — "
+                                "change the rung first.")
+                return
+            if not accept_box.state:
+                self.app.notify("Tick “I have read and accept” to continue.")
+                return
+            self.sel.licenses_accepted = True
+            self.app.pop()
+            self._render()
+
+        modal = Modal(self.app, "License agreements", rows,
+                      [("Accept", do_accept), ("Cancel", self.app.pop)])
+        self.app.push_modal(modal, width=("relative", 80), height=("relative", 82))
+
+    def _change_rung(self):
+        # Close the gate, pick a rung, then reopen the gate on the new rung. Changing
+        # the rung invalidates any prior acceptance (must re-accept the new terms).
+        self.app.pop()
         opts = [(k, _LICENSE_LABELS[k]) for k in ("libre", "redistributable", "full")]
-        _choice_modal(self.app, "License policy", opts, self.sel.license,
-                      lambda k: setattr(self.sel, "license", k), self._render)
+
+        def apply(k):
+            if k != self.sel.license:
+                self.sel.license = k
+                self.sel.licenses_accepted = False
+
+        _choice_modal(self.app, "License policy", opts, self.sel.license, apply,
+                      self._open_license_gate)
+
+    def _view_license(self, agreement):
+        text = licensing.read_license_text(agreement.name)
+        if not text:
+            text = (f"{agreement.name}\n\n{agreement.one_line}\n\n"
+                    "(The full license text isn't available in this environment — it "
+                    f"ships in the Portage tree at {agreement.text_path}.)")
+        # Selectable line rows so ↑/↓ scroll the text even where there's no mouse.
+        lines = [_row(ln) for ln in text.splitlines()] or [_row("")]
+        listbox = urwid.ListBox(urwid.SimpleFocusListWalker(lines))
+        modal = Modal(self.app, agreement.name, [urwid.BoxAdapter(listbox, 18)],
+                      [("Close", self.app.pop)])
+        self.app.push_modal(modal, width=("relative", 82), height=("relative", 84))
 
     def _edit_features(self):
         boxes = [urwid.CheckBox(cap.label, state=cap.key in self.sel.capabilities)
@@ -1135,6 +1254,14 @@ class BaseSystemStep(WizardStep):
     def validate(self):
         if self.sel.license not in LICENSE_POLICIES:
             return f"Unknown license policy: {self.sel.license}"
+        # Pre-flight license gate: block the incompatible-rung trap (e.g. Libre on an
+        # NVIDIA machine) here, and require an explicit acceptance of the agreements.
+        review = self._current_review()
+        if review.blockers:
+            return review.blockers[0]
+        if not self.sel.licenses_accepted:
+            return ("Review and accept the license agreements first — open the "
+                    "“License policy” row on this gate.")
         return None
 
 
