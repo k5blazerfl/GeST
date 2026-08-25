@@ -60,11 +60,16 @@ path ignores them:
    `org.gentoo.hede.Notifications`: `GetHistory`, `ClearHistory`, and a
    `NotificationAdded` signal (mirroring how DnD already relays
    `DoNotDisturbChanged`).
-3. **The Lantern surface** — `helm-lantern`, a right-edge slide-out: a list of
-   history entries (icon/app/summary/body/time), a DnD toggle (reusing the
-   `dndtoggle` D-Bus client), and clear-all. Toggled open/closed from a
-   tray/applet; dismiss on Esc / click-away. (Needs a compositor to see; the
-   client logic is testable.)
+3. **The Lantern surface** *(shipped)* — `helm-lantern`, a right-edge
+   `LayerOverlay` slide-out: a header (title + DnD toggle + Clear all) over a
+   scrollable, newest-first history list (title / body / relative time). A
+   `LanternClient` wraps the slice-2 D-Bus API (`GetHistory`, `ClearHistory`,
+   `SetDoNotDisturb`) and live-refreshes off `NotificationAdded`/`HistoryCleared`/
+   `DoNotDisturbChanged`. A one-shot surface like `helm-menu`: dismiss on Esc /
+   click-away. Pure `format` + `parseHistory` are unit-tested; the client+window
+   were smoked end-to-end against the daemon on a private bus (needs a compositor
+   to *see*). **Follow-up:** the tray/applet trigger that launches it (today it's
+   the `helm-lantern` binary), and glanceable widgets (the v2 non-goal below).
 
 ## Non-goals (v1)
 

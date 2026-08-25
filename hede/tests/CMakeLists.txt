@@ -30,6 +30,10 @@ qt_add_executable(test-notification test_notification.cpp)
 target_link_libraries(test-notification PRIVATE Qt6::Test helm-notify-lib)
 add_test(NAME notification COMMAND test-notification)
 
+qt_add_executable(test-lantern test_lantern.cpp)
+target_link_libraries(test-lantern PRIVATE Qt6::Test lantern-lib)
+add_test(NAME lantern COMMAND test-lantern)
+
 qt_add_executable(test-snimodel test_snimodel.cpp)
 target_link_libraries(test-snimodel PRIVATE Qt6::Test helm-tray)
 add_test(NAME snimodel COMMAND test-snimodel)
