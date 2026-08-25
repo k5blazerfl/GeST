@@ -4,6 +4,7 @@
 
 #include "history.h"
 #include "notification.h"
+#include "notifyservice.h"
 
 class TestNotification : public QObject {
     Q_OBJECT
@@ -144,6 +145,50 @@ class TestNotification : public QObject {
         QCOMPARE(r.size(), 1);
         QCOMPARE(r[0].id, 7u);
         QCOMPARE(r[0].summary, QStringLiteral("saved"));
+    }
+
+    // --- Lantern daemon wiring (slice 2), headless via a null toast stack ---
+
+    void serviceRetainsPersistsReloadsAndClears() {
+        QTemporaryDir dir;
+        const QString path = dir.filePath(QStringLiteral("hede/notifications.json"));
+        uint id1 = 0;
+        {
+            // No ToastStack (headless): the history path is exercised on its own.
+            helm::NotifyService svc(nullptr, nullptr, path);
+            QVERIFY(svc.history().isEmpty());
+            id1 = svc.notify(QStringLiteral("Mail"), 0, QString(), QStringLiteral("Hi"),
+                             QStringLiteral("body"), {}, 0);
+            const uint id2 = svc.notify(QStringLiteral("Chat"), 0, QString(),
+                                        QStringLiteral("Yo"), QStringLiteral("b2"), {}, 0);
+            QCOMPARE(svc.history().size(), 2);
+            QCOMPARE(svc.history()[0].id, id2);         // newest first
+            QVERIFY(svc.history()[0].received.isValid()); // stamped on arrival
+        }
+        {
+            // A fresh daemon reloads the persisted log (survives a restart).
+            helm::NotifyService svc(nullptr, nullptr, path);
+            QCOMPARE(svc.history().size(), 2);
+            QCOMPARE(svc.history()[1].id, id1);
+            svc.clearHistory();
+            QVERIFY(svc.history().isEmpty());
+        }
+        {
+            // clearHistory() persisted the empty log too.
+            helm::NotifyService svc(nullptr, nullptr, path);
+            QVERIFY(svc.history().isEmpty());
+        }
+    }
+
+    void serviceDedupesHistoryOnReplacesId() {
+        QTemporaryDir dir;
+        const QString path = dir.filePath(QStringLiteral("hede/notifications.json"));
+        helm::NotifyService svc(nullptr, nullptr, path);
+        const uint id = svc.notify(QStringLiteral("App"), 0, QString(), QStringLiteral("v1"),
+                                   QString(), {}, 0);
+        svc.notify(QStringLiteral("App"), id, QString(), QStringLiteral("v2"), QString(), {}, 0);
+        QCOMPARE(svc.history().size(), 1); // replaces_id updates in place
+        QCOMPARE(svc.history()[0].summary, QStringLiteral("v2"));
     }
 };
 
