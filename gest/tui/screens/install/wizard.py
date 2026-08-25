@@ -855,7 +855,7 @@ class DiskStep(WizardStep):
         if label == "Root size":
             return ("With /home split off, root gets a fixed budget and /home takes "
                     "the rest. Root only holds the OS, installed packages and caches, "
-                    "so it needn't be large — 30–60G suits most desktops. Give it more "
+                    "so it needn't be large — 30-60G suits most desktops. Give it more "
                     "if you compile heavily from source or install big toolchains, "
                     "which pile up under /var and /usr.")
         return super().row_detail(label, value)
@@ -1041,8 +1041,11 @@ class BaseSystemStep(WizardStep):
     # you have set (and how it differs from the alternatives) as you change it.
     _LICENSE_DETAIL = {
         "libre": "Accept only free/open-source licenses (@FREE). The most principled "
-                 "choice, but you'll go without binary firmware and drivers like "
-                 "NVIDIA's — some hardware won't work fully.",
+                 "choice, but it EXCLUDES binary firmware and proprietary drivers: no "
+                 "sys-kernel/linux-firmware (most Wi-Fi and NVIDIA GSP won't work), the "
+                 "kernel is built firmware-free, and an NVIDIA card falls back to the "
+                 "open nouveau driver. Pick this only for a deliberately all-free "
+                 "system; for real hardware — especially NVIDIA — choose Redistributable.",
         "redistributable": "Also accept licenses that are free to redistribute — "
                            "notably binary firmware and the NVIDIA driver — while "
                            "still refusing click-through EULAs. A practical middle "

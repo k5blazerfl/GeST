@@ -176,10 +176,7 @@ def emerge_desktop_argv(*, atoms: tuple[str, ...] = DESKTOP_ATOMS,
     @world already installed — notably upgrading version-locked deps like
     dev-libs/wayland to match dev-util/wayland-scanner (else the split-package
     blocker aborts the emerge). Mirrors the live-CD build's emerge flags."""
-    if binary_only:
-        mode = ["--usepkgonly"]
-    else:
-        mode = ["--getbinpkg", "--update", "--deep", "--newuse"]
+    mode = ["--usepkgonly"] if binary_only else ["--getbinpkg", "--update", "--deep", "--newuse"]
     return ["emerge", *mode, "--color", "n", *atoms]
 
 

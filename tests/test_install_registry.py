@@ -339,6 +339,24 @@ def test_configure_network_base_uses_systemd_networkd(tmp_path):
     assert not any("networkmanager" in c for c in cmds)         # no NM on a base install
 
 
+def test_install_kernel_sources_drops_genkernel_firmware_under_libre():
+    from gest.core.install.registry import InstallKernelSources
+    from gest.core.kernel.build import BuildConfig
+    plan = _plan()
+    object.__setattr__(plan, "kernel", BuildConfig(method="genkernel", jobs=2))
+    # Libre (@FREE) can't license linux-firmware → build genkernel firmware-free
+    # instead of dying on a masked package.
+    object.__setattr__(plan, "license", "libre")
+    gk = next(s.argv for s in InstallKernelSources().build(_ctx(FakeExecutor(), plan=plan))
+              if "sys-kernel/genkernel" in s.argv)
+    assert gk[:2] == ["env", "USE=-firmware"]
+    # Redistributable/Full → genkernel pulls firmware normally (no env prefix)
+    object.__setattr__(plan, "license", "full")
+    gk = next(s.argv for s in InstallKernelSources().build(_ctx(FakeExecutor(), plan=plan))
+              if "sys-kernel/genkernel" in s.argv)
+    assert "env" not in gk
+
+
 def test_install_desktop_uses_binpkgs_when_present(tmp_path):
     from gest.core.install.desktop import DESKTOP_ATOMS
     from gest.core.install.registry import InstallDesktop

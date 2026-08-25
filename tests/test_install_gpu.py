@@ -68,6 +68,19 @@ def test_driver_atoms_add_nvidia_when_proprietary():
     assert gpu.driver_atoms(spec) == ["sys-kernel/linux-firmware", "x11-drivers/nvidia-drivers"]
 
 
+def test_install_gpu_drivers_noop_under_libre(tmp_path):
+    # Libre (@FREE) forbids firmware + the NVIDIA driver → the step skips them
+    # entirely (no emerge, no config) instead of license-masking and aborting.
+    plan = _plan(GpuSpec(video_cards=("nvidia",), nvidia_proprietary=True))
+    object.__setattr__(plan, "license", "libre")
+    fx = FakeExecutor()
+    ctx = _ctx(fx, str(tmp_path), plan)
+    asyncio.run(InstallGpuDrivers().run(ctx))
+    assert fx.calls == []                                          # nothing emerged
+    assert not (tmp_path / "etc/portage/package.license/gest-gpu").exists()
+    assert asyncio.run(InstallGpuDrivers().is_satisfied(ctx)) is True   # marked done
+
+
 def test_package_use_kernel_open_only_for_nvidia():
     on = gpu.package_use(
         GpuSpec(video_cards=("nvidia",), nvidia_proprietary=True, kernel_open=True))
