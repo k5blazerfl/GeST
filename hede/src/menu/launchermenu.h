@@ -29,13 +29,12 @@ class LauncherMenu : public QWidget {
 
   protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
-    // Paint the #HelmPullout glass background — the pullout is a top-level
-    // WA_TranslucentBackground widget, which otherwise renders fully transparent.
-    void paintEvent(QPaintEvent *event) override;
-    // Dismiss the menu when it loses window activation (clicked outside / focus
-    // moved away). A layer-shell surface gets no implicit popup grab, so without
-    // this the pullout stays open after losing focus.
-    bool event(QEvent *event) override;
+    // Dismiss on a click anywhere outside the pullout. The top-level is a
+    // full-screen transparent backdrop (main.cpp anchors it to all four edges),
+    // so every outside click lands here — layer-shell gives no popup grab, and
+    // QEvent::WindowDeactivate is unreliable on labwc (a KeyboardInteractivity=
+    // OnDemand surface never takes seat focus on map, so it never deactivates).
+    void mousePressEvent(QMouseEvent *event) override;
 
   private slots:
     void showActions(const QPoint &pos); // right-click → pin + jump-list actions
@@ -61,6 +60,7 @@ class LauncherMenu : public QWidget {
     void openRun();                       // Run… prompt
     void moveSelection(int dir);          // Up/Down, skipping non-app rows
 
+    QWidget *m_pullout;                   // the glass card; the top-level is a backdrop
     QLineEdit *m_search;
     QListWidget *m_list;
     QVector<DesktopEntry> m_all;
