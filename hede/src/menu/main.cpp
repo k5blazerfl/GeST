@@ -19,16 +19,18 @@ int main(int argc, char **argv) {
     helm::applyAppearance();
     helm::watchAppearance(); // re-tint live on a world/accent switch
 
-    const helm::Config cfg;
-
     helm::LauncherMenu menu;
     menu.winId(); // realise the platform window
 
+    // A full-screen transparent backdrop anchored to every edge: the pullout card
+    // sits bottom-left inside it (positioned by the backdrop's layout, tucked above
+    // the panel), and any click that misses the card dismisses the menu
+    // (LauncherMenu::mousePressEvent) — the reliable click-outside grab that
+    // layer-shell / WindowDeactivate don't give us on labwc.
     helm::applyLayerShell(
-        menu.windowHandle(), LayerShellQt::Window::LayerTop, // bar's layer — bar stays in front
-        helm::edges(/*top*/ false, /*bottom*/ true, /*left*/ true, /*right*/ false),
-        /*exclusiveZone*/ 0, LayerShellQt::Window::KeyboardInteractivityOnDemand,
-        QMargins(0, 0, 0, cfg.panelHeight()));
+        menu.windowHandle(), LayerShellQt::Window::LayerTop,
+        helm::edges(/*top*/ true, /*bottom*/ true, /*left*/ true, /*right*/ true),
+        /*exclusiveZone*/ 0, LayerShellQt::Window::KeyboardInteractivityOnDemand);
 
     menu.show();
     return app.exec();

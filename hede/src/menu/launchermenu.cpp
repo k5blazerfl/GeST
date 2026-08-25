@@ -22,6 +22,7 @@
 #include <QListWidget>
 #include <QMap>
 #include <QMenu>
+#include <QMouseEvent>
 #include <QProcess>
 #include <QPushButton>
 #include <QSysInfo>
@@ -63,34 +64,53 @@ QToolButton *powerButton(const QString &icon, const QString &tip, QWidget *paren
 } // namespace
 
 LauncherMenu::LauncherMenu(QWidget *parent)
-    : QWidget(parent), m_search(new QLineEdit(this)), m_list(new QListWidget(this)) {
+    : QWidget(parent), m_pullout(new QWidget(this)), m_search(new QLineEdit(this)),
+      m_list(new QListWidget(this)) {
     m_classic = Config().string(QStringLiteral("launcher/style"),
                                 QStringLiteral("win7_two_pane"))
                 == QLatin1String("classic");
 
-    // The acrylic pullout: objectName drives the #HelmPullout QSS (see
-    // helm::styleSheet); styled + translucent so it reads as glass, with a flat
-    // bottom edge that tucks against the bar (the pullout standard). Both styles
-    // share this shell; the caption strip is a child (#HelmClassicCaption).
-    setObjectName(QStringLiteral("HelmPullout"));
-    setAttribute(Qt::WA_StyledBackground, true);
+    // The top-level is a full-screen transparent backdrop; its only job is to
+    // catch a click outside the pullout and dismiss (mousePressEvent). main.cpp
+    // anchors it to all four edges.
     setAttribute(Qt::WA_TranslucentBackground, true);
 
+    // The acrylic pullout: objectName drives the #HelmPullout QSS (see
+    // helm::styleSheet). It is now a *child* of the backdrop, not a top-level, so
+    // Qt paints its styled glass background directly — no paintStyledSurface hack
+    // needed (that was only required because a WA_TranslucentBackground top-level
+    // suppresses the styled fill). Flat bottom edge tucks against the bar; both
+    // styles share this shell, the caption strip is a child (#HelmClassicCaption).
+    m_pullout->setObjectName(QStringLiteral("HelmPullout"));
+    m_pullout->setAttribute(Qt::WA_StyledBackground, true);
+
     if (m_classic) {
-        setFixedSize(300, 520); // taller, narrower single column
-        auto *cols = new QHBoxLayout(this);
+        m_pullout->setFixedSize(300, 520); // taller, narrower single column
+        auto *cols = new QHBoxLayout(m_pullout);
         cols->setContentsMargins(0, 0, 10, 0); // caption bleeds to the left edge
         cols->setSpacing(8);
         cols->addWidget(buildCaptionStrip());
         cols->addWidget(buildClassicColumn(), 1);
     } else {
-        setFixedSize(560, 480);
-        auto *cols = new QHBoxLayout(this);
+        m_pullout->setFixedSize(560, 480);
+        auto *cols = new QHBoxLayout(m_pullout);
         cols->setContentsMargins(10, 10, 10, 10);
         cols->setSpacing(8);
         cols->addWidget(buildLeftPane(), 1);
         cols->addWidget(buildRightPane());
     }
+
+    // Anchor the pullout bottom-left inside the backdrop, tucked just above the
+    // panel (the pullout standard). The rest of the surface stays transparent and
+    // click-to-dismiss.
+    auto *outer = new QVBoxLayout(this);
+    outer->setContentsMargins(0, 0, 0, Config().panelHeight());
+    outer->addStretch(1);
+    auto *row = new QHBoxLayout();
+    row->setContentsMargins(0, 0, 0, 0);
+    row->addWidget(m_pullout);
+    row->addStretch(1);
+    outer->addLayout(row);
 
     // Search focus is a setting (tokens.launcher.search.focus): "auto" focuses
     // the search on open (type immediately, the default); "tab" leaves focus on
@@ -534,17 +554,15 @@ bool LauncherMenu::eventFilter(QObject *obj, QEvent *event) {
     return QWidget::eventFilter(obj, event);
 }
 
-void LauncherMenu::paintEvent(QPaintEvent *) { paintStyledSurface(this); }
-
-bool LauncherMenu::event(QEvent *e) {
-    // The pullout grabs keyboard focus on show (m_search/m_list setFocus), so it
-    // is the active window; when the user clicks another surface it deactivates —
-    // close, mirroring a click-outside popup grab that layer-shell doesn't give us.
-    if (e->type() == QEvent::WindowDeactivate) {
+void LauncherMenu::mousePressEvent(QMouseEvent *e) {
+    // A press that reaches the backdrop (i.e. misses the pullout card and its
+    // children, which consume their own presses first) dismisses the menu. This
+    // is the reliable click-outside grab layer-shell won't give us, and unlike
+    // WindowDeactivate it doesn't depend on the surface holding seat focus.
+    if (!m_pullout->geometry().contains(e->pos()))
         qApp->quit();
-        return true;
-    }
-    return QWidget::event(e);
+    else
+        QWidget::mousePressEvent(e);
 }
 
 } // namespace helm
