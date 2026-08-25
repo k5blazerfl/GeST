@@ -260,6 +260,10 @@ def test_install_gpu_drivers_nvidia(tmp_path):
     assert ["emerge", "--getbinpkg", "--color", "n", "--noreplace",
             "x11-drivers/nvidia-drivers"] in inner
     assert ["emerge", "--color", "n", "@module-rebuild"] in inner
+    # initramfs re-baked AFTER the nvidia module builds — the initramfs BuildKernel
+    # made predates the driver, so without this it has no nvidia_drm (no early KMS →
+    # Plymouth can't draw → the firmware/OEM logo shows through the splash).
+    assert any(argv and argv[0] == "genkernel" and "initramfs" in argv for argv in inner)
     # modprobe.d modeset/blacklist dropped
     assert "options nvidia_drm modeset=1 fbdev=1" in Path(root + gpu.MODPROBE_CONF).read_text()
     # kernel cmdline hardening written to /etc/default/grub
@@ -278,6 +282,7 @@ def test_install_gpu_drivers_firmware_only(tmp_path):
     # no nvidia driver, no module rebuild, no modprobe.d
     assert not any("nvidia-drivers" in tok for argv in inner for tok in argv)
     assert ["emerge", "--color", "n", "@module-rebuild"] not in inner
+    assert not any(argv and argv[0] == "genkernel" for argv in inner)  # no initramfs re-bake
     assert not os.path.exists(root + gpu.MODPROBE_CONF)
     assert not os.path.exists(os.path.join(root, "etc", "default", "grub"))  # no cmdline write
     assert not os.path.exists(root + gpu.PACKAGE_USE)                        # no kernel-open
