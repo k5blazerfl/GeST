@@ -4,6 +4,7 @@
 #include "config.h"
 #include "launcherbutton.h"
 #include "layout.h"
+#include "palette.h"
 #include "taskbarwidget.h"
 #include "traywidget.h"
 
@@ -173,5 +174,7 @@ void Panel::watchConfig() {
     connect(watcher, &QFileSystemWatcher::fileChanged, this, onChange);
     connect(watcher, &QFileSystemWatcher::directoryChanged, this, onChange);
 }
+
+void Panel::paintEvent(QPaintEvent *) { paintStyledSurface(this); }
 
 } // namespace helm
