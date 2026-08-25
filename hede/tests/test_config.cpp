@@ -82,6 +82,35 @@ private slots:
         QCOMPARE(cfg.panelApplets().first(), QStringLiteral("launcher"));
         QCOMPARE(cfg.panelApplets().size(), 11);
     }
+    void rereadReflectsExternalEdit() {
+        // Slice-2 crux: the live-reload watcher fires, then reload() constructs a
+        // fresh Config to read the new values. This proves a fresh read sees an
+        // external rewrite (i.e. QSettings does not hand back stale cached data).
+        QTemporaryDir dir;
+        const QString path = dir.filePath(QStringLiteral("hede.conf"));
+        {
+            QSettings s(path, QSettings::IniFormat);
+            s.setValue(QStringLiteral("panel/applets"), QStringLiteral("launcher, clock"));
+            s.setValue(QStringLiteral("panel/height"), 40);
+        }
+        QCOMPARE(helm::Config(path).panelApplets(),
+                 (QStringList{QStringLiteral("launcher"), QStringLiteral("clock")}));
+        QCOMPARE(helm::Config(path).panelHeight(), 40);
+
+        // The editor (or a hand-edit) rewrites the file...
+        {
+            QSettings s(path, QSettings::IniFormat);
+            s.setValue(QStringLiteral("panel/applets"),
+                       QStringLiteral("clock, tray, launcher"));
+            s.setValue(QStringLiteral("panel/height"), 52);
+            s.sync();
+        }
+        // ...and a fresh Config must reflect it.
+        QCOMPARE(helm::Config(path).panelApplets(),
+                 (QStringList{QStringLiteral("clock"), QStringLiteral("tray"),
+                              QStringLiteral("launcher")}));
+        QCOMPARE(helm::Config(path).panelHeight(), 52);
+    }
 };
 
 QTEST_MAIN(TestConfig)

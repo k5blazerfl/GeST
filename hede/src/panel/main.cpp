@@ -22,10 +22,20 @@ int main(int argc, char **argv) {
     helm::Panel panel;
     panel.winId(); // realise the platform window so we can grab its QWindow
 
-    helm::applyLayerShell(
-        panel.windowHandle(), LayerShellQt::Window::LayerTop,
-        helm::edges(/*top*/ false, /*bottom*/ true, /*left*/ true, /*right*/ true), panel.height(),
-        LayerShellQt::Window::KeyboardInteractivityNone);
+    // Promote to a layer-shell surface, reserving an exclusive zone the height of
+    // the bar. Factored so a live [panel] height change can re-reserve it.
+    auto anchorBar = [&panel](int height) {
+        helm::applyLayerShell(
+            panel.windowHandle(), LayerShellQt::Window::LayerTop,
+            helm::edges(/*top*/ false, /*bottom*/ true, /*left*/ true, /*right*/ true), height,
+            LayerShellQt::Window::KeyboardInteractivityNone);
+    };
+    anchorBar(panel.height());
+
+    // Live config: rebuild the bar when hede.conf changes, and re-reserve the
+    // exclusive zone if the height changed with it.
+    QObject::connect(&panel, &helm::Panel::heightChanged, &panel, anchorBar);
+    panel.watchConfig();
 
     panel.show();
     return app.exec();
