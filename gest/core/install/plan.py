@@ -170,5 +170,10 @@ class InstallPlan:
     # (RTC=UTC + NTP via chrony) or local (RTC in local time, no NTP). ConfigureClock renders it.
     global_use: tuple[str, ...] = ()   # system-wide USE= tokens resolved from the
     # wizard's Features checklist (capabilities.resolve_global_use); WriteMakeConf renders them.
+    gentoo_mirrors: tuple[str, ...] = ()   # GENTOO_MIRRORS distfile mirrors (auto-picked
+    # fastest at install, see portage.mirrors); empty = Gentoo's default rotation.
+    sync_uri: str = ""             # main-repo sync mirror for repos.conf/gentoo.conf; empty
+    # = the default rsync rotation. WriteReposConf renders an explicit gentoo.conf from these.
+    sync_type: str = "rsync"       # repos.conf sync-type for the main repo (rsync/webrsync/git).
     make_conf_overrides: tuple[tuple[str, str], ...] = ()   # Custom-role raw make.conf
     # var overrides (name, value); overlaid last by WriteMakeConf. Empty for canned roles.
