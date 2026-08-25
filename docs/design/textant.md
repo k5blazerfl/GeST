@@ -174,21 +174,33 @@ call is the captain's — this is the chosen name, superseding the earlier
 
 ### Logo
 
-A brass sextant sighting a glowing `>_` prompt where the star should be — you
-measure the angle to the prompt, so the pun in the name becomes the pun in the
-mark. Instrument-era brass and a phosphor-amber cursor on HeDE harbor-navy glass.
-Two assets ship:
+Two jobs, two marks — deliberately split, because they optimize for different
+things.
 
-- **`assets/textant-logo.svg`** — the glass tile (app icon / launcher): world-navy
-  tile, brass sextant, glow on the prompt. The full-depth version.
-- **`assets/textant-mark.svg`** — the brass mark (menus, favicon, ≤32px): no tile,
-  no glow, thicker strokes and fewer graduations so the silhouette stays crisp on
-  any ground.
+**App icon — a terminal window.** `assets/textant-icon.svg`. An icon's first job
+is recognition: in a dock or launcher a user must read "terminal" in a
+half-second. So the icon is exactly that — a HeDE-glass window (harbor-navy tile,
+titlebar with controls, a `helm-theme` brass window edge) with a phosphor-amber
+`>_` prompt glowing on the dark screen. No cleverness to decode; it reads as a
+terminal at 32px. This is the launcher/dock/`.desktop` icon.
 
-Anatomy: a true ~60° sextant wedge with a concentric inner frame arc (keeps it
-from reading as a drafting compass), a graduated tick scale that doubles as a nod
-to columns of monospace text, a telescope aimed up the sightline, and the two-tone
-`>_` prompt as the one warm point everything measures toward. The brass can
-re-tint with the active world's accent (`helm-theme`) if we want it to breathe
-with the desktop. Keep the prompt the warmest thing in frame; never recolor it to
-match the brass (the two-tone contrast is the concept).
+- `assets/textant-icon-brand.svg` — the same window with a tiny brass sextant
+  tucked into the titlebar as the app-emblem. Use it only at large format (store
+  listing, splash, hero) where the emblem is legible; below ~48px it collapses to
+  an ambiguous corner speck, so the plain icon is the default everywhere small.
+
+**Brand emblem — the sextant.** `assets/textant-logo.svg` (glass tile) and
+`assets/textant-mark.svg` (bare brass mark). A brass sextant sighting a glowing
+`>_` prompt where the star should be — you measure the angle to the prompt, so
+the name's *sextant + text* pun becomes the pun in the mark. This is the identity
+we show where it has room to be read: docs, the About box, the wordmark lockup,
+watermarks. It is **not** the launcher icon — a lone sextant reads as "compass
+app," not "terminal," which is the whole reason the app icon is a window instead.
+
+Emblem anatomy: a true ~60° sextant wedge with a concentric inner frame arc
+(keeps it from reading as a drafting compass), a graduated tick scale that doubles
+as a nod to columns of monospace text, a telescope aimed up the sightline, and the
+two-tone `>_` prompt as the one warm point everything measures toward. The brass
+can re-tint with the active world's accent (`helm-theme`). Keep the prompt the
+warmest thing in frame; never recolor it to match the brass — the two-tone
+contrast is the concept, in both the icon and the emblem.
