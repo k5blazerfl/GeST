@@ -1,4 +1,5 @@
 qt_add_library(helm-apps STATIC
+    categories.cpp
     desktopentry.cpp
     launcherstore.cpp
     search.cpp
