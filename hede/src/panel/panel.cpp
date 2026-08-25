@@ -3,6 +3,7 @@
 #include "clock.h"
 #include "config.h"
 #include "launcherbutton.h"
+#include "layout.h"
 #include "taskbarwidget.h"
 #include "traywidget.h"
 
@@ -75,10 +76,10 @@ void Panel::buildApplets() {
         w->show();
     };
 
-    // Build the bar from the ordered [panel] applets list (Barnacle's surface).
-    // An un-configured panel gets the built-in default lineup, so this stays a
-    // pure refactor of the previous hard-coded order — same widgets, same order.
-    for (const QString &name : cfg.panelApplets()) {
+    // Build the bar from the ordered [panel] applets list (Barnacle's surface),
+    // read through the shared engine so the bar and the editor never disagree.
+    // An un-configured panel gets the built-in default lineup.
+    for (const QString &name : PanelLayout::read(cfg.path())) {
         if (name == QLatin1String("launcher")) {
             // The ⎈ Start tile — Helm mark + label (label keeps it discoverable
             // if the glyph is missing from the installed font); #HelmStart styles it.

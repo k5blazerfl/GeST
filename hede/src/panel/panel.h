@@ -7,7 +7,7 @@ class QHBoxLayout;
 namespace helm {
 
 // The bottom bar. Its applet lineup is built from hede.conf [panel] applets
-// (see Config::panelApplets), and it rebuilds itself in place when that file
+// (via helm::PanelLayout), and it rebuilds itself in place when that file
 // changes — the seam Barnacle (the panel editor) writes to.
 class Panel : public QWidget {
     Q_OBJECT
