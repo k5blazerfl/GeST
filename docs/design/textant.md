@@ -1,10 +1,14 @@
-# Design: Telegraph — the HeDE terminal
+# Design: Textant — the HeDE terminal
 
 A first-class, HeDE-owned terminal emulator: Qt-native, no KDE, no GTK, themed
 with the shell and integrated with the world/appearance system — the same way
-SeFE is our file manager and Seahorse is our archive front. Named for the ship's
-bridge telegraph, the device that relays a command from the bridge to the engine
-room and rings back an acknowledgement: you issue an order, something below acts.
+SeFE is our file manager and Seahorse is our archive front. Named for the
+**sextant** — the precision instrument you read the raw sky with, an expert's
+measuring tool — folded together with **text**: a terminal *is* a text device.
+The sextant supplies the logo and the maritime read; the pun puts the function
+in the name. (It also quietly sanitizes the source word — `sextant` carries a
+`sex` substring that `textant` does not, which is one less wart in a binary
+name, a tab-completion, a log line.)
 
 ## Why build one (and why *not* for the reason you'd guess)
 
@@ -25,7 +29,7 @@ The real motivation is **ownership and integration**, the SeFE/Seahorse instinct
 - **A Qt-native default.** HeDE's shell is Qt; owning the terminal keeps the
   first-party surface coherent and under our control, versioned with HeDE.
 
-foot stays the shipped default until Telegraph reaches parity — this is additive,
+foot stays the shipped default until Textant reaches parity — this is additive,
 not a rip-and-replace.
 
 ## The decision: libvterm + Qt
@@ -92,26 +96,26 @@ HarfBuzz shaping is Phase 3 — most terminal text doesn't need it.
   (reuse `helm::paintStyledSurface` / the appearance palette) at a configurable
   opacity, so it composites over the wallpaper like `#HelmPullout`. Default
   fg/bg/palette derive from the active world's accent via `applyAppearance`, and
-  Telegraph calls `helm::watchAppearance()` to **re-tint live** on a world switch.
+  Textant calls `helm::watchAppearance()` to **re-tint live** on a world switch.
 - **labwc SSD titlebar.** It's a normal xdg-toplevel — labwc server-side-decorates
   it (the `serverDecoration="yes"` rule), so it gets the HeDE titlebar for free.
 - **Launched cleanly.** When spawned from the shell it must go through
   `helm::launchDetached`, which scrubs `QT_WAYLAND_SHELL_INTEGRATION` — otherwise
-  Telegraph, being Qt, would inherit the shell's `layer-shell` integration and
+  Textant, being Qt, would inherit the shell's `layer-shell` integration and
   come up as a frameless layer surface (the exact Control Center bug). Being Qt
   makes this non-optional.
 - **Default-terminal registration.** Once mature: swap the labwc `Super+Return`
-  keybind + menu Terminal item from `foot` to `telegraph`, register as
+  keybind + menu Terminal item from `foot` to `textant`, register as
   `x-terminal-emulator`, and have `helm-panel`'s Start-menu "Terminal" spawn it.
   Keep `foot` installed as a fallback until parity is proven on hardware.
 
 ## Packaging
 
-- Source under `hede/src/telegraph/`; binary `telegraph`; a new
-  `add_subdirectory(src/telegraph)` in `hede/CMakeLists.txt`.
+- Source under `hede/src/textant/`; binary `textant`; a new
+  `add_subdirectory(src/textant)` in `hede/CMakeLists.txt`.
 - Build dep: `dev-libs/libvterm`. Runtime: same + Qt6 Widgets (already a HeDE
   dep). **No KDE, no GTK.**
-- The hede ebuild keeps `gui-apps/foot` as the fallback terminal until Telegraph
+- The hede ebuild keeps `gui-apps/foot` as the fallback terminal until Textant
   is the default; then foot moves to a soft/optional dep.
 
 ## Phasing (slices)
@@ -143,8 +147,27 @@ HarfBuzz shaping is Phase 3 — most terminal text doesn't need it.
 
 ## Name
 
-**Telegraph** (working name) — the bridge→engine command relay; you send an
-order, something below acts and rings back. Fits the nautical fleet (Helm,
-Seahorse, Hold, Gangway, Drydock, Flotilla, Lantern, Barnacle). Alternatives if
-it reads too old-timey: **Semaphore** (flag signalling), **Signalman**. Final
-call is the captain's.
+**Textant** — a portmanteau of **sextant** + **text**. The sextant is the
+precision instrument a navigator reads the raw sky with; framing the terminal as
+an expert's measuring instrument is exactly the register we want, and it gives us
+a ready-made logo. Folding **text** into it puts the function in the name — a
+terminal is a text device — so the pun and the meaning are the same thing rather
+than decoration bolted on.
+
+Why it's more than a gag:
+
+- **It sanitizes the source word.** `sextant` is `s-e-x-t-a-n-t`; `textant` drops
+  the `sex` substring. One less wart in a binary name, a tab-completion, a log
+  line, a docs heading.
+- **`-ant` reads as an agent suffix.** Like assist*ant* / occup*ant* — "the thing
+  that handles text." Even a reader who's never heard "sextant" gets a coherent
+  word; the logo then rewards the ones who have. A two-layer name.
+- **It's on-brand.** HeDE already runs one salty pun per tool (Barnacle winks at
+  *binnacle*, the crab lineage) — a wordplay name here fits the fleet's culture
+  where a straight-faced "Sextant" would be a touch too solemn.
+
+Fits the nautical fleet (Helm, Seahorse, Hold, Gangway, Drydock, Flotilla,
+Lantern, Barnacle). The one honest risk is the `-ant` ending nudging a reader
+toward "text-*ant*" (the insect); the sextant logo is what defuses that. Final
+call is the captain's — this is the chosen name, superseding the earlier
+**Telegraph** working title.
