@@ -100,11 +100,14 @@ LauncherMenu::LauncherMenu(QWidget *parent)
         cols->addWidget(buildRightPane());
     }
 
-    // Anchor the pullout bottom-left inside the backdrop, tucked just above the
-    // panel (the pullout standard). The rest of the surface stays transparent and
-    // click-to-dismiss.
+    // Anchor the pullout bottom-left inside the backdrop, tucked flush against the
+    // panel (the pullout standard). No bottom margin: the backdrop uses
+    // exclusiveZone 0, so the compositor already confines it to the usable area —
+    // its bottom edge sits at the top of the bar's exclusive zone. Adding a
+    // panelHeight margin here would double the offset and float the card above the
+    // bar. The rest of the surface stays transparent and click-to-dismiss.
     auto *outer = new QVBoxLayout(this);
-    outer->setContentsMargins(0, 0, 0, Config().panelHeight());
+    outer->setContentsMargins(0, 0, 0, 0);
     outer->addStretch(1);
     auto *row = new QHBoxLayout();
     row->setContentsMargins(0, 0, 0, 0);

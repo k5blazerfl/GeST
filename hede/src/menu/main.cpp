@@ -2,8 +2,6 @@
 #include "layershell.h"
 #include "palette.h"
 
-#include "config.h"
-
 #include <QApplication>
 
 // helm-menu: the Start menu. A layer-shell popup anchored bottom-left, tucked
