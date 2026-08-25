@@ -58,7 +58,6 @@ from gest.core.kernel import config as kconfig
 from gest.core.kernel.build import build_steps
 from gest.core.network import hosts as net_hosts
 from gest.core.network import netifrc
-from gest.core.network import resolv as net_resolv
 from gest.core.portage import paths
 from gest.core.portage.codec import shell
 from gest.core.privilege import render as priv_render

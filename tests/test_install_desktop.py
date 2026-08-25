@@ -121,8 +121,8 @@ def test_installer_keyword_list_matches_the_build_keyword_list():
     build_file = (Path(__file__).resolve().parents[1]
                   / "packaging/livecd/portage-conf/package.accept_keywords")
     build_atoms = set()
-    for line in build_file.read_text(encoding="utf-8").splitlines():
-        line = line.split("#", 1)[0].strip()
+    for raw in build_file.read_text(encoding="utf-8").splitlines():
+        line = raw.split("#", 1)[0].strip()
         if line:
             build_atoms.add(line.split()[0])       # "cat/pkg ~amd64" → "cat/pkg"
     assert set(desktop._DESKTOP_KEYWORDED) == build_atoms
@@ -132,8 +132,8 @@ def _build_package_use_line(atom_prefix: str) -> str:
     from pathlib import Path
     f = (Path(__file__).resolve().parents[1]
          / "packaging/livecd/portage-conf/package.use")
-    for line in f.read_text(encoding="utf-8").splitlines():
-        line = line.split("#", 1)[0].strip()
+    for raw in f.read_text(encoding="utf-8").splitlines():
+        line = raw.split("#", 1)[0].strip()
         if line.startswith(atom_prefix):
             return line
     return ""

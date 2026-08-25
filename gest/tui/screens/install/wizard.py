@@ -855,7 +855,7 @@ class DiskStep(WizardStep):
         if label == "Root size":
             return ("With /home split off, root gets a fixed budget and /home takes "
                     "the rest. Root only holds the OS, installed packages and caches, "
-                    "so it needn't be large — 30–60G suits most desktops. Give it more "
+                    "so it needn't be large — 30-60G suits most desktops. Give it more "
                     "if you compile heavily from source or install big toolchains, "
                     "which pile up under /var and /usr.")
         return super().row_detail(label, value)
