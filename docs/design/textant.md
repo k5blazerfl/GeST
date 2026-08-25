@@ -171,3 +171,24 @@ Lantern, Barnacle). The one honest risk is the `-ant` ending nudging a reader
 toward "text-*ant*" (the insect); the sextant logo is what defuses that. Final
 call is the captain's — this is the chosen name, superseding the earlier
 **Telegraph** working title.
+
+### Logo
+
+A brass sextant sighting a glowing `>_` prompt where the star should be — you
+measure the angle to the prompt, so the pun in the name becomes the pun in the
+mark. Instrument-era brass and a phosphor-amber cursor on HeDE harbor-navy glass.
+Two assets ship:
+
+- **`assets/textant-logo.svg`** — the glass tile (app icon / launcher): world-navy
+  tile, brass sextant, glow on the prompt. The full-depth version.
+- **`assets/textant-mark.svg`** — the brass mark (menus, favicon, ≤32px): no tile,
+  no glow, thicker strokes and fewer graduations so the silhouette stays crisp on
+  any ground.
+
+Anatomy: a true ~60° sextant wedge with a concentric inner frame arc (keeps it
+from reading as a drafting compass), a graduated tick scale that doubles as a nod
+to columns of monospace text, a telescope aimed up the sightline, and the two-tone
+`>_` prompt as the one warm point everything measures toward. The brass can
+re-tint with the active world's accent (`helm-theme`) if we want it to breathe
+with the desktop. Keep the prompt the warmest thing in frame; never recolor it to
+match the brass (the two-tone contrast is the concept).
