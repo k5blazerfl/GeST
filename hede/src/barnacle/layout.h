@@ -22,6 +22,12 @@ class PanelLayout {
     // Normalise a raw comma-separated value: split, trim, lower-case, drop
     // empties. Shared by read() and the editor so the parsing rules never drift.
     static QStringList parse(const QString &raw);
+
+    // The screen edge the bar anchors to. Valid values are validEdges();
+    // anything else (or unset) reads back as "bottom".
+    static QStringList validEdges();                            // {"bottom", "top"}
+    static QString readEdge(const QString &configPath);        // [panel] edge; default "bottom"
+    static bool writeEdge(const QString &configPath, const QString &edge);
 };
 
 } // namespace helm

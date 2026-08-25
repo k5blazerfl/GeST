@@ -7,11 +7,20 @@ namespace helm {
 
 void PanelEditorModel::loadFrom(const QString &configPath) {
     m_applets = PanelLayout::read(configPath);
+    m_edge = PanelLayout::readEdge(configPath);
 }
 
 void PanelEditorModel::setApplets(const QStringList &applets) { m_applets = applets; }
 
-void PanelEditorModel::resetToDefault() { m_applets = defaultApplets(); }
+void PanelEditorModel::setEdge(const QString &edge) {
+    const QString e = edge.trimmed().toLower();
+    m_edge = PanelLayout::validEdges().contains(e) ? e : QStringLiteral("bottom");
+}
+
+void PanelEditorModel::resetToDefault() {
+    m_applets = defaultApplets();
+    m_edge = QStringLiteral("bottom");
+}
 
 void PanelEditorModel::moveItem(int from, int to) {
     if (from < 0 || from >= m_applets.size())
@@ -49,7 +58,9 @@ QStringList PanelEditorModel::available() const {
 }
 
 bool PanelEditorModel::apply(const QString &configPath) const {
-    return PanelLayout::write(configPath, m_applets);
+    const bool okApplets = PanelLayout::write(configPath, m_applets);
+    const bool okEdge = PanelLayout::writeEdge(configPath, m_edge);
+    return okApplets && okEdge;
 }
 
 } // namespace helm

@@ -51,8 +51,7 @@ Panel::Panel(QWidget *parent) : QWidget(parent) {
     m_layout->setSpacing(6);
 
     const Config cfg;
-    m_height = cfg.panelHeight();
-    setFixedHeight(m_height);
+    setFixedHeight(cfg.panelHeight());
     buildApplets();
 }
 
@@ -124,13 +123,9 @@ void Panel::reload() {
     }
 
     const Config cfg;
-    const int h = cfg.panelHeight();
-    if (h != m_height) {
-        m_height = h;
-        setFixedHeight(h);
-        Q_EMIT heightChanged(h); // owner re-sizes the layer-shell exclusive zone
-    }
+    setFixedHeight(cfg.panelHeight());
     buildApplets();
+    Q_EMIT reloaded(); // owner re-anchors the surface (height + edge)
 }
 
 void Panel::watchConfig() {

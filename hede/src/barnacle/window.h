@@ -5,6 +5,7 @@
 #include <QString>
 #include <QWidget>
 
+class QComboBox;
 class QListWidget;
 
 namespace helm {
@@ -30,6 +31,7 @@ class BarnacleWindow : public QWidget {
     QString m_configPath;
     QListWidget *m_barList = nullptr;
     QListWidget *m_availList = nullptr;
+    QComboBox *m_edgeCombo = nullptr;
 };
 
 } // namespace helm

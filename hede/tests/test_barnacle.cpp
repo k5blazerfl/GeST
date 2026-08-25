@@ -173,8 +173,52 @@ class TestBarnacle : public QObject {
     void editorResetToDefault() {
         PanelEditorModel m;
         m.setApplets({QStringLiteral("clock")});
+        m.setEdge(QStringLiteral("top"));
         m.resetToDefault();
         QCOMPARE(m.applets(), helm::defaultApplets());
+        QCOMPARE(m.edge(), QStringLiteral("bottom")); // reset restores the edge too
+    }
+
+    // ---- edge (slice 6) --------------------------------------------------
+    void edgeDefaultsToBottomWhenUnset() {
+        QTemporaryDir dir;
+        const QString path = dir.filePath(QStringLiteral("hede.conf"));
+        QCOMPARE(PanelLayout::readEdge(path), QStringLiteral("bottom"));
+        QVERIFY(PanelLayout::validEdges().contains(QStringLiteral("bottom")));
+        QVERIFY(PanelLayout::validEdges().contains(QStringLiteral("top")));
+    }
+    void edgeWriteReadRoundTrips() {
+        QTemporaryDir dir;
+        const QString path = dir.filePath(QStringLiteral("hede.conf"));
+        QVERIFY(PanelLayout::writeEdge(path, QStringLiteral("top")));
+        QCOMPARE(PanelLayout::readEdge(path), QStringLiteral("top"));
+        QVERIFY(PanelLayout::writeEdge(path, QStringLiteral("bottom")));
+        QCOMPARE(PanelLayout::readEdge(path), QStringLiteral("bottom"));
+    }
+    void edgeNormalisesCaseAndRejectsGarbage() {
+        QTemporaryDir dir;
+        const QString path = dir.filePath(QStringLiteral("hede.conf"));
+        QVERIFY(PanelLayout::writeEdge(path, QStringLiteral("  TOP ")));
+        QCOMPARE(PanelLayout::readEdge(path), QStringLiteral("top")); // trimmed + lowered
+        // A bad value written directly to the INI reads back as the default.
+        {
+            QSettings s(path, QSettings::IniFormat);
+            s.setValue(QStringLiteral("panel/edge"), QStringLiteral("sideways"));
+        }
+        QCOMPARE(PanelLayout::readEdge(path), QStringLiteral("bottom"));
+    }
+    void editorEdgeLoadsSetsAppliesAndValidates() {
+        QTemporaryDir dir;
+        const QString path = dir.filePath(QStringLiteral("hede.conf"));
+        PanelEditorModel m;
+        m.loadFrom(path);
+        QCOMPARE(m.edge(), QStringLiteral("bottom")); // default when unset
+        m.setEdge(QStringLiteral("top"));
+        QCOMPARE(m.edge(), QStringLiteral("top"));
+        QVERIFY(m.apply(path));
+        QCOMPARE(PanelLayout::readEdge(path), QStringLiteral("top")); // the bar would re-anchor
+        m.setEdge(QStringLiteral("garbage"));
+        QCOMPARE(m.edge(), QStringLiteral("bottom")); // invalid snaps back to default
     }
 };
 

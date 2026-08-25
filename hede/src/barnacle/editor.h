@@ -33,12 +33,18 @@ class PanelEditorModel {
     // bar, plus `spacer` (a gap, which may appear any number of times).
     QStringList available() const;
 
-    // Persist the working list to a hede.conf INI (via PanelLayout::write); the
-    // bar live-reloads. Returns false if the write failed.
+    // The screen edge the bar anchors to ("bottom" | "top"). setEdge validates:
+    // an unknown value snaps back to "bottom", so edge() is always valid.
+    const QString &edge() const { return m_edge; }
+    void setEdge(const QString &edge);
+
+    // Persist the working list AND edge to a hede.conf INI (via PanelLayout);
+    // the bar live-reloads. Returns false if either write failed.
     bool apply(const QString &configPath) const;
 
   private:
     QStringList m_applets;
+    QString m_edge = QStringLiteral("bottom");
 };
 
 } // namespace helm

@@ -147,6 +147,11 @@ are worth doing on their own merit (they make the bar configurable at all).
    `Personalization` page) that launches `helm-barnacle` detached. The second
    door onto the same engine; reuses the Appearance "helm-tool not found → install
    HeDE" idiom.
+6. **Panel edge (top/bottom)** — `[panel] edge` in the engine
+   (`PanelLayout::readEdge`/`writeEdge`, `PanelEditorModel::edge`), a Position
+   control in the editor, and `helm-panel` anchoring to the configured edge (and
+   re-anchoring live via the generalised `Panel::reloaded` signal). Left/right
+   vertical edges remain a later slice.
 
 ## Non-goals (v1)
 

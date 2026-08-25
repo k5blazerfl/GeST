@@ -2,8 +2,10 @@
 
 #include "catalog.h"
 #include "config.h"
+#include "layout.h"
 
 #include <QAbstractItemView>
+#include <QComboBox>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QListWidget>
@@ -64,12 +66,27 @@ BarnacleWindow::BarnacleWindow(QWidget *parent) : QWidget(parent) {
     cols->addLayout(mid);
     cols->addLayout(right, 1);
 
+    // Position: which screen edge the bar anchors to. Set the current value
+    // before wiring the signal so building the row doesn't spuriously re-apply.
+    m_edgeCombo = new QComboBox(this);
+    for (const QString &e : PanelLayout::validEdges())
+        m_edgeCombo->addItem(e == QLatin1String("top") ? tr("Top") : tr("Bottom"), e);
+    const int edgeIdx = m_edgeCombo->findData(m_model.edge());
+    if (edgeIdx >= 0)
+        m_edgeCombo->setCurrentIndex(edgeIdx);
+
+    auto *posRow = new QHBoxLayout;
+    posRow->addWidget(new QLabel(tr("Position:"), this));
+    posRow->addWidget(m_edgeCombo);
+    posRow->addStretch();
+
     auto *bottom = new QHBoxLayout;
     bottom->addWidget(resetBtn);
     bottom->addStretch();
     bottom->addWidget(new QLabel(tr("Changes apply to the bar immediately."), this));
 
     auto *root = new QVBoxLayout(this);
+    root->addLayout(posRow);
     root->addLayout(cols, 1);
     root->addLayout(bottom);
 
@@ -77,8 +94,18 @@ BarnacleWindow::BarnacleWindow(QWidget *parent) : QWidget(parent) {
     connect(removeBtn, &QPushButton::clicked, this, &BarnacleWindow::removeSelected);
     connect(resetBtn, &QPushButton::clicked, this, [this] {
         m_model.resetToDefault();
+        {
+            const QSignalBlocker block(m_edgeCombo); // reflect edge without re-applying
+            const int idx = m_edgeCombo->findData(m_model.edge());
+            if (idx >= 0)
+                m_edgeCombo->setCurrentIndex(idx);
+        }
         rebuildLists();
         applyNow();
+    });
+    connect(m_edgeCombo, &QComboBox::currentIndexChanged, this, [this](int) {
+        m_model.setEdge(m_edgeCombo->currentData().toString());
+        applyNow(); // no list change; the bar re-anchors on reload
     });
     connect(m_availList, &QListWidget::itemDoubleClicked, this, &BarnacleWindow::addSelected);
     connect(m_barList, &QListWidget::itemDoubleClicked, this, &BarnacleWindow::removeSelected);

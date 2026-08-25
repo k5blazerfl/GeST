@@ -1,6 +1,8 @@
 #include "panel.h"
 
+#include "config.h"
 #include "layershell.h"
+#include "layout.h"
 #include "palette.h"
 
 #include <QApplication>
@@ -22,19 +24,22 @@ int main(int argc, char **argv) {
     helm::Panel panel;
     panel.winId(); // realise the platform window so we can grab its QWindow
 
-    // Promote to a layer-shell surface, reserving an exclusive zone the height of
-    // the bar. Factored so a live [panel] height change can re-reserve it.
-    auto anchorBar = [&panel](int height) {
+    // Promote to a layer-shell surface: anchor to the configured [panel] edge
+    // (bottom by default, or top) and reserve an exclusive zone the height of the
+    // bar so maximized windows don't cover it. Re-derived from config each call
+    // so a live edge/height change re-anchors correctly.
+    auto anchor = [&panel]() {
+        const bool top = helm::PanelLayout::readEdge(helm::Config().path()) == QLatin1String("top");
         helm::applyLayerShell(
             panel.windowHandle(), LayerShellQt::Window::LayerTop,
-            helm::edges(/*top*/ false, /*bottom*/ true, /*left*/ true, /*right*/ true), height,
-            LayerShellQt::Window::KeyboardInteractivityNone);
+            helm::edges(/*top*/ top, /*bottom*/ !top, /*left*/ true, /*right*/ true),
+            panel.height(), LayerShellQt::Window::KeyboardInteractivityNone);
     };
-    anchorBar(panel.height());
+    anchor();
 
-    // Live config: rebuild the bar when hede.conf changes, and re-reserve the
-    // exclusive zone if the height changed with it.
-    QObject::connect(&panel, &helm::Panel::heightChanged, &panel, anchorBar);
+    // Live config: rebuild the bar when hede.conf changes, then re-anchor the
+    // surface (a changed edge or height takes effect without a restart).
+    QObject::connect(&panel, &helm::Panel::reloaded, &panel, anchor);
     panel.watchConfig();
 
     panel.show();

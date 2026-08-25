@@ -35,4 +35,24 @@ bool PanelLayout::write(const QString &configPath, const QStringList &applets) {
     return s.status() == QSettings::NoError;
 }
 
+static QString edgeKey() { return QStringLiteral("panel/edge"); }
+
+QStringList PanelLayout::validEdges() {
+    return {QStringLiteral("bottom"), QStringLiteral("top")};
+}
+
+QString PanelLayout::readEdge(const QString &configPath) {
+    QSettings s(configPath, QSettings::IniFormat);
+    const QString e = s.value(edgeKey()).toString().trimmed().toLower();
+    return validEdges().contains(e) ? e : QStringLiteral("bottom");
+}
+
+bool PanelLayout::writeEdge(const QString &configPath, const QString &edge) {
+    const QString e = edge.trimmed().toLower();
+    QSettings s(configPath, QSettings::IniFormat);
+    s.setValue(edgeKey(), validEdges().contains(e) ? e : QStringLiteral("bottom"));
+    s.sync();
+    return s.status() == QSettings::NoError;
+}
+
 } // namespace helm
