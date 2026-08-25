@@ -114,9 +114,11 @@ are worth doing on their own merit (they make the bar configurable at all).
     ship this as a compact popup/overlay rather than fully draggable chrome if
     live-surface DnD proves heavy — the model and config are identical either way.
   - *Control Center doorway* — a `panel.py` module under `gest/qt/modules/`
-    registered in `gest/qt/registry.py` (mirrors `appearance.py`), whose primary
-    action opens/flips the bar into edit mode. Built only when `gest-settings`
-    matures; not a v1 blocker.
+    registered in `gest/qt/app.py`'s `build_registry` (mirrors `appearance.py`),
+    whose primary action **launches `helm-barnacle`**. Because the GeST frontend
+    is Python and the engine is C++, the door doesn't reimplement the model — it
+    opens the same editor. (A future in-place edit-mode *on the bar* could make
+    this "flip the bar into edit mode" instead; the launcher is the honest v1.)
 
 ## Packaging
 
@@ -141,8 +143,10 @@ are worth doing on their own merit (they make the bar configurable at all).
    testable lib; `test_barnacle.cpp`.
 4. **Edit mode on the bar** — `helm-barnacle` / the in-place reorder+add+remove
    experience, writing through `barnacle-lib`. The delightful core.
-5. **Control Center doorway** — `panel.py` module in `gest-settings` that opens
-   edit mode. Deferred until the Qt frontend is ready.
+5. **Control Center doorway** — `panel.py` module in `gest-settings` (a
+   `Personalization` page) that launches `helm-barnacle` detached. The second
+   door onto the same engine; reuses the Appearance "helm-tool not found → install
+   HeDE" idiom.
 
 ## Non-goals (v1)
 
