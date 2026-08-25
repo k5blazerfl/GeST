@@ -1,6 +1,8 @@
 #include "panel.h"
 
+#include "config.h"
 #include "layershell.h"
+#include "layout.h"
 #include "palette.h"
 
 #include <QApplication>
@@ -22,10 +24,38 @@ int main(int argc, char **argv) {
     helm::Panel panel;
     panel.winId(); // realise the platform window so we can grab its QWindow
 
-    helm::applyLayerShell(
-        panel.windowHandle(), LayerShellQt::Window::LayerTop,
-        helm::edges(/*top*/ false, /*bottom*/ true, /*left*/ true, /*right*/ true), panel.height(),
-        LayerShellQt::Window::KeyboardInteractivityNone);
+    // Promote to a layer-shell surface: anchor to the configured [panel] edge and
+    // reserve an exclusive zone the thickness of the bar so maximized windows
+    // don't cover it. Horizontal edges (bottom/top) span left↔right and reserve
+    // the bar's height; vertical edges (left/right) span top↔bottom and reserve
+    // its width. Re-derived from config each call so a live edge/thickness change
+    // re-anchors correctly (applyLayerShell is idempotent on the live surface).
+    auto anchor = [&panel]() {
+        const QString edge = helm::PanelLayout::readEdge(helm::Config().path());
+        LayerShellQt::Window::Anchors anchors;
+        int zone;
+        if (edge == QLatin1String("top")) {
+            anchors = helm::edges(true, false, true, true);
+            zone = panel.height();
+        } else if (edge == QLatin1String("left")) {
+            anchors = helm::edges(true, true, true, false);
+            zone = panel.width();
+        } else if (edge == QLatin1String("right")) {
+            anchors = helm::edges(true, true, false, true);
+            zone = panel.width();
+        } else { // bottom (default)
+            anchors = helm::edges(false, true, true, true);
+            zone = panel.height();
+        }
+        helm::applyLayerShell(panel.windowHandle(), LayerShellQt::Window::LayerTop, anchors, zone,
+                              LayerShellQt::Window::KeyboardInteractivityNone);
+    };
+    anchor();
+
+    // Live config: rebuild the bar when hede.conf changes, then re-anchor the
+    // surface (a changed edge or height takes effect without a restart).
+    QObject::connect(&panel, &helm::Panel::reloaded, &panel, anchor);
+    panel.watchConfig();
 
     panel.show();
     return app.exec();

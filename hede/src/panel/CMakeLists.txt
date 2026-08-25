@@ -14,5 +14,6 @@ target_link_libraries(helm-panel PRIVATE
     helm-media
     helm-appearance
     helm-common
+    barnacle-lib
 )
 install(TARGETS helm-panel RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)

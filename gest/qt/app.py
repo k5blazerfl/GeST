@@ -132,6 +132,7 @@ def build_registry() -> Registry:
         makeconf,
         network,
         news,
+        panel,
         preferences,
         privilege,
         repos,
@@ -151,7 +152,7 @@ def build_registry() -> Registry:
                 sync, news, makeconf, binhost, licenses, preferences, services,
                 clock, hostname, locale, keymap, consolefont, bootloader, users,
                 sysctl, eselect, envd, privilege, logs, firewall, network, wifi,
-                sshd, dns, hosts, appearance):
+                sshd, dns, hosts, appearance, panel):
         registry.register(mod.DESCRIPTOR, mod.factory)
     return registry
 

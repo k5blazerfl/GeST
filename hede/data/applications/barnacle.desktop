@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Barnacle
+GenericName=Panel Editor
+Comment=Arrange the applets on your panel
+Exec=helm-barnacle
+Icon=preferences-desktop-panel
+Terminal=false
+Categories=Settings;DesktopSettings;Qt;
+Keywords=panel;taskbar;bar;applets;layout;
+StartupNotify=true

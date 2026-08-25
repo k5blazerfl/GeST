@@ -5,14 +5,15 @@
 namespace helm {
 
 // Reads HeDE's INI config ($XDG_CONFIG_HOME/hede/hede.conf by default).
-// Phase 0 exposes exactly two keys, both defaulted. GeST will own this surface
-// later; the pattern is established here.
+// GeST (and Barnacle, the panel editor) will write this surface; the pattern is
+// established here. The ordered [panel] applets list lives in barnacle-lib
+// (helm::PanelLayout) — the shared engine the bar and the editor both use.
 class Config {
   public:
     Config();                             // default path
     explicit Config(const QString &path); // explicit path (tests)
 
-    int panelHeight() const;         // [panel] height   (default 32)
+    int panelHeight() const;         // [panel] height   (default 46)
     QString terminalCommand() const; // [terminal] command (default "foot")
 
     // Generic accessor for feature-specific keys (e.g. "wallpaper/mode").

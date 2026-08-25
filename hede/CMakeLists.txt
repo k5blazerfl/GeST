@@ -25,6 +25,7 @@ add_subdirectory(src/media)
 add_subdirectory(src/theme)
 add_subdirectory(src/decoration)
 add_subdirectory(src/appearance)
+add_subdirectory(src/barnacle)
 add_subdirectory(src/panel)
 add_subdirectory(src/menu)
 add_subdirectory(src/bg)
@@ -43,6 +44,7 @@ install(FILES data/wayland-sessions/hede.desktop
 # discovers these via the XDG app dirs; sefe registers as the folder
 # (inode/directory) AND archive handler — Hold folded into Seahorse, no separate app.
 install(FILES data/applications/sefe.desktop
+              data/applications/barnacle.desktop
         DESTINATION ${CMAKE_INSTALL_PREFIX}/share/applications)
 install(DIRECTORY data/labwc data/wayfire data/grub data/worlds
         DESTINATION ${CMAKE_INSTALL_PREFIX}/share/hede)
