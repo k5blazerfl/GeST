@@ -4,8 +4,10 @@
 #include <QTemporaryDir>
 
 #include "catalog.h"
+#include "editor.h"
 #include "layout.h"
 
+using helm::PanelEditorModel;
 using helm::PanelLayout;
 
 class TestBarnacle : public QObject {
@@ -115,6 +117,64 @@ class TestBarnacle : public QObject {
         QCOMPARE(PanelLayout::read(path),
                  (QStringList{QStringLiteral("clock"), QStringLiteral("tray"),
                               QStringLiteral("launcher")}));
+    }
+
+    // ---- editor model (slice 4) ------------------------------------------
+    void editorLoadReorderApplyRoundTrips() {
+        QTemporaryDir dir;
+        const QString path = dir.filePath(QStringLiteral("hede.conf"));
+        PanelEditorModel m;
+        m.loadFrom(path); // unset → default lineup
+        QCOMPARE(m.applets(), helm::defaultApplets());
+        m.moveItem(0, 2); // drag launcher two slots right
+        QCOMPARE(m.applets().at(2), QStringLiteral("launcher"));
+        QVERIFY(m.apply(path));
+        QCOMPARE(PanelLayout::read(path), m.applets()); // the bar would see this
+    }
+    void editorAddRemoveTracksAvailable() {
+        PanelEditorModel m;
+        m.setApplets({QStringLiteral("launcher"), QStringLiteral("clock")});
+        const QStringList avail = m.available();
+        QVERIFY(avail.contains(QStringLiteral("tray")));      // not on the bar → offered
+        QVERIFY(!avail.contains(QStringLiteral("launcher"))); // already on the bar → not
+        QVERIFY(avail.contains(QStringLiteral("spacer")));    // gap always offered
+
+        m.append(QStringLiteral("tray"));
+        QCOMPARE(m.applets(), (QStringList{QStringLiteral("launcher"), QStringLiteral("clock"),
+                                           QStringLiteral("tray")}));
+        QVERIFY(!m.available().contains(QStringLiteral("tray"))); // now placed
+
+        m.removeAt(1); // drop clock
+        QCOMPARE(m.applets(),
+                 (QStringList{QStringLiteral("launcher"), QStringLiteral("tray")}));
+        QVERIFY(m.available().contains(QStringLiteral("clock"))); // returns to Available
+    }
+    void editorSpacerIsRepeatable() {
+        PanelEditorModel m;
+        m.setApplets({QStringLiteral("taskbar")});
+        m.append(QStringLiteral("spacer"));
+        m.append(QStringLiteral("spacer"));
+        QCOMPARE(m.applets().count(QStringLiteral("spacer")), 2);
+        QVERIFY(m.available().contains(QStringLiteral("spacer"))); // still offerable
+    }
+    void editorGuardsBadIndicesAndEmptyIds() {
+        PanelEditorModel m;
+        m.setApplets({QStringLiteral("launcher"), QStringLiteral("clock")});
+        m.moveItem(-1, 0);          // out of range
+        m.moveItem(0, 9);           // out of range
+        m.removeAt(5);              // out of range
+        m.insert(0, QString());     // empty id ignored
+        QCOMPARE(m.applets(),
+                 (QStringList{QStringLiteral("launcher"), QStringLiteral("clock")}));
+        m.insert(1, QStringLiteral("tray"));
+        QCOMPARE(m.applets(), (QStringList{QStringLiteral("launcher"), QStringLiteral("tray"),
+                                           QStringLiteral("clock")}));
+    }
+    void editorResetToDefault() {
+        PanelEditorModel m;
+        m.setApplets({QStringLiteral("clock")});
+        m.resetToDefault();
+        QCOMPARE(m.applets(), helm::defaultApplets());
     }
 };
 
