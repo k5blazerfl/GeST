@@ -21,6 +21,20 @@ def test_bin_first_for_heavy_browsers():
         assert x.atom.startswith("www-client/")
 
 
+def test_chrome_and_opera_are_offered_with_their_eula_licenses():
+    chrome = b.by_id("chrome")
+    opera = b.by_id("opera")
+    assert chrome is not None and opera is not None
+    assert chrome.atom == "www-client/google-chrome" and chrome.license == "google-chrome"
+    assert opera.atom == "www-client/opera" and opera.license == "OPERA-2018"
+    assert opera.desktop_id == "opera"
+
+
+def test_free_browsers_declare_no_license():
+    # Firefox/Chromium are free — nothing to accept, so no package.license write
+    assert b.by_id("firefox").license == ""
+
+
 def test_by_id_and_by_desktop_id():
     firefox = b.by_id("firefox")
     assert firefox is not None and firefox.name == "Firefox"

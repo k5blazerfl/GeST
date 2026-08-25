@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 )
 
 from gest.core.defaultapps import browser as browsers
+from gest.qt.licenses import set_atom_licenses
 from gest.qt.modules.software import InstallWorker
 from gest.qt.registry import ModuleDescriptor
 from gest.qt.theme import fixed_font
@@ -125,6 +126,15 @@ class DefaultBrowserModule(QWidget):
         if _is_installed(b):
             self._apply_default(b)
             return
+        # A proprietary browser (Chrome/Opera) carries a click-through EULA that the
+        # profile's ACCEPT_LICENSE may not cover — accept it (package.license) before
+        # emerge, else the merge is license-masked. Picking the browser IS accepting
+        # its terms; abort clearly if the privileged write is refused.
+        if b.license:
+            ok, msg = set_atom_licenses(b.atom, [b.license])
+            if not ok:
+                self._status.setText(f"Could not accept the {b.license} license: {msg}")
+                return
         # Not installed: merge it first, then set the default when it succeeds.
         self._pending = b
         self._output.show()
