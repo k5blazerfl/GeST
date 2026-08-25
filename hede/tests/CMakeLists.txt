@@ -61,6 +61,9 @@ add_test(NAME theme COMMAND test-theme)
 
 qt_add_executable(test-world test_world.cpp)
 target_link_libraries(test-world PRIVATE Qt6::Test helm-theme-lib)
+# Guard the shipped Slate world's professional intent (solid bar, no frame).
+target_compile_definitions(test-world PRIVATE
+    HELM_SLATE_THEME="${CMAKE_SOURCE_DIR}/data/worlds/slate/theme.yaml")
 add_test(NAME world COMMAND test-world)
 
 qt_add_executable(test-sefe test_sefe.cpp)
