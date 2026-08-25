@@ -89,6 +89,8 @@ add_test(NAME appearance COMMAND test-appearance)
 qt_add_executable(test-menu test_menu.cpp)
 target_link_libraries(test-menu PRIVATE Qt6::Test helm-menu-lib)
 add_test(NAME menu COMMAND test-menu)
+# The per-style construction tests build real widgets — run headless.
+set_tests_properties(menu PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # Headless integration: boot labwc (wlroots headless backend) and assert
 # helm-panel binds a layer-shell surface. Skips (77) when labwc is absent.
