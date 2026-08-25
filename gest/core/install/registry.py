@@ -242,6 +242,7 @@ class WriteMakeConf(FuncStep):
     label = "Write make.conf"
     phase = Phase.BASE_SYSTEM
     target_aware = True
+    key = "write_make_conf"
 
     async def run(self, ctx: InstallContext, on_progress: OnProgress | None = None) -> None:
         conf = paths.make_conf(ctx.root)
@@ -280,9 +281,15 @@ class WriteMakeConf(FuncStep):
             rendered = shell.render(rendered, name, value)
         path = write_under_root(ctx.root, "/etc/portage/make.conf", rendered)
         _emit(on_progress, f"wrote {path}")
+        ctx.state.mark(self)
 
     async def is_satisfied(self, ctx: InstallContext) -> bool:
-        return os.path.exists(rootpath.resolve(ctx.root, "/etc/portage/make.conf"))
+        # A state marker, NOT make.conf's mere existence: the stage3 ALWAYS ships an
+        # /etc/portage/make.conf, so an existence check made this step a permanent
+        # no-op — ACCEPT_LICENSE (and MAKEOPTS/VIDEO_CARDS/USE) were never written and
+        # the target kept the profile-default @FREE, license-masking firmware/NVIDIA at
+        # the kernel step regardless of the chosen rung. Only skip once we've written.
+        return ctx.state.done(self.key)
 
 
 class PrepareChroot(FuncStep):

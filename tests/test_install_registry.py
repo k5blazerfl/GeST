@@ -70,6 +70,7 @@ _EXPECTED_LABELS = [
 _MARKER_KEYS = {
     "Partition the disk": "partition",
     "Unpack the stage3 tarball": "unpack_stage3",
+    "Write make.conf": "write_make_conf",
     "Sync the Portage tree": "sync_tree",
     "Emerge @world": "emerge_world",
     "Provision the Helm Desktop Environment": "provision_desktop",
@@ -749,6 +750,22 @@ async def test_write_makeconf_renders_license_use_and_overrides(tmp_path, monkey
     assert "bluetooth" in text and "USE=" in text
     assert "~amd64" in text                              # raw override, overlaid last
     assert "-march=native" not in text                  # binary_pref → no CPU tuning
+
+
+async def test_write_makeconf_runs_even_when_stage3_shipped_a_make_conf(tmp_path):
+    # The stage3 ALWAYS ships /etc/portage/make.conf, so a mere-existence gate made
+    # this step a permanent no-op — ACCEPT_LICENSE was never written and firmware
+    # license-masked at the kernel step. is_satisfied must key off a state marker.
+    from gest.core.install.registry import WriteMakeConf
+    conf = tmp_path / "etc/portage/make.conf"
+    conf.parent.mkdir(parents=True)
+    conf.write_text('COMMON_FLAGS="-O2"\n', encoding="utf-8")   # a stage3-style make.conf
+    step = WriteMakeConf()
+    ctx = _ctx(FakeExecutor(), root=str(tmp_path), plan=_plan())
+    assert await step.is_satisfied(ctx) is False                # NOT satisfied by existence
+    await step.run(ctx)
+    assert "ACCEPT_LICENSE" in conf.read_text(encoding="utf-8")  # it actually wrote it
+    assert await step.is_satisfied(ctx) is True                 # marker set → now skips
 
 
 async def test_write_makeconf_tunes_cpu_on_source_builds(tmp_path, monkeypatch):
