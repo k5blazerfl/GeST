@@ -184,16 +184,18 @@ class TestBarnacle : public QObject {
         QTemporaryDir dir;
         const QString path = dir.filePath(QStringLiteral("hede.conf"));
         QCOMPARE(PanelLayout::readEdge(path), QStringLiteral("bottom"));
-        QVERIFY(PanelLayout::validEdges().contains(QStringLiteral("bottom")));
-        QVERIFY(PanelLayout::validEdges().contains(QStringLiteral("top")));
+        // All four edges are offered (bottom/top horizontal, left/right vertical).
+        const QStringList e = PanelLayout::validEdges();
+        for (const char *want : {"bottom", "top", "left", "right"})
+            QVERIFY(e.contains(QString::fromLatin1(want)));
     }
-    void edgeWriteReadRoundTrips() {
+    void edgeWriteReadRoundTripsAllFour() {
         QTemporaryDir dir;
         const QString path = dir.filePath(QStringLiteral("hede.conf"));
-        QVERIFY(PanelLayout::writeEdge(path, QStringLiteral("top")));
-        QCOMPARE(PanelLayout::readEdge(path), QStringLiteral("top"));
-        QVERIFY(PanelLayout::writeEdge(path, QStringLiteral("bottom")));
-        QCOMPARE(PanelLayout::readEdge(path), QStringLiteral("bottom"));
+        for (const QString &edge : PanelLayout::validEdges()) {
+            QVERIFY(PanelLayout::writeEdge(path, edge));
+            QCOMPARE(PanelLayout::readEdge(path), edge);
+        }
     }
     void edgeNormalisesCaseAndRejectsGarbage() {
         QTemporaryDir dir;

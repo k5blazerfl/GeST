@@ -24,9 +24,10 @@ class PanelLayout {
     static QStringList parse(const QString &raw);
 
     // The screen edge the bar anchors to. Valid values are validEdges();
-    // anything else (or unset) reads back as "bottom".
-    static QStringList validEdges();                            // {"bottom", "top"}
-    static QString readEdge(const QString &configPath);        // [panel] edge; default "bottom"
+    // anything else (or unset) reads back as "bottom". bottom/top are
+    // horizontal bars, left/right vertical.
+    static QStringList validEdges();                    // {bottom, top, left, right}
+    static QString readEdge(const QString &configPath); // [panel] edge; default "bottom"
     static bool writeEdge(const QString &configPath, const QString &edge);
 };
 

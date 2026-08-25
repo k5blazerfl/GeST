@@ -150,13 +150,18 @@ are worth doing on their own merit (they make the bar configurable at all).
 6. **Panel edge (top/bottom)** — `[panel] edge` in the engine
    (`PanelLayout::readEdge`/`writeEdge`, `PanelEditorModel::edge`), a Position
    control in the editor, and `helm-panel` anchoring to the configured edge (and
-   re-anchoring live via the generalised `Panel::reloaded` signal). Left/right
-   vertical edges remain a later slice.
+   re-anchoring live via the generalised `Panel::reloaded` signal).
+7. **Vertical edges (left/right)** — `validEdges` grows to all four; the bar's
+   `QBoxLayout` flips direction (`Panel::applyGeometry`) and reserves width
+   instead of height; `main.cpp` anchors the vertical span. The Position control
+   offers all four. Per-applet vertical-rendering polish is a follow-up.
 
 ## Non-goals (v1)
 
 Free-floating/multi-monitor panels, multiple panels, per-applet deep settings
-panes (an applet configures itself; Barnacle arranges *which* and *where*),
-left/right vertical edges (bottom/top first), and third-party/scriptable applets
-(the catalog is HeDE's built-ins plus pinned `.desktop` launchers). Barnacle
-arranges the rail; it does not reinvent what each applet does.
+panes (an applet configures itself; Barnacle arranges *which* and *where*), and
+third-party/scriptable applets (the catalog is HeDE's built-ins plus pinned
+`.desktop` launchers). Barnacle arranges the rail; it does not reinvent what each
+applet does. All four edges anchor (slice 7), but per-applet *vertical rendering*
+polish (e.g. a horizontal window-list stacked on a left bar) is a follow-up — the
+framework orients; individual applets may still want vertical-aware layouts.

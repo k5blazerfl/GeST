@@ -18,10 +18,10 @@
 
 #include "mpris.h"
 
+#include <QBoxLayout>
 #include <QCoreApplication>
 #include <QFileInfo>
 #include <QFileSystemWatcher>
-#include <QHBoxLayout>
 #include <QLayoutItem>
 #include <QTimer>
 
@@ -46,13 +46,34 @@ Panel::Panel(QWidget *parent) : QWidget(parent) {
     setAttribute(Qt::WA_StyledBackground, true);
     setAttribute(Qt::WA_TranslucentBackground, true);
 
-    m_layout = new QHBoxLayout(this);
-    m_layout->setContentsMargins(8, 0, 8, 0); // tokens.spacing[1] sides, flush vertically
+    m_layout = new QBoxLayout(QBoxLayout::LeftToRight, this);
     m_layout->setSpacing(6);
 
-    const Config cfg;
-    setFixedHeight(cfg.panelHeight());
+    applyGeometry(); // orientation + thickness from [panel] edge/height
     buildApplets();
+}
+
+// Orient the bar for its edge and reserve its thickness. bottom/top run
+// horizontal (thickness = height); left/right run vertical (thickness = width).
+// [panel] height is the bar's thickness in either orientation.
+void Panel::applyGeometry() {
+    const Config cfg;
+    const int thickness = cfg.panelHeight();
+    const QString edge = PanelLayout::readEdge(cfg.path());
+    const bool vertical = (edge == QLatin1String("left") || edge == QLatin1String("right"));
+
+    m_layout->setDirection(vertical ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
+    if (vertical) {
+        m_layout->setContentsMargins(0, 8, 0, 8); // pad the ends, flush at the sides
+        setMinimumHeight(0);
+        setMaximumHeight(QWIDGETSIZE_MAX); // the compositor stretches us full-height
+        setFixedWidth(thickness);
+    } else {
+        m_layout->setContentsMargins(8, 0, 8, 0);
+        setMinimumWidth(0);
+        setMaximumWidth(QWIDGETSIZE_MAX); // ...or full-width
+        setFixedHeight(thickness);
+    }
 }
 
 void Panel::buildApplets() {
@@ -122,10 +143,9 @@ void Panel::reload() {
         delete item;          // frees the layout item / spacer wrapper
     }
 
-    const Config cfg;
-    setFixedHeight(cfg.panelHeight());
+    applyGeometry(); // edge may have flipped orientation, or height changed
     buildApplets();
-    Q_EMIT reloaded(); // owner re-anchors the surface (height + edge)
+    Q_EMIT reloaded(); // owner re-anchors the surface (edge + thickness)
 }
 
 void Panel::watchConfig() {

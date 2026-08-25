@@ -24,16 +24,31 @@ int main(int argc, char **argv) {
     helm::Panel panel;
     panel.winId(); // realise the platform window so we can grab its QWindow
 
-    // Promote to a layer-shell surface: anchor to the configured [panel] edge
-    // (bottom by default, or top) and reserve an exclusive zone the height of the
-    // bar so maximized windows don't cover it. Re-derived from config each call
-    // so a live edge/height change re-anchors correctly.
+    // Promote to a layer-shell surface: anchor to the configured [panel] edge and
+    // reserve an exclusive zone the thickness of the bar so maximized windows
+    // don't cover it. Horizontal edges (bottom/top) span left↔right and reserve
+    // the bar's height; vertical edges (left/right) span top↔bottom and reserve
+    // its width. Re-derived from config each call so a live edge/thickness change
+    // re-anchors correctly (applyLayerShell is idempotent on the live surface).
     auto anchor = [&panel]() {
-        const bool top = helm::PanelLayout::readEdge(helm::Config().path()) == QLatin1String("top");
-        helm::applyLayerShell(
-            panel.windowHandle(), LayerShellQt::Window::LayerTop,
-            helm::edges(/*top*/ top, /*bottom*/ !top, /*left*/ true, /*right*/ true),
-            panel.height(), LayerShellQt::Window::KeyboardInteractivityNone);
+        const QString edge = helm::PanelLayout::readEdge(helm::Config().path());
+        LayerShellQt::Window::Anchors anchors;
+        int zone;
+        if (edge == QLatin1String("top")) {
+            anchors = helm::edges(true, false, true, true);
+            zone = panel.height();
+        } else if (edge == QLatin1String("left")) {
+            anchors = helm::edges(true, true, true, false);
+            zone = panel.width();
+        } else if (edge == QLatin1String("right")) {
+            anchors = helm::edges(true, true, false, true);
+            zone = panel.width();
+        } else { // bottom (default)
+            anchors = helm::edges(false, true, true, true);
+            zone = panel.height();
+        }
+        helm::applyLayerShell(panel.windowHandle(), LayerShellQt::Window::LayerTop, anchors, zone,
+                              LayerShellQt::Window::KeyboardInteractivityNone);
     };
     anchor();
 

@@ -38,7 +38,8 @@ bool PanelLayout::write(const QString &configPath, const QStringList &applets) {
 static QString edgeKey() { return QStringLiteral("panel/edge"); }
 
 QStringList PanelLayout::validEdges() {
-    return {QStringLiteral("bottom"), QStringLiteral("top")};
+    return {QStringLiteral("bottom"), QStringLiteral("top"), QStringLiteral("left"),
+            QStringLiteral("right")};
 }
 
 QString PanelLayout::readEdge(const QString &configPath) {

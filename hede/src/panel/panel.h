@@ -2,13 +2,15 @@
 
 #include <QWidget>
 
-class QHBoxLayout;
+class QBoxLayout;
 
 namespace helm {
 
-// The bottom bar. Its applet lineup is built from hede.conf [panel] applets
-// (via helm::PanelLayout), and it rebuilds itself in place when that file
-// changes — the seam Barnacle (the panel editor) writes to.
+// The panel bar. Its applet lineup is built from hede.conf [panel] applets and
+// its edge from [panel] edge (via helm::PanelLayout); it rebuilds itself in
+// place when that file changes — the seam Barnacle (the panel editor) writes to.
+// The bar anchors to any screen edge: bottom/top run horizontal, left/right run
+// vertical (the layout flips direction to match).
 class Panel : public QWidget {
     Q_OBJECT
   public:
@@ -29,9 +31,10 @@ class Panel : public QWidget {
     void reload();
 
   private:
-    void buildApplets(); // (re)populate m_layout from [panel] applets
+    void buildApplets();   // (re)populate m_layout from [panel] applets
+    void applyGeometry();   // orient + size the bar for the current [panel] edge
 
-    QHBoxLayout *m_layout = nullptr;
+    QBoxLayout *m_layout = nullptr;
 };
 
 } // namespace helm

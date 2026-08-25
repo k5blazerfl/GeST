@@ -70,7 +70,8 @@ BarnacleWindow::BarnacleWindow(QWidget *parent) : QWidget(parent) {
     // before wiring the signal so building the row doesn't spuriously re-apply.
     m_edgeCombo = new QComboBox(this);
     for (const QString &e : PanelLayout::validEdges())
-        m_edgeCombo->addItem(e == QLatin1String("top") ? tr("Top") : tr("Bottom"), e);
+        // Title-case the id for the label ("bottom" → "Bottom"); the id is the data.
+        m_edgeCombo->addItem(e.left(1).toUpper() + e.mid(1), e);
     const int edgeIdx = m_edgeCombo->findData(m_model.edge());
     if (edgeIdx >= 0)
         m_edgeCombo->setCurrentIndex(edgeIdx);
