@@ -58,7 +58,7 @@ from gest.core.kernel import config as kconfig
 from gest.core.kernel.build import build_steps
 from gest.core.network import hosts as net_hosts
 from gest.core.network import netifrc
-from gest.core.portage import paths
+from gest.core.portage import mirrors, paths
 from gest.core.portage.codec import shell
 from gest.core.privilege import render as priv_render
 from gest.core.privilege.model import DOAS_CONF, SUDOERS_DROPIN, EscalationPolicy
@@ -270,6 +270,11 @@ class WriteMakeConf(FuncStep):
         # System-wide USE from the wizard's Features checklist (explicit +/- both ways).
         if ctx.plan.global_use:
             rendered = shell.render(rendered, "USE", " ".join(ctx.plan.global_use))
+        # GENTOO_MIRRORS — the fastest distfile mirrors the Get Online gate picked
+        # (Handbook "Repo Mirror Selection"); empty leaves Gentoo's default rotation.
+        if ctx.plan.gentoo_mirrors:
+            rendered = shell.render(rendered, "GENTOO_MIRRORS",
+                                    mirrors.render_gentoo_mirrors(ctx.plan.gentoo_mirrors))
         # Source builds only: tune for this CPU. Binpkgs use the binhost's flags, so
         # COMMON_FLAGS/RUSTFLAGS only bite when compiling — it's a consequence of the
         # build-strategy fork, not a separate decision.
@@ -289,6 +294,35 @@ class WriteMakeConf(FuncStep):
         # no-op — ACCEPT_LICENSE (and MAKEOPTS/VIDEO_CARDS/USE) were never written and
         # the target kept the profile-default @FREE, license-masking firmware/NVIDIA at
         # the kernel step regardless of the chosen rung. Only skip once we've written.
+        return ctx.state.done(self.key)
+
+
+class WriteReposConf(FuncStep):
+    """Write an explicit main-repo config into the target: ``repos.conf/gentoo.conf``
+    with the Get Online gate's chosen sync mirror + ``auto-sync = yes``.
+
+    A fresh install leaned on the stage3's *built-in* default gentoo repo config, so
+    the installed system had no visible, mirror-selectable main-repo entry — the
+    Handbook's "Repo Mirror Selection" gap. This makes the gentoo repo first-class
+    (and points this install's own ``emerge --sync`` at the fast mirror too). Runs
+    before ``SyncTree``. The Amphitheater overlay's ``repos.conf`` is written by
+    ``ProvisionDesktop`` (desktop-only, now ``auto-sync = yes``); this is the
+    always-present main repo.
+    """
+
+    label = "Write repos.conf"
+    phase = Phase.BASE_SYSTEM
+    target_aware = True
+    key = "write_repos_conf"
+
+    async def run(self, ctx: InstallContext, on_progress: OnProgress | None = None) -> None:
+        sync_uri = ctx.plan.sync_uri or mirrors.DEFAULT_SYNC_URI
+        body = mirrors.gentoo_repos_conf(sync_uri, sync_type=ctx.plan.sync_type or "rsync")
+        path = write_under_root(ctx.root, "/etc/portage/repos.conf/gentoo.conf", body)
+        _emit(on_progress, f"wrote {path} (sync-uri {sync_uri})")
+        ctx.state.mark(self)
+
+    async def is_satisfied(self, ctx: InstallContext) -> bool:
         return ctx.state.done(self.key)
 
 
@@ -1307,6 +1341,7 @@ def build_registry(plan: InstallPlan, *, root_secret: Secret | None = None,
         UnpackStage3(),
         WriteFstab(),
         WriteMakeConf(),
+        WriteReposConf(),
         PrepareChroot(),
         SyncTree(),
         SetProfile(),
@@ -1366,6 +1401,7 @@ def build_minimal_registry(
         UnpackStage3(),
         WriteFstab(),
         WriteMakeConf(),
+        WriteReposConf(),
         PrepareChroot(),
         SyncTree(),
         SetProfile(),

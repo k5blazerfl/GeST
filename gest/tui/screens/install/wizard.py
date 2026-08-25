@@ -15,6 +15,7 @@ which stays the review + install surface. The engine/plan/run path is unchanged.
 from __future__ import annotations
 
 import os
+from urllib.parse import urlsplit
 
 import urwid
 
@@ -26,6 +27,7 @@ from gest.core.install.assemble import InstallSelections, UserDraft
 from gest.core.install.netcheck import check_connectivity
 from gest.core.install.plan import ADMIN_MODELS, LICENSE_POLICIES, sets_root_password
 from gest.core.network import reader as net_reader
+from gest.core.portage import mirrors
 from gest.core.system import console as console_core
 from gest.core.system import hostname as hostname_core
 from gest.core.system import locale as locale_core
@@ -120,6 +122,20 @@ def _detect_firmware() -> str:
     "bios". A legacy-BIOS machine must get a BIOS-boot layout, not an ESP/UEFI one
     that grub-install refuses and that won't boot."""
     return "uefi" if os.path.isdir("/sys/firmware/efi") else "bios"
+
+
+async def pick_mirrors_if_online(app: App, sel) -> None:
+    """Auto-pick the fastest distfile/sync mirrors into ``sel`` — the Handbook's Repo
+    Mirror Selection, done in the background. No-op if mirrors are already chosen or
+    we're offline; only commits a real *probed* result (an offline fallback would
+    otherwise pin a stale default). Runs the latency probe off the UI thread."""
+    if sel.gentoo_mirrors or not check_connectivity()[0]:
+        return
+    result = await app.run_blocking(mirrors.select_mirrors)
+    if result.probed:
+        sel.gentoo_mirrors = result.distfiles
+        sel.sync_uri = result.sync_uri
+        sel.sync_type = result.sync_type
 
 
 _SIZE_UNITS = {"K": 1024, "M": 1024 ** 2, "G": 1024 ** 3, "T": 1024 ** 4, "P": 1024 ** 5}
@@ -511,6 +527,10 @@ class LocalizationStep(WizardStep):
             with contextlib.suppress(Exception):
                 await ex.run(net_commands.iplink_argv(iface.name, True))
                 await ex.run(["dhcpcd", iface.name])
+        # Links are up — auto-pick the fastest distfile/sync mirrors in the background
+        # so they're ready whether or not the Get Online gate is shown (it's skipped
+        # when we're already online). The Get Online gate displays + lets you re-pick.
+        await pick_mirrors_if_online(self.app, self.sel)
 
     def _next_screen(self) -> Screen:
         # Skip the Get Online gate when the background warm-up already got us online.
@@ -586,9 +606,10 @@ class OnlineStep(WizardStep):
 
     def help(self) -> str:
         return ("The installer downloads a stage3 and syncs Portage, so it needs a\n"
-                "network connection. You only see this step because the background\n"
-                "bring-up didn't get you online. Bring up a wired link, set up Wi-Fi\n"
-                "(the GeST Wi-Fi module), then re-check.")
+                "network connection. Bring up a wired link or set up Wi-Fi (the GeST\n"
+                "Wi-Fi module), then re-check. Once you're online the installer also\n"
+                "auto-picks the fastest package mirrors — review or override them in\n"
+                "the Mirrors row.")
 
     def _online(self) -> bool:
         ok, _detail = check_connectivity()      # (bool, detail) — network probe
@@ -618,12 +639,76 @@ class OnlineStep(WizardStep):
             kind = "Wi-Fi" if self._is_wifi(i) else "wired"
             addr = i.addresses[0] if i.addresses else "no address"
             rows.append((f"{i.name} ({kind})", f"{i.state.lower()}, {addr}", None))
+        # Repo mirrors (Handbook "Repo Mirror Selection"): auto-pick the fastest once
+        # we're online, shown here with a re-pick + manual choose.
+        self._ensure_mirrors(online)
+        rows.append(None)
+        rows.append(("Mirrors", self._mirror_value(), self._choose_mirrors))
+        rows.append(("Re-pick fastest mirrors", None, self._repick_mirrors))
         rows.append(None)
         rows.append(("Bring up wired network (DHCP)", None, self._dhcp))
         if any(self._is_wifi(i) for i in ifaces):
             rows.append(("Set up Wi-Fi…", None, self._wifi))
         rows.append(("Re-check connectivity", None, self._render))
         return rows
+
+    # -- repo mirrors ----------------------------------------------------------
+    def _ensure_mirrors(self, online: bool) -> None:
+        """Kick the fastest-mirror probe once, in the background, when online and not
+        yet chosen. Re-render when it lands so the picked mirrors show."""
+        if getattr(self, "_mirror_probe_started", False) or self.sel.gentoo_mirrors:
+            return
+        if not online:
+            return
+        self._mirror_probe_started = True
+        self.app.run_async(self._probe_mirrors())
+
+    async def _probe_mirrors(self) -> None:
+        result = await self.app.run_blocking(mirrors.select_mirrors)
+        # Commit whatever we got (probed or the offline default) — the user is on this
+        # gate, so a concrete choice beats leaving it blank.
+        self.sel.gentoo_mirrors = result.distfiles
+        self.sel.sync_uri = result.sync_uri
+        self.sel.sync_type = result.sync_type
+        self._mirror_probed = result.probed
+        self._render()
+
+    def _mirror_value(self) -> str:
+        if not self.sel.gentoo_mirrors:
+            if getattr(self, "_mirror_probe_started", False):
+                return "picking the fastest…"
+            return "Gentoo default rotation (connect to auto-pick)"
+        host = urlsplit(self.sel.gentoo_mirrors[0]).hostname or self.sel.gentoo_mirrors[0]
+        extra = f" +{len(self.sel.gentoo_mirrors) - 1}" if len(self.sel.gentoo_mirrors) > 1 else ""
+        tag = "auto-picked" if getattr(self, "_mirror_probed", False) else "selected"
+        return f"{host}{extra}  ({tag})"
+
+    def _repick_mirrors(self) -> None:
+        self._mirror_probe_started = False
+        self.sel.gentoo_mirrors = ()
+        self._render()                              # re-render kicks _ensure_mirrors again
+
+    def _choose_mirrors(self) -> None:
+        boxes = [urwid.CheckBox(f"{m.name} — {m.region}",
+                                state=m.distfiles in self.sel.gentoo_mirrors)
+                 for m in mirrors.CATALOG]
+
+        def save():
+            chosen = [m for m, b in zip(mirrors.CATALOG, boxes, strict=True) if b.state]
+            if chosen:
+                self.sel.gentoo_mirrors = tuple(m.distfiles for m in chosen)
+                self.sel.sync_uri = chosen[0].rsync
+                self.sel.sync_type = "rsync"
+                self._mirror_probed = False
+            self.app.pop()
+            self._render()
+
+        modal = Modal(self.app, "Choose distfile mirrors",
+                      [urwid.Text(("hint", "Checked mirrors become GENTOO_MIRRORS; the "
+                                   "first is also the sync mirror.")),
+                       urwid.Divider(), *boxes],
+                      [("Save", save), ("Cancel", self.app.pop)])
+        self.app.push_modal(modal, width=("relative", 66), height=("relative", 80))
 
     def _dhcp(self):
         self.app.notify("Bringing up wired network (dhcpcd) …")
@@ -666,6 +751,15 @@ class OnlineStep(WizardStep):
             return ("Probe the network again after bringing a link up. Once this "
                     "reads 'connected', the install has everything it needs and you "
                     "can Continue.")
+        if label == "Mirrors":
+            return ("Where packages download from (GENTOO_MIRRORS) and where the "
+                    "Portage tree syncs from. Once you're online the installer times "
+                    "the official mirrors and picks the fastest few for you — no need "
+                    "to choose. 'Choose mirrors…' overrides it by hand; offline, the "
+                    "install falls back to Gentoo's default mirror rotation.")
+        if label.startswith("Re-pick"):
+            return ("Time the mirrors again and re-pick the fastest — handy if the "
+                    "network changed since the first probe.")
         return super().row_detail(label, value)
 
 

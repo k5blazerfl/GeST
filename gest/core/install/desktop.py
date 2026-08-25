@@ -97,15 +97,17 @@ def accept_keywords(arch: str) -> str:
 def repos_conf() -> str:
     """The target's ``repos.conf/amphitheater.conf`` — a git-backed overlay entry.
 
-    ``auto-sync = no``: the install seeds the overlay from the live image, and the
-    installed system re-syncs from GitHub only when the user runs ``emerge --sync``.
+    ``auto-sync = yes``: the install seeds the overlay from the live image so it's
+    usable offline, but the installed system must **refresh HeDE/GeST by default** on
+    ``emerge --sync`` — otherwise day-2 updates to the desktop are stranded at the
+    ISO's snapshot. git auto-sync is a fast fast-forward when there's nothing new.
     """
     return (
         f"[{OVERLAY_NAME}]\n"
         f"location = {OVERLAY_LOCATION}\n"
         "sync-type = git\n"
         f"sync-uri = {OVERLAY_SYNC_URI}\n"
-        "auto-sync = no\n"
+        "auto-sync = yes\n"
     )
 
 

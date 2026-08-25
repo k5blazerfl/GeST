@@ -109,7 +109,7 @@ def test_repos_conf_is_a_git_backed_amphitheater_entry():
     assert "location = /var/db/repos/amphitheater" in conf
     assert "sync-type = git" in conf
     assert "sync-uri = https://github.com/k5blazerfl/Amphitheater" in conf
-    assert "auto-sync = no" in conf          # installed system syncs on the user's terms
+    assert "auto-sync = yes" in conf         # refresh HeDE/GeST by default on emerge --sync
 
 
 def test_installer_keyword_list_matches_the_build_keyword_list():

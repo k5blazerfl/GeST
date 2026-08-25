@@ -98,6 +98,7 @@ def test_set_root_password_without_secret_raises():
 _MINIMAL_LABELS = [
     "Partition the disk", "Make filesystems", "Mount the target",
     "Unpack the stage3 tarball", "Generate /etc/fstab", "Write make.conf",
+    "Write repos.conf",
     "Prepare the chroot", "Sync the Portage tree", "Select the profile",
     "Emerge @world", "Install kernel sources", "Stage the kernel config",
     "Build the kernel", "Install the bootloader",
@@ -147,7 +148,8 @@ def test_minimal_end_to_end_chroot_boundary_and_teardown():
     fx = FakeExecutor()
     reg = build_minimal_registry(_plan(), root_secret=lambda: "s3cret")
     drop = {"Partition the disk", "Make filesystems", "Mount the target",
-            "Unpack the stage3 tarball", "Generate /etc/fstab", "Write make.conf"}
+            "Unpack the stage3 tarball", "Generate /etc/fstab", "Write make.conf",
+            "Write repos.conf"}
     steps = [s for s in reg if s.label not in drop]
     asyncio.run(run_install(_ctx(fx), steps))
 

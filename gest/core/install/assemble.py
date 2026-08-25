@@ -162,6 +162,12 @@ class InstallSelections:
                                  "wayland", "vaapi", "codecs"})
     admin_model: str = "traditional"  # plan.ADMIN_MODELS: who can become root
     escalator: str = "sudo"           # sudo | doas (sudo-augmented / rootless)
+    # Repo mirrors (Handbook "Repo Mirror Selection"): the Get Online gate auto-picks
+    # the fastest distfile mirrors (GENTOO_MIRRORS) + a sync mirror (repos.conf gentoo
+    # sync-uri). Empty = Gentoo's default rotation. Populated by portage.mirrors.
+    gentoo_mirrors: tuple[str, ...] = ()
+    sync_uri: str = ""
+    sync_type: str = "rsync"
     # Custom-role raw make.conf overrides (var -> value), overlaid last. Empty otherwise.
     make_conf_overrides: dict[str, str] = field(default_factory=dict)
 
@@ -511,4 +517,7 @@ def assemble_plan(sel: InstallSelections, stage3: Stage3Selection) -> InstallPla
         escalator=sel.escalator,
         global_use=global_use,
         make_conf_overrides=overrides,
+        gentoo_mirrors=tuple(sel.gentoo_mirrors),
+        sync_uri=sel.sync_uri,
+        sync_type=sel.sync_type,
     )

@@ -41,6 +41,7 @@ _EXPECTED_LABELS = [
     "Unpack the stage3 tarball",
     "Generate /etc/fstab",
     "Write make.conf",
+    "Write repos.conf",
     "Prepare the chroot",
     "Sync the Portage tree",
     "Select the profile",
@@ -71,6 +72,7 @@ _MARKER_KEYS = {
     "Partition the disk": "partition",
     "Unpack the stage3 tarball": "unpack_stage3",
     "Write make.conf": "write_make_conf",
+    "Write repos.conf": "write_repos_conf",
     "Sync the Portage tree": "sync_tree",
     "Emerge @world": "emerge_world",
     "Provision the Helm Desktop Environment": "provision_desktop",
@@ -189,12 +191,12 @@ def test_registry_phases_are_non_decreasing():
     assert indices == sorted(indices)
     # the exact phase grouping
     assert [s.phase for s in reg[:3]] == [Phase.PREPARE_DISK] * 3
-    assert [s.phase for s in reg[3:13]] == [Phase.BASE_SYSTEM] * 10  # +HeDE desktop (x3)
-    assert [s.phase for s in reg[13:17]] == [Phase.CONFIGURE] * 4    # +Generate the locale
+    assert [s.phase for s in reg[3:14]] == [Phase.BASE_SYSTEM] * 11  # +HeDE (x3) +repos.conf
+    assert [s.phase for s in reg[14:18]] == [Phase.CONFIGURE] * 4    # +Generate the locale
     # KERNEL_BOOT: sources, stage-config, build, gpu-drivers, bootloader, m1n1
-    assert [s.phase for s in reg[17:23]] == [Phase.KERNEL_BOOT] * 6
-    assert [s.phase for s in reg[23:27]] == [Phase.USERS_NETWORK] * 4  # +user password
-    assert [s.phase for s in reg[27:29]] == [Phase.FINISH] * 2       # HeDE session + clock
+    assert [s.phase for s in reg[18:24]] == [Phase.KERNEL_BOOT] * 6
+    assert [s.phase for s in reg[24:28]] == [Phase.USERS_NETWORK] * 4  # +user password
+    assert [s.phase for s in reg[28:30]] == [Phase.FINISH] * 2       # HeDE session + clock
 
 
 def test_registry_chroot_and_opens_chroot_flags():
@@ -213,7 +215,7 @@ def test_registry_marker_keys():
 def test_tier2_default_empty():
     # base rows + 3 HeDE desktop steps + kernel-sources + stage-kernel-config +
     # gpu-drivers + enable-session + configure-clock + the arm64-gated m1n1 boot stub
-    assert len(build_registry(_plan())) == 29
+    assert len(build_registry(_plan())) == 30
 
 
 def test_boot_stub_step_is_arm64_gated():
@@ -766,6 +768,46 @@ async def test_write_makeconf_runs_even_when_stage3_shipped_a_make_conf(tmp_path
     await step.run(ctx)
     assert "ACCEPT_LICENSE" in conf.read_text(encoding="utf-8")  # it actually wrote it
     assert await step.is_satisfied(ctx) is True                 # marker set → now skips
+
+
+async def test_write_makeconf_renders_gentoo_mirrors(tmp_path, monkeypatch):
+    import dataclasses
+
+    from gest.core.hwflags import detect as hwdetect
+    from gest.core.install.registry import WriteMakeConf
+    monkeypatch.setattr(hwdetect, "detect_cpu_flags", lambda *a, **k: [])
+    plan = dataclasses.replace(
+        _plan(), gentoo_mirrors=("https://mirrors.mit.edu/gentoo-distfiles/",
+                                 "https://mirror.rackspace.com/gentoo/"))
+    ctx = _ctx(FakeExecutor(), root=str(tmp_path), plan=plan)
+    await WriteMakeConf().run(ctx)
+    text = (tmp_path / "etc/portage/make.conf").read_text()
+    assert 'GENTOO_MIRRORS=' in text
+    assert "mirrors.mit.edu" in text and "mirror.rackspace.com" in text
+
+
+async def test_write_repos_conf_writes_gentoo_conf_with_chosen_mirror(tmp_path):
+    import dataclasses
+
+    from gest.core.install.registry import WriteReposConf
+    plan = dataclasses.replace(_plan(), sync_uri="rsync://rsync.us.gentoo.org/gentoo-portage")
+    step = WriteReposConf()
+    ctx = _ctx(FakeExecutor(), root=str(tmp_path), plan=plan)
+    assert await step.is_satisfied(ctx) is False
+    await step.run(ctx)
+    conf = (tmp_path / "etc/portage/repos.conf/gentoo.conf").read_text()
+    assert "[gentoo]" in conf and "location = /var/db/repos/gentoo" in conf
+    assert "sync-uri = rsync://rsync.us.gentoo.org/gentoo-portage" in conf
+    assert "auto-sync = yes" in conf
+    assert await step.is_satisfied(ctx) is True
+
+
+async def test_write_repos_conf_defaults_to_the_rsync_rotation(tmp_path):
+    from gest.core.install.registry import WriteReposConf
+    ctx = _ctx(FakeExecutor(), root=str(tmp_path), plan=_plan())   # no sync_uri chosen
+    await WriteReposConf().run(ctx)
+    conf = (tmp_path / "etc/portage/repos.conf/gentoo.conf").read_text()
+    assert "sync-uri = rsync://rsync.gentoo.org/gentoo-portage" in conf
 
 
 async def test_write_makeconf_tunes_cpu_on_source_builds(tmp_path, monkeypatch):
