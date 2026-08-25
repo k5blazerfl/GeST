@@ -1,5 +1,6 @@
 qt_add_library(helm-notify-lib STATIC
     notification.cpp
+    history.cpp
     toast.cpp
     notifyservice.cpp
     notifyadaptor.cpp
