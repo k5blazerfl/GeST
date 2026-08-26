@@ -116,6 +116,7 @@ def build_registry() -> Registry:
         cleanup,
         clock,
         consolefont,
+        defaultbrowser,
         disk,
         dns,
         envd,
@@ -148,7 +149,7 @@ def build_registry() -> Registry:
     )
 
     registry = Registry()
-    for mod in (hardware, hwflags, disk, software, world, repos, update, cleanup,
+    for mod in (hardware, hwflags, disk, software, defaultbrowser, world, repos, update, cleanup,
                 sync, news, makeconf, binhost, licenses, preferences, services,
                 clock, hostname, locale, keymap, consolefont, bootloader, users,
                 sysctl, eselect, envd, privilege, logs, firewall, network, wifi,
