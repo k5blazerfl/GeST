@@ -68,8 +68,13 @@ path ignores them:
    `DoNotDisturbChanged`. A one-shot surface like `helm-menu`: dismiss on Esc /
    click-away. Pure `format` + `parseHistory` are unit-tested; the client+window
    were smoked end-to-end against the daemon on a private bus (needs a compositor
-   to *see*). **Follow-up:** the tray/applet trigger that launches it (today it's
-   the `helm-lantern` binary), and glanceable widgets (the v2 non-goal below).
+   to *see*).
+4. **The trigger** *(shipped)* — `LanternButton`, a panel applet (a notification
+   bell in `src/quicksettings/`, beside the DnD toggle): opens `helm-lantern` on
+   click, carries an accent dot while the history is non-empty (counts
+   `GetHistory`, refreshes on `NotificationAdded`/`HistoryCleared`), and hides when
+   the daemon is absent — the same D-Bus-client shape as `DndToggle`. **Follow-up:**
+   glanceable widgets (the v2 non-goal below).
 
 ## Non-goals (v1)
 

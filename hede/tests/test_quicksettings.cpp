@@ -2,6 +2,7 @@
 
 #include "brightness.h"
 #include "dndtoggle.h"
+#include "lanternbutton.h"
 #include "volume.h"
 
 class TestQuickSettings : public QObject {
@@ -28,6 +29,13 @@ private slots:
     void dndIcons() {
         QCOMPARE(helm::dndIconName(true), QStringLiteral("notifications-disabled"));
         QCOMPARE(helm::dndIconName(false), QStringLiteral("notifications"));
+    }
+
+    void lanternTooltipPluralises() {
+        QCOMPARE(helm::lanternTooltip(0), QStringLiteral("Notifications"));
+        QCOMPARE(helm::lanternTooltip(-1), QStringLiteral("Notifications")); // guard
+        QCOMPARE(helm::lanternTooltip(1), QStringLiteral("1 notification"));
+        QCOMPARE(helm::lanternTooltip(5), QStringLiteral("5 notifications"));
     }
 
     void brightnessParse() {

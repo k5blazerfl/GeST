@@ -13,6 +13,7 @@
 
 #include "brightness.h"
 #include "dndtoggle.h"
+#include "lanternbutton.h"
 #include "volume.h"
 
 #include "mpris.h"
@@ -68,6 +69,7 @@ Panel::Panel(QWidget *parent) : QWidget(parent) {
     layout->addWidget(new BrightnessApplet(this)); // brightnessctl
     layout->addWidget(new VolumeApplet(this));     // wpctl (PipeWire)
     layout->addWidget(new DndToggle(this));        // do-not-disturb (helm-notifyd)
+    layout->addWidget(new LanternButton(this));    // notification center (helm-lantern)
 
     layout->addWidget(new TrayWidget(this)); // system tray
     layout->addWidget(new Clock(this));
