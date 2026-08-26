@@ -28,19 +28,13 @@
   <g filter="url(#i_shadow)">
     <rect x="34" y="50" width="188" height="158" rx="22" fill="url(#i_screen)"/>
     <g clip-path="url(#i_winclip)">
-      <!-- titlebar -->
+      <!-- plain titlebar (no buttons) -->
       <rect x="34" y="50" width="188" height="34" fill="url(#i_bar)"/>
-      <circle cx="55" cy="67" r="4.6" fill="#e0743f"/>
-      <circle cx="72" cy="67" r="4.6" fill="#d9a641"/>
-      <circle cx="89" cy="67" r="4.6" fill="#57b98a"/>
-      <!-- screen content -->
-      <rect x="56" y="108" width="58" height="8" rx="4" fill="#33465f"/>
-      <rect x="120" y="108" width="30" height="8" rx="4" fill="#2a3a52"/>
-      <!-- prompt >_ -->
+      <!-- prompt >_ on the first line -->
       <g filter="url(#i_glow)">
-        <path d="M60 132 L78 148 L60 164" fill="none" stroke="#ffc247" stroke-width="9"
+        <path d="M58 100 L80 116 L58 132" fill="none" stroke="#ffc247" stroke-width="10"
               stroke-linecap="round" stroke-linejoin="round"/>
-        <rect x="90" y="139" width="24" height="18" rx="4.5" fill="#ffce62"/>
+        <rect x="93" y="106" width="26" height="20" rx="5" fill="#ffce62"/>
       </g>
     </g>
     <rect x="34" y="84" width="188" height="1.5" fill="#000" opacity=".35"/>
