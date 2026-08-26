@@ -27,16 +27,19 @@
     <rect x="34" y="50" width="188" height="158" rx="22" fill="url(#ib_screen)"/>
     <g clip-path="url(#ib_winclip)">
       <rect x="34" y="50" width="188" height="34" fill="url(#ib_bar)"/>
-      <!-- sextant app-emblem, left of the titlebar -->
-      <g transform="translate(58 67) scale(0.175) translate(-132 -132)" fill="none"
-         stroke-linecap="round" stroke-linejoin="round">
-        <path d="M48.1 182.4A150 150 0 0 0 215.9 182.4" stroke="#e2b455" stroke-width="14"/>
-        <path d="M132 58L48.1 182.4" stroke="#e2b455" stroke-width="11"/>
-        <path d="M132 58L215.9 182.4" stroke="#e2b455" stroke-width="11"/>
-        <path d="M97.5 143.3A92 92 0 0 0 166.5 143.3" stroke="#b5843a" stroke-width="8"/>
-        <path d="M132 58L168.3 203.5" stroke="#b5843a" stroke-width="9"/>
-        <path d="M128 74L92 62" stroke="#e2b455" stroke-width="13"/>
-        <circle cx="132" cy="58" r="12" fill="#e2b455"/>
+      <!-- trident app-emblem, left of the titlebar -->
+      <g transform="translate(56 67) scale(0.165) translate(-128 -140)" stroke="#e2b455"
+         fill="#e2b455" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M128 132 L128 214" stroke-width="11" fill="none"/>
+        <circle cx="128" cy="218" r="7" stroke="none"/>
+        <path d="M115 176 L141 176" stroke-width="9" fill="none"/>
+        <path d="M96 132 L160 132" stroke-width="11" fill="none"/>
+        <path d="M128 132 L128 60" stroke-width="11" fill="none"/>
+        <path d="M96 132 C 90 108 86 92 88 66" stroke-width="11" fill="none"/>
+        <path d="M160 132 C 166 108 170 92 168 66" stroke-width="11" fill="none"/>
+        <path d="M128 60 l 8 13 l -8 11 l -8 -11 z" stroke="none"/>
+        <path d="M88 66 l 8 12 l -9 10 l -7 -12 z" stroke="none"/>
+        <path d="M168 66 l 7 12 l -7 12 l -8 -10 z" stroke="none"/>
       </g>
       <!-- prompt >_ on the first line -->
       <g filter="url(#ib_glow)">

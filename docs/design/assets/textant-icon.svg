@@ -30,6 +30,20 @@
     <g clip-path="url(#i_winclip)">
       <!-- plain titlebar (no buttons) -->
       <rect x="34" y="50" width="188" height="34" fill="url(#i_bar)"/>
+      <!-- trident watermark (Poseidon; nautical brand cue) -->
+      <g transform="translate(128 148) scale(0.70) translate(-128 -142)"
+         stroke="#d9a641" fill="#d9a641" opacity="0.30" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M128 132 L128 214" stroke-width="9" fill="none"/>
+        <circle cx="128" cy="218" r="6" stroke="none"/>
+        <path d="M116 176 L140 176" stroke-width="7" fill="none"/>
+        <path d="M96 132 L160 132" stroke-width="9" fill="none"/>
+        <path d="M128 132 L128 60" stroke-width="9" fill="none"/>
+        <path d="M96 132 C 90 108 86 92 88 66" stroke-width="9" fill="none"/>
+        <path d="M160 132 C 166 108 170 92 168 66" stroke-width="9" fill="none"/>
+        <path d="M128 60 l 7 12 l -7 10 l -7 -10 z" stroke="none"/>
+        <path d="M88 66 l 7 11 l -8 9 l -6 -11 z" stroke="none"/>
+        <path d="M168 66 l 6 11 l -6 11 l -7 -9 z" stroke="none"/>
+      </g>
       <!-- prompt >_ on the first line -->
       <g filter="url(#i_glow)">
         <path d="M58 100 L80 116 L58 132" fill="none" stroke="#ffc247" stroke-width="10"

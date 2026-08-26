@@ -168,9 +168,14 @@ Why it's more than a gag:
 
 Fits the nautical fleet (Helm, Seahorse, Hold, Gangway, Drydock, Flotilla,
 Lantern, Barnacle). The one honest risk is the `-ant` ending nudging a reader
-toward "text-*ant*" (the insect); the sextant logo is what defuses that. Final
-call is the captain's — this is the chosen name, superseding the earlier
-**Telegraph** working title.
+toward "text-*ant*" (the insect). Final call is the captain's — this is the
+chosen name, superseding the earlier **Telegraph** working title.
+
+> **Name vs. art.** The *word* was coined from *sextant + text*, but the visual
+> identity is deliberately **not** a sextant — it's a **trident** (see Logo). Name
+> and mark are decoupled on purpose: "Textant" stands on its own as a text/terminal
+> word, while Poseidon's trident carries the nautical-fleet identity where a sextant
+> read as "compass/instrument" and didn't hold its shape at small sizes.
 
 ### Logo
 
@@ -180,27 +185,31 @@ things.
 **App icon — a terminal window.** `assets/textant-icon.svg`. An icon's first job
 is recognition: in a dock or launcher a user must read "terminal" in a
 half-second. So the icon is exactly that — a HeDE-glass window (harbor-navy tile,
-titlebar with controls, a `helm-theme` brass window edge) with a phosphor-amber
-`>_` prompt glowing on the dark screen. No cleverness to decode; it reads as a
-terminal at 32px. This is the launcher/dock/`.desktop` icon.
+a plain empty titlebar — no macOS traffic-light dots — and a `helm-theme` brass
+window edge) with a phosphor-amber `>_` prompt glowing on the first line of the
+dark screen. Behind the prompt sits a **trident** watermark in brass at ~30%
+(Poseidon's trident — a quiet nautical brand cue that never competes with the
+prompt). No cleverness to decode; it reads as a terminal at 32px. This is the
+launcher/dock/`.desktop` icon.
 
-- `assets/textant-icon-brand.svg` — the same window with a tiny brass sextant
+- `assets/textant-icon-brand.svg` — the same window with a tiny brass **trident**
   tucked into the titlebar as the app-emblem. Use it only at large format (store
-  listing, splash, hero) where the emblem is legible; below ~48px it collapses to
-  an ambiguous corner speck, so the plain icon is the default everywhere small.
+  listing, splash, hero); below ~48px the emblem collapses to a speck, so the plain
+  icon is the default everywhere small.
 
-**Brand emblem — the sextant.** `assets/textant-logo.svg` (glass tile) and
-`assets/textant-mark.svg` (bare brass mark). A brass sextant sighting a glowing
-`>_` prompt where the star should be — you measure the angle to the prompt, so
-the name's *sextant + text* pun becomes the pun in the mark. This is the identity
-we show where it has room to be read: docs, the About box, the wordmark lockup,
-watermarks. It is **not** the launcher icon — a lone sextant reads as "compass
-app," not "terminal," which is the whole reason the app icon is a window instead.
+**Brand emblem — the trident.** `assets/textant-logo.svg` (glass tile) and
+`assets/textant-mark.svg` (bare brass mark). Poseidon's **trident** in brass
+standing over a glowing `>_` prompt — command of the sea, on the command line.
+This is the identity we show where it has room: docs, the About box, the wordmark
+lockup, watermarks. It is **not** the launcher icon — a bare trident reads as a
+"Poseidon app," not a terminal, which is the whole reason the app icon is a window
+instead.
 
-Emblem anatomy: a true ~60° sextant wedge with a concentric inner frame arc
-(keeps it from reading as a drafting compass), a graduated tick scale that doubles
-as a nod to columns of monospace text, a telescope aimed up the sightline, and the
-two-tone `>_` prompt as the one warm point everything measures toward. The brass
-can re-tint with the active world's accent (`helm-theme`). Keep the prompt the
-warmest thing in frame; never recolor it to match the brass — the two-tone
-contrast is the concept, in both the icon and the emblem.
+Emblem anatomy: three tines whose outer prongs curve outward to spear points (the
+silhouette stays a trident at a glance, and holds its shape at small sizes where a
+sextant turned to mush); a cross-guard and pommel on the shaft so it reads "sigil,"
+not "pitchfork"; a brass gradient that can re-tint to the active world's accent
+(`helm-theme`); and the two-tone `>_` prompt as the one warm phosphor note keeping
+the terminal meaning attached. Keep the prompt the warmest thing in frame; never
+recolor it to match the brass — the two-tone contrast is the concept, in both the
+icon and the emblem.
