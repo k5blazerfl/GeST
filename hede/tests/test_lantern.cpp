@@ -5,6 +5,10 @@
 #include "client.h"
 #include "format.h"
 #include "notification.h"
+#include "widgets.h"
+
+#include <QSettings>
+#include <QTemporaryDir>
 
 class TestLantern : public QObject {
     Q_OBJECT
@@ -51,6 +55,51 @@ class TestLantern : public QObject {
         QVERIFY(h[0].received.isValid());
         // garbage → empty, never a crash
         QVERIFY(helm::LanternClient::parseHistory(QStringLiteral("nonsense")).isEmpty());
+    }
+
+    // --- widgets (v2, slice 5) ---
+
+    void widgetIdsDefaultAndConfigured() {
+        QTemporaryDir dir;
+        const QString path = dir.filePath(QStringLiteral("hede.conf"));
+        // unset → default lineup
+        QCOMPARE(helm::lanternWidgetIds(path), QStringList{QStringLiteral("system")});
+        {
+            QSettings s(path, QSettings::IniFormat);
+            s.setValue(QStringLiteral("lantern/widgets"), QStringLiteral(" System , Weather "));
+        }
+        QCOMPARE(helm::lanternWidgetIds(path),
+                 (QStringList{QStringLiteral("system"), QStringLiteral("weather")}));
+        {
+            QSettings s(path, QSettings::IniFormat);
+            s.setValue(QStringLiteral("lantern/widgets"), QString()); // explicit none
+        }
+        QVERIFY(helm::lanternWidgetIds(path).isEmpty());
+    }
+
+    void memInfoParsesAndPercents() {
+        const QString sample = QStringLiteral(
+            "MemTotal:        8000000 kB\n"
+            "MemFree:         1000000 kB\n"
+            "MemAvailable:    2000000 kB\n");
+        const helm::MemInfo m = helm::parseMemInfo(sample);
+        QCOMPARE(m.totalKb, 8000000LL);
+        QCOMPARE(m.availableKb, 2000000LL);
+        QCOMPARE(helm::usedPercent(m.totalKb - m.availableKb, m.totalKb), 75);
+        QCOMPARE(helm::usedPercent(1, 0), 0); // guard div-by-zero
+    }
+
+    void bytesFormatDecimal() {
+        QCOMPARE(helm::formatBytes(512), QStringLiteral("512 B"));
+        QCOMPARE(helm::formatBytes(1500), QStringLiteral("1.5 KB"));
+        QCOMPARE(helm::formatBytes(2500000000LL), QStringLiteral("2.5 GB"));
+    }
+
+    void uptimeParsesAndFormats() {
+        QCOMPARE(helm::parseUptimeSeconds(QStringLiteral("12345.67 9999.9")), 12345LL);
+        QCOMPARE(helm::formatUptime(300), QStringLiteral("up 5m"));
+        QCOMPARE(helm::formatUptime(3661), QStringLiteral("up 1h 1m"));
+        QCOMPARE(helm::formatUptime(90061), QStringLiteral("up 1d 1h"));
     }
 };
 

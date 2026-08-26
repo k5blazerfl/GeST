@@ -73,13 +73,19 @@ path ignores them:
    bell in `src/quicksettings/`, beside the DnD toggle): opens `helm-lantern` on
    click, carries an accent dot while the history is non-empty (counts
    `GetHistory`, refreshes on `NotificationAdded`/`HistoryCleared`), and hides when
-   the daemon is absent — the same D-Bus-client shape as `DndToggle`. **Follow-up:**
-   glanceable widgets (the v2 non-goal below).
+   the daemon is absent — the same D-Bus-client shape as `DndToggle`.
+5. **Glanceable widgets — framework + system card** *(shipped)* — a config-driven
+   widget strip in the drawer: `[lantern] widgets` (comma list, default `system`),
+   read by `lanternWidgetIds`, mirroring Barnacle's `[panel] applets`. The first
+   widget is **`system`** (`LanternSysinfo`): root-disk usage, memory, and uptime,
+   from `QStorageInfo` + `/proc/meminfo` + `/proc/uptime` through pure, unit-tested
+   helpers (`parseMemInfo`/`formatBytes`/`usedPercent`/`parseUptimeSeconds`/
+   `formatUptime`). New widget ids (e.g. `weather`) slot into the same strip.
 
-## Non-goals (v1)
+## Non-goals
 
-Glanceable **widgets** (weather, disk/system info) — the ambitious follow-up; v1
-is history + DnD + clear-all only. Also: per-app filtering/muting, notification
+A **weather** widget (needs a network API + a location config — a later slice on
+the framework slice 5 established), per-app filtering/muting, notification
 *actions* replay from history (the app may be gone), and grouping/threading.
-Lantern shows the log and lets you clear it; it does not become a second toast
-system.
+Lantern shows the log + a glance card and lets you clear it; it does not become a
+second toast system.

@@ -3,6 +3,10 @@
 #include "client.h"
 #include "format.h"
 #include "notification.h"
+#include "sysinfowidget.h"
+#include "widgets.h"
+
+#include "config.h"
 
 #include <QCheckBox>
 #include <QDateTime>
@@ -87,6 +91,13 @@ LanternWindow::LanternWindow(QWidget *parent) : QWidget(parent) {
 
     auto *root = new QVBoxLayout(this);
     root->addLayout(header);
+    // Glanceable widgets (config-driven, [lantern] widgets — default "system"),
+    // between the header and the notification list.
+    for (const QString &id : lanternWidgetIds(Config().path())) {
+        if (id == QLatin1String("system"))
+            root->addWidget(new LanternSysinfo(this));
+        // (unknown ids are skipped; weather etc. slot in here in a later slice)
+    }
     root->addWidget(scroll, 1);
 
     connect(clear, &QPushButton::clicked, this, [this] { m_client->clearHistory(); });
