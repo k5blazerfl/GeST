@@ -28,6 +28,10 @@ class Browser:
     desktop_id: str  # the ``.desktop`` basename xdg-settings sets as default
     summary: str  # one-line cockpit blurb
     recommended: bool = False
+    license: str = ""  # the EULA this browser needs accepted before it will emerge —
+    # e.g. ``google-chrome`` / ``OPERA-2018`` (both in @EULA). Empty = a free license the
+    # profile already accepts (Firefox/Chromium). The module writes package.license for it
+    # on install, so a pick works regardless of the system's ACCEPT_LICENSE rung.
 
 
 # Hand-picked, -bin-first so a casual pick is a quick install rather than a
@@ -48,6 +52,15 @@ BROWSERS: tuple[Browser, ...] = (
         "www-client/google-chrome",
         "google-chrome",
         "Google's browser, for people who already live in Chrome.",
+        license="google-chrome",
+    ),
+    Browser(
+        "opera",
+        "Opera",
+        "www-client/opera",
+        "opera",
+        "Chromium-based, with a built-in ad blocker, free VPN and sidebar.",
+        license="OPERA-2018",
     ),
     Browser(
         "brave",

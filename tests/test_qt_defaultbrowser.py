@@ -34,6 +34,87 @@ def test_populates_and_reflects_no_default(monkeypatch):
     assert w._use.text() == "Install & set default"
 
 
+class _Sig:
+    def connect(self, *a):
+        pass
+
+
+class _FakeWorker:
+    def __init__(self, atom):
+        self.atom = atom
+        self.output = _Sig()
+        self.done = _Sig()
+
+    def isRunning(self):
+        return False
+
+    def start(self):
+        pass
+
+
+def _select(w, browser_id):
+    idx = next(i for i, br in enumerate(browsers.BROWSERS) if br.id == browser_id)
+    w._list.setCurrentRow(idx)
+
+
+def test_licensed_browser_accepts_eula_then_installs(monkeypatch):
+    _app()
+    monkeypatch.setattr(mod, "_is_installed", lambda b: False)
+    monkeypatch.setattr(mod, "_run", lambda argv: (True, ""))
+    monkeypatch.setattr(mod, "InstallWorker", _FakeWorker)
+    accepted: list[tuple[str, tuple[str, ...]]] = []
+
+    def fake_accept(atom, lics):
+        accepted.append((atom, tuple(lics)))
+        return (True, "")
+    monkeypatch.setattr(mod, "set_atom_licenses", fake_accept)
+
+    w = mod.factory()
+    _select(w, "opera")
+    w._on_use()
+    # the EULA was accepted for the exact atom, then the install worker started
+    assert accepted == [("www-client/opera", ("OPERA-2018",))]
+    assert isinstance(w._worker, _FakeWorker) and w._worker.atom == "www-client/opera"
+
+
+def test_license_rejection_aborts_the_install(monkeypatch):
+    _app()
+    monkeypatch.setattr(mod, "_is_installed", lambda b: False)
+    monkeypatch.setattr(mod, "_run", lambda argv: (True, ""))
+    monkeypatch.setattr(mod, "set_atom_licenses", lambda atom, lics: (False, "not authorized"))
+    started = []
+
+    def fake_worker(atom):
+        started.append(atom)
+    monkeypatch.setattr(mod, "InstallWorker", fake_worker)
+
+    w = mod.factory()
+    _select(w, "chrome")
+    w._on_use()
+    assert started == []                        # no merge started
+    assert w._worker is None
+    assert "license" in w._status.text().lower()
+
+
+def test_free_browser_skips_license_write(monkeypatch):
+    _app()
+    monkeypatch.setattr(mod, "_is_installed", lambda b: False)
+    monkeypatch.setattr(mod, "_run", lambda argv: (True, ""))
+    monkeypatch.setattr(mod, "InstallWorker", _FakeWorker)
+    called = []
+
+    def fake_accept(atom, lics):
+        called.append(atom)
+        return (True, "")
+    monkeypatch.setattr(mod, "set_atom_licenses", fake_accept)
+
+    w = mod.factory()
+    _select(w, "firefox")                       # no license → no package.license write
+    w._on_use()
+    assert called == []
+    assert isinstance(w._worker, _FakeWorker)
+
+
 def test_installed_browser_sets_default_directly(monkeypatch):
     _app()
     calls: list[list[str]] = []
