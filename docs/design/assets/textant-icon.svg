@@ -28,20 +28,18 @@
   <g filter="url(#i_shadow)">
     <rect x="34" y="50" width="188" height="158" rx="22" fill="url(#i_screen)"/>
     <g clip-path="url(#i_winclip)">
-      <!-- trident watermark (Poseidon) — emerging diagonally from the top-right corner
+      <!-- sextant watermark — emerging diagonally from the top-right corner
            (drawn BEFORE the titlebar so the bar covers the part reaching into it) -->
-      <g transform="translate(162 150) rotate(45) scale(0.80) translate(-128 -142)"
+      <g transform="translate(158 150) rotate(45) scale(0.64) translate(-132 -128)"
          stroke="#d9a641" fill="#d9a641" opacity="0.22" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M128 132 L128 214" stroke-width="9" fill="none"/>
-        <circle cx="128" cy="218" r="6" stroke="none"/>
-        <path d="M116 176 L140 176" stroke-width="7" fill="none"/>
-        <path d="M96 132 L160 132" stroke-width="9" fill="none"/>
-        <path d="M128 132 L128 60" stroke-width="9" fill="none"/>
-        <path d="M96 132 C 90 108 86 92 88 66" stroke-width="9" fill="none"/>
-        <path d="M160 132 C 166 108 170 92 168 66" stroke-width="9" fill="none"/>
-        <path d="M128 60 l 7 12 l -7 10 l -7 -10 z" stroke="none"/>
-        <path d="M88 66 l 7 11 l -8 9 l -6 -11 z" stroke="none"/>
-        <path d="M168 66 l 6 11 l -6 11 l -7 -9 z" stroke="none"/>
+        <path d="M 48.1 182.4 A 150 150 0 0 0 215.9 182.4" stroke-width="14" fill="none"/>
+        <path d="M 132 58 L 48.1 182.4" stroke-width="10" fill="none"/>
+        <path d="M 132 58 L 215.9 182.4" stroke-width="10" fill="none"/>
+        <path d="M 97.5 143.3 A 92 92 0 0 0 166.5 143.3" stroke-width="7" fill="none"/>
+        <path d="M 132 58 L 168.3 203.5" stroke-width="8" fill="none"/>
+        <circle cx="168.3" cy="203.5" r="7.5" stroke="none"/>
+        <path d="M 128 74 L 92 62" stroke-width="12" fill="none"/>
+        <circle cx="132" cy="58" r="11" stroke="none"/>
       </g>
       <!-- plain titlebar (no buttons) — covers the trident above the screen line -->
       <rect x="34" y="50" width="188" height="34" fill="url(#i_bar)"/>
