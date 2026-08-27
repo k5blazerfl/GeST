@@ -16,13 +16,13 @@ from dataclasses import dataclass
 from gest.core.exec.executor import Executor
 from gest.core.exec.runner import OnProgress
 from gest.core.exec.steps import Step, run_steps
-from gest.core.kernel import commands
+from gest.core.kernel import commands, reader
 
 
 @dataclass(slots=True, frozen=True)
 class BuildConfig:
-    """A kernel-build request. ``jobs`` 0 means "resolve to 1" here — callers pass
-    the detected CPU count (see ``reader.cpu_count``)."""
+    """A kernel-build request. ``jobs`` 0 means "use every detected CPU" (see
+    ``reader.cpu_count``); a positive value pins the job count explicitly."""
 
     method: str                      # "genkernel" | "make"
     source_dir: str = "/usr/src/linux"
@@ -41,7 +41,7 @@ def build_steps(config: BuildConfig) -> list[Step]:
                                              plymouth=config.plymouth))]
     if config.method != "make":
         raise ValueError(f"unknown build method: {config.method!r}")
-    jobs = config.jobs if config.jobs > 0 else 1
+    jobs = config.jobs if config.jobs > 0 else min(reader.cpu_count(), commands.MAX_JOBS)
     steps = [
         Step("build kernel", commands.make_argv(jobs=jobs, directory=config.source_dir)),
         Step("install modules",

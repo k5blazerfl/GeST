@@ -55,6 +55,7 @@ from gest.core.install.plan import (
 from gest.core.install.step import ArgvStep, FuncStep, InstallStep
 from gest.core.install.write import write_under_root
 from gest.core.kernel import config as kconfig
+from gest.core.kernel import reader as kernel_reader
 from gest.core.kernel.build import build_steps
 from gest.core.kernel.commands import genkernel_argv
 from gest.core.network import hosts as net_hosts
@@ -252,7 +253,10 @@ class WriteMakeConf(FuncStep):
                 text = fh.read()
         except OSError:
             text = ""
-        jobs = ctx.plan.kernel.jobs if ctx.plan.kernel.jobs > 0 else 1
+        # jobs 0 = "auto" → every detected CPU. genkernel takes its parallelism
+        # solely from this MAKEOPTS, so a stale -j1 here builds the kernel
+        # single-threaded (no early fan spin-up, hours-long compile).
+        jobs = ctx.plan.kernel.jobs if ctx.plan.kernel.jobs > 0 else kernel_reader.cpu_count()
         rendered = shell.render(text, "MAKEOPTS", f"-j{jobs}")
         # ACCEPT_LICENSE policy — set before @world so licensed atoms (firmware,
         # NVIDIA-r2, EULA packages) resolve per the reviewed rung.

@@ -754,6 +754,24 @@ async def test_write_makeconf_renders_license_use_and_overrides(tmp_path, monkey
     assert "-march=native" not in text                  # binary_pref → no CPU tuning
 
 
+async def test_write_makeconf_jobs_zero_makeopts_uses_all_cpus(tmp_path, monkeypatch):
+    # kernel.jobs=0 ("auto") must render MAKEOPTS from the detected CPU count, not a
+    # silent -j1. genkernel reads its parallelism solely from this MAKEOPTS, so -j1
+    # here is a hours-long single-threaded kernel compile (the fans-never-spin bug).
+    import dataclasses
+
+    from gest.core.hwflags import detect as hwdetect
+    from gest.core.install import registry as reg
+    from gest.core.install.registry import WriteMakeConf
+    monkeypatch.setattr(hwdetect, "detect_cpu_flags", lambda *a, **k: [])
+    monkeypatch.setattr(reg.kernel_reader, "cpu_count", lambda: 16)
+    plan = dataclasses.replace(_plan(), kernel=BuildConfig(method="genkernel", jobs=0))
+    ctx = _ctx(FakeExecutor(), root=str(tmp_path), plan=plan)
+    await WriteMakeConf().run(ctx)
+    text = (tmp_path / "etc/portage/make.conf").read_text()
+    assert 'MAKEOPTS="-j16"' in text
+
+
 async def test_write_makeconf_runs_even_when_stage3_shipped_a_make_conf(tmp_path):
     # The stage3 ALWAYS ships /etc/portage/make.conf, so a mere-existence gate made
     # this step a permanent no-op — ACCEPT_LICENSE was never written and firmware
