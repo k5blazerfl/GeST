@@ -133,6 +133,7 @@ void MainWindow::zoomFont(int delta) {
 Terminal *MainWindow::addTab() {
     auto *t = new Terminal(m_cfg);
     t->setWorldColors(m_fg, m_bg);
+    t->setAccent(m_accent);
     if (m_fontSize != m_cfg.fontSize)
         t->applyFont(m_cfg.fontFamily, m_fontSize);
     const int idx = m_stack->addWidget(t);
@@ -190,12 +191,14 @@ void MainWindow::syncChrome() {
 void MainWindow::applyWorldTint() {
     const helm::Config hc;
     m_accent = helm::effectiveAccent(hc);
-    // Dark charcoal terminal background (Konsole-like), opaque by default. The
-    // world accent still colours the active tab so it isn't fully monochrome.
+    // Neutral Konsole-dark charcoal — the biome shows in the accents (cursor,
+    // selection, active tab), never by washing the surface.
     m_bg = QColor(0x1a, 0x1b, 0x1e);
     for (int i = 0; i < m_stack->count(); ++i)
-        if (auto *t = qobject_cast<Terminal *>(m_stack->widget(i)))
-            t->setWorldColors(m_fg, m_bg);
+        if (auto *tw = qobject_cast<Terminal *>(m_stack->widget(i))) {
+            tw->setWorldColors(m_fg, m_bg);
+            tw->setAccent(m_accent);
+        }
 
     const QColor tabBg = m_bg.lighter(170);
     const QColor tabSel = m_accent.darker(130);

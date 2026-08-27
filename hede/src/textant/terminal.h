@@ -19,6 +19,7 @@ public:
 
     void startShell();
     void setWorldColors(const QColor &fg, const QColor &bg);
+    void setAccent(const QColor &accent);
     void applyFont(const QString &family, int pointSize);
     void copy();
     void paste();

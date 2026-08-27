@@ -20,8 +20,12 @@
 
 namespace {
 const QColor kBackground(0x1a, 0x1b, 0x1e);
-const QColor kCursor(0xff, 0xc2, 0x47);
-const QColor kSelection(0x2f, 0x4c, 0x74);
+
+QColor blend(const QColor &a, const QColor &b, double t) {
+    return QColor(int(a.red() + (b.red() - a.red()) * t),
+                  int(a.green() + (b.green() - a.green()) * t),
+                  int(a.blue() + (b.blue() - a.blue()) * t));
+}
 
 // Fetch a cell by absolute position (scrollback then live).
 bool posCell(const VTermSession *s, int pos, int col, VTermScreenCell &out) {
@@ -97,6 +101,14 @@ TerminalView::TerminalView(QWidget *parent) : QWidget(parent) {
     m_font.setStyleHint(QFont::Monospace);
     m_font.setFixedPitch(true);
     updateFontMetrics();
+}
+
+void TerminalView::setAccent(const QColor &accent) {
+    if (!accent.isValid())
+        return;
+    m_cursorColor = accent;                          // the biome colour, on the cursor
+    m_selectionColor = blend(kBackground, accent, 0.5);
+    update();
 }
 
 void TerminalView::setOpacity(double opacity) {
@@ -299,7 +311,7 @@ void TerminalView::paintEvent(QPaintEvent *ev) {
         if (cell.attrs.reverse)
             std::swap(fg, bg);
         if (inSelection(pos, c))
-            bg = kSelection;
+            bg = m_selectionColor;
     };
 
     for (int r = r0; r <= r1; ++r) {
@@ -393,7 +405,7 @@ void TerminalView::paintEvent(QPaintEvent *ev) {
     if (m_scrollOffset == 0 && m_session->cursorVisible()) {
         const VTermPos cur = m_session->cursor();
         if (cur.row >= 0 && cur.row < rows && cur.col >= 0 && cur.col < cols) {
-            QColor c = kCursor;
+            QColor c = m_cursorColor;
             c.setAlpha(180);
             p.fillRect(cur.col * m_cellW, cur.row * m_cellH, m_cellW, m_cellH, c);
         }

@@ -43,6 +43,10 @@ void Terminal::setWorldColors(const QColor &fg, const QColor &bg) {
     m_session->setDefaultColors(fg, bg);
 }
 
+void Terminal::setAccent(const QColor &accent) {
+    m_view->setAccent(accent);
+}
+
 void Terminal::applyFont(const QString &family, int pointSize) {
     m_view->applyFont(family, pointSize);
 }

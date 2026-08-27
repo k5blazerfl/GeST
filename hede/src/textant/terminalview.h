@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QWidget>
+#include <QColor>
 #include <QFont>
 #include <QImage>
 #include <QPoint>
@@ -25,6 +26,7 @@ public:
     void setPty(Pty *pty) { m_pty = pty; }
     void applyFont(const QString &family, int pointSize);
     void setOpacity(double opacity);   // < 1 -> translucent glass surface
+    void setAccent(const QColor &accent);   // biome accent -> cursor + selection
     void copyToClipboard() { copySelection(false); }
     void pasteClipboard() { paste(false); }
 
@@ -60,6 +62,8 @@ private:
     int m_ascent = 12;
     int m_scrollOffset = 0;        // lines scrolled up from the live bottom
     double m_opacity = 1.0;
+    QColor m_cursorColor { 0xff, 0xc2, 0x47 };
+    QColor m_selectionColor { 0x2f, 0x4c, 0x74 };
 
     bool m_selecting = false;
     bool m_hasSel = false;
