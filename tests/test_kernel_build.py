@@ -85,6 +85,20 @@ def test_build_steps_make_full_pipeline():
     assert labels == ["build kernel", "install modules", "install kernel", "build initramfs"]
 
 
+def test_build_steps_make_jobs_zero_uses_all_cpus(monkeypatch):
+    # jobs=0 means "auto" → every detected CPU, NOT a silent -j1 (regression: a
+    # single-threaded kernel compile that never spins the fans up).
+    monkeypatch.setattr(build.reader, "cpu_count", lambda: 12)
+    steps = build.build_steps(build.BuildConfig(method="make", jobs=0))
+    assert steps[0].argv == ["make", "-C", "/usr/src/linux", "-j12"]
+
+
+def test_build_steps_make_jobs_zero_clamps_to_max(monkeypatch):
+    monkeypatch.setattr(build.reader, "cpu_count", lambda: commands.MAX_JOBS + 99)
+    steps = build.build_steps(build.BuildConfig(method="make", jobs=0))
+    assert steps[0].argv[-1] == f"-j{commands.MAX_JOBS}"
+
+
 def test_build_steps_genkernel_plymouth_flows_to_argv():
     steps = build.build_steps(build.BuildConfig(method="genkernel", plymouth=True))
     assert steps[0].argv == ["genkernel", "--plymouth", "--plymouth-theme=hede", "all"]
