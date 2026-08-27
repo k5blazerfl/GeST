@@ -11,6 +11,10 @@ VTermSession::VTermSession(int rows, int cols, QObject *parent)
     vterm_output_set_callback(m_vt, &VTermSession::onOutput, this);
 
     m_screen = vterm_obtain_screen(m_vt);
+    // Maintain the alternate screen buffer, so full-screen apps (ncurses TUIs)
+    // that switch to it on entry restore the primary screen on exit — otherwise
+    // the TUI's last frame lingers and the shell prompt prints over it.
+    vterm_screen_enable_altscreen(m_screen, 1);
 
     static const VTermScreenCallbacks cb = {
         .damage      = &VTermSession::onDamage,
