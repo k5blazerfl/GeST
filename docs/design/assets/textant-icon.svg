@@ -30,9 +30,9 @@
     <g clip-path="url(#i_winclip)">
       <!-- plain titlebar (no buttons) -->
       <rect x="34" y="50" width="188" height="34" fill="url(#i_bar)"/>
-      <!-- trident watermark (Poseidon; nautical brand cue) -->
-      <g transform="translate(128 148) scale(0.70) translate(-128 -142)"
-         stroke="#d9a641" fill="#d9a641" opacity="0.30" stroke-linecap="round" stroke-linejoin="round">
+      <!-- trident watermark (Poseidon) — emerging diagonally from the top-right corner -->
+      <g transform="translate(162 150) rotate(45) scale(0.80) translate(-128 -142)"
+         stroke="#d9a641" fill="#d9a641" opacity="0.22" stroke-linecap="round" stroke-linejoin="round">
         <path d="M128 132 L128 214" stroke-width="9" fill="none"/>
         <circle cx="128" cy="218" r="6" stroke="none"/>
         <path d="M116 176 L140 176" stroke-width="7" fill="none"/>
