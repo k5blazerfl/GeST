@@ -117,6 +117,16 @@ HarfBuzz shaping is Phase 3 — most terminal text doesn't need it.
   dep). **No KDE, no GTK.**
 - The hede ebuild keeps `gui-apps/foot` as the fallback terminal until Textant
   is the default; then foot moves to a soft/optional dep.
+- **Icon (shipping now).** The finalized app icon lives in the icon theme at
+  `hede/data/icons/hicolor/scalable/apps/textant.svg` with rasterized PNGs at
+  16–256px, installed via `install(DIRECTORY data/icons …)` so `Icon=textant`
+  resolves. Unlike SeFE/Barnacle (which reuse stock freedesktop icon names), this
+  is HeDE's first bespoke app icon.
+- **Launcher (staged).** `hede/data/applications/textant.desktop` is written
+  (`Exec=textant`, `Icon=textant`, `TerminalEmulator` category) but deliberately
+  *not* wired into `install()` yet — a launcher pointing at a non-existent binary
+  would be a dead menu entry. P0 adds it to the install list; P2 registers Textant
+  as `x-terminal-emulator` and swaps the labwc `Super+Return` bind off `foot`.
 
 ## Phasing (slices)
 

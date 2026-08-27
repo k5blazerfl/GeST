@@ -46,6 +46,12 @@ install(FILES data/wayland-sessions/hede.desktop
 install(FILES data/applications/sefe.desktop
               data/applications/barnacle.desktop
         DESTINATION ${CMAKE_INSTALL_PREFIX}/share/applications)
+# Textant's app icon ships now (the finalized brand mark; see docs/design/textant.md)
+# so Icon=textant resolves in the theme. The launcher (data/applications/textant.desktop)
+# is staged but intentionally NOT installed until the `textant` binary lands (P0) — a
+# .desktop with Exec=textant before the binary exists would be a dead menu entry.
+install(DIRECTORY data/icons
+        DESTINATION ${CMAKE_INSTALL_PREFIX}/share)
 install(DIRECTORY data/labwc data/wayfire data/grub data/worlds
         DESTINATION ${CMAKE_INSTALL_PREFIX}/share/hede)
 # The Helm labwc titlebar theme lands in the XDG theme search path
