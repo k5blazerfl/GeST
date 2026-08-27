@@ -30,7 +30,7 @@
     <g clip-path="url(#i_winclip)">
       <!-- sextant watermark — emerging diagonally from the top-right corner
            (drawn BEFORE the titlebar so the bar covers the part reaching into it) -->
-      <g transform="translate(158 150) rotate(45) scale(0.64) translate(-132 -128)"
+      <g transform="translate(178 124) rotate(45) scale(0.66) translate(-132 -128)"
          stroke="#d9a641" fill="#d9a641" opacity="0.22" stroke-linecap="round" stroke-linejoin="round">
         <path d="M 48.1 182.4 A 150 150 0 0 0 215.9 182.4" stroke-width="14" fill="none"/>
         <path d="M 132 58 L 48.1 182.4" stroke-width="10" fill="none"/>
