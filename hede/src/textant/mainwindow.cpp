@@ -74,7 +74,7 @@ MainWindow::MainWindow(const Settings &cfg, QWidget *parent)
 void MainWindow::buildMenu() {
     auto *mb = new QMenuBar(this);
     mb->setStyleSheet(QStringLiteral(
-        "QMenuBar{background:transparent;color:#e9eef6;}"
+        "QMenuBar{background:#1a1b1e;color:#e9eef6;}"
         "QMenuBar::item{padding:4px 10px;background:transparent;}"
         "QMenuBar::item:selected{background:rgba(255,255,255,0.12);border-radius:4px;}"));
     const auto item = [this](QMenu *m, const QString &text, const QString &sc,
@@ -190,13 +190,15 @@ void MainWindow::syncChrome() {
 void MainWindow::applyWorldTint() {
     const helm::Config hc;
     m_accent = helm::effectiveAccent(hc);
-    m_bg = helm::barTint(m_accent);
+    // Dark charcoal terminal background (Konsole-like), opaque by default. The
+    // world accent still colours the active tab so it isn't fully monochrome.
+    m_bg = QColor(0x1a, 0x1b, 0x1e);
     for (int i = 0; i < m_stack->count(); ++i)
         if (auto *t = qobject_cast<Terminal *>(m_stack->widget(i)))
             t->setWorldColors(m_fg, m_bg);
 
-    const QColor tabBg = m_bg.lighter(150);
-    const QColor tabSel = m_bg.lighter(210);
+    const QColor tabBg = m_bg.lighter(170);
+    const QColor tabSel = m_accent.darker(130);
     m_tabbar->setStyleSheet(QStringLiteral(
         "QTabBar{background:transparent;}"
         "QTabBar::tab{background:%1;color:#e9eef6;padding:5px 12px;margin-right:2px;"

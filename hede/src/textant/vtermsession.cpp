@@ -41,10 +41,10 @@ VTermSession::VTermSession(int rows, int cols, QObject *parent)
     };
     vterm_screen_set_unrecognised_fallbacks(m_screen, &fb, this);
 
-    // Light-on-dark defaults, matching the app-icon screen.
+    // Light-on-dark-charcoal defaults (Konsole-like); the window overrides these.
     VTermColor fg, bg;
     vterm_color_rgb(&fg, 0xe9, 0xee, 0xf6);
-    vterm_color_rgb(&bg, 0x0e, 0x17, 0x28);
+    vterm_color_rgb(&bg, 0x1a, 0x1b, 0x1e);
     vterm_screen_set_default_colors(m_screen, &fg, &bg);
 
     vterm_screen_reset(m_screen, /*hard=*/1);

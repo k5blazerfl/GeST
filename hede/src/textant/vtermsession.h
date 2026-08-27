@@ -86,7 +86,7 @@ private:
     std::deque<std::vector<VTermScreenCell>> m_scrollback;
     int m_scrollbackMax = 1000;
     QColor m_defaultFg { 0xe9, 0xee, 0xf6 };
-    QColor m_defaultBg { 0x0e, 0x17, 0x28 };
+    QColor m_defaultBg { 0x1a, 0x1b, 0x1e };
     QByteArray m_sixelBuf;       // accumulates DCS sixel payload fragments
     bool m_inSixel = false;
     int m_cellHeight = 16;
