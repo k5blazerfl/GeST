@@ -25,7 +25,8 @@ qt_add_executable(textant
     pty.cpp
     vtermsession.cpp
     terminalview.cpp
-    settings.cpp)
+    settings.cpp
+    sixel.cpp)
 
 target_link_libraries(textant PRIVATE
     Qt6::Widgets

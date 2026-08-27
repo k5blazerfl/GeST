@@ -2,7 +2,9 @@
 
 #include <QWidget>
 #include <QFont>
+#include <QImage>
 #include <QPoint>
+#include <QVector>
 
 class VTermSession;
 class Pty;
@@ -61,4 +63,8 @@ private:
     bool m_hasSel = false;
     QPoint m_selAnchor { 0, 0 };   // (col, pos)
     QPoint m_selPoint { 0, 0 };    // (col, pos)
+
+    // Sixel images, anchored to an absolute line position + column.
+    struct PlacedImage { int pos; int col; QImage img; };
+    QVector<PlacedImage> m_images;
 };

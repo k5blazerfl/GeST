@@ -101,6 +101,14 @@ void TerminalView::setSession(VTermSession *session) {
             update();
         }
     });
+    connect(session, &VTermSession::imageReceived, this,
+            [this](const QImage &img, int absPos, int col) {
+                m_images.push_back({absPos, col, img});
+                if (m_images.size() > 64)          // cap live images
+                    m_images.remove(0);
+                update();
+            });
+    session->setCellHeight(m_cellH);
     update();
 }
 
@@ -116,8 +124,10 @@ void TerminalView::syncGrid() {
         return;
     const int cols = std::max(1, width() / m_cellW);
     const int rows = std::max(1, height() / m_cellH);
-    if (m_session)
+    if (m_session) {
         m_session->setSize(rows, cols);
+        m_session->setCellHeight(m_cellH);
+    }
     if (m_pty)
         m_pty->resize(rows, cols);
     update();
@@ -312,6 +322,18 @@ void TerminalView::paintEvent(QPaintEvent *ev) {
             }
             p.drawText(start * m_cellW, y + m_ascent, run);
             c = cc;
+        }
+    }
+
+    // Sixel images, anchored to their absolute line/column, over the blank cells
+    // the session reserved for them.
+    if (!m_images.isEmpty()) {
+        const int sb = m_session->scrollbackCount();
+        for (const PlacedImage &pi : m_images) {
+            const int y = (pi.pos - (sb - m_scrollOffset)) * m_cellH;
+            if (y + pi.img.height() < 0 || y > height())
+                continue;
+            p.drawImage(pi.col * m_cellW, y, pi.img);
         }
     }
 

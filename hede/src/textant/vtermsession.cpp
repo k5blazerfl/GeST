@@ -1,5 +1,7 @@
 #include "vtermsession.h"
 
+#include "sixel.h"
+
 #include <algorithm>
 
 VTermSession::VTermSession(int rows, int cols, QObject *parent)
@@ -23,6 +25,18 @@ VTermSession::VTermSession(int rows, int cols, QObject *parent)
     };
     vterm_screen_set_callbacks(m_screen, &cb, this);
 
+    // Catch DCS sequences libvterm doesn't decode — notably sixel graphics.
+    static const VTermStateFallbacks fb = {
+        .control = nullptr,
+        .csi     = nullptr,
+        .osc     = nullptr,
+        .dcs     = &VTermSession::onDcs,
+        .apc     = nullptr,
+        .pm      = nullptr,
+        .sos     = nullptr,
+    };
+    vterm_screen_set_unrecognised_fallbacks(m_screen, &fb, this);
+
     // Light-on-dark defaults, matching the app-icon screen.
     VTermColor fg, bg;
     vterm_color_rgb(&fg, 0xe9, 0xee, 0xf6);
@@ -39,6 +53,14 @@ VTermSession::~VTermSession() {
 
 void VTermSession::writeInput(const QByteArray &bytes) {
     vterm_input_write(m_vt, bytes.constData(), static_cast<size_t>(bytes.size()));
+    // A sixel image reserved text rows below it: advance the cursor now that the
+    // parse is done (feeding LFs mid-parse would reenter the parser).
+    if (m_pendingRows > 0) {
+        const QByteArray lf(m_pendingRows, '\n');
+        vterm_input_write(m_vt, lf.constData(), static_cast<size_t>(lf.size()));
+        vterm_input_write(m_vt, "\r", 1);
+        m_pendingRows = 0;
+    }
     vterm_screen_flush_damage(m_screen);
 }
 
@@ -182,5 +204,36 @@ int VTermSession::onPopline(int cols, VTermScreenCell *cells, void *user) {
 
 int VTermSession::onSbClear(void *user) {
     static_cast<VTermSession *>(user)->m_scrollback.clear();
+    return 1;
+}
+
+int VTermSession::onDcs(const char *command, size_t commandlen,
+                        VTermStringFragment frag, void *user) {
+    auto *self = static_cast<VTermSession *>(user);
+    // Sixel DCS ends its introducer with 'q' (e.g. "0;0;8q").
+    const bool isSixel = commandlen > 0 && command[commandlen - 1] == 'q';
+
+    if (frag.initial) {
+        self->m_inSixel = isSixel;
+        if (self->m_inSixel)
+            self->m_sixelBuf.clear();
+    }
+    if (!self->m_inSixel)
+        return 1;
+
+    if (frag.len > 0)
+        self->m_sixelBuf.append(frag.str, static_cast<int>(frag.len));
+
+    if (frag.final) {
+        self->m_inSixel = false;
+        const QImage img = decodeSixel(self->m_sixelBuf);
+        self->m_sixelBuf.clear();
+        if (!img.isNull()) {
+            const int absPos = self->scrollbackCount() + self->m_cursor.row;
+            emit self->imageReceived(img, absPos, self->m_cursor.col);
+            const int rows = (img.height() + self->m_cellHeight - 1) / self->m_cellHeight;
+            self->m_pendingRows += std::max(1, rows);
+        }
+    }
     return 1;
 }

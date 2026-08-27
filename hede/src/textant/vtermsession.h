@@ -3,6 +3,7 @@
 #include <QObject>
 #include <QByteArray>
 #include <QColor>
+#include <QImage>
 #include <QRect>
 #include <QString>
 
@@ -48,6 +49,10 @@ public:
     int scrollbackCount() const { return static_cast<int>(m_scrollback.size()); }
     bool scrollbackCell(int line, int col, VTermScreenCell &out) const;
 
+    // Sixel (P3): the cell pixel height lets the session reserve the right number
+    // of text rows below a decoded image.
+    void setCellHeight(int px) { if (px > 0) m_cellHeight = px; }
+
 signals:
     void outputReady(const QByteArray &bytes);   // vterm -> pty
     void damaged(const QRect &cellRect);
@@ -55,6 +60,7 @@ signals:
     void bell();
     void titleChanged(const QString &title);
     void lineScrolledOff();                       // a line moved into scrollback
+    void imageReceived(const QImage &img, int absPos, int col);   // sixel image
 
 private:
     // libvterm C callbacks (user == this).
@@ -67,6 +73,8 @@ private:
     static int  onPushline(int cols, const VTermScreenCell *cells, void *user);
     static int  onPopline(int cols, VTermScreenCell *cells, void *user);
     static int  onSbClear(void *user);
+    static int  onDcs(const char *command, size_t commandlen,
+                      VTermStringFragment frag, void *user);
 
     VTerm *m_vt = nullptr;
     VTermScreen *m_screen = nullptr;
@@ -79,4 +87,8 @@ private:
     int m_scrollbackMax = 1000;
     QColor m_defaultFg { 0xe9, 0xee, 0xf6 };
     QColor m_defaultBg { 0x0e, 0x17, 0x28 };
+    QByteArray m_sixelBuf;       // accumulates DCS sixel payload fragments
+    bool m_inSixel = false;
+    int m_cellHeight = 16;
+    int m_pendingRows = 0;       // text rows to advance after an image
 };
