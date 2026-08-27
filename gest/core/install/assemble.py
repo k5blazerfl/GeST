@@ -155,6 +155,11 @@ class InstallSelections:
     # rung (or the role that sets it) changes, so acceptance is always of the CURRENT
     # rung. The Base System gate refuses Continue until this is set.
     licenses_accepted: bool = False
+    # Names of the individual agreements the user has viewed + accepted (the
+    # per-agreement soft-lock in the License gate). licenses_accepted is the derived
+    # "all required accepted" flag; this is the per-agreement detail behind it. Reset
+    # together whenever the rung (or the role that sets it) changes.
+    accepted_licenses: set[str] = field(default_factory=set)
     # Features checklist → system-wide USE (capabilities keys). Desktop pre-checks
     # the common ones; resolve_global_use turns this into the make.conf USE tokens.
     capabilities: set[str] = field(
@@ -248,6 +253,7 @@ def apply_role(sel: InstallSelections, role: str) -> None:
     # The role sets the license rung, so a role switch invalidates any prior
     # acceptance — the user must re-view + accept the new rung's agreements.
     sel.licenses_accepted = False
+    sel.accepted_licenses = set()
 
 
 def resolve_stage3(variant: Stage3Variant, *, mirror: str = index.MIRROR) -> Stage3Selection:

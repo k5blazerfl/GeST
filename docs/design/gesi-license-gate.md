@@ -40,22 +40,27 @@ system) is a separate concern and out of scope here.
 
 ## The flow
 
-The license row becomes a small **gate/modal** with three parts:
+License is its **own dedicated wizard gate** (`… → Base System → Licenses →
+Your Account →`), not a row inside Base System. The **rung selection lives in this
+gate** too, so it owns the whole consent flow end-to-end:
 
-1. **Choose the rung** — the existing Libre / Redistributable / Full picker, unchanged.
-2. **See the agreements that rung entails** — a concise, grouped list of the license
-   agreements the selected rung accepts, with an emphasis on the ones *this* install
-   will actually exercise (see "Relevance" below). Each entry is one line:
-   `NVIDIA-r2 — proprietary NVIDIA driver license   [View]`.
-3. **Accept** — an explicit "I accept these agreements" affirmation (a checkbox or an
-   Accept button) that must be set to leave the gate. This is the acknowledgement;
-   it does not change what `ACCEPT_LICENSE` is written to (that still comes from the
-   rung) — it makes the choice *conscious*.
+1. **Choose the rung** — the Libre / Redistributable / Full picker (moved here from
+   Base System). Changing the rung re-computes the agreement list *and clears any
+   prior per-agreement acceptance* — you re-consent to the new terms.
+2. **Read + accept each agreement it entails** — one **row per *required*
+   agreement** (the ones this hardware actually exercises), each showing its
+   accepted state (`not yet` / `✓ accepted`). Opening a row is a **full-text
+   viewer**: the agreement's real license text, scrollable, with the relevance line
+   ("Required for THIS machine — …") and one **Accept** action carrying the explicit
+   consent: **"By clicking Accept, you are agreeing to the terms above."** Accept
+   soft-locks that agreement; Decline drops back to the rung picker.
+3. **Continue is gated** — it stays refused until *every required agreement* is
+   accepted (`licenses_accepted` is derived: all required names ⊆
+   `accepted_licenses`). Libre entails nothing → the gate is just the rung + Continue.
 
-Each listed agreement carries a **[View]** action that opens the license's actual
-text in a scrollable pane (the licenses ship in the tree at
-`/var/db/repos/gentoo/licenses/<name>` on the live medium). "Accept" then means
-something, because you could read it.
+Per-agreement, full-text, one honest Accept each — you can't advance without having
+seen what you agreed to. Acceptance does not change what `ACCEPT_LICENSE` is written
+to (that still comes from the rung); it makes the choice *conscious*.
 
 ## What each rung entails (the agreement list)
 
@@ -187,11 +192,19 @@ the full gate ships (tracked separately):
 
 ## Phasing
 
-1. **Stopgap** — Libre warning + `genkernel[-firmware]`/atom-skip under Libre.
-2. **`license_agreements()`** + tests (pure; the agreement list + relevance + blockers).
-3. **View+accept modal** wired into `BaseSystemStep`; Review reflects it.
-4. **EULA relevance map** grown as packages that pull `@EULA` licenses are added to
-   the feature/role sets.
+1. **Stopgap** — Libre warning + `genkernel[-firmware]`/atom-skip under Libre. ✅
+2. **`license_agreements()`** + tests (pure; the agreement list + relevance + blockers). ✅
+3. **View+accept** wired into `BaseSystemStep` (single list + one accept). ✅ (superseded)
+4. **Own gate + per-agreement full-viewers** — promoted out of Base System to a
+   dedicated `LicenseStep` (rung selection moved in); each required agreement is a
+   full-text viewer with its own "By clicking Accept…" consent, soft-locked into
+   `sel.accepted_licenses`; `licenses_accepted` derived; Continue gated on all
+   required accepted. ✅ (`gest/tui/screens/install/wizard.py`,
+   `tests/test_wizard_license_gate.py`)
+5. **EULA relevance map** grown as packages that pull `@EULA` licenses are added to
+   the feature/role sets. (ongoing)
+6. **Qt parity** — the same gate model in the Control Center / future Qt wizard
+   (`licensing.py` is already frontend-agnostic). (planned)
 
 ## Non-goals
 
