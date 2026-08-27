@@ -22,6 +22,8 @@ endif()
 
 qt_add_executable(textant
     main.cpp
+    mainwindow.cpp
+    terminal.cpp
     pty.cpp
     vtermsession.cpp
     terminalview.cpp
