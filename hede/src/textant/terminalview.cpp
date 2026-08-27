@@ -67,15 +67,23 @@ bool boxConnections(uint cp, bool &up, bool &down, bool &left, bool &right) {
 void drawBoxGlyph(QPainter &p, int x, int y, int w, int h, uint cp, const QColor &color) {
     bool up, down, left, right;
     boxConnections(cp, up, down, left, right);
-    const qreal cx = x + w / 2.0, cy = y + h / 2.0;
-    QPen pen(color, std::max(1.0, w / 10.0));
-    pen.setCapStyle(Qt::FlatCap);
+    const int cx = x + w / 2, cy = y + h / 2;    // integer -> crisp, no AA smear
+    QPen pen(color, std::max(1, w / 8));
+    pen.setCapStyle(Qt::SquareCap);              // caps overlap the join
     p.save();
     p.setPen(pen);
-    if (left)  p.drawLine(QPointF(x, cy), QPointF(cx, cy));
-    if (right) p.drawLine(QPointF(cx, cy), QPointF(x + w, cy));
-    if (up)    p.drawLine(QPointF(cx, y), QPointF(cx, cy));
-    if (down)  p.drawLine(QPointF(cx, cy), QPointF(cx, y + h));
+    // Straight-through runs draw as ONE line (no centre seam per cell, which is
+    // what made long borders look faintly dotted); only corners/junctions split.
+    if (left && right && !up && !down) {
+        p.drawLine(x, cy, x + w, cy);
+    } else if (up && down && !left && !right) {
+        p.drawLine(cx, y, cx, y + h);
+    } else {
+        if (left)  p.drawLine(x, cy, cx, cy);
+        if (right) p.drawLine(cx, cy, x + w, cy);
+        if (up)    p.drawLine(cx, y, cx, cy);
+        if (down)  p.drawLine(cx, cy, cx, y + h);
+    }
     p.restore();
 }
 } // namespace
