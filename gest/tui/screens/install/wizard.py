@@ -61,6 +61,7 @@ _RAIL: tuple[tuple[str, str], ...] = (
     ("role", "System Role"),
     ("disk", "Disk"),
     ("base", "Base System"),
+    ("license", "Licenses"),
     ("account", "Your Account"),
     ("review", "Review"),
 )
@@ -1114,6 +1115,147 @@ class DiskStep(WizardStep):
         return None
 
 
+class LicenseStep(WizardStep):
+    """Licenses gate — a dedicated consent step. Pick the ACCEPT_LICENSE rung, then
+    read + accept EACH agreement that rung entails for this machine. Every required
+    agreement is its own full-text viewer you accept individually (soft-locked), so
+    Continue genuinely means you've seen what you're agreeing to. The rung selection
+    lives here, not in Base System."""
+
+    step_key = "license"
+    step_title = "Licenses"
+
+    _RUNG_NAMES = {"libre": "Libre", "redistributable": "Redistributable", "full": "Full"}
+
+    _LICENSE_DETAIL = {
+        "libre": "Accept only free/open-source licenses (@FREE). The most principled "
+                 "choice, but it EXCLUDES binary firmware and proprietary drivers: no "
+                 "sys-kernel/linux-firmware (most Wi-Fi and NVIDIA GSP won't work), the "
+                 "kernel is built firmware-free, and an NVIDIA card falls back to the "
+                 "open nouveau driver. Pick this only for a deliberately all-free "
+                 "system; for real hardware — especially NVIDIA — choose Redistributable.",
+        "redistributable": "Also accept licenses that are free to redistribute — "
+                           "notably binary firmware and the NVIDIA driver — while "
+                           "still refusing click-through EULAs. A practical middle "
+                           "ground; the right default for most real hardware.",
+        "full": "Accept everything, including click-through EULAs (some fonts, Steam, "
+                "and the like). Maximum compatibility and the least fuss, with the "
+                "least restrictive stance on licensing.",
+    }
+
+    def help(self) -> str:
+        return ("The license policy sets ACCEPT_LICENSE. Full/Redistributable cover\n"
+                "binary firmware and the NVIDIA driver; Libre is free-only (no\n"
+                "proprietary GPU). Read and accept each agreement your choice entails\n"
+                "for this machine — open each row, review the full text, choose Accept.")
+
+    def _nvidia_planned(self) -> bool:
+        """Whether the proprietary NVIDIA driver is planned — the relevance input."""
+        if not self.sel.gpu_auto:
+            return self.sel.nvidia_proprietary
+        cached = getattr(self, "_nvidia_auto", None)
+        if cached is None:
+            cached = assemble.resolve_gpu().nvidia_proprietary
+            self._nvidia_auto = cached
+        return cached
+
+    def _review(self) -> licensing.LicenseReview:
+        return licensing.review_licenses(self.sel.license, nvidia=self._nvidia_planned())
+
+    def _recompute_accept(self) -> None:
+        """licenses_accepted := every REQUIRED agreement is in accepted_licenses."""
+        req = {a.name for a in self._review().required}
+        self.sel.licenses_accepted = req <= self.sel.accepted_licenses
+
+    def setting_rows(self):
+        review = self._review()
+        rows = [("License policy", self._RUNG_NAMES[self.sel.license], self._change_rung)]
+        if review.blockers:
+            return rows  # incompatible rung — only the policy matters until it's fixed
+        for a in review.required:
+            done = a.name in self.sel.accepted_licenses
+            val = "✓ accepted" if done else "not yet — open to read & accept"
+            rows.append((a.label, val, lambda a=a: self._open_agreement(a)))
+        if not review.required:
+            rows.append(("Agreements", "none to accept for this rung", None))
+        return rows
+
+    def row_detail(self, label, value):
+        review = self._review()
+        if label == "License policy":
+            base = self._LICENSE_DETAIL.get(self.sel.license, "")
+            if review.blockers:
+                return f"{base}\n\n⚠ {review.blockers[0]}"
+            req = ", ".join(a.label for a in review.required) or "none"
+            tail = f"For THIS machine, {self._RUNG_NAMES[self.sel.license]} requires: {req}."
+            if review.warnings:
+                tail += f"\n\n⚠ {review.warnings[0]}"
+            return f"{base}\n\n{tail}"
+        for a in review.required:
+            if a.label == label:
+                state = ("Accepted." if a.name in self.sel.accepted_licenses
+                         else "Not yet accepted.")
+                return (f"{a.one_line}\n\nRequired for this machine ({a.group}). {state} "
+                        "Open this row to read the full text and accept it.")
+        return super().row_detail(label, value)
+
+    def _change_rung(self):
+        opts = [(k, _LICENSE_LABELS[k]) for k in ("libre", "redistributable", "full")]
+
+        def apply(k):
+            if k != self.sel.license:
+                self.sel.license = k
+                self.sel.licenses_accepted = False
+                self.sel.accepted_licenses = set()
+
+        _choice_modal(self.app, "License policy", opts, self.sel.license, apply, self._render)
+
+    def _open_agreement(self, agreement):
+        """The full-text viewer for one agreement — read, then Accept (soft-lock) or
+        Decline (back to the rung picker)."""
+        text = licensing.read_license_text(agreement.name)
+        if not text:
+            text = (f"{agreement.label}\n\n{agreement.one_line}\n\n"
+                    "(The full license text isn't available in this environment — it "
+                    f"ships in the Portage tree at {agreement.text_path}.)")
+        lines = [_row(ln) for ln in text.splitlines()] or [_row("")]
+        listbox = urwid.ListBox(urwid.SimpleFocusListWalker(lines))
+
+        def accept():
+            self.sel.accepted_licenses = self.sel.accepted_licenses | {agreement.name}
+            self._recompute_accept()
+            self.app.pop()
+            self._render()
+
+        def decline():
+            self.app.pop()
+            self._change_rung()
+
+        body = [
+            urwid.Text(("hint", f"Required for THIS machine — {agreement.one_line}")),
+            urwid.Divider(),
+            urwid.BoxAdapter(listbox, 16),
+            urwid.Divider(),
+            urwid.Text(("field",
+                        "By clicking Accept, you are agreeing to the terms above.")),
+        ]
+        modal = Modal(self.app, agreement.label, body,
+                      [("Accept", accept), ("Decline (change rung)", decline)])
+        self.app.push_modal(modal, width=("relative", 82), height=("relative", 84))
+
+    def validate(self):
+        if self.sel.license not in LICENSE_POLICIES:
+            return f"Unknown license policy: {self.sel.license}"
+        review = self._review()
+        if review.blockers:
+            return review.blockers[0]
+        self._recompute_accept()
+        if not self.sel.licenses_accepted:
+            return ("Read and accept each license agreement above before continuing — "
+                    "open each row, review the full text, and choose Accept.")
+        return None
+
+
 class BaseSystemStep(WizardStep):
     step_key = "base"
     step_title = "Base System"
@@ -1130,7 +1272,6 @@ class BaseSystemStep(WizardStep):
         feats = ", ".join(sorted(self.sel.capabilities)) or "(none)"
         rows = [
             ("Build strategy", build, self._edit_build),
-            ("License policy", self._license_row_value(), self._edit_license),
             ("Features (USE)", feats, self._edit_features),
             ("Admin model", _ADMIN_LABELS[self.sel.admin_model], self._edit_admin),
         ]
@@ -1140,21 +1281,6 @@ class BaseSystemStep(WizardStep):
 
     # Detail keyed off the *currently selected* option, so the panel explains what
     # you have set (and how it differs from the alternatives) as you change it.
-    _LICENSE_DETAIL = {
-        "libre": "Accept only free/open-source licenses (@FREE). The most principled "
-                 "choice, but it EXCLUDES binary firmware and proprietary drivers: no "
-                 "sys-kernel/linux-firmware (most Wi-Fi and NVIDIA GSP won't work), the "
-                 "kernel is built firmware-free, and an NVIDIA card falls back to the "
-                 "open nouveau driver. Pick this only for a deliberately all-free "
-                 "system; for real hardware — especially NVIDIA — choose Redistributable.",
-        "redistributable": "Also accept licenses that are free to redistribute — "
-                           "notably binary firmware and the NVIDIA driver — while "
-                           "still refusing click-through EULAs. A practical middle "
-                           "ground; the right default for most real hardware.",
-        "full": "Accept everything, including click-through EULAs (some fonts, Steam, "
-                "and the like). Maximum compatibility and the least fuss, with the "
-                "least restrictive stance on licensing.",
-    }
     _ADMIN_DETAIL = {
         "traditional": "The classic Unix setup: root has its own password and you "
                        "become root with su. Simple and familiar, but every admin "
@@ -1177,9 +1303,6 @@ class BaseSystemStep(WizardStep):
             return ("Compile every package from source, tuned to your exact CPU and "
                     "USE flags — the classic Gentoo way. Slower (sometimes hours) but "
                     "maximally tailored. Best with capable hardware and some patience.")
-        if label == "License policy":
-            base = self._LICENSE_DETAIL.get(self.sel.license, "")
-            return f"{base}\n\n{self._license_detail_tail(self._current_review())}"
         if label == "Features (USE)":
             return ("Features are high-level toggles that map to system-wide USE flags "
                     "— the switches that decide which optional support gets compiled "
@@ -1213,122 +1336,6 @@ class BaseSystemStep(WizardStep):
                       lambda k: setattr(self.sel, "binary_pref", k == "binary"),
                       self._render)
 
-    # -- license gate: pick a rung, see the agreements it entails for THIS machine,
-    #    and explicitly accept them (docs/design/gesi-license-gate.md) ------------
-    _RUNG_NAMES = {"libre": "Libre", "redistributable": "Redistributable", "full": "Full"}
-
-    def _nvidia_planned(self) -> bool:
-        """Whether the proprietary NVIDIA driver is planned — the relevance input.
-        When the GPU is auto-detected (gpu_auto), probe the real hardware once
-        (lspci) so an auto NVIDIA card counts; otherwise honour the explicit choice."""
-        if not self.sel.gpu_auto:
-            return self.sel.nvidia_proprietary
-        cached = getattr(self, "_nvidia_auto", None)
-        if cached is None:
-            cached = assemble.resolve_gpu().nvidia_proprietary
-            self._nvidia_auto = cached
-        return cached
-
-    def _current_review(self) -> licensing.LicenseReview:
-        return licensing.review_licenses(self.sel.license, nvidia=self._nvidia_planned())
-
-    def _license_row_value(self) -> str:
-        review = self._current_review()
-        base = self._RUNG_NAMES[self.sel.license]
-        if review.blockers:
-            return f"{base}   ⚠ incompatible — open to fix"
-        if not self.sel.licenses_accepted:
-            return f"{base}   (not yet accepted)"
-        n = len(review.required)
-        return f"{base}   ✓ accepted · {n} agreement{'' if n == 1 else 's'}"
-
-    def _license_detail_tail(self, review) -> str:
-        if review.blockers:
-            return "⚠ " + review.blockers[0] + "\n\nOpen this row to change the rung."
-        req = ", ".join(a.label for a in review.required) or "none"
-        status = ("accepted" if self.sel.licenses_accepted
-                  else "NOT yet accepted — open this row to review and accept")
-        line = f"Agreements that apply to this machine: {req}. Status: {status}."
-        if review.warnings:
-            line += "\n\n⚠ " + review.warnings[0]
-        return line
-
-    def _edit_license(self):
-        self._open_license_gate()
-
-    def _open_license_gate(self):
-        review = self._current_review()
-        rows = [
-            urwid.Text(("hint", "Review the licenses this rung accepts for THIS "
-                        "machine, then accept to continue.")),
-            urwid.Text([("field", "Rung: "), self._RUNG_NAMES[self.sel.license],
-                        ("dim", f"   ({review.accept_value})")]),
-            _button("Change rung…", self._change_rung),
-            urwid.Divider(),
-        ]
-        if review.entails:
-            rows.append(urwid.Text(("hint", "Agreements ( ● used by this install ):")))
-            for a in review.entails:
-                mark, attr = ("●", "ok") if a.required_by_this_install else ("○", "dim")
-                rows.append(urwid.Columns([
-                    ("weight", 1, urwid.Text((attr, f" {mark} {a.label} — {a.one_line}"))),
-                    (10, _button("View", lambda a=a: self._view_license(a))),
-                ], dividechars=1))
-        else:
-            rows.append(urwid.Text(("dim",
-                        " This rung entails no binary-firmware or EULA agreements.")))
-        for b in review.blockers:
-            rows.append(urwid.Text(("error", f" ✗ {b}")))
-        for w in review.warnings:
-            rows.append(urwid.Text(("hint", f" ⚠ {w}")))
-        rows.append(urwid.Divider())
-        accept_box = urwid.CheckBox("I have read and accept these agreements",
-                                    state=self.sel.licenses_accepted)
-        rows.append(accept_box)
-
-        def do_accept():
-            if review.blockers:
-                self.app.notify("This rung can't cover a required license — "
-                                "change the rung first.")
-                return
-            if not accept_box.state:
-                self.app.notify("Tick “I have read and accept” to continue.")
-                return
-            self.sel.licenses_accepted = True
-            self.app.pop()
-            self._render()
-
-        modal = Modal(self.app, "License agreements", rows,
-                      [("Accept", do_accept), ("Cancel", self.app.pop)])
-        self.app.push_modal(modal, width=("relative", 80), height=("relative", 82))
-
-    def _change_rung(self):
-        # Close the gate, pick a rung, then reopen the gate on the new rung. Changing
-        # the rung invalidates any prior acceptance (must re-accept the new terms).
-        self.app.pop()
-        opts = [(k, _LICENSE_LABELS[k]) for k in ("libre", "redistributable", "full")]
-
-        def apply(k):
-            if k != self.sel.license:
-                self.sel.license = k
-                self.sel.licenses_accepted = False
-
-        _choice_modal(self.app, "License policy", opts, self.sel.license, apply,
-                      self._open_license_gate)
-
-    def _view_license(self, agreement):
-        text = licensing.read_license_text(agreement.name)
-        if not text:
-            text = (f"{agreement.name}\n\n{agreement.one_line}\n\n"
-                    "(The full license text isn't available in this environment — it "
-                    f"ships in the Portage tree at {agreement.text_path}.)")
-        # Selectable line rows so ↑/↓ scroll the text even where there's no mouse.
-        lines = [_row(ln) for ln in text.splitlines()] or [_row("")]
-        listbox = urwid.ListBox(urwid.SimpleFocusListWalker(lines))
-        modal = Modal(self.app, agreement.name, [urwid.BoxAdapter(listbox, 18)],
-                      [("Close", self.app.pop)])
-        self.app.push_modal(modal, width=("relative", 82), height=("relative", 84))
-
     def _edit_features(self):
         boxes = [urwid.CheckBox(cap.label, state=cap.key in self.sel.capabilities)
                  for cap in capabilities.CAPABILITIES]
@@ -1344,19 +1351,6 @@ class BaseSystemStep(WizardStep):
                        urwid.Divider(), *boxes],
                       [("Save", save), ("Cancel", self.app.pop)])
         self.app.push_modal(modal, width=("relative", 60), height=("relative", 70))
-
-    def validate(self):
-        if self.sel.license not in LICENSE_POLICIES:
-            return f"Unknown license policy: {self.sel.license}"
-        # Pre-flight license gate: block the incompatible-rung trap (e.g. Libre on an
-        # NVIDIA machine) here, and require an explicit acceptance of the agreements.
-        review = self._current_review()
-        if review.blockers:
-            return review.blockers[0]
-        if not self.sel.licenses_accepted:
-            return ("Review and accept the license agreements first — open the "
-                    "“License policy” row on this gate.")
-        return None
 
 
 class AccountStep(WizardStep):
@@ -1530,6 +1524,7 @@ _STEPS = {
     "role": RoleStep,
     "disk": DiskStep,
     "base": BaseSystemStep,
+    "license": LicenseStep,
     "account": AccountStep,
 }
 

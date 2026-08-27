@@ -36,13 +36,22 @@ def test_base_system_detail_tracks_selection(monkeypatch):
                       license="libre", binary_pref=True)
     assert "prebuilt" in step.row_detail("Build strategy", "").lower() or \
            "binary" in step.row_detail("Build strategy", "").lower()
-    assert "free/open-source" in step.row_detail("License policy", "").lower()
     assert "locked" in step.row_detail("Admin model", "").lower()      # rootless
     assert "use flag" in step.row_detail("Features (USE)", "").lower()
     assert "doas" in step.row_detail("Escalator", "").lower()
     # source strategy flips the copy
     sel.binary_pref = False
     assert "source" in step.row_detail("Build strategy", "").lower()
+
+
+def test_license_detail_tracks_rung_and_relevance(monkeypatch):
+    # gpu_auto off + no explicit nvidia → _nvidia_planned is deterministic (no lspci)
+    step, sel = _step(wz.LicenseStep, monkeypatch, license="libre",
+                      gpu_auto=False, nvidia_proprietary=False)
+    assert "free/open-source" in step.row_detail("License policy", "").lower()
+    # a covering rung names the agreements it requires for this machine
+    sel.license = "full"
+    assert "requires" in step.row_detail("License policy", "").lower()
 
 
 def test_account_detail_covers_hostname_users_root(monkeypatch):

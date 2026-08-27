@@ -28,7 +28,7 @@ def _step(cls, sel=None):
 
 def test_rail_is_the_mainline_order():
     assert [k for k, _ in wz._RAIL] == [
-        "localization", "online", "role", "disk", "base", "account", "review"]
+        "localization", "online", "role", "disk", "base", "license", "account", "review"]
 
 
 def test_welcome_skips_get_online_when_already_connected():
