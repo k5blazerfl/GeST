@@ -1,3 +1,4 @@
+#include "config.h"
 #include "pty.h"
 #include "terminalview.h"
 #include "vtermsession.h"
@@ -16,11 +17,15 @@ int main(int argc, char **argv) {
     constexpr int kRows = 24;
     constexpr int kCols = 80;
 
+    const Config cfg = Config::load();
+
     Pty pty;
     VTermSession session(kRows, kCols);
+    session.setScrollbackMax(cfg.scrollback);
     TerminalView view;
     view.setSession(&session);
     view.setPty(&pty);
+    view.applyFont(cfg.fontFamily, cfg.fontSize);
     view.setWindowTitle(QStringLiteral("Textant"));
 
     // pty <-> session <-> view wiring.

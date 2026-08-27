@@ -3,22 +3,47 @@
 #include "pty.h"
 #include "vtermsession.h"
 
+#include <QApplication>
+#include <QClipboard>
 #include <QFontMetrics>
 #include <QKeyEvent>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPaintEvent>
 #include <QResizeEvent>
+#include <QWheelEvent>
 
 #include <algorithm>
 
 namespace {
 const QColor kBackground(0x0e, 0x17, 0x28);
 const QColor kCursor(0xff, 0xc2, 0x47);
+const QColor kSelection(0x2f, 0x4c, 0x74);
+
+// Fetch a cell by absolute position (scrollback then live).
+bool posCell(const VTermSession *s, int pos, int col, VTermScreenCell &out) {
+    const int sb = s->scrollbackCount();
+    if (pos < 0 || pos >= sb + s->rows())
+        return false;
+    if (pos < sb)
+        return s->scrollbackCell(pos, col, out);
+    return s->cell(pos - sb, col, out);
 }
+
+int cellChars(const VTermScreenCell &cell, QString &out) {
+    int n = 0;
+    while (n < VTERM_MAX_CHARS_PER_CELL && cell.chars[n])
+        ++n;
+    out = n > 0 ? QString::fromUcs4(reinterpret_cast<const char32_t *>(cell.chars), n)
+                : QString();
+    return n;
+}
+} // namespace
 
 TerminalView::TerminalView(QWidget *parent) : QWidget(parent) {
     setFocusPolicy(Qt::StrongFocus);
     setAttribute(Qt::WA_OpaquePaintEvent);
+    setCursor(Qt::IBeamCursor);
 
     m_font = QFont(QStringLiteral("monospace"), 11);
     m_font.setStyleHint(QFont::Monospace);
@@ -26,18 +51,45 @@ TerminalView::TerminalView(QWidget *parent) : QWidget(parent) {
     updateFontMetrics();
 }
 
+void TerminalView::applyFont(const QString &family, int pointSize) {
+    if (!family.isEmpty())
+        m_font.setFamily(family);
+    if (pointSize > 0)
+        m_font.setPointSize(pointSize);
+    m_font.setStyleHint(QFont::Monospace);
+    m_font.setFixedPitch(true);
+    updateFontMetrics();
+    syncGrid();
+    update();
+}
+
 void TerminalView::setSession(VTermSession *session) {
     m_session = session;
     if (!session)
         return;
     connect(session, &VTermSession::damaged, this, [this](const QRect &cells) {
-        update(cellsToPixels(cells));
+        if (m_scrollOffset > 0)
+            update();                       // live coords don't map cleanly when scrolled
+        else
+            update(cellsToPixels(cells));
     });
     connect(session, &VTermSession::cursorMoved, this,
             [this](const QRect &oldCell, const QRect &newCell) {
+                if (m_scrollOffset > 0)
+                    return;
                 update(cellsToPixels(oldCell));
                 update(cellsToPixels(newCell));
             });
+    // A line scrolled into history: keep the viewed content stable if scrolled up,
+    // and drop any selection (its positions would shift).
+    connect(session, &VTermSession::lineScrolledOff, this, [this] {
+        if (m_scrollOffset > 0)
+            setScrollOffset(m_scrollOffset + 1);
+        if (m_hasSel) {
+            m_hasSel = false;
+            update();
+        }
+    });
     update();
 }
 
@@ -65,12 +117,60 @@ QRect TerminalView::cellsToPixels(const QRect &c) const {
                  c.width() * m_cellW, c.height() * m_cellH);
 }
 
+int TerminalView::viewportRowToPos(int row) const {
+    return m_session ? m_session->scrollbackCount() - m_scrollOffset + row : row;
+}
+
+QPoint TerminalView::pixelToCell(const QPoint &p) const {
+    const int cols = m_session ? m_session->cols() : 1;
+    const int rows = m_session ? m_session->rows() : 1;
+    const int col = std::clamp(p.x() / m_cellW, 0, cols - 1);
+    const int row = std::clamp(p.y() / m_cellH, 0, rows - 1);
+    return QPoint(col, viewportRowToPos(row));
+}
+
+void TerminalView::setScrollOffset(int off) {
+    const int maxOff = m_session ? m_session->scrollbackCount() : 0;
+    off = std::clamp(off, 0, maxOff);
+    if (off == m_scrollOffset)
+        return;
+    m_scrollOffset = off;
+    update();
+}
+
 QSize TerminalView::sizeHint() const {
     return QSize(m_cellW * 80, m_cellH * 24);
 }
 
 void TerminalView::resizeEvent(QResizeEvent *) {
     syncGrid();
+}
+
+void TerminalView::wheelEvent(QWheelEvent *ev) {
+    if (!m_session)
+        return;
+    const int steps = ev->angleDelta().y() / 40;   // ~3 lines per notch
+    if (steps != 0)
+        setScrollOffset(m_scrollOffset + steps);
+    ev->accept();
+}
+
+bool TerminalView::inSelection(int pos, int col) const {
+    if (!m_hasSel)
+        return false;
+    QPoint a = m_selAnchor, b = m_selPoint;     // (col, pos)
+    const auto before = [](QPoint x, QPoint y) {
+        return x.y() < y.y() || (x.y() == y.y() && x.x() < y.x());
+    };
+    QPoint s = before(a, b) ? a : b;
+    QPoint e = before(a, b) ? b : a;
+    if (pos < s.y() || pos > e.y())
+        return false;
+    if (pos == s.y() && col < s.x())
+        return false;
+    if (pos == e.y() && col > e.x())
+        return false;
+    return true;
 }
 
 void TerminalView::paintEvent(QPaintEvent *ev) {
@@ -88,11 +188,12 @@ void TerminalView::paintEvent(QPaintEvent *ev) {
     const int r1 = std::min(rows - 1, clip.bottom() / m_cellH);
 
     for (int r = r0; r <= r1; ++r) {
+        const int pos = viewportRowToPos(r);
         for (int c = c0; c <= c1; ++c) {
             VTermScreenCell cell;
-            if (!m_session->cell(r, c, cell))
+            if (!posCell(m_session, pos, c, cell))
                 continue;
-            if (cell.width == 0)     // right half of a wide glyph — already drawn
+            if (cell.width == 0)
                 continue;
 
             const int x = c * m_cellW;
@@ -103,16 +204,14 @@ void TerminalView::paintEvent(QPaintEvent *ev) {
             QColor bg = m_session->toColor(cell.bg);
             if (cell.attrs.reverse)
                 std::swap(fg, bg);
+            if (inSelection(pos, c))
+                bg = kSelection;
 
             if (bg != kBackground)
                 p.fillRect(x, y, w, m_cellH, bg);
 
-            int n = 0;
-            while (n < VTERM_MAX_CHARS_PER_CELL && cell.chars[n])
-                ++n;
-            if (n > 0) {
-                const QString s = QString::fromUcs4(
-                    reinterpret_cast<const char32_t *>(cell.chars), n);
+            QString s;
+            if (cellChars(cell, s) > 0) {
                 if (cell.attrs.bold || cell.attrs.italic || cell.attrs.underline) {
                     QFont f = m_font;
                     f.setBold(cell.attrs.bold);
@@ -128,7 +227,7 @@ void TerminalView::paintEvent(QPaintEvent *ev) {
         }
     }
 
-    if (m_session->cursorVisible()) {
+    if (m_scrollOffset == 0 && m_session->cursorVisible()) {
         const VTermPos cur = m_session->cursor();
         if (cur.row >= 0 && cur.row < rows && cur.col >= 0 && cur.col < cols) {
             QColor c = kCursor;
@@ -138,12 +237,113 @@ void TerminalView::paintEvent(QPaintEvent *ev) {
     }
 }
 
+QString TerminalView::selectionText() const {
+    if (!m_hasSel || !m_session)
+        return QString();
+    QPoint a = m_selAnchor, b = m_selPoint;
+    const auto before = [](QPoint x, QPoint y) {
+        return x.y() < y.y() || (x.y() == y.y() && x.x() < y.x());
+    };
+    const QPoint s = before(a, b) ? a : b;
+    const QPoint e = before(a, b) ? b : a;
+    const int cols = m_session->cols();
+
+    QString out;
+    for (int pos = s.y(); pos <= e.y(); ++pos) {
+        const int from = (pos == s.y()) ? s.x() : 0;
+        const int to = (pos == e.y()) ? e.x() : cols - 1;
+        QString line;
+        for (int c = from; c <= to; ++c) {
+            VTermScreenCell cell;
+            if (!posCell(m_session, pos, c, cell) || cell.width == 0)
+                continue;
+            QString ch;
+            line += (cellChars(cell, ch) > 0) ? ch : QStringLiteral(" ");
+        }
+        while (line.endsWith(QLatin1Char(' ')))
+            line.chop(1);
+        if (pos != s.y())
+            out += QLatin1Char('\n');
+        out += line;
+    }
+    return out;
+}
+
+void TerminalView::copySelection(bool toPrimary) {
+    const QString text = selectionText();
+    if (text.isEmpty())
+        return;
+    QApplication::clipboard()->setText(
+        text, toPrimary ? QClipboard::Selection : QClipboard::Clipboard);
+}
+
+void TerminalView::paste(bool fromPrimary) {
+    if (!m_pty)
+        return;
+    const QString text = QApplication::clipboard()->text(
+        fromPrimary ? QClipboard::Selection : QClipboard::Clipboard);
+    if (text.isEmpty())
+        return;
+    scrollToBottom();
+    m_pty->write(text.toUtf8());
+}
+
+void TerminalView::mousePressEvent(QMouseEvent *ev) {
+    if (ev->button() == Qt::MiddleButton) {
+        paste(true);                        // primary selection
+        return;
+    }
+    if (ev->button() == Qt::LeftButton) {
+        setFocus();
+        m_selecting = true;
+        m_selAnchor = m_selPoint = pixelToCell(ev->pos());
+        m_hasSel = false;
+        update();
+    }
+}
+
+void TerminalView::mouseMoveEvent(QMouseEvent *ev) {
+    if (!m_selecting)
+        return;
+    m_selPoint = pixelToCell(ev->pos());
+    m_hasSel = (m_selPoint != m_selAnchor);
+    update();
+}
+
+void TerminalView::mouseReleaseEvent(QMouseEvent *ev) {
+    if (ev->button() != Qt::LeftButton)
+        return;
+    m_selecting = false;
+    if (m_hasSel)
+        copySelection(true);                // mirror to primary, X11-style
+}
+
 void TerminalView::keyPressEvent(QKeyEvent *ev) {
     if (!m_session)
         return;
 
-    VTermModifier mod = VTERM_MOD_NONE;
     const Qt::KeyboardModifiers qm = ev->modifiers();
+
+    // Clipboard + scroll bindings (Ctrl+Shift+C/V, Shift+PageUp/Down).
+    if (qm.testFlag(Qt::ControlModifier) && qm.testFlag(Qt::ShiftModifier)) {
+        if (ev->key() == Qt::Key_C) { copySelection(false); return; }
+        if (ev->key() == Qt::Key_V) { paste(false); return; }
+    }
+    if (qm.testFlag(Qt::ShiftModifier)) {
+        if (ev->key() == Qt::Key_PageUp) {
+            setScrollOffset(m_scrollOffset + std::max(1, m_session->rows() - 1));
+            return;
+        }
+        if (ev->key() == Qt::Key_PageDown) {
+            setScrollOffset(m_scrollOffset - std::max(1, m_session->rows() - 1));
+            return;
+        }
+    }
+
+    // Any real input returns to the live view.
+    scrollToBottom();
+
+    VTermModifier mod = VTERM_MOD_NONE;
     if (qm & Qt::ShiftModifier)
         mod = static_cast<VTermModifier>(mod | VTERM_MOD_SHIFT);
     if (qm & Qt::AltModifier)
@@ -151,7 +351,6 @@ void TerminalView::keyPressEvent(QKeyEvent *ev) {
     if (qm & Qt::ControlModifier)
         mod = static_cast<VTermModifier>(mod | VTERM_MOD_CTRL);
 
-    // Special keys first.
     VTermKey vk = VTERM_KEY_NONE;
     switch (ev->key()) {
     case Qt::Key_Return:
@@ -179,7 +378,6 @@ void TerminalView::keyPressEvent(QKeyEvent *ev) {
         return;
     }
 
-    // Ctrl+letter: hand libvterm the base letter so it encodes the control byte.
     if (qm & Qt::ControlModifier) {
         const int k = ev->key();
         if (k >= Qt::Key_A && k <= Qt::Key_Z) {
@@ -192,7 +390,6 @@ void TerminalView::keyPressEvent(QKeyEvent *ev) {
         }
     }
 
-    // Printable text — already reflects Shift, so pass without modifiers.
     const QString text = ev->text();
     if (!text.isEmpty()) {
         const auto ucs = text.toUcs4();

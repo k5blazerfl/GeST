@@ -1,5 +1,7 @@
 #include "vtermsession.h"
 
+#include <algorithm>
+
 VTermSession::VTermSession(int rows, int cols, QObject *parent)
     : QObject(parent), m_rows(rows), m_cols(cols) {
     m_vt = vterm_new(rows, cols);
@@ -15,9 +17,9 @@ VTermSession::VTermSession(int rows, int cols, QObject *parent)
         .settermprop = &VTermSession::onSetTermProp,
         .bell        = &VTermSession::onBell,
         .resize      = &VTermSession::onResize,
-        .sb_pushline = nullptr,     // scrollback lands in P1
-        .sb_popline  = nullptr,
-        .sb_clear    = nullptr,
+        .sb_pushline = &VTermSession::onPushline,
+        .sb_popline  = &VTermSession::onPopline,
+        .sb_clear    = &VTermSession::onSbClear,
     };
     vterm_screen_set_callbacks(m_screen, &cb, this);
 
@@ -60,6 +62,19 @@ void VTermSession::inputKey(VTermKey key, VTermModifier mod) {
 bool VTermSession::cell(int row, int col, VTermScreenCell &out) const {
     VTermPos p { row, col };
     return vterm_screen_get_cell(m_screen, p, &out) != 0;
+}
+
+bool VTermSession::scrollbackCell(int line, int col, VTermScreenCell &out) const {
+    if (line < 0 || line >= static_cast<int>(m_scrollback.size()))
+        return false;
+    const std::vector<VTermScreenCell> &l = m_scrollback[static_cast<size_t>(line)];
+    if (col < 0 || col >= static_cast<int>(l.size())) {
+        out = VTermScreenCell {};
+        out.width = 1;
+        return true;                 // past the stored width — a blank cell
+    }
+    out = l[static_cast<size_t>(col)];
+    return true;
 }
 
 QColor VTermSession::toColor(VTermColor col) const {
@@ -123,5 +138,37 @@ int VTermSession::onResize(int rows, int cols, void *user) {
     auto *self = static_cast<VTermSession *>(user);
     self->m_rows = rows;
     self->m_cols = cols;
+    return 1;
+}
+
+int VTermSession::onPushline(int cols, const VTermScreenCell *cells, void *user) {
+    auto *self = static_cast<VTermSession *>(user);
+    if (self->m_scrollbackMax <= 0)
+        return 1;
+    self->m_scrollback.emplace_back(cells, cells + cols);
+    while (static_cast<int>(self->m_scrollback.size()) > self->m_scrollbackMax)
+        self->m_scrollback.pop_front();
+    emit self->lineScrolledOff();
+    return 1;
+}
+
+int VTermSession::onPopline(int cols, VTermScreenCell *cells, void *user) {
+    auto *self = static_cast<VTermSession *>(user);
+    if (self->m_scrollback.empty())
+        return 0;                    // nothing to restore
+    const std::vector<VTermScreenCell> &line = self->m_scrollback.back();
+    const int n = std::min(cols, static_cast<int>(line.size()));
+    for (int i = 0; i < n; ++i)
+        cells[i] = line[static_cast<size_t>(i)];
+    for (int i = n; i < cols; ++i) {
+        cells[i] = VTermScreenCell {};
+        cells[i].width = 1;
+    }
+    self->m_scrollback.pop_back();
+    return 1;
+}
+
+int VTermSession::onSbClear(void *user) {
+    static_cast<VTermSession *>(user)->m_scrollback.clear();
     return 1;
 }
