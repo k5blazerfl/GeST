@@ -32,6 +32,7 @@ add_subdirectory(src/bg)
 add_subdirectory(src/notify)
 add_subdirectory(src/hold)
 add_subdirectory(src/sefe)
+add_subdirectory(src/textant)
 add_subdirectory(tests)
 
 # --- data / session files ---------------------------------------------------
@@ -45,11 +46,10 @@ install(FILES data/wayland-sessions/hede.desktop
 # (inode/directory) AND archive handler — Hold folded into Seahorse, no separate app.
 install(FILES data/applications/sefe.desktop
               data/applications/barnacle.desktop
+              data/applications/textant.desktop
         DESTINATION ${CMAKE_INSTALL_PREFIX}/share/applications)
-# Textant's app icon ships now (the finalized brand mark; see docs/design/textant.md)
-# so Icon=textant resolves in the theme. The launcher (data/applications/textant.desktop)
-# is staged but intentionally NOT installed until the `textant` binary lands (P0) — a
-# .desktop with Exec=textant before the binary exists would be a dead menu entry.
+# Textant's app icon (the finalized brand mark; see docs/design/textant.md) so
+# Icon=textant resolves in the theme. HeDE's first bespoke app icon.
 install(DIRECTORY data/icons
         DESTINATION ${CMAKE_INSTALL_PREFIX}/share)
 install(DIRECTORY data/labwc data/wayfire data/grub data/worlds
