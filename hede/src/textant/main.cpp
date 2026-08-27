@@ -1,23 +1,37 @@
-#include "config.h"
 #include "pty.h"
+#include "settings.h"
 #include "terminalview.h"
 #include "vtermsession.h"
 
-#include <QApplication>
+#include "config.h"     // helm-common: helm::Config (hede.conf -> world accent)
+#include "palette.h"    // helm-appearance: applyAppearance / effectiveAccent / barTint
 
-// Textant P0 — a first-light terminal: pty + libvterm + a QWidget surface that
-// runs $SHELL. Ugly but usable; scrollback, selection, theming and default-terminal
-// registration follow in P1/P2 (see docs/design/textant.md).
+#include <QApplication>
+#include <QFileSystemWatcher>
+
+// Textant P2 — the HeDE-native terminal: pty + libvterm + a themed QWidget that
+// runs $SHELL, wears the active world's tint, and re-tints live on a world
+// switch. (P0/P1 gave the terminal + scrollback/selection/config.)
 int main(int argc, char **argv) {
+    // launchDetached correctness: the HeDE shell exports
+    // QT_WAYLAND_SHELL_INTEGRATION=layer-shell; a Qt app inheriting it comes up as
+    // a frameless layer surface instead of a normal window. Scrub it before the
+    // QApplication so Textant is always an ordinary xdg-toplevel, however launched.
+    qunsetenv("QT_WAYLAND_SHELL_INTEGRATION");
+
     QApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("Textant"));
     app.setApplicationDisplayName(QStringLiteral("Textant"));
     app.setDesktopFileName(QStringLiteral("textant"));
 
+    // Match the shell's palette/style, and re-apply on a world/accent switch.
+    helm::applyAppearance();
+    helm::watchAppearance();
+
+    const Settings cfg = Settings::load();
+
     constexpr int kRows = 24;
     constexpr int kCols = 80;
-
-    const Config cfg = Config::load();
 
     Pty pty;
     VTermSession session(kRows, kCols);
@@ -26,7 +40,27 @@ int main(int argc, char **argv) {
     view.setSession(&session);
     view.setPty(&pty);
     view.applyFont(cfg.fontFamily, cfg.fontSize);
+    view.setOpacity(cfg.opacity);
     view.setWindowTitle(QStringLiteral("Textant"));
+
+    // Tint the terminal surface from the active world's accent (helm-theme), and
+    // re-tint live when hede.conf changes (a world switch).
+    const auto applyWorldTint = [&session] {
+        const helm::Config hc;
+        const QColor accent = helm::effectiveAccent(hc);
+        session.setDefaultColors(QColor(0xe9, 0xee, 0xf6), helm::barTint(accent));
+    };
+    applyWorldTint();
+
+    const helm::Config hcForPath;
+    auto *watcher = new QFileSystemWatcher(&app);
+    watcher->addPath(hcForPath.path());
+    QObject::connect(watcher, &QFileSystemWatcher::fileChanged, &app,
+                     [watcher, applyWorldTint](const QString &path) {
+                         applyWorldTint();
+                         if (!watcher->files().contains(path))
+                             watcher->addPath(path);   // re-arm after atomic replace
+                     });
 
     // pty <-> session <-> view wiring.
     QObject::connect(&pty, &Pty::readyRead, &session, &VTermSession::writeInput);
@@ -46,6 +80,6 @@ int main(int argc, char **argv) {
     }
 
     view.resize(720, 430);
-    view.show();          // first resizeEvent syncs the real grid to pty + session
+    view.show();
     return app.exec();
 }

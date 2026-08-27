@@ -51,6 +51,14 @@ TerminalView::TerminalView(QWidget *parent) : QWidget(parent) {
     updateFontMetrics();
 }
 
+void TerminalView::setOpacity(double opacity) {
+    m_opacity = std::clamp(opacity, 0.2, 1.0);
+    const bool glass = m_opacity < 0.999;
+    setAttribute(Qt::WA_TranslucentBackground, glass);
+    setAttribute(Qt::WA_OpaquePaintEvent, !glass);
+    update();
+}
+
 void TerminalView::applyFont(const QString &family, int pointSize) {
     if (!family.isEmpty())
         m_font.setFamily(family);
@@ -175,7 +183,16 @@ bool TerminalView::inSelection(int pos, int col) const {
 
 void TerminalView::paintEvent(QPaintEvent *ev) {
     QPainter p(this);
-    p.fillRect(ev->rect(), kBackground);
+    const QColor defBg = m_session ? m_session->defaultBg() : kBackground;
+    if (m_opacity < 0.999) {
+        QColor glass = defBg;
+        glass.setAlphaF(m_opacity);
+        p.setCompositionMode(QPainter::CompositionMode_Source);  // write the alpha
+        p.fillRect(ev->rect(), glass);
+        p.setCompositionMode(QPainter::CompositionMode_SourceOver);
+    } else {
+        p.fillRect(ev->rect(), defBg);
+    }
     if (!m_session)
         return;
 
@@ -207,7 +224,7 @@ void TerminalView::paintEvent(QPaintEvent *ev) {
             if (inSelection(pos, c))
                 bg = kSelection;
 
-            if (bg != kBackground)
+            if (bg != defBg)                 // only non-default cells paint bg
                 p.fillRect(x, y, w, m_cellH, bg);
 
             QString s;

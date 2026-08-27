@@ -34,6 +34,12 @@ public:
     bool cell(int row, int col, VTermScreenCell &out) const;
     QColor toColor(VTermColor col) const;        // resolves indexed/default -> rgb
 
+    // Default fg/bg (world-tinted by the caller; drives the unset-colour cells
+    // and the surface clear). Repaints on change.
+    void setDefaultColors(const QColor &fg, const QColor &bg);
+    QColor defaultFg() const { return m_defaultFg; }
+    QColor defaultBg() const { return m_defaultBg; }
+
     VTermPos cursor() const { return m_cursor; }
     bool cursorVisible() const { return m_cursorVisible; }
 
@@ -71,4 +77,6 @@ private:
     QByteArray m_title;      // accumulates title string fragments
     std::deque<std::vector<VTermScreenCell>> m_scrollback;
     int m_scrollbackMax = 1000;
+    QColor m_defaultFg { 0xe9, 0xee, 0xf6 };
+    QColor m_defaultBg { 0x0e, 0x17, 0x28 };
 };

@@ -83,6 +83,18 @@ QColor VTermSession::toColor(VTermColor col) const {
     return QColor(col.rgb.red, col.rgb.green, col.rgb.blue);
 }
 
+void VTermSession::setDefaultColors(const QColor &fg, const QColor &bg) {
+    m_defaultFg = fg;
+    m_defaultBg = bg;
+    VTermColor vf, vb;
+    vterm_color_rgb(&vf, static_cast<uint8_t>(fg.red()),
+                    static_cast<uint8_t>(fg.green()), static_cast<uint8_t>(fg.blue()));
+    vterm_color_rgb(&vb, static_cast<uint8_t>(bg.red()),
+                    static_cast<uint8_t>(bg.green()), static_cast<uint8_t>(bg.blue()));
+    vterm_screen_set_default_colors(m_screen, &vf, &vb);
+    emit damaged(QRect(0, 0, m_cols, m_rows));    // re-tint the whole surface
+}
+
 // --- libvterm callbacks -----------------------------------------------------
 
 void VTermSession::onOutput(const char *s, size_t len, void *user) {

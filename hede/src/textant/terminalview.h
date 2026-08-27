@@ -22,6 +22,7 @@ public:
     void setSession(VTermSession *session);
     void setPty(Pty *pty) { m_pty = pty; }
     void applyFont(const QString &family, int pointSize);
+    void setOpacity(double opacity);   // < 1 -> translucent glass surface
 
 protected:
     void paintEvent(QPaintEvent *ev) override;
@@ -53,6 +54,7 @@ private:
     int m_cellH = 16;
     int m_ascent = 12;
     int m_scrollOffset = 0;        // lines scrolled up from the live bottom
+    double m_opacity = 1.0;
 
     bool m_selecting = false;
     bool m_hasSel = false;

@@ -25,11 +25,13 @@ qt_add_executable(textant
     pty.cpp
     vtermsession.cpp
     terminalview.cpp
-    config.cpp)
+    settings.cpp)
 
 target_link_libraries(textant PRIVATE
     Qt6::Widgets
     PkgConfig::VTERM
-    util)              # forkpty() lives in libutil
+    helm-appearance   # world tint + applyAppearance/watchAppearance
+    helm-common       # helm::Config (hede.conf -> active world)
+    util)             # forkpty() lives in libutil
 
 install(TARGETS textant RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
