@@ -20,7 +20,7 @@ int main(int argc, char **argv) {
     helm::watchAppearance();
 
     MainWindow window(Settings::load());
-    window.resize(760, 460);
+    window.resize(900, 560);
     window.show();
     return app.exec();
 }

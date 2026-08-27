@@ -41,6 +41,43 @@ int cellChars(const VTermScreenCell &cell, QString &out) {
                 : QString();
     return n;
 }
+
+// The common single-line box-drawing characters: which cell edges they connect.
+bool boxConnections(uint cp, bool &up, bool &down, bool &left, bool &right) {
+    up = down = left = right = false;
+    switch (cp) {
+    case 0x2500: left = right = true; break;               // ─
+    case 0x2502: up = down = true; break;                  // │
+    case 0x250C: right = down = true; break;               // ┌
+    case 0x2510: left = down = true; break;                // ┐
+    case 0x2514: up = right = true; break;                 // └
+    case 0x2518: up = left = true; break;                  // ┘
+    case 0x251C: up = down = right = true; break;          // ├
+    case 0x2524: up = down = left = true; break;           // ┤
+    case 0x252C: left = right = down = true; break;        // ┬
+    case 0x2534: left = right = up = true; break;          // ┴
+    case 0x253C: up = down = left = right = true; break;   // ┼
+    default: return false;
+    }
+    return true;
+}
+
+// Draw a box-drawing glyph as lines to the cell edges, so adjacent cells join
+// into unbroken borders (font glyphs leave gaps / drift).
+void drawBoxGlyph(QPainter &p, int x, int y, int w, int h, uint cp, const QColor &color) {
+    bool up, down, left, right;
+    boxConnections(cp, up, down, left, right);
+    const qreal cx = x + w / 2.0, cy = y + h / 2.0;
+    QPen pen(color, std::max(1.0, w / 10.0));
+    pen.setCapStyle(Qt::FlatCap);
+    p.save();
+    p.setPen(pen);
+    if (left)  p.drawLine(QPointF(x, cy), QPointF(cx, cy));
+    if (right) p.drawLine(QPointF(cx, cy), QPointF(x + w, cy));
+    if (up)    p.drawLine(QPointF(cx, y), QPointF(cx, cy));
+    if (down)  p.drawLine(QPointF(cx, cy), QPointF(cx, y + h));
+    p.restore();
+}
 } // namespace
 
 TerminalView::TerminalView(QWidget *parent) : QWidget(parent) {
@@ -306,8 +343,10 @@ void TerminalView::paintEvent(QPaintEvent *ev) {
                 continue;
             }
 
-            QString run;
-            const int start = c;
+            // Same-style run: set font/pen once (above), but draw each glyph at
+            // its exact cell x. Drawing the run as one string would let the font's
+            // natural advance drift off the grid, so long box-drawing borders
+            // wouldn't meet their corners (visible clipping on wide TUIs).
             int cc = c;
             for (; cc <= c1; ++cc) {
                 VTermScreenCell n;
@@ -318,9 +357,15 @@ void TerminalView::paintEvent(QPaintEvent *ev) {
                     || n.attrs.underline != under)
                     break;
                 QString ch;
-                run += (cellChars(n, ch) > 0) ? ch : QStringLiteral(" ");
+                if (cellChars(n, ch) > 0 && ch != QStringLiteral(" ")) {
+                    bool u, d, l, r;
+                    if (boxConnections(n.chars[0], u, d, l, r))
+                        drawBoxGlyph(p, cc * m_cellW, y, m_cellW, m_cellH,
+                                     n.chars[0], fg);
+                    else
+                        p.drawText(cc * m_cellW, y + m_ascent, ch);
+                }
             }
-            p.drawText(start * m_cellW, y + m_ascent, run);
             c = cc;
         }
     }
