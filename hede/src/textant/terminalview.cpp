@@ -236,43 +236,82 @@ void TerminalView::paintEvent(QPaintEvent *ev) {
     const int r0 = std::max(0, clip.top() / m_cellH);
     const int r1 = std::min(rows - 1, clip.bottom() / m_cellH);
 
+    // Effective fg/bg for a cell (reverse video + selection applied).
+    const auto effColors = [this](int pos, int c, const VTermScreenCell &cell,
+                                  QColor &fg, QColor &bg) {
+        fg = m_session->toColor(cell.fg);
+        bg = m_session->toColor(cell.bg);
+        if (cell.attrs.reverse)
+            std::swap(fg, bg);
+        if (inSelection(pos, c))
+            bg = kSelection;
+    };
+
     for (int r = r0; r <= r1; ++r) {
         const int pos = viewportRowToPos(r);
-        for (int c = c0; c <= c1; ++c) {
+        const int y = r * m_cellH;
+
+        // Pass 1 — backgrounds, batching contiguous cells of equal bg.
+        for (int c = c0; c <= c1;) {
             VTermScreenCell cell;
-            if (!posCell(m_session, pos, c, cell))
-                continue;
-            if (cell.width == 0)
-                continue;
-
-            const int x = c * m_cellW;
-            const int y = r * m_cellH;
-            const int w = m_cellW * (cell.width > 0 ? cell.width : 1);
-
-            QColor fg = m_session->toColor(cell.fg);
-            QColor bg = m_session->toColor(cell.bg);
-            if (cell.attrs.reverse)
-                std::swap(fg, bg);
-            if (inSelection(pos, c))
-                bg = kSelection;
-
-            if (bg != defBg)                 // only non-default cells paint bg
-                p.fillRect(x, y, w, m_cellH, bg);
-
-            QString s;
-            if (cellChars(cell, s) > 0) {
-                if (cell.attrs.bold || cell.attrs.italic || cell.attrs.underline) {
-                    QFont f = m_font;
-                    f.setBold(cell.attrs.bold);
-                    f.setItalic(cell.attrs.italic);
-                    f.setUnderline(cell.attrs.underline);
-                    p.setFont(f);
-                } else {
-                    p.setFont(m_font);
-                }
-                p.setPen(fg);
-                p.drawText(x, y + m_ascent, s);
+            if (!posCell(m_session, pos, c, cell)) { ++c; continue; }
+            QColor fg, bg;
+            effColors(pos, c, cell, fg, bg);
+            int cc = c + 1;
+            for (; cc <= c1; ++cc) {
+                VTermScreenCell n;
+                QColor nf, nb;
+                if (!posCell(m_session, pos, cc, n)) break;
+                effColors(pos, cc, n, nf, nb);
+                if (nb != bg) break;
             }
+            if (bg != defBg)
+                p.fillRect(c * m_cellW, y, (cc - c) * m_cellW, m_cellH, bg);
+            c = cc;
+        }
+
+        // Pass 2 — glyphs, batching runs that share fg + attrs (width-1 cells);
+        // wide glyphs draw singly.
+        for (int c = c0; c <= c1;) {
+            VTermScreenCell cell;
+            if (!posCell(m_session, pos, c, cell) || cell.width == 0) { ++c; continue; }
+            QColor fg, bg;
+            effColors(pos, c, cell, fg, bg);
+            const bool bold = cell.attrs.bold, ital = cell.attrs.italic,
+                       under = cell.attrs.underline;
+            QFont f = m_font;
+            if (bold || ital || under) {
+                f.setBold(bold);
+                f.setItalic(ital);
+                f.setUnderline(under);
+            }
+            p.setFont(f);
+            p.setPen(fg);
+
+            if (cell.width != 1) {                 // wide glyph
+                QString ch;
+                if (cellChars(cell, ch) > 0)
+                    p.drawText(c * m_cellW, y + m_ascent, ch);
+                c += cell.width;
+                continue;
+            }
+
+            QString run;
+            const int start = c;
+            int cc = c;
+            for (; cc <= c1; ++cc) {
+                VTermScreenCell n;
+                if (!posCell(m_session, pos, cc, n) || n.width != 1) break;
+                QColor nf, nb;
+                effColors(pos, cc, n, nf, nb);
+                if (nf != fg || n.attrs.bold != bold || n.attrs.italic != ital
+                    || n.attrs.underline != under)
+                    break;
+                QString ch;
+                run += (cellChars(n, ch) > 0) ? ch : QStringLiteral(" ");
+            }
+            p.drawText(start * m_cellW, y + m_ascent, run);
+            c = cc;
         }
     }
 
