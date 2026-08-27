@@ -5,12 +5,15 @@
 
 #include <QApplication>
 #include <QClipboard>
+#include <QDesktopServices>
 #include <QFontMetrics>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPaintEvent>
+#include <QRegularExpression>
 #include <QResizeEvent>
+#include <QUrl>
 #include <QWheelEvent>
 
 #include <algorithm>
@@ -135,6 +138,35 @@ QPoint TerminalView::pixelToCell(const QPoint &p) const {
     const int col = std::clamp(p.x() / m_cellW, 0, cols - 1);
     const int row = std::clamp(p.y() / m_cellH, 0, rows - 1);
     return QPoint(col, viewportRowToPos(row));
+}
+
+QString TerminalView::urlAt(int pos, int col) const {
+    if (!m_session)
+        return QString();
+    const int cols = m_session->cols();
+    QString line;                       // one char per column, so index == column
+    for (int c = 0; c < cols; ++c) {
+        VTermScreenCell cell;
+        QString ch;
+        line += (posCell(m_session, pos, c, cell) && cellChars(cell, ch) > 0)
+                    ? ch.left(1)
+                    : QStringLiteral(" ");
+    }
+    static const QRegularExpression re(
+        QStringLiteral(R"((?:https?://|www\.)[^\s"'<>()\[\]]+)"));
+    auto it = re.globalMatch(line);
+    while (it.hasNext()) {
+        const QRegularExpressionMatch m = it.next();
+        if (col >= m.capturedStart() && col < m.capturedEnd()) {
+            QString u = m.captured();
+            while (u.endsWith(QLatin1Char('.')) || u.endsWith(QLatin1Char(',')))
+                u.chop(1);              // trailing sentence punctuation
+            if (u.startsWith(QLatin1String("www.")))
+                u.prepend(QStringLiteral("https://"));
+            return u;
+        }
+    }
+    return QString();
 }
 
 void TerminalView::setScrollOffset(int off) {
@@ -312,8 +344,16 @@ void TerminalView::mousePressEvent(QMouseEvent *ev) {
     }
     if (ev->button() == Qt::LeftButton) {
         setFocus();
+        const QPoint cell = pixelToCell(ev->pos());
+        if (ev->modifiers() & Qt::ControlModifier) {
+            const QString url = urlAt(cell.y(), cell.x());
+            if (!url.isEmpty()) {
+                QDesktopServices::openUrl(QUrl(url));
+                return;                 // ctrl-click opened a link; don't select
+            }
+        }
         m_selecting = true;
-        m_selAnchor = m_selPoint = pixelToCell(ev->pos());
+        m_selAnchor = m_selPoint = cell;
         m_hasSel = false;
         update();
     }

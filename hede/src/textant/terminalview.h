@@ -40,6 +40,7 @@ private:
     QRect cellsToPixels(const QRect &cells) const;
     int viewportRowToPos(int row) const;
     QPoint pixelToCell(const QPoint &p) const;    // -> (col, pos)
+    QString urlAt(int pos, int col) const;        // URL under a cell, or empty
     void setScrollOffset(int off);
     void scrollToBottom() { setScrollOffset(0); }
     bool inSelection(int pos, int col) const;
