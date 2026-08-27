@@ -22,13 +22,17 @@ protected:
     void paintEvent(QPaintEvent *ev) override;
 
 private:
+    void buildMenu();
     Terminal *addTab();
     void closeTab(int index);
     void selectRelative(int delta);
+    Terminal *current() const;
+    void zoomFont(int delta);
     void applyWorldTint();
     void syncChrome();                 // tab-bar visibility + window title
 
     Settings m_cfg;
+    int m_fontSize = 11;
     QTabBar *m_tabbar = nullptr;
     QStackedWidget *m_stack = nullptr;
     QFileSystemWatcher *m_watcher = nullptr;

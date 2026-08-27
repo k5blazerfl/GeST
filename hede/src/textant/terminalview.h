@@ -25,6 +25,8 @@ public:
     void setPty(Pty *pty) { m_pty = pty; }
     void applyFont(const QString &family, int pointSize);
     void setOpacity(double opacity);   // < 1 -> translucent glass surface
+    void copyToClipboard() { copySelection(false); }
+    void pasteClipboard() { paste(false); }
 
 protected:
     void paintEvent(QPaintEvent *ev) override;

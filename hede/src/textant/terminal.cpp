@@ -42,3 +42,10 @@ void Terminal::startShell() {
 void Terminal::setWorldColors(const QColor &fg, const QColor &bg) {
     m_session->setDefaultColors(fg, bg);
 }
+
+void Terminal::applyFont(const QString &family, int pointSize) {
+    m_view->applyFont(family, pointSize);
+}
+
+void Terminal::copy() { m_view->copyToClipboard(); }
+void Terminal::paste() { m_view->pasteClipboard(); }

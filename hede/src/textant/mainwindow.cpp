@@ -5,14 +5,20 @@
 #include "config.h"     // helm::Config
 #include "palette.h"    // helm::effectiveAccent / barTint
 
+#include <QAction>
 #include <QFileSystemWatcher>
 #include <QKeySequence>
+#include <QMenu>
+#include <QMenuBar>
+#include <QMessageBox>
 #include <QPainter>
 #include <QPaintEvent>
-#include <QShortcut>
 #include <QStackedWidget>
 #include <QTabBar>
 #include <QVBoxLayout>
+
+#include <algorithm>
+#include <functional>
 
 MainWindow::MainWindow(const Settings &cfg, QWidget *parent)
     : QWidget(parent), m_cfg(cfg) {
@@ -48,16 +54,8 @@ MainWindow::MainWindow(const Settings &cfg, QWidget *parent)
     connect(m_tabbar, &QTabBar::tabCloseRequested, this,
             [this](int i) { closeTab(i); });
 
-    const auto add = new QShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+T")), this);
-    connect(add, &QShortcut::activated, this, [this] { addTab(); });
-    const auto close = new QShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+W")), this);
-    connect(close, &QShortcut::activated, this,
-            [this] { closeTab(m_tabbar->currentIndex()); });
-    const auto next = new QShortcut(QKeySequence(QStringLiteral("Ctrl+PgDown")), this);
-    connect(next, &QShortcut::activated, this, [this] { selectRelative(+1); });
-    const auto prev = new QShortcut(QKeySequence(QStringLiteral("Ctrl+PgUp")), this);
-    connect(prev, &QShortcut::activated, this, [this] { selectRelative(-1); });
-
+    m_fontSize = m_cfg.fontSize;
+    buildMenu();
     applyWorldTint();
 
     m_watcher = new QFileSystemWatcher(this);
@@ -73,9 +71,70 @@ MainWindow::MainWindow(const Settings &cfg, QWidget *parent)
     addTab();
 }
 
+void MainWindow::buildMenu() {
+    auto *mb = new QMenuBar(this);
+    mb->setStyleSheet(QStringLiteral(
+        "QMenuBar{background:transparent;color:#e9eef6;}"
+        "QMenuBar::item{padding:4px 10px;background:transparent;}"
+        "QMenuBar::item:selected{background:rgba(255,255,255,0.12);border-radius:4px;}"));
+    const auto item = [this](QMenu *m, const QString &text, const QString &sc,
+                             std::function<void()> fn) {
+        QAction *a = m->addAction(text);
+        if (!sc.isEmpty())
+            a->setShortcut(QKeySequence(sc));
+        connect(a, &QAction::triggered, this, std::move(fn));
+        return a;
+    };
+
+    QMenu *file = mb->addMenu(tr("&File"));
+    item(file, tr("New &Tab"), QStringLiteral("Ctrl+Shift+T"), [this] { addTab(); });
+    item(file, tr("&Close Tab"), QStringLiteral("Ctrl+Shift+W"),
+         [this] { closeTab(m_tabbar->currentIndex()); });
+    file->addSeparator();
+    item(file, tr("&Quit"), QStringLiteral("Ctrl+Q"), [this] { close(); });
+
+    QMenu *edit = mb->addMenu(tr("&Edit"));
+    item(edit, tr("&Copy"), QStringLiteral("Ctrl+Shift+C"),
+         [this] { if (auto *t = current()) t->copy(); });
+    item(edit, tr("&Paste"), QStringLiteral("Ctrl+Shift+V"),
+         [this] { if (auto *t = current()) t->paste(); });
+
+    QMenu *view = mb->addMenu(tr("&View"));
+    item(view, tr("Zoom &In"), QStringLiteral("Ctrl++"), [this] { zoomFont(+1); });
+    item(view, tr("Zoom &Out"), QStringLiteral("Ctrl+-"), [this] { zoomFont(-1); });
+    item(view, tr("&Reset Zoom"), QStringLiteral("Ctrl+0"),
+         [this] { m_fontSize = m_cfg.fontSize; zoomFont(0); });
+
+    QMenu *tabs = mb->addMenu(tr("&Tabs"));
+    item(tabs, tr("&Next Tab"), QStringLiteral("Ctrl+PgDown"), [this] { selectRelative(+1); });
+    item(tabs, tr("&Previous Tab"), QStringLiteral("Ctrl+PgUp"), [this] { selectRelative(-1); });
+
+    QMenu *help = mb->addMenu(tr("&Help"));
+    item(help, tr("&About Textant"), QString(), [this] {
+        QMessageBox::about(this, tr("About Textant"),
+                           tr("<b>Textant</b> — the HeDE terminal.<br>"
+                              "A sextant sighting your prompt. libvterm + Qt."));
+    });
+
+    layout()->setMenuBar(mb);
+}
+
+Terminal *MainWindow::current() const {
+    return qobject_cast<Terminal *>(m_stack->currentWidget());
+}
+
+void MainWindow::zoomFont(int delta) {
+    m_fontSize = std::clamp(m_fontSize + delta, 6, 48);
+    for (int i = 0; i < m_stack->count(); ++i)
+        if (auto *t = qobject_cast<Terminal *>(m_stack->widget(i)))
+            t->applyFont(m_cfg.fontFamily, m_fontSize);
+}
+
 Terminal *MainWindow::addTab() {
     auto *t = new Terminal(m_cfg);
     t->setWorldColors(m_fg, m_bg);
+    if (m_fontSize != m_cfg.fontSize)
+        t->applyFont(m_cfg.fontFamily, m_fontSize);
     const int idx = m_stack->addWidget(t);
     m_tabbar->insertTab(idx, t->title());
 

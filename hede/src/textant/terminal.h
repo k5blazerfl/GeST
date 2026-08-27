@@ -19,6 +19,9 @@ public:
 
     void startShell();
     void setWorldColors(const QColor &fg, const QColor &bg);
+    void applyFont(const QString &family, int pointSize);
+    void copy();
+    void paste();
     QString title() const { return m_title; }
 
 signals:
