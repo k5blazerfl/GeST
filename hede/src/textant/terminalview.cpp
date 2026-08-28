@@ -20,6 +20,7 @@
 
 namespace {
 const QColor kBackground(0x1a, 0x1b, 0x1e);
+constexpr int kPad = 4;                 // inner buffer so text isn't flush to the edge
 
 QColor blend(const QColor &a, const QColor &b, double t) {
     return QColor(int(a.red() + (b.red() - a.red()) * t),
@@ -179,8 +180,8 @@ void TerminalView::updateFontMetrics() {
 void TerminalView::syncGrid() {
     if (m_cellW <= 0 || m_cellH <= 0)
         return;
-    const int cols = std::max(1, width() / m_cellW);
-    const int rows = std::max(1, height() / m_cellH);
+    const int cols = std::max(1, (width() - 2 * kPad) / m_cellW);
+    const int rows = std::max(1, (height() - 2 * kPad) / m_cellH);
     if (m_session) {
         m_session->setSize(rows, cols);
         m_session->setCellHeight(m_cellH);
@@ -191,7 +192,7 @@ void TerminalView::syncGrid() {
 }
 
 QRect TerminalView::cellsToPixels(const QRect &c) const {
-    return QRect(c.x() * m_cellW, c.y() * m_cellH,
+    return QRect(kPad + c.x() * m_cellW, kPad + c.y() * m_cellH,
                  c.width() * m_cellW, c.height() * m_cellH);
 }
 
@@ -202,8 +203,8 @@ int TerminalView::viewportRowToPos(int row) const {
 QPoint TerminalView::pixelToCell(const QPoint &p) const {
     const int cols = m_session ? m_session->cols() : 1;
     const int rows = m_session ? m_session->rows() : 1;
-    const int col = std::clamp(p.x() / m_cellW, 0, cols - 1);
-    const int row = std::clamp(p.y() / m_cellH, 0, rows - 1);
+    const int col = std::clamp((p.x() - kPad) / m_cellW, 0, cols - 1);
+    const int row = std::clamp((p.y() - kPad) / m_cellH, 0, rows - 1);
     return QPoint(col, viewportRowToPos(row));
 }
 
@@ -295,9 +296,11 @@ void TerminalView::paintEvent(QPaintEvent *ev) {
     if (!m_session)
         return;
 
+    p.translate(kPad, kPad);            // inner buffer; cells drawn in content space
+
     const int rows = m_session->rows();
     const int cols = m_session->cols();
-    const QRect clip = ev->rect();
+    const QRect clip = ev->rect().translated(-kPad, -kPad);
     const int c0 = std::max(0, clip.left() / m_cellW);
     const int c1 = std::min(cols - 1, clip.right() / m_cellW);
     const int r0 = std::max(0, clip.top() / m_cellH);

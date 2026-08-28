@@ -35,12 +35,16 @@ MainWindow::MainWindow(const Settings &cfg, QWidget *parent)
     m_tabbar->setElideMode(Qt::ElideRight);
     m_tabbar->setFocusPolicy(Qt::NoFocus);
 
+    m_accentLine = new QWidget(this);
+    m_accentLine->setFixedHeight(3);
+    m_accentLine->hide();                 // only shown when the tab bar is
     m_stack = new QStackedWidget(this);
 
     auto *lay = new QVBoxLayout(this);
     lay->setContentsMargins(0, 0, 0, 0);
     lay->setSpacing(0);
     lay->addWidget(m_tabbar);
+    lay->addWidget(m_accentLine);
     lay->addWidget(m_stack, 1);
 
     connect(m_tabbar, &QTabBar::currentChanged, this, [this](int i) {
@@ -182,7 +186,10 @@ void MainWindow::selectRelative(int delta) {
 }
 
 void MainWindow::syncChrome() {
-    m_tabbar->setVisible(m_tabbar->count() > 1);
+    const bool tabbed = m_tabbar->count() > 1;
+    m_tabbar->setVisible(tabbed);
+    if (m_accentLine)
+        m_accentLine->setVisible(tabbed);   // stripe only while tabbed
     const int i = m_tabbar->currentIndex();
     if (auto *t = qobject_cast<Terminal *>(m_stack->widget(i)))
         setWindowTitle(t->title());
@@ -199,6 +206,10 @@ void MainWindow::applyWorldTint() {
             tw->setWorldColors(m_fg, m_bg);
             tw->setAccent(m_accent);
         }
+
+    if (m_accentLine)
+        m_accentLine->setStyleSheet(
+            QStringLiteral("background:%1;").arg(m_accent.name()));
 
     const QColor tabBg = m_bg.lighter(170);
     const QColor tabSel = m_accent.darker(130);
