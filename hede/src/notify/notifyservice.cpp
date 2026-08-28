@@ -2,6 +2,7 @@
 
 #include "history.h"
 #include "toast.h"
+#include "petbridge.h"
 
 #include <QDateTime>
 
@@ -47,6 +48,7 @@ uint NotifyService::notify(const QString &app, uint replacesId, const QString &i
     if (shouldShowToast(m_dnd, urgency)) {
         if (m_toasts)
             m_toasts->showNotification(n);
+        petNotify(n); // and let Hiedi's pet present it (no-op if she isn't running)
     } else if (m_toasts) {
         m_toasts->closeNotification(n.id); // if it was showing (e.g. replaces_id)
     }
