@@ -28,6 +28,11 @@ sys-fs/btrfs-progs       # btrfs
 sys-fs/f2fs-tools        # f2fs
 sys-fs/dosfstools        # vfat (the ESP)
 sys-fs/ntfs3g            # ntfs (mkfs.ntfs — Windows/interop data partitions)
+
+# make.conf tuning: WriteMakeConf shells out to cpuid2cpuflags to detect the
+# target's CPU_FLAGS_X86. Without it on the live image the detection silently
+# no-ops and CPU_FLAGS_X86 is left at the stage3 default. (x86-only.)
+app-portage/cpuid2cpuflags
 sys-fs/exfatprogs        # exfat (mkfs.exfat — removable/interop data partitions)
 
 # stage3 fetch + verify + unpack
