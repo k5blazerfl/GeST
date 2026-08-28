@@ -10,6 +10,12 @@
 int main(int argc, char **argv) {
     // launchDetached correctness: never inherit the shell's layer-shell integration.
     qunsetenv("QT_WAYLAND_SHELL_INTEGRATION");
+    // Request server-side decoration so the compositor (labwc) draws the themed
+    // HeDE titlebar instead of Qt drawing its own plain one. The HeDE session
+    // already exports this, but set it defensively so a `textant` typed in any
+    // shell still gets the world-themed titlebar.
+    if (qEnvironmentVariableIsEmpty("QT_WAYLAND_DISABLE_WINDOWDECORATION"))
+        qputenv("QT_WAYLAND_DISABLE_WINDOWDECORATION", "1");
 
     QApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("Textant"));
