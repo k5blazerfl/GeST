@@ -31,6 +31,7 @@ DEPEND="
 	dev-qt/qtwayland:6
 	|| ( kde-plasma/layer-shell-qt:6 kde-frameworks/layer-shell-qt:6 )
 	dev-libs/libvterm
+	dev-libs/polkit-qt[qt6]
 "
 # Runtime: the compositor HeDE drives, the default terminal helm-panel spawns,
 # GeST (the Control Center + the org.gentoo.gest.Shell read seam), and a polkit
@@ -40,7 +41,6 @@ RDEPEND="
 	gui-wm/labwc
 	gui-apps/foot
 	app-admin/gest
-	lxqt-base/lxqt-policykit
 	media-video/wireplumber
 	gui-apps/swaylock
 	gui-apps/swayidle
