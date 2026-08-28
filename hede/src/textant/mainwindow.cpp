@@ -35,15 +35,12 @@ MainWindow::MainWindow(const Settings &cfg, QWidget *parent)
     m_tabbar->setElideMode(Qt::ElideRight);
     m_tabbar->setFocusPolicy(Qt::NoFocus);
 
-    m_accentLine = new QWidget(this);
-    m_accentLine->setFixedHeight(3);      // biome stripe between chrome and terminal
     m_stack = new QStackedWidget(this);
 
     auto *lay = new QVBoxLayout(this);
     lay->setContentsMargins(0, 0, 0, 0);
     lay->setSpacing(0);
     lay->addWidget(m_tabbar);
-    lay->addWidget(m_accentLine);
     lay->addWidget(m_stack, 1);
 
     connect(m_tabbar, &QTabBar::currentChanged, this, [this](int i) {
@@ -202,10 +199,6 @@ void MainWindow::applyWorldTint() {
             tw->setWorldColors(m_fg, m_bg);
             tw->setAccent(m_accent);
         }
-
-    if (m_accentLine)
-        m_accentLine->setStyleSheet(
-            QStringLiteral("background:%1;").arg(m_accent.name()));
 
     const QColor tabBg = m_bg.lighter(170);
     const QColor tabSel = m_accent.darker(130);
