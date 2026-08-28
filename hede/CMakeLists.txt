@@ -33,6 +33,7 @@ add_subdirectory(src/notify)
 add_subdirectory(src/hold)
 add_subdirectory(src/sefe)
 add_subdirectory(src/textant)
+add_subdirectory(src/helm-polkit)
 add_subdirectory(tests)
 
 # --- data / session files ---------------------------------------------------

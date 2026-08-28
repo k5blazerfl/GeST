@@ -2,7 +2,8 @@
 
 # Exactly one polkit agent for the session: auth prompts for GeST's
 # polkit-gated backend when the shell triggers a privileged change (Phase 2b).
-command -v lxqt-policykit-agent >/dev/null 2>&1 && lxqt-policykit-agent &
+# helm-polkit is HeDE's native agent (replaces lxqt-policykit-agent).
+command -v helm-polkit >/dev/null 2>&1 && helm-polkit &
 
 # GeST read seam (org.gentoo.gest.Shell); harmless/absent-safe.
 command -v gest-shell >/dev/null 2>&1 && gest-shell &
