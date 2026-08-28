@@ -40,9 +40,10 @@
   </windowRules>
 
   <keyboard>
-    <!-- Super+Return → terminal -->
+    <!-- Super+Return → terminal (Textant, the HeDE terminal; foot stays installed
+         as a fallback — see docs/design/textant.md P2). -->
     <keybind key="W-Return">
-      <action name="Execute"><command>foot</command></action>
+      <action name="Execute"><command>textant</command></action>
     </keybind>
     <!-- Super+Q → close the focused window -->
     <keybind key="W-q">
