@@ -34,6 +34,7 @@ private:
     Settings m_cfg;
     int m_fontSize = 11;
     QTabBar *m_tabbar = nullptr;
+    QWidget *m_accentLine = nullptr;   // thin biome-coloured stripe in the chrome
     QStackedWidget *m_stack = nullptr;
     QFileSystemWatcher *m_watcher = nullptr;
     QColor m_fg { 0xe9, 0xee, 0xf6 };
