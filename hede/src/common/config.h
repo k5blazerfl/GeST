@@ -14,7 +14,7 @@ class Config {
     explicit Config(const QString &path); // explicit path (tests)
 
     int panelHeight() const;         // [panel] height   (default 46)
-    QString terminalCommand() const; // [terminal] command (default "foot")
+    QString terminalCommand() const; // [terminal] command (default "textant")
 
     // Generic accessor for feature-specific keys (e.g. "wallpaper/mode").
     QString string(const QString &key, const QString &def = QString()) const;

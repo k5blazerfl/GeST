@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Textant
+GenericName=Terminal
+Comment=The HeDE terminal
+Exec=textant
+Icon=textant
+Terminal=false
+Categories=System;TerminalEmulator;Utility;
+Keywords=terminal;shell;command;console;prompt;tty;
+StartupNotify=true

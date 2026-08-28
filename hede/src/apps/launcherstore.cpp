@@ -110,7 +110,7 @@ QStringList defaultPins(const QStringList &available) {
     // Installer-image staples, in a sensible order; kept only if present.
     static const QStringList wanted = {
         QStringLiteral("gest-install"), QStringLiteral("gest-settings"),
-        QStringLiteral("foot"), QStringLiteral("firefox")};
+        QStringLiteral("textant"), QStringLiteral("firefox")};
     QStringList pins;
     for (const QString &id : wanted)
         if (available.contains(id))

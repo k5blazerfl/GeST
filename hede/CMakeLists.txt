@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(hede VERSION 0.7.3 LANGUAGES C CXX)  # HeDE's own version line; the
+project(hede VERSION 0.8.0 LANGUAGES C CXX)  # HeDE's own version line; the
 # release source of truth — mirror-hede.py / amphi-hede.py stamp the HeDE repo
 # tag and the gui-apps/hede ebuild from this. Bump it when cutting a HeDE change.
 
@@ -32,6 +32,7 @@ add_subdirectory(src/bg)
 add_subdirectory(src/notify)
 add_subdirectory(src/hold)
 add_subdirectory(src/sefe)
+add_subdirectory(src/textant)
 add_subdirectory(tests)
 
 # --- data / session files ---------------------------------------------------
@@ -45,7 +46,12 @@ install(FILES data/wayland-sessions/hede.desktop
 # (inode/directory) AND archive handler — Hold folded into Seahorse, no separate app.
 install(FILES data/applications/sefe.desktop
               data/applications/barnacle.desktop
+              data/applications/textant.desktop
         DESTINATION ${CMAKE_INSTALL_PREFIX}/share/applications)
+# Textant's app icon (the finalized brand mark; see docs/design/textant.md) so
+# Icon=textant resolves in the theme. HeDE's first bespoke app icon.
+install(DIRECTORY data/icons
+        DESTINATION ${CMAKE_INSTALL_PREFIX}/share)
 install(DIRECTORY data/labwc data/wayfire data/grub data/worlds
         DESTINATION ${CMAKE_INSTALL_PREFIX}/share/hede)
 # The Helm labwc titlebar theme lands in the XDG theme search path

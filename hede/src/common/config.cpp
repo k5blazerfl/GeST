@@ -21,7 +21,7 @@ int Config::panelHeight() const {
 
 QString Config::terminalCommand() const {
     QSettings s(m_path, QSettings::IniFormat);
-    return s.value(QStringLiteral("terminal/command"), QStringLiteral("foot")).toString();
+    return s.value(QStringLiteral("terminal/command"), QStringLiteral("textant")).toString();
 }
 
 QString Config::string(const QString &key, const QString &def) const {
