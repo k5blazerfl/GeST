@@ -61,3 +61,22 @@ the cockpit costs a window, not a second engine.
 3. Services (systemd D-Bus) + Users.
 4. Startup (systemd user units + XDG autostart).
 5. cgroup tree view, per-process journal tail, GPU via DRM fdinfo.
+6. Summary view: one landing page with CPU / memory / disk / network /
+   thermals at a glance, so the common case ("is something eating my
+   machine?") is answered without picking a tab.
+7. Thermals + Energy: sensor readings and trends from hwmon
+   (`/sys/class/hwmon`), package watts from RAPL
+   (`/sys/class/powercap/intel-rapl*`, works on AMD too), battery
+   charge/discharge from `/sys/class/power_supply`. Same pure-parser
+   pattern as slice 1 — sysfs text in, numbers out, unit-tested.
+8. Graph feel: drop the tick toward 1 s and interpolate between samples so
+   the meters read as live rather than periodic. Sampling stays cheap
+   (/proc + sysfs reads); the cost is paint, which the damage-scoped
+   graphs already bound.
+
+Slices 6–7 are informed by TMOG (tmog.org), the cross-platform freemium
+task manager whose Linux build is Qt 6 — its Summary, Energy, and Thermals
+views are the fresh ideas worth having. The structural advantages stay
+ours: EzRA is in the OS, free, bound to Ctrl+Shift+Esc on a fresh install,
+and reaches systemd/cgroup/journal depth that a shared cross-platform core
+cannot express.
