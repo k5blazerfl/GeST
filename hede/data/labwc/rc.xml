@@ -37,6 +37,12 @@
        path foot uses. This windowRule tells labwc to serve SSD for every window. -->
   <windowRules>
     <windowRule identifier="*" serverDecoration="yes"/>
+    <!-- Seahorse (SeFE, app_id "sefe") draws its OWN painterly window chrome
+         (frameless HelmTitleBar + world-scene paintEvent, Phase D). The blanket
+         "*" SSD rule above would stack labwc's server titlebar ON TOP of that —
+         a double border. Suppress SSD for sefe so its client-side chrome is the
+         only frame. A later, more specific rule wins in labwc. -->
+    <windowRule identifier="sefe" serverDecoration="no"/>
   </windowRules>
 
   <keyboard>

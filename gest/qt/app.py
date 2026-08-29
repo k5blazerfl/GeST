@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from gest.qt.registry import Registry
+from gest.qt.theme import HELM_APP_WINDOW
 
 
 class ControlCenter(QWidget):
@@ -26,6 +27,10 @@ class ControlCenter(QWidget):
     def __init__(self, registry: Registry, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("GeST — Control Center")
+        # Wear the Helm app-chrome object name so the shared glass QSS
+        # (#HelmAppWindow …, applied by theme.apply_appearance) tints this window's
+        # menu/tool/status bars like SeFE and the shell — else it renders untinted.
+        self.setObjectName(HELM_APP_WINDOW)
         self.resize(820, 560)
         self._registry = registry
         self._widgets: dict[str, QWidget] = {}  # id -> instantiated widget (cache)
@@ -98,6 +103,7 @@ def embed_window(registry: Registry, module_id: str) -> QWidget | None:
     if entry is None:
         return None
     host = QWidget()
+    host.setObjectName(HELM_APP_WINDOW)   # wear the Helm glass chrome (see ControlCenter)
     host.setWindowTitle(f"GeST — {entry.descriptor.title}")
     if entry.descriptor.icon:
         host.setWindowIcon(QIcon.fromTheme(entry.descriptor.icon))
