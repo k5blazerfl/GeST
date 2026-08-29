@@ -7,6 +7,8 @@
 
 #include "processmodel.h"
 #include "sampler.h"
+#include "services.h"
+#include "usermodel.h"
 
 #include <QMainWindow>
 
@@ -44,10 +46,18 @@ private:
     QWidget *buildProcessesTab();
     QWidget *buildDetailsTab();
     QWidget *buildPerformanceTab();
+    QWidget *buildUsersTab();
+    QWidget *buildServicesTab();
 
     ProcessSampler processSampler_;
     SystemSampler systemSampler_;
     ProcessModel *model_ = nullptr;
+    UserModel *userModel_ = nullptr;
+    ServiceModel *serviceModel_ = nullptr;
+    ServiceManager *serviceManager_ = nullptr;
+    QTableView *servicesTable_ = nullptr;
+    int servicesTabIndex_ = -1;
+    int tick_ = 0;
     QTabWidget *tabs_ = nullptr;
     QTableView *activeTable_ = nullptr; // the table the last action targeted
     QLineEdit *filter_ = nullptr;

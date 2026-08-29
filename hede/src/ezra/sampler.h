@@ -76,6 +76,17 @@ bool parsePidStat(const QByteArray &text, qulonglong pageSize, ProcessSample *ou
 // "R" -> "Running", "Z" -> "Zombie", … for the Details Status column.
 QString stateName(char state);
 
+// The Users tab row: per-user resource rollup over one process sweep.
+struct UserRollup {
+    QString user;
+    int processes = 0;
+    double cpuPercent = 0.0;
+    qulonglong rssBytes = 0;
+};
+
+// Pure aggregation of a sample sweep, sorted by user name.
+QVector<UserRollup> rollupByUser(const QVector<ProcessSample> &samples);
+
 // --- stateful samplers ----------------------------------------------------
 
 // Scans /proc and computes per-process CPU% from the tick delta since the

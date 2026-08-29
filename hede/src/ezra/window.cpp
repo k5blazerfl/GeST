@@ -41,14 +41,26 @@ EzraWindow::EzraWindow() {
 
     model_ = new ProcessModel(this);
 
+    // OG tab order (Startup slots in before Users later).
     tabs_ = new QTabWidget(this);
     tabs_->addTab(buildProcessesTab(), tr("Processes"));
     tabs_->addTab(buildPerformanceTab(), tr("Performance"));
+    tabs_->addTab(buildUsersTab(), tr("Users"));
     tabs_->addTab(buildDetailsTab(), tr("Details"));
+    servicesTabIndex_ = tabs_->addTab(buildServicesTab(), tr("Services"));
     setCentralWidget(tabs_);
+    // The unit list is fetched on entering the tab (and re-fetched every
+    // fifth tick while it stays current) — no D-Bus chatter while hidden.
+    connect(tabs_, &QTabWidget::currentChanged, this, [this](int index) {
+        if (index == servicesTabIndex_)
+            serviceManager_->refresh();
+    });
 
+    // Permanent (right side) so temporary messages — permission denials,
+    // D-Bus errors — get the left side to themselves instead of painting
+    // over the totals.
     footer_ = new QLabel(this);
-    statusBar()->addWidget(footer_);
+    statusBar()->addPermanentWidget(footer_);
 
     timer_ = new QTimer(this);
     timer_->setInterval(kTickMs);
@@ -130,6 +142,96 @@ QWidget *EzraWindow::buildDetailsTab() {
     return page;
 }
 
+QWidget *EzraWindow::buildUsersTab() {
+    auto *page = new QWidget(this);
+    auto *layout = new QVBoxLayout(page);
+
+    userModel_ = new UserModel(this);
+    auto *proxy = new QSortFilterProxyModel(page);
+    proxy->setSourceModel(userModel_);
+    proxy->setSortRole(UserModel::SortRole);
+
+    auto *table = new QTableView(page);
+    table->setModel(proxy);
+    table->setSortingEnabled(true);
+    table->sortByColumn(UserModel::User, Qt::AscendingOrder);
+    table->setSelectionBehavior(QAbstractItemView::SelectRows);
+    table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    table->verticalHeader()->setVisible(false);
+    table->setShowGrid(false);
+    table->horizontalHeader()->setSectionResizeMode(UserModel::User, QHeaderView::Stretch);
+    layout->addWidget(table, 1);
+    return page;
+}
+
+QWidget *EzraWindow::buildServicesTab() {
+    auto *page = new QWidget(this);
+    auto *layout = new QVBoxLayout(page);
+
+    auto *filter = new QLineEdit(page);
+    filter->setPlaceholderText(tr("Filter services"));
+    filter->setClearButtonEnabled(true);
+    layout->addWidget(filter);
+
+    serviceManager_ = new ServiceManager(this);
+    serviceModel_ = new ServiceModel(this);
+    connect(serviceManager_, &ServiceManager::servicesChanged, serviceModel_,
+            &ServiceModel::setServices);
+    connect(serviceManager_, &ServiceManager::actionFailed, this,
+            [this](const QString &unit, const QString &message) {
+                statusBar()->showMessage(
+                    unit.isEmpty() ? message : tr("%1: %2").arg(unit, message), 6000);
+            });
+
+    auto *proxy = new QSortFilterProxyModel(page);
+    proxy->setSourceModel(serviceModel_);
+    proxy->setFilterCaseSensitivity(Qt::CaseInsensitive);
+    proxy->setFilterKeyColumn(-1);
+    connect(filter, &QLineEdit::textChanged, proxy,
+            &QSortFilterProxyModel::setFilterFixedString);
+
+    servicesTable_ = new QTableView(page);
+    servicesTable_->setModel(proxy);
+    servicesTable_->setSortingEnabled(true);
+    servicesTable_->sortByColumn(ServiceModel::Name, Qt::AscendingOrder);
+    servicesTable_->setSelectionBehavior(QAbstractItemView::SelectRows);
+    servicesTable_->setSelectionMode(QAbstractItemView::SingleSelection);
+    servicesTable_->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    servicesTable_->verticalHeader()->setVisible(false);
+    servicesTable_->setShowGrid(false);
+    servicesTable_->horizontalHeader()->setSectionResizeMode(ServiceModel::Description,
+                                                             QHeaderView::Stretch);
+    servicesTable_->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(servicesTable_, &QTableView::customContextMenuRequested, this,
+            [this, proxy](const QPoint &pos) {
+                const QModelIndex index = servicesTable_->indexAt(pos);
+                if (!index.isValid())
+                    return;
+                servicesTable_->selectionModel()->setCurrentIndex(
+                    index, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+                const UnitInfo *unit =
+                    serviceModel_->serviceAt(proxy->mapToSource(index).row());
+                if (!unit)
+                    return;
+                const QString name = unit->name;
+                QMenu menu(this);
+                menu.addAction(tr("Start"), this, [this, name] {
+                    serviceManager_->runVerb(QStringLiteral("StartUnit"), name);
+                });
+                menu.addAction(tr("Stop"), this, [this, name] {
+                    serviceManager_->runVerb(QStringLiteral("StopUnit"), name);
+                });
+                menu.addAction(tr("Restart"), this, [this, name] {
+                    serviceManager_->runVerb(QStringLiteral("RestartUnit"), name);
+                });
+                menu.addSeparator();
+                menu.addAction(tr("Refresh"), serviceManager_, &ServiceManager::refresh);
+                menu.exec(servicesTable_->viewport()->mapToGlobal(pos));
+            });
+    layout->addWidget(servicesTable_, 1);
+    return page;
+}
+
 QWidget *EzraWindow::buildPerformanceTab() {
     auto *page = new QWidget(this);
     auto *grid = new QGridLayout(page);
@@ -168,6 +270,9 @@ QWidget *EzraWindow::buildPerformanceTab() {
 void EzraWindow::refresh() {
     const QVector<ProcessSample> processes = processSampler_.sample();
     model_->setSamples(processes);
+    userModel_->setRollups(rollupByUser(processes));
+    if (tabs_->currentIndex() == servicesTabIndex_ && ++tick_ % 5 == 0)
+        serviceManager_->refresh();
 
     const SystemSampler::Snapshot snap = systemSampler_.sample();
     cpuGraph_->push(snap.cpuPercent,

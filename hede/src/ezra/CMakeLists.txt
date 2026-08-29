@@ -4,9 +4,12 @@
 qt_add_library(ezra-lib STATIC
     sampler.cpp
     processmodel.cpp
+    usermodel.cpp
+    services.cpp
 )
 target_include_directories(ezra-lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(ezra-lib PUBLIC Qt6::Core)
+# DBus: the Services engine talks to systemd's Manager on the system bus.
+target_link_libraries(ezra-lib PUBLIC Qt6::Core Qt6::DBus)
 
 qt_add_executable(ezra
     main.cpp

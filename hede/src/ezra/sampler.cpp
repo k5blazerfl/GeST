@@ -5,6 +5,8 @@
 #include <QFile>
 #include <QRegularExpression>
 
+#include <algorithm>
+
 #include <pwd.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -168,6 +170,24 @@ QString stateName(char state) {
     case 'X': return QStringLiteral("Dead");
     }
     return QString(QChar::fromLatin1(state));
+}
+
+QVector<UserRollup> rollupByUser(const QVector<ProcessSample> &samples) {
+    QHash<QString, UserRollup> byUser;
+    for (const ProcessSample &p : samples) {
+        UserRollup &u = byUser[p.user];
+        u.user = p.user;
+        u.processes += 1;
+        u.cpuPercent += p.cpuPercent;
+        u.rssBytes += p.rssBytes;
+    }
+    QVector<UserRollup> out;
+    out.reserve(byUser.size());
+    for (const UserRollup &u : byUser)
+        out.append(u);
+    std::sort(out.begin(), out.end(),
+              [](const UserRollup &a, const UserRollup &b) { return a.user < b.user; });
+    return out;
 }
 
 QVector<ProcessSample> ProcessSampler::sample() {

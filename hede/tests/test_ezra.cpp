@@ -3,6 +3,8 @@
 // doesn't jump).
 #include "processmodel.h"
 #include "sampler.h"
+#include "services.h"
+#include "usermodel.h"
 
 #include <QtTest>
 
@@ -20,6 +22,8 @@ private slots:
     void pidStatEvilComm();
     void pidStatRejectsGarbage();
     void modelMergeKeepsRows();
+    void userRollup();
+    void serviceModelStatus();
 };
 
 void TestEzra::procStat() {
@@ -151,6 +155,51 @@ void TestEzra::modelMergeKeepsRows() {
              QStringLiteral("9.5 %"));
     QCOMPARE(model.data(model.index(0, ProcessModel::Name), Qt::DisplayRole).toString(),
              QStringLiteral("init"));
+}
+
+void TestEzra::userRollup() {
+    auto proc = [](const char *user, double cpu, qulonglong rss) {
+        ProcessSample p;
+        p.user = QString::fromLatin1(user);
+        p.cpuPercent = cpu;
+        p.rssBytes = rss;
+        return p;
+    };
+    const QVector<UserRollup> rollups = rollupByUser(
+        {proc("root", 1.0, 100), proc("charron", 2.5, 200), proc("root", 0.5, 300)});
+    QCOMPARE(rollups.size(), 2); // sorted by name: charron, root
+    QCOMPARE(rollups.at(0).user, QStringLiteral("charron"));
+    QCOMPARE(rollups.at(0).processes, 1);
+    QCOMPARE(rollups.at(1).user, QStringLiteral("root"));
+    QCOMPARE(rollups.at(1).processes, 2);
+    QCOMPARE(rollups.at(1).cpuPercent, 1.5);
+    QCOMPARE(rollups.at(1).rssBytes, 400ULL);
+
+    UserModel model;
+    model.setRollups(rollups);
+    QCOMPARE(model.rowCount(), 2);
+    QCOMPARE(model.data(model.index(1, UserModel::Cpu), Qt::DisplayRole).toString(),
+             QStringLiteral("1.5 %"));
+}
+
+void TestEzra::serviceModelStatus() {
+    UnitInfo running;
+    running.name = QStringLiteral("sshd.service");
+    running.loadState = QStringLiteral("loaded");
+    running.activeState = QStringLiteral("active");
+    running.subState = QStringLiteral("running");
+    UnitInfo masked;
+    masked.name = QStringLiteral("old.service");
+    masked.loadState = QStringLiteral("masked");
+
+    ServiceModel model;
+    model.setServices({running, masked});
+    QCOMPARE(model.rowCount(), 2);
+    QCOMPARE(model.data(model.index(0, ServiceModel::Status), Qt::DisplayRole).toString(),
+             QStringLiteral("active (running)"));
+    QCOMPARE(model.data(model.index(1, ServiceModel::Status), Qt::DisplayRole).toString(),
+             QStringLiteral("masked"));
+    QCOMPARE(model.serviceAt(0)->name, QStringLiteral("sshd.service"));
 }
 
 QTEST_GUILESS_MAIN(TestEzra)
