@@ -15,7 +15,7 @@ class ProcessModel : public QAbstractTableModel {
 public:
     // One model serves both process views: Processes shows the first five
     // columns and hides the rest; Details shows everything.
-    enum Column { Name, Pid, User, Cpu, Memory, Ppid, State, Threads, Nice, CommandLine, ColumnCount };
+    enum Column { Name, Pid, User, Cpu, Memory, Gpu, Ppid, State, Threads, Nice, Cgroup, CommandLine, ColumnCount };
     static constexpr int kProcessesColumnCount = Ppid; // first Details-only column
     // Raw values for sorting (display strings don't sort numerically).
     enum Role { SortRole = Qt::UserRole, PidRole };

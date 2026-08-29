@@ -26,6 +26,8 @@ private slots:
     void userRollup();
     void serviceModelStatus();
     void sensorMath();
+    void cgroupParse();
+    void fdinfoDrmParse();
 };
 
 void TestEzra::procStat() {
@@ -218,6 +220,29 @@ void TestEzra::sensorMath() {
     QCOMPARE(wattsFromEnergyDelta(1'000'000, 11'000'000, 2000), 5.0);
     QCOMPARE(wattsFromEnergyDelta(11'000'000, 1'000'000, 2000), 0.0); // wrap → skip
     QCOMPARE(wattsFromEnergyDelta(1, 2, 0), 0.0);                     // no elapsed time
+}
+
+void TestEzra::cgroupParse() {
+    QCOMPARE(parseCgroup("0::/user.slice/user-1000.slice/session-2.scope\n"),
+             QStringLiteral("/user.slice/user-1000.slice/session-2.scope"));
+    // Legacy v1 lines are ignored; only the v2 "0::" line counts.
+    QCOMPARE(parseCgroup("12:cpu,cpuacct:/foo\n0::/bar\n"), QStringLiteral("/bar"));
+    QCOMPARE(parseCgroup("12:cpu,cpuacct:/foo\n"), QString());
+    QCOMPARE(parseCgroup(""), QString());
+}
+
+void TestEzra::fdinfoDrmParse() {
+    DrmClient client;
+    QVERIFY(parseFdinfoDrm("pos:\t0\nflags:\t02100002\n"
+                           "drm-driver:\tamdgpu\n"
+                           "drm-client-id:\t42\n"
+                           "drm-engine-gfx:\t123456789 ns\n"
+                           "drm-engine-compute:\t1000 ns\n",
+                           &client));
+    QCOMPARE(client.clientId, 42ULL);
+    QCOMPARE(client.engineNs, 123457789ULL); // gfx + compute
+
+    QVERIFY(!parseFdinfoDrm("pos:\t0\nflags:\t02\n", &client)); // not a DRM fd
 }
 
 QTEST_GUILESS_MAIN(TestEzra)

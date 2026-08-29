@@ -158,6 +158,36 @@ bool parsePidStat(const QByteArray &text, qulonglong pageSize, ProcessSample *ou
     return out->pid > 0;
 }
 
+QString parseCgroup(const QByteArray &text) {
+    // cgroup2: a "0::/user.slice/…" line. Legacy v1 lines (N:controller:…)
+    // are ignored — HeDE is a pure-v2 world.
+    for (const QByteArray &line : text.split('\n'))
+        if (line.startsWith("0::"))
+            return QString::fromUtf8(line.mid(3)).trimmed();
+    return {};
+}
+
+bool parseFdinfoDrm(const QByteArray &text, DrmClient *out) {
+    bool isDrm = false;
+    out->clientId = 0;
+    out->engineNs = 0;
+    for (const QByteArray &raw : text.split('\n')) {
+        const int colon = raw.indexOf(':');
+        if (colon < 0)
+            continue;
+        const QByteArray key = raw.left(colon);
+        const QByteArray value = raw.mid(colon + 1).simplified();
+        if (key == "drm-client-id") {
+            out->clientId = value.toULongLong();
+            isDrm = true;
+        } else if (key == "drm-engine-gfx" || key == "drm-engine-render"
+                   || key == "drm-engine-compute") {
+            out->engineNs += value.split(' ').value(0).toULongLong();
+        }
+    }
+    return isDrm;
+}
+
 QString stateName(char state) {
     switch (state) {
     case 'R': return QStringLiteral("Running");
@@ -200,6 +230,9 @@ QVector<ProcessSample> ProcessSampler::sample() {
 
     QVector<ProcessSample> out;
     QHash<int, qulonglong> ticksNow;
+    QHash<int, qulonglong> gpuNsNow;
+    const qint64 nowMs = monotonicMs();
+    const qint64 sampleElapsedMs = prevSampleMs_ > 0 ? nowMs - prevSampleMs_ : 0;
     const QDir proc(QStringLiteral("/proc"));
     const QStringList entries =
         proc.entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
@@ -218,6 +251,35 @@ QVector<ProcessSample> ProcessSampler::sample() {
         p.cmdline = QString::fromUtf8(readAll(base + QStringLiteral("/cmdline")))
                         .replace(QChar(u'\0'), QChar(u' '))
                         .trimmed();
+        p.cgroup = parseCgroup(readAll(base + QStringLiteral("/cgroup")));
+
+        // DRM engine time from fdinfo, deduped by client id (a context shows
+        // up once per duplicated fd). /proc/<pid>/fd of other users isn't
+        // readable without root — their GPU share just stays 0.
+        const QDir fdDir(base + QStringLiteral("/fd"));
+        if (fdDir.isReadable()) {
+            QHash<qulonglong, qulonglong> clients;
+            const QStringList fds =
+                fdDir.entryList(QDir::AllEntries | QDir::NoDotAndDotDot | QDir::System);
+            for (const QString &fd : fds) {
+                const QString target = QFile::symLinkTarget(fdDir.absoluteFilePath(fd));
+                if (!target.startsWith(QStringLiteral("/dev/dri/")))
+                    continue;
+                DrmClient client;
+                if (parseFdinfoDrm(readAll(base + QStringLiteral("/fdinfo/") + fd), &client))
+                    clients.insert(client.clientId, client.engineNs);
+            }
+            qulonglong gpuNs = 0;
+            for (qulonglong ns : clients)
+                gpuNs += ns;
+            const auto prevGpu = prevGpuNs_.constFind(pid);
+            if (prevGpu != prevGpuNs_.constEnd() && sampleElapsedMs > 0
+                && gpuNs >= prevGpu.value())
+                p.gpuPercent = qMin(100.0, double(gpuNs - prevGpu.value())
+                                               / (double(sampleElapsedMs) * 1e6) * 100.0);
+            if (gpuNs > 0)
+                gpuNsNow.insert(pid, gpuNs);
+        }
 
         struct stat st{};
         if (::stat((base).toLocal8Bit().constData(), &st) == 0) {
@@ -241,6 +303,8 @@ QVector<ProcessSample> ProcessSampler::sample() {
 
     prevTicks_ = ticksNow;
     prevTotal_ = machineTotal;
+    prevGpuNs_ = gpuNsNow;
+    prevSampleMs_ = nowMs;
     return out;
 }
 

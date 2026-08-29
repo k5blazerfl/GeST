@@ -77,10 +77,14 @@ the cockpit costs a window, not a second engine.
 8. **Partly shipped:** tick dropped to the OG's 1 s "Normal" speed.
    Remaining: interpolate between samples if the meters should read
    smoother.
-9. Still open: a Summary landing view (the Performance grid now covers most
-   of the at-a-glance case — revisit whether a separate tab earns its
-   place), cgroup tree, per-process journal tail, per-process GPU via DRM
-   fdinfo.
+9. **Shipped:** per-process GPU% via DRM fdinfo (engine ns deltas, deduped
+   by drm-client-id; `/proc/<pid>/fd` of other users needs root, so their
+   share reads 0) as a GPU column in Processes/Details, and a Cgroup column
+   in Details from `/proc/<pid>/cgroup` (v2 line).
+10. Still open: a Summary landing view (the Performance grid now covers
+    most of the at-a-glance case — revisit whether a separate tab earns its
+    place), a cgroup-grouped tree view, per-process journal tail, graph
+    interpolation.
 
 Slices 6–7 are informed by TMOG (tmog.org), the cross-platform freemium
 task manager whose Linux build is Qt 6 — its Summary, Energy, and Thermals

@@ -29,10 +29,12 @@ QVariant ProcessModel::data(const QModelIndex &index, int role) const {
         case User: return p.user;
         case Cpu: return p.cpuPercent;
         case Memory: return p.rssBytes;
+        case Gpu: return p.gpuPercent;
         case Ppid: return p.ppid;
         case State: return stateName(p.state);
         case Threads: return p.threads;
         case Nice: return p.nice;
+        case Cgroup: return p.cgroup;
         case CommandLine: return p.cmdline;
         }
         return {};
@@ -45,10 +47,12 @@ QVariant ProcessModel::data(const QModelIndex &index, int role) const {
         case User: return p.user;
         case Cpu: return QString::number(p.cpuPercent, 'f', 1) + QStringLiteral(" %");
         case Memory: return QLocale().formattedDataSize(qint64(p.rssBytes), 1);
+        case Gpu: return QString::number(p.gpuPercent, 'f', 1) + QStringLiteral(" %");
         case Ppid: return p.ppid;
         case State: return stateName(p.state);
         case Threads: return p.threads;
         case Nice: return p.nice;
+        case Cgroup: return p.cgroup;
         case CommandLine: return p.cmdline;
         }
         return {};
@@ -58,8 +62,9 @@ QVariant ProcessModel::data(const QModelIndex &index, int role) const {
         return p.cmdline.isEmpty() ? p.name : p.cmdline;
 
     if (role == Qt::TextAlignmentRole
-        && (index.column() == Cpu || index.column() == Memory || index.column() == Pid
-            || index.column() == Ppid || index.column() == Threads || index.column() == Nice))
+        && (index.column() == Cpu || index.column() == Memory || index.column() == Gpu
+            || index.column() == Pid || index.column() == Ppid
+            || index.column() == Threads || index.column() == Nice))
         return int(Qt::AlignRight | Qt::AlignVCenter);
 
     return {};
@@ -74,10 +79,12 @@ QVariant ProcessModel::headerData(int section, Qt::Orientation orientation, int 
     case User: return tr("User");
     case Cpu: return tr("CPU");
     case Memory: return tr("Memory");
+    case Gpu: return tr("GPU");
     case Ppid: return tr("PPID");
     case State: return tr("Status");
     case Threads: return tr("Threads");
     case Nice: return tr("Nice");
+    case Cgroup: return tr("Cgroup");
     case CommandLine: return tr("Command line");
     }
     return {};

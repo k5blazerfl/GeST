@@ -29,6 +29,8 @@ struct ProcessSample {
     qulonglong stime = 0;
     qulonglong rssBytes = 0;
     double cpuPercent = 0.0;
+    double gpuPercent = 0.0; // DRM fdinfo engine time; own processes only
+    QString cgroup;          // cgroup2 path from /proc/<pid>/cgroup
 };
 
 // One "cpu…" row of /proc/stat, in clock ticks.
@@ -76,6 +78,19 @@ bool parsePidStat(const QByteArray &text, qulonglong pageSize, ProcessSample *ou
 // "R" -> "Running", "Z" -> "Zombie", … for the Details Status column.
 QString stateName(char state);
 
+// The cgroup2 path from /proc/<pid>/cgroup (the "0::" line).
+QString parseCgroup(const QByteArray &text);
+
+// One DRM client from a /proc/<pid>/fdinfo/<fd> of a /dev/dri fd: the
+// client id (the same GPU context appears once per duplicated fd — callers
+// dedupe on it) and the cumulative busy nanoseconds across the gfx/render/
+// compute engines. Returns false if the text isn't a DRM fdinfo.
+struct DrmClient {
+    qulonglong clientId = 0;
+    qulonglong engineNs = 0;
+};
+bool parseFdinfoDrm(const QByteArray &text, DrmClient *out);
+
 // The Users tab row: per-user resource rollup over one process sweep.
 struct UserRollup {
     QString user;
@@ -98,6 +113,8 @@ public:
 private:
     QHash<int, qulonglong> prevTicks_; // pid -> utime+stime at last sample
     qulonglong prevTotal_ = 0;         // machine total ticks at last sample
+    QHash<int, qulonglong> prevGpuNs_; // pid -> summed DRM engine ns
+    qint64 prevSampleMs_ = 0;
     QHash<uint, QString> userCache_;   // uid -> name
 };
 
