@@ -16,6 +16,10 @@ int main(int argc, char **argv) {
     helm::watchAppearance(); // re-tint live on a world/accent switch
 
     ezra::EzraWindow window;
+    const QStringList args = app.arguments();
+    const int tabFlag = args.indexOf(QStringLiteral("--tab"));
+    if (tabFlag >= 0 && tabFlag + 1 < args.size())
+        window.selectTab(args.at(tabFlag + 1));
     window.show();
     return app.exec();
 }

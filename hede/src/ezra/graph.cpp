@@ -9,8 +9,9 @@ namespace {
 constexpr int kSamples = 60; // 2 minutes of history at the 2 s tick
 }
 
-HistoryGraph::HistoryGraph(const QString &title, Scale scale, QWidget *parent)
-    : QWidget(parent), title_(title), scale_(scale) {
+HistoryGraph::HistoryGraph(const QString &title, Scale scale, QWidget *parent,
+                           const QSize &minSize)
+    : QWidget(parent), title_(title), scale_(scale), minSize_(minSize) {
     setMinimumSize(minimumSizeHint());
 }
 

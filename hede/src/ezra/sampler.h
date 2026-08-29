@@ -23,6 +23,8 @@ struct ProcessSample {
     QString cmdline; // full command line ('' for kernel threads)
     QString user;
     char state = '?';
+    int nice = 0;
+    int threads = 0;
     qulonglong utime = 0;
     qulonglong stime = 0;
     qulonglong rssBytes = 0;
@@ -68,8 +70,11 @@ DiskTotals parseDiskStats(const QByteArray &text);
 // /proc/<pid>/stat. comm may itself contain spaces and parentheses, so the
 // fields are anchored on the LAST ')'. rss arrives in pages; pass the page
 // size so the parser stays a pure function. Fills pid/name/state/ppid/
-// utime/stime/rssBytes.
+// nice/threads/utime/stime/rssBytes.
 bool parsePidStat(const QByteArray &text, qulonglong pageSize, ProcessSample *out);
+
+// "R" -> "Running", "Z" -> "Zombie", … for the Details Status column.
+QString stateName(char state);
 
 // --- stateful samplers ----------------------------------------------------
 

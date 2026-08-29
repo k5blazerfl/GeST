@@ -15,6 +15,7 @@
 #include <QMenu>
 #include <QPushButton>
 #include <QSortFilterProxyModel>
+#include <QStackedWidget>
 #include <QStatusBar>
 #include <QTabWidget>
 #include <QTableView>
@@ -22,6 +23,7 @@
 #include <QVBoxLayout>
 
 #include <csignal>
+#include <sys/resource.h>
 
 namespace ezra {
 
@@ -37,10 +39,13 @@ EzraWindow::EzraWindow() {
     setWindowTitle(QStringLiteral("EzRA"));
     resize(760, 540);
 
-    auto *tabs = new QTabWidget(this);
-    tabs->addTab(buildProcessesTab(), tr("Processes"));
-    tabs->addTab(buildPerformanceTab(), tr("Performance"));
-    setCentralWidget(tabs);
+    model_ = new ProcessModel(this);
+
+    tabs_ = new QTabWidget(this);
+    tabs_->addTab(buildProcessesTab(), tr("Processes"));
+    tabs_->addTab(buildPerformanceTab(), tr("Performance"));
+    tabs_->addTab(buildDetailsTab(), tr("Details"));
+    setCentralWidget(tabs_);
 
     footer_ = new QLabel(this);
     statusBar()->addWidget(footer_);
@@ -52,6 +57,46 @@ EzraWindow::EzraWindow() {
     refresh();
 }
 
+void EzraWindow::selectTab(const QString &name) {
+    for (int i = 0; i < tabs_->count(); ++i)
+        if (tabs_->tabText(i).compare(name, Qt::CaseInsensitive) == 0)
+            tabs_->setCurrentIndex(i);
+}
+
+QTableView *EzraWindow::buildProcessTable(QWidget *parent, bool details) {
+    auto *proxy = new QSortFilterProxyModel(parent);
+    proxy->setSourceModel(model_);
+    proxy->setSortRole(ProcessModel::SortRole);
+    proxy->setFilterCaseSensitivity(Qt::CaseInsensitive);
+    proxy->setFilterKeyColumn(-1); // match on any column
+
+    auto *table = new QTableView(parent);
+    table->setModel(proxy);
+    table->setSortingEnabled(true);
+    table->setSelectionBehavior(QAbstractItemView::SelectRows);
+    table->setSelectionMode(QAbstractItemView::SingleSelection);
+    table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    table->verticalHeader()->setVisible(false);
+    table->setShowGrid(false);
+    table->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
+    table->horizontalHeader()->setSectionResizeMode(ProcessModel::Name, QHeaderView::Stretch);
+    if (details) {
+        // Details sorts by name like the OG; the dense column set is the point.
+        table->sortByColumn(ProcessModel::Name, Qt::AscendingOrder);
+    } else {
+        table->sortByColumn(ProcessModel::Cpu, Qt::DescendingOrder);
+        for (int col = ProcessModel::kProcessesColumnCount; col < ProcessModel::ColumnCount; ++col)
+            table->setColumnHidden(col, true);
+    }
+    table->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(table, &QTableView::customContextMenuRequested, this,
+            [this, table, details](const QPoint &pos) { showContextMenu(table, pos, details); });
+    // Whichever table the user touches last is the target for End task etc.
+    connect(table->selectionModel(), &QItemSelectionModel::currentChanged, this,
+            [this, table] { activeTable_ = table; });
+    return table;
+}
+
 QWidget *EzraWindow::buildProcessesTab() {
     auto *page = new QWidget(this);
     auto *layout = new QVBoxLayout(page);
@@ -61,30 +106,12 @@ QWidget *EzraWindow::buildProcessesTab() {
     filter_->setClearButtonEnabled(true);
     layout->addWidget(filter_);
 
-    model_ = new ProcessModel(this);
-    proxy_ = new QSortFilterProxyModel(this);
-    proxy_->setSourceModel(model_);
-    proxy_->setSortRole(ProcessModel::SortRole);
-    proxy_->setFilterCaseSensitivity(Qt::CaseInsensitive);
-    proxy_->setFilterKeyColumn(-1); // match on any column
-    connect(filter_, &QLineEdit::textChanged, proxy_,
+    QTableView *table = buildProcessTable(page, false);
+    activeTable_ = table;
+    auto *proxy = static_cast<QSortFilterProxyModel *>(table->model());
+    connect(filter_, &QLineEdit::textChanged, proxy,
             &QSortFilterProxyModel::setFilterFixedString);
-
-    table_ = new QTableView(page);
-    table_->setModel(proxy_);
-    table_->setSortingEnabled(true);
-    table_->sortByColumn(ProcessModel::Cpu, Qt::DescendingOrder);
-    table_->setSelectionBehavior(QAbstractItemView::SelectRows);
-    table_->setSelectionMode(QAbstractItemView::SingleSelection);
-    table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    table_->verticalHeader()->setVisible(false);
-    table_->setShowGrid(false);
-    table_->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
-    table_->horizontalHeader()->setSectionResizeMode(ProcessModel::Name, QHeaderView::Stretch);
-    table_->setContextMenuPolicy(Qt::CustomContextMenu);
-    connect(table_, &QTableView::customContextMenuRequested, this,
-            &EzraWindow::showContextMenu);
-    layout->addWidget(table_, 1);
+    layout->addWidget(table, 1);
 
     auto *buttonRow = new QHBoxLayout;
     buttonRow->addStretch(1);
@@ -96,14 +123,42 @@ QWidget *EzraWindow::buildProcessesTab() {
     return page;
 }
 
+QWidget *EzraWindow::buildDetailsTab() {
+    auto *page = new QWidget(this);
+    auto *layout = new QVBoxLayout(page);
+    layout->addWidget(buildProcessTable(page, true), 1);
+    return page;
+}
+
 QWidget *EzraWindow::buildPerformanceTab() {
     auto *page = new QWidget(this);
     auto *grid = new QGridLayout(page);
+
+    // CPU tile: overall graph by default; right-click switches to the
+    // per-core grid (built lazily once the core count is known).
+    cpuStack_ = new QStackedWidget(page);
     cpuGraph_ = new HistoryGraph(tr("CPU"), HistoryGraph::Percent, page);
+    coreGrid_ = new QWidget(page);
+    new QGridLayout(coreGrid_);
+    cpuStack_->addWidget(cpuGraph_);
+    cpuStack_->addWidget(coreGrid_);
+    cpuStack_->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(cpuStack_, &QWidget::customContextMenuRequested, this, [this](const QPoint &pos) {
+        QMenu menu(this);
+        QAction *overall = menu.addAction(tr("Overall utilization"));
+        QAction *perCore = menu.addAction(tr("Logical processors"));
+        for (QAction *a : {overall, perCore})
+            a->setCheckable(true);
+        (cpuStack_->currentIndex() == 0 ? overall : perCore)->setChecked(true);
+        connect(overall, &QAction::triggered, this, [this] { cpuStack_->setCurrentIndex(0); });
+        connect(perCore, &QAction::triggered, this, [this] { cpuStack_->setCurrentIndex(1); });
+        menu.exec(cpuStack_->mapToGlobal(pos));
+    });
+
     memGraph_ = new HistoryGraph(tr("Memory"), HistoryGraph::Percent, page);
     diskGraph_ = new HistoryGraph(tr("Disk"), HistoryGraph::AutoScale, page);
     netGraph_ = new HistoryGraph(tr("Network"), HistoryGraph::AutoScale, page);
-    grid->addWidget(cpuGraph_, 0, 0);
+    grid->addWidget(cpuStack_, 0, 0);
     grid->addWidget(memGraph_, 0, 1);
     grid->addWidget(diskGraph_, 1, 0);
     grid->addWidget(netGraph_, 1, 1);
@@ -117,6 +172,22 @@ void EzraWindow::refresh() {
     const SystemSampler::Snapshot snap = systemSampler_.sample();
     cpuGraph_->push(snap.cpuPercent,
                     QString::number(snap.cpuPercent, 'f', 0) + QStringLiteral(" %"));
+
+    if (coreGraphs_.isEmpty() && !snap.perCorePercent.isEmpty()) {
+        auto *grid = static_cast<QGridLayout *>(coreGrid_->layout());
+        grid->setSpacing(4);
+        const int columns = snap.perCorePercent.size() > 8 ? 4 : 2;
+        for (int i = 0; i < snap.perCorePercent.size(); ++i) {
+            auto *g = new HistoryGraph(QString::number(i), HistoryGraph::Percent,
+                                       coreGrid_, QSize(80, 44));
+            coreGraphs_.append(g);
+            grid->addWidget(g, i / columns, i % columns);
+        }
+    }
+    for (int i = 0; i < coreGraphs_.size() && i < snap.perCorePercent.size(); ++i)
+        coreGraphs_[i]->push(snap.perCorePercent.at(i),
+                             QString::number(snap.perCorePercent.at(i), 'f', 0)
+                                 + QStringLiteral(" %"));
 
     const qulonglong usedKb =
         snap.mem.totalKb > snap.mem.availableKb ? snap.mem.totalKb - snap.mem.availableKb : 0;
@@ -139,15 +210,27 @@ void EzraWindow::refresh() {
 }
 
 const ProcessSample *EzraWindow::selectedSample() const {
-    const QModelIndex current = table_->selectionModel()->currentIndex();
+    if (!activeTable_)
+        return nullptr;
+    const QModelIndex current = activeTable_->selectionModel()->currentIndex();
     if (!current.isValid())
         return nullptr;
-    return model_->sampleAt(proxy_->mapToSource(current).row());
+    auto *proxy = static_cast<QSortFilterProxyModel *>(activeTable_->model());
+    return model_->sampleAt(proxy->mapToSource(current).row());
 }
 
 void EzraWindow::endSelected(int signal) {
     if (const ProcessSample *p = selectedSample())
-        ::kill(p->pid, signal);
+        if (::kill(p->pid, signal) != 0)
+            statusBar()->showMessage(tr("Could not signal %1: permission denied").arg(p->name),
+                                     4000);
+}
+
+void EzraWindow::setPriority(int nice) {
+    if (const ProcessSample *p = selectedSample())
+        if (::setpriority(PRIO_PROCESS, id_t(p->pid), nice) != 0)
+            statusBar()->showMessage(
+                tr("Could not set priority of %1: permission denied").arg(p->name), 4000);
 }
 
 void EzraWindow::openFileLocation() {
@@ -165,20 +248,32 @@ void EzraWindow::copyCommandLine() {
         QApplication::clipboard()->setText(p->cmdline.isEmpty() ? p->name : p->cmdline);
 }
 
-void EzraWindow::showContextMenu(const QPoint &pos) {
-    const QModelIndex index = table_->indexAt(pos);
+void EzraWindow::showContextMenu(QTableView *table, const QPoint &pos, bool details) {
+    const QModelIndex index = table->indexAt(pos);
     if (!index.isValid())
         return;
-    table_->selectionModel()->setCurrentIndex(
+    activeTable_ = table;
+    table->selectionModel()->setCurrentIndex(
         index, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
 
     QMenu menu(this);
     menu.addAction(tr("End task"), this, [this] { endSelected(SIGTERM); });
     menu.addAction(tr("Force kill"), this, [this] { endSelected(SIGKILL); });
+    if (details) {
+        // Same rungs as the OG's Set priority; the labels are nice values.
+        QMenu *priority = menu.addMenu(tr("Set priority"));
+        const std::pair<const char *, int> rungs[] = {
+            {QT_TR_NOOP("High (-10)"), -10}, {QT_TR_NOOP("Above normal (-5)"), -5},
+            {QT_TR_NOOP("Normal (0)"), 0},   {QT_TR_NOOP("Below normal (10)"), 10},
+            {QT_TR_NOOP("Low (19)"), 19},
+        };
+        for (const auto &[label, nice] : rungs)
+            priority->addAction(tr(label), this, [this, nice = nice] { setPriority(nice); });
+    }
     menu.addSeparator();
     menu.addAction(tr("Open file location"), this, &EzraWindow::openFileLocation);
     menu.addAction(tr("Copy command line"), this, &EzraWindow::copyCommandLine);
-    menu.exec(table_->viewport()->mapToGlobal(pos));
+    menu.exec(table->viewport()->mapToGlobal(pos));
 }
 
 } // namespace ezra

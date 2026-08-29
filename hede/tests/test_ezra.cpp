@@ -16,6 +16,7 @@ private slots:
     void netDevSkipsLoopback();
     void diskStatsWholeDisksOnly();
     void pidStat();
+    void stateNames();
     void pidStatEvilComm();
     void pidStatRejectsGarbage();
     void modelMergeKeepsRows();
@@ -89,7 +90,17 @@ void TestEzra::pidStat() {
     QCOMPARE(p.ppid, 1);
     QCOMPARE(p.utime, 500ULL);
     QCOMPARE(p.stime, 250ULL);
+    QCOMPARE(p.nice, 0);
+    QCOMPARE(p.threads, 4);
     QCOMPARE(p.rssBytes, 2048ULL * 4096ULL);
+}
+
+void TestEzra::stateNames() {
+    QCOMPARE(stateName('R'), QStringLiteral("Running"));
+    QCOMPARE(stateName('S'), QStringLiteral("Sleeping"));
+    QCOMPARE(stateName('Z'), QStringLiteral("Zombie"));
+    QCOMPARE(stateName('I'), QStringLiteral("Idle"));
+    QCOMPARE(stateName('?'), QStringLiteral("?")); // unknown passes through
 }
 
 void TestEzra::pidStatEvilComm() {

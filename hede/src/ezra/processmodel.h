@@ -13,7 +13,10 @@ namespace ezra {
 class ProcessModel : public QAbstractTableModel {
     Q_OBJECT
 public:
-    enum Column { Name, Pid, User, Cpu, Memory, ColumnCount };
+    // One model serves both process views: Processes shows the first five
+    // columns and hides the rest; Details shows everything.
+    enum Column { Name, Pid, User, Cpu, Memory, Ppid, State, Threads, Nice, CommandLine, ColumnCount };
+    static constexpr int kProcessesColumnCount = Ppid; // first Details-only column
     // Raw values for sorting (display strings don't sort numerically).
     enum Role { SortRole = Qt::UserRole, PidRole };
 

@@ -150,8 +150,24 @@ bool parsePidStat(const QByteArray &text, qulonglong pageSize, ProcessSample *ou
     out->ppid = rest.at(1).toInt();
     out->utime = rest.at(11).toULongLong();
     out->stime = rest.at(12).toULongLong();
+    out->nice = rest.at(16).toInt();
+    out->threads = rest.at(17).toInt();
     out->rssBytes = rest.at(21).toULongLong() * pageSize;
     return out->pid > 0;
+}
+
+QString stateName(char state) {
+    switch (state) {
+    case 'R': return QStringLiteral("Running");
+    case 'S': return QStringLiteral("Sleeping");
+    case 'D': return QStringLiteral("Disk sleep");
+    case 'Z': return QStringLiteral("Zombie");
+    case 'T': return QStringLiteral("Stopped");
+    case 't': return QStringLiteral("Traced");
+    case 'I': return QStringLiteral("Idle");
+    case 'X': return QStringLiteral("Dead");
+    }
+    return QString(QChar::fromLatin1(state));
 }
 
 QVector<ProcessSample> ProcessSampler::sample() {
