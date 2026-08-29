@@ -31,7 +31,7 @@ import tempfile
 from collections.abc import Callable
 
 from gest.core import rootpath
-from gest.core.bootloader import m1n1
+from gest.core.bootloader import m1n1, seamless
 from gest.core.bootloader.install import install_steps
 from gest.core.chroot.prepare import prepare_chroot
 from gest.core.disk import fstab as disk_fstab
@@ -895,6 +895,54 @@ class InstallGpuDrivers(FuncStep):
         return ctx.state.done(self.key)
 
 
+class ConfigureHibernateResume(FuncStep):
+    """Point the kernel cmdline at swap so hibernate can resume (``resume=UUID=``).
+
+    The installer formats swap (``mkswap``) and writes it into fstab, but without
+    a ``resume=`` on the kernel cmdline the kernel has no idea where a hibernation
+    image lives — so a hibernated system cold-boots and silently loses the whole
+    session. This resolves the swap UUID (the same way ``WriteFstab`` does — from
+    ``ctx.uuids`` or a live ``lsblk`` read) and merges ``resume=UUID=<swap>`` into
+    ``GRUB_CMDLINE_LINUX`` before ``InstallBootloader`` runs grub-mkconfig, riding
+    the same cmdline rail as the GPU args (so they compose). No-op when the layout
+    has no swap. BuildKernel already added the dracut/genkernel resume module; this
+    supplies the cmdline half without which that module never fires.
+    """
+
+    label = "Configure hibernate resume"
+    phase = Phase.KERNEL_BOOT
+    target_aware = True          # merges resume= into the target's /etc/default/grub
+    key = "configure_hibernate_resume"
+
+    async def run(self, ctx: InstallContext, on_progress: OnProgress | None = None) -> None:
+        swap = ctx.plan.mount.swap
+        if not swap:
+            _emit(on_progress, "no swap in the layout — nothing to resume from")
+            ctx.state.mark(self)
+            return
+        device = swap[0]
+        uuid = ctx.uuids.get(device) if ctx.uuids else disk_reader.device_uuid(device)
+        if not uuid:
+            # Don't fail the install over a hibernate nicety — resume just stays off.
+            _emit(on_progress, f"could not resolve swap UUID for {device} — skipping resume=")
+            ctx.state.mark(self)
+            return
+        grub_path = "/etc/default/grub"
+        existing = ""
+        try:
+            with open(rootpath.resolve(ctx.root, grub_path), encoding="utf-8") as fh:
+                existing = fh.read()
+        except OSError:
+            pass
+        path = write_under_root(ctx.root, grub_path,
+                                seamless.apply_resume_cmdline(existing, uuid))
+        _emit(on_progress, f"wrote {path} (resume=UUID={uuid})")
+        ctx.state.mark(self)
+
+    async def is_satisfied(self, ctx: InstallContext) -> bool:
+        return ctx.state.done(self.key)
+
+
 class InstallBootloader(ArgvStep):
     """Install GRUB + regenerate its config inside the target (``install_steps``)."""
 
@@ -1374,6 +1422,7 @@ def build_registry(plan: InstallPlan, *, root_secret: Secret | None = None,
         StageKernelConfig(),
         BuildKernel(),
         InstallGpuDrivers(),        # firmware always; NVIDIA proprietary when requested
+        ConfigureHibernateResume(), # resume=UUID= onto the cmdline (no-op without swap)
         InstallBootloader(),
         InstallBootStub(),          # arm64/Asahi only; no-op on x86
         _root_password_step(root_secret),
@@ -1425,6 +1474,7 @@ def build_minimal_registry(
         InstallKernelSources(),
         StageKernelConfig(),
         BuildKernel(),
+        ConfigureHibernateResume(), # resume=UUID= onto the cmdline (no-op without swap)
         InstallBootloader(),
         InstallBootStub(),          # arm64/Asahi only; no-op on x86 — boot-critical there
         _root_password_step(root_secret),

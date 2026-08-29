@@ -101,7 +101,7 @@ _MINIMAL_LABELS = [
     "Write repos.conf",
     "Prepare the chroot", "Sync the Portage tree", "Select the profile",
     "Emerge @world", "Install kernel sources", "Stage the kernel config",
-    "Build the kernel", "Install the bootloader",
+    "Build the kernel", "Configure hibernate resume", "Install the bootloader",
     "Install the m1n1 boot stub", "Set the root password",
 ]
 

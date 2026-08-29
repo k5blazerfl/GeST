@@ -50,8 +50,12 @@ def build_steps(config: BuildConfig) -> list[Step]:
              commands.make_argv("install", jobs=jobs, directory=config.source_dir)),
     ]
     if config.initramfs:
+        # resume=True always: an installed system may have swap to hibernate to,
+        # and the module is inert without a resume= cmdline, so including it is
+        # free insurance and the make-path twin of genkernel's built-in resume.
         steps.append(Step("build initramfs",
-                          commands.dracut_argv(config.kver, plymouth=config.plymouth)))
+                          commands.dracut_argv(config.kver, plymouth=config.plymouth,
+                                               resume=True)))
     return steps
 
 
