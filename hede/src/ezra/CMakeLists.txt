@@ -6,10 +6,14 @@ qt_add_library(ezra-lib STATIC
     processmodel.cpp
     usermodel.cpp
     services.cpp
+    sensors.cpp
+    startupmodel.cpp
 )
 target_include_directories(ezra-lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 # DBus: the Services engine talks to systemd's Manager on the system bus.
-target_link_libraries(ezra-lib PUBLIC Qt6::Core Qt6::DBus)
+# helm-apps: the Startup tab shares the XDG autostart engine with the
+# session's helm-autostart runner.
+target_link_libraries(ezra-lib PUBLIC Qt6::Core Qt6::DBus helm-apps)
 
 qt_add_executable(ezra
     main.cpp

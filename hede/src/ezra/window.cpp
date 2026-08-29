@@ -28,7 +28,7 @@
 namespace ezra {
 
 namespace {
-constexpr int kTickMs = 2000;
+constexpr int kTickMs = 1000; // the OG's "Normal" update speed
 
 QString rate(double bytesPerSec) {
     return QLocale().formattedDataSize(qint64(bytesPerSec), 1) + QStringLiteral("/s");
@@ -41,19 +41,23 @@ EzraWindow::EzraWindow() {
 
     model_ = new ProcessModel(this);
 
-    // OG tab order (Startup slots in before Users later).
+    // The OG tab order.
     tabs_ = new QTabWidget(this);
     tabs_->addTab(buildProcessesTab(), tr("Processes"));
     tabs_->addTab(buildPerformanceTab(), tr("Performance"));
+    startupTabIndex_ = tabs_->addTab(buildStartupTab(), tr("Startup"));
     tabs_->addTab(buildUsersTab(), tr("Users"));
     tabs_->addTab(buildDetailsTab(), tr("Details"));
     servicesTabIndex_ = tabs_->addTab(buildServicesTab(), tr("Services"));
     setCentralWidget(tabs_);
     // The unit list is fetched on entering the tab (and re-fetched every
     // fifth tick while it stays current) — no D-Bus chatter while hidden.
+    // The autostart list likewise rescans on entry.
     connect(tabs_, &QTabWidget::currentChanged, this, [this](int index) {
         if (index == servicesTabIndex_)
             serviceManager_->refresh();
+        else if (index == startupTabIndex_)
+            rescanStartup();
     });
 
     // Permanent (right side) so temporary messages — permission denials,
@@ -140,6 +144,60 @@ QWidget *EzraWindow::buildDetailsTab() {
     auto *layout = new QVBoxLayout(page);
     layout->addWidget(buildProcessTable(page, true), 1);
     return page;
+}
+
+QWidget *EzraWindow::buildStartupTab() {
+    auto *page = new QWidget(this);
+    auto *layout = new QVBoxLayout(page);
+
+    startupModel_ = new StartupModel(this);
+    auto *proxy = new QSortFilterProxyModel(page);
+    proxy->setSourceModel(startupModel_);
+
+    startupTable_ = new QTableView(page);
+    startupTable_->setModel(proxy);
+    startupTable_->setSortingEnabled(true);
+    startupTable_->sortByColumn(StartupModel::Name, Qt::AscendingOrder);
+    startupTable_->setSelectionBehavior(QAbstractItemView::SelectRows);
+    startupTable_->setSelectionMode(QAbstractItemView::SingleSelection);
+    startupTable_->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    startupTable_->verticalHeader()->setVisible(false);
+    startupTable_->setShowGrid(false);
+    startupTable_->horizontalHeader()->setSectionResizeMode(StartupModel::Command,
+                                                            QHeaderView::Stretch);
+    layout->addWidget(startupTable_, 1);
+
+    auto *buttonRow = new QHBoxLayout;
+    buttonRow->addStretch(1);
+    auto *toggle = new QPushButton(tr("Enable/disable"), page);
+    connect(toggle, &QPushButton::clicked, this, &EzraWindow::toggleStartupSelected);
+    buttonRow->addWidget(toggle);
+    layout->addLayout(buttonRow);
+
+    rescanStartup();
+    return page;
+}
+
+void EzraWindow::rescanStartup() {
+    const QString desktop =
+        qEnvironmentVariable("XDG_CURRENT_DESKTOP", QStringLiteral("HeDE"))
+            .section(QLatin1Char(':'), 0, 0);
+    startupModel_->setEntries(helm::scanAutostart(helm::defaultAutostartDirs(), desktop));
+}
+
+void EzraWindow::toggleStartupSelected() {
+    const QModelIndex current = startupTable_->selectionModel()->currentIndex();
+    if (!current.isValid())
+        return;
+    auto *proxy = static_cast<QSortFilterProxyModel *>(startupTable_->model());
+    const helm::AutostartEntry *entry =
+        startupModel_->entryAt(proxy->mapToSource(current).row());
+    if (!entry)
+        return;
+    const QString userDir = helm::defaultAutostartDirs().first();
+    if (!helm::setAutostartEnabled(*entry, !entry->enabled, userDir))
+        statusBar()->showMessage(tr("Could not update %1").arg(entry->entry.id), 4000);
+    rescanStartup();
 }
 
 QWidget *EzraWindow::buildUsersTab() {
@@ -264,6 +322,24 @@ QWidget *EzraWindow::buildPerformanceTab() {
     grid->addWidget(memGraph_, 0, 1);
     grid->addWidget(diskGraph_, 1, 0);
     grid->addWidget(netGraph_, 1, 1);
+
+    // Sensor tiles appear only where the hardware reports them: GPU busy%
+    // (amdgpu sysfs), hottest temperature (hwmon), package watts (RAPL).
+    const SensorSampler::Snapshot probe = sensorSampler_.sample();
+    int row = 2, col = 0;
+    auto place = [&](HistoryGraph *g) {
+        grid->addWidget(g, row, col);
+        if (++col == 2) {
+            col = 0;
+            ++row;
+        }
+    };
+    if (probe.hasGpu)
+        place(gpuGraph_ = new HistoryGraph(tr("GPU"), HistoryGraph::Percent, page));
+    if (probe.hasTemp)
+        place(tempGraph_ = new HistoryGraph(tr("Temperature"), HistoryGraph::Percent, page));
+    if (probe.hasPower)
+        place(powerGraph_ = new HistoryGraph(tr("Power"), HistoryGraph::AutoScale, page));
     return page;
 }
 
@@ -307,6 +383,35 @@ void EzraWindow::refresh() {
                      tr("R %1  W %2").arg(rate(snap.readBytesPerSec), rate(snap.writeBytesPerSec)));
     netGraph_->push(snap.rxBytesPerSec + snap.txBytesPerSec,
                     tr("↓ %1  ↑ %2").arg(rate(snap.rxBytesPerSec), rate(snap.txBytesPerSec)));
+
+    if (gpuGraph_ || tempGraph_ || powerGraph_) {
+        const SensorSampler::Snapshot sensors = sensorSampler_.sample();
+        if (gpuGraph_) {
+            QString caption = QString::number(sensors.gpuBusyPercent, 'f', 0) + QStringLiteral(" %");
+            if (sensors.vramTotalBytes)
+                caption += tr("  VRAM %1 / %2")
+                               .arg(locale.formattedDataSize(qint64(sensors.vramUsedBytes), 1),
+                                    locale.formattedDataSize(qint64(sensors.vramTotalBytes), 1));
+            gpuGraph_->push(sensors.gpuBusyPercent, caption);
+        }
+        if (tempGraph_ && sensors.hasTemp) {
+            // Skip generic "tempN" labels — the chip name is the information.
+            const QString where =
+                sensors.hottest.label.startsWith(QStringLiteral("temp"))
+                    ? sensors.hottest.chip
+                    : sensors.hottest.chip + QLatin1Char(' ') + sensors.hottest.label;
+            tempGraph_->push(sensors.hottest.degC,
+                             tr("%1  %2 °C").arg(where).arg(sensors.hottest.degC, 0, 'f', 0));
+        }
+        if (powerGraph_) {
+            QString caption = tr("%1 W (%2)")
+                                  .arg(sensors.packageWatts, 0, 'f', 1)
+                                  .arg(sensors.powerSource);
+            if (sensors.batteryWatts > 0)
+                caption += tr("  battery %1 W").arg(sensors.batteryWatts, 0, 'f', 1);
+            powerGraph_->push(sensors.packageWatts, caption);
+        }
+    }
 
     footer_->setText(tr("Processes: %1    CPU: %2 %    Memory: %3 %")
                          .arg(processes.size())

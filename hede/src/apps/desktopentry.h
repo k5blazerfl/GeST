@@ -26,7 +26,17 @@ struct DesktopEntry {
     bool terminal = false;
     QStringList mimeTypes;          // MimeType= entries this app declares it opens
     QStringList categories;         // Categories= (freedesktop groups → menu sections)
+    QStringList onlyShowIn;         // OnlyShowIn= (autostart/menu desktop gating)
+    QStringList notShowIn;          // NotShowIn=
     QVector<DesktopAction> actions; // jump-list actions, in Actions= order
+
+    // The ShowIn verdict for a desktop name (e.g. "HeDE"): OnlyShowIn wins,
+    // then NotShowIn excludes; both empty → shown everywhere.
+    bool shownIn(const QString &desktop) const {
+        if (!onlyShowIn.isEmpty())
+            return onlyShowIn.contains(desktop);
+        return !notShowIn.contains(desktop);
+    }
 };
 
 // Parse a .desktop file's text: the [Desktop Entry] group plus any

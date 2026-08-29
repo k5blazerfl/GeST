@@ -61,18 +61,26 @@ the cockpit costs a window, not a second engine.
 3. Services (systemd D-Bus) + Users.
 4. Startup (systemd user units + XDG autostart).
 5. cgroup tree view, per-process journal tail, GPU via DRM fdinfo.
-6. Summary view: one landing page with CPU / memory / disk / network /
-   thermals at a glance, so the common case ("is something eating my
-   machine?") is answered without picking a tab.
-7. Thermals + Energy: sensor readings and trends from hwmon
-   (`/sys/class/hwmon`), package watts from RAPL
-   (`/sys/class/powercap/intel-rapl*`, works on AMD too), battery
-   charge/discharge from `/sys/class/power_supply`. Same pure-parser
-   pattern as slice 1 — sysfs text in, numbers out, unit-tested.
-8. Graph feel: drop the tick toward 1 s and interpolate between samples so
-   the meters read as live rather than periodic. Sampling stays cheap
-   (/proc + sysfs reads); the cost is paint, which the damage-scoped
-   graphs already bound.
+6. **Shipped:** Startup tab over XDG autostart — and the session half of the
+   story: HeDE never ran autostart entries at all, so this slice adds
+   `helm-autostart` (in helm-apps, sharing `scanAutostart` with the tab),
+   launched from the labwc autostart file. User file shadows system by id;
+   disabling writes a user override (`Hidden=true` stub for system entries,
+   in-place for user ones); OnlyShowIn/NotShowIn gate by
+   `$XDG_CURRENT_DESKTOP`.
+7. **Shipped, folded into Performance** (instead of separate Thermals/Energy
+   tabs): GPU busy% + VRAM (amdgpu sysfs), hottest temperature (hwmon), and
+   package watts — RAPL when readable, else an hwmon power sensor (amdgpu's
+   PPT; RAPL's `energy_uj` is root-only since the side-channel mitigations),
+   plus battery draw while discharging. Tiles appear only where the hardware
+   reports them.
+8. **Partly shipped:** tick dropped to the OG's 1 s "Normal" speed.
+   Remaining: interpolate between samples if the meters should read
+   smoother.
+9. Still open: a Summary landing view (the Performance grid now covers most
+   of the at-a-glance case — revisit whether a separate tab earns its
+   place), cgroup tree, per-process journal tail, per-process GPU via DRM
+   fdinfo.
 
 Slices 6–7 are informed by TMOG (tmog.org), the cross-platform freemium
 task manager whose Linux build is Qt 6 — its Summary, Energy, and Thermals

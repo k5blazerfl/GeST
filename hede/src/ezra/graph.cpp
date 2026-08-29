@@ -6,7 +6,7 @@
 namespace ezra {
 
 namespace {
-constexpr int kSamples = 60; // 2 minutes of history at the 2 s tick
+constexpr int kSamples = 60; // one minute of history at the 1 s tick
 }
 
 HistoryGraph::HistoryGraph(const QString &title, Scale scale, QWidget *parent,
@@ -35,10 +35,14 @@ void HistoryGraph::paintEvent(QPaintEvent *) {
     const int headerH = fm.height() + 4;
     const QRectF plot = QRectF(rect()).adjusted(0.5, headerH + 0.5, -0.5, -0.5);
 
-    // Header: title left, current value right.
+    // Header: the caption (current value) keeps the right side; the title is
+    // elided into whatever is left so the two never collide on narrow tiles.
     painter.setPen(pal.color(QPalette::WindowText));
-    painter.drawText(QRectF(0, 0, width(), headerH), Qt::AlignLeft | Qt::AlignVCenter, title_);
+    const int captionW = fm.horizontalAdvance(caption_);
     painter.drawText(QRectF(0, 0, width(), headerH), Qt::AlignRight | Qt::AlignVCenter, caption_);
+    const QString title =
+        fm.elidedText(title_, Qt::ElideRight, qMax(0, width() - captionW - 8));
+    painter.drawText(QRectF(0, 0, width(), headerH), Qt::AlignLeft | Qt::AlignVCenter, title);
 
     // Plot frame + midline.
     painter.setPen(frame);

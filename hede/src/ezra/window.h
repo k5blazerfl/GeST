@@ -7,7 +7,9 @@
 
 #include "processmodel.h"
 #include "sampler.h"
+#include "sensors.h"
 #include "services.h"
+#include "startupmodel.h"
 #include "usermodel.h"
 
 #include <QMainWindow>
@@ -48,15 +50,22 @@ private:
     QWidget *buildPerformanceTab();
     QWidget *buildUsersTab();
     QWidget *buildServicesTab();
+    QWidget *buildStartupTab();
+    void rescanStartup();
+    void toggleStartupSelected();
 
     ProcessSampler processSampler_;
     SystemSampler systemSampler_;
+    SensorSampler sensorSampler_;
     ProcessModel *model_ = nullptr;
     UserModel *userModel_ = nullptr;
     ServiceModel *serviceModel_ = nullptr;
     ServiceManager *serviceManager_ = nullptr;
     QTableView *servicesTable_ = nullptr;
+    StartupModel *startupModel_ = nullptr;
+    QTableView *startupTable_ = nullptr;
     int servicesTabIndex_ = -1;
+    int startupTabIndex_ = -1;
     int tick_ = 0;
     QTabWidget *tabs_ = nullptr;
     QTableView *activeTable_ = nullptr; // the table the last action targeted
@@ -70,6 +79,10 @@ private:
     HistoryGraph *memGraph_ = nullptr;
     HistoryGraph *diskGraph_ = nullptr;
     HistoryGraph *netGraph_ = nullptr;
+    // Sensor tiles, created only when the hardware reports them.
+    HistoryGraph *gpuGraph_ = nullptr;
+    HistoryGraph *tempGraph_ = nullptr;
+    HistoryGraph *powerGraph_ = nullptr;
     QLabel *footer_ = nullptr;
 };
 

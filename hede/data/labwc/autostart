@@ -22,6 +22,10 @@ helm-bg &
 helm-notifyd &
 helm-panel &
 
+# XDG autostart entries (user + /etc/xdg), honoring Hidden and ShowIn rules.
+# EzRA's Startup tab manages these; without this runner they'd never run.
+command -v helm-autostart >/dev/null 2>&1 && helm-autostart &
+
 # Hiedi's desktop pet (helm-pet) — opt-in: she's Hiedi's on-screen body, so she
 # comes up with Hiedi, not on every desktop. Enable with `pet = true` under
 # [hiedi] in ~/.config/hede/hede.conf, or HELM_PET=1. helm-notifyd forwards

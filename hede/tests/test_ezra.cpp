@@ -3,6 +3,7 @@
 // doesn't jump).
 #include "processmodel.h"
 #include "sampler.h"
+#include "sensors.h"
 #include "services.h"
 #include "usermodel.h"
 
@@ -24,6 +25,7 @@ private slots:
     void modelMergeKeepsRows();
     void userRollup();
     void serviceModelStatus();
+    void sensorMath();
 };
 
 void TestEzra::procStat() {
@@ -200,6 +202,22 @@ void TestEzra::serviceModelStatus() {
     QCOMPARE(model.data(model.index(1, ServiceModel::Status), Qt::DisplayRole).toString(),
              QStringLiteral("masked"));
     QCOMPARE(model.serviceAt(0)->name, QStringLiteral("sshd.service"));
+}
+
+void TestEzra::sensorMath() {
+    TempReading hottest;
+    QVERIFY(!hottestOf({}, &hottest));
+    QVERIFY(hottestOf({{QStringLiteral("k10temp"), QStringLiteral("Tctl"), 62.5},
+                       {QStringLiteral("amdgpu"), QStringLiteral("edge"), 71.0},
+                       {QStringLiteral("nvme"), QStringLiteral("temp1"), 40.0}},
+                      &hottest));
+    QCOMPARE(hottest.chip, QStringLiteral("amdgpu"));
+    QCOMPARE(hottest.degC, 71.0);
+
+    // 10 J over 2 s = 5 W.
+    QCOMPARE(wattsFromEnergyDelta(1'000'000, 11'000'000, 2000), 5.0);
+    QCOMPARE(wattsFromEnergyDelta(11'000'000, 1'000'000, 2000), 0.0); // wrap → skip
+    QCOMPARE(wattsFromEnergyDelta(1, 2, 0), 0.0);                     // no elapsed time
 }
 
 QTEST_GUILESS_MAIN(TestEzra)
