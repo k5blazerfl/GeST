@@ -28,6 +28,7 @@ private slots:
     void sensorMath();
     void cgroupParse();
     void fdinfoDrmParse();
+    void cpuAveragerRampAndPrune();
 };
 
 void TestEzra::procStat() {
@@ -243,6 +244,35 @@ void TestEzra::fdinfoDrmParse() {
     QCOMPARE(client.engineNs, 123457789ULL); // gfx + compute
 
     QVERIFY(!parseFdinfoDrm("pos:\t0\nflags:\t02\n", &client)); // not a DRM fd
+}
+
+void TestEzra::cpuAveragerRampAndPrune() {
+    auto proc = [](int pid, double cpu) {
+        ProcessSample p;
+        p.pid = pid;
+        p.cpuPercent = cpu;
+        return p;
+    };
+
+    CpuAverager averager(4); // small window to keep the arithmetic visible
+    // A fresh 80% spike ramps in (divided by the FULL window)…
+    QHash<int, double> avg = averager.update({proc(1, 80.0)});
+    QCOMPARE(avg.value(1), 20.0);
+    // …and climbs only while it is sustained.
+    avg = averager.update({proc(1, 80.0)});
+    QCOMPARE(avg.value(1), 40.0);
+    avg = averager.update({proc(1, 80.0)});
+    avg = averager.update({proc(1, 80.0)});
+    QCOMPARE(avg.value(1), 80.0); // window full: steady load reads true
+
+    // The window slides: a drop to 0 decays instead of vanishing at once.
+    avg = averager.update({proc(1, 0.0)});
+    QCOMPARE(avg.value(1), 60.0);
+
+    // A pid absent from a sweep loses its history entirely.
+    averager.update({proc(2, 10.0)});
+    avg = averager.update({proc(1, 80.0), proc(2, 10.0)});
+    QCOMPARE(avg.value(1), 20.0); // ramps in fresh, not from stale history
 }
 
 QTEST_GUILESS_MAIN(TestEzra)

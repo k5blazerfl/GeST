@@ -58,6 +58,7 @@ private:
     ProcessSampler processSampler_;
     SystemSampler systemSampler_;
     SensorSampler sensorSampler_;
+    CpuAverager topAverager_; // 10 s window for the Top-processes card
     SensorSampler::Snapshot sensorProbe_; // taken once at startup to gate tiles
     ProcessModel *model_ = nullptr;
     UserModel *userModel_ = nullptr;

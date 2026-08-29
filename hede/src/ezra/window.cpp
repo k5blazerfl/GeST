@@ -122,7 +122,7 @@ QWidget *EzraWindow::buildOverviewTab() {
     row->addLayout(grid, 3);
 
     auto *side = new QVBoxLayout;
-    auto *topTitle = new QLabel(tr("Top processes"), page);
+    auto *topTitle = new QLabel(tr("Top processes (10 s average)"), page);
     QFont bold = topTitle->font();
     bold.setBold(true);
     topTitle->setFont(bold);
@@ -484,22 +484,30 @@ void EzraWindow::refresh() {
                            .arg(snap.perCorePercent.size())
                            .arg(processes.size()));
 
-    // Top processes by CPU — the "what's eating my machine" glance.
+    // Top processes over a 10 s window — the "what's eating my machine"
+    // glance without every tick reshuffling the ranks. Memory breaks ties
+    // so an idle machine's list stays put instead of shuffling 0.0%-ers.
+    const QHash<int, double> avg = topAverager_.update(processes);
     QVector<int> order(processes.size());
     std::iota(order.begin(), order.end(), 0);
-    std::partial_sort(order.begin(), order.begin() + qMin(5, order.size()), order.end(),
+    const int topCount = qMin(10, order.size());
+    std::partial_sort(order.begin(), order.begin() + topCount, order.end(),
                       [&](int a, int b) {
-                          return processes.at(a).cpuPercent > processes.at(b).cpuPercent;
+                          const double avgA = avg.value(processes.at(a).pid);
+                          const double avgB = avg.value(processes.at(b).pid);
+                          if (avgA != avgB)
+                              return avgA > avgB;
+                          return processes.at(a).rssBytes > processes.at(b).rssBytes;
                       });
     QString html = QStringLiteral("<table width=\"100%\" cellspacing=\"0\" cellpadding=\"3\">");
-    for (int i = 0; i < qMin(5, order.size()); ++i) {
+    for (int i = 0; i < topCount; ++i) {
         const ProcessSample &p = processes.at(order.at(i));
         html += QStringLiteral(
                     "<tr><td>%1</td><td align=\"right\">%2</td>"
                     "<td align=\"right\">%3 %</td><td align=\"right\">%4</td></tr>")
                     .arg(p.name.toHtmlEscaped())
                     .arg(p.pid)
-                    .arg(p.cpuPercent, 0, 'f', 1)
+                    .arg(avg.value(p.pid), 0, 'f', 1)
                     .arg(locale.formattedDataSize(qint64(p.rssBytes), 1));
     }
     html += QStringLiteral("</table>");

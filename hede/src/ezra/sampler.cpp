@@ -234,6 +234,26 @@ QVector<UserRollup> rollupByUser(const QVector<ProcessSample> &samples) {
     return out;
 }
 
+QHash<int, double> CpuAverager::update(const QVector<ProcessSample> &samples) {
+    QHash<int, QVector<double>> next;
+    QHash<int, double> averages;
+    next.reserve(samples.size());
+    averages.reserve(samples.size());
+    for (const ProcessSample &p : samples) {
+        QVector<double> readings = history_.take(p.pid); // absent pids drop off
+        readings.append(p.cpuPercent);
+        if (readings.size() > window_)
+            readings.removeFirst();
+        double sum = 0;
+        for (double v : readings)
+            sum += v;
+        averages.insert(p.pid, sum / double(window_));
+        next.insert(p.pid, readings);
+    }
+    history_ = next;
+    return averages;
+}
+
 QVector<ProcessSample> ProcessSampler::sample() {
     const qulonglong pageSize = qulonglong(sysconf(_SC_PAGESIZE));
 

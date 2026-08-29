@@ -108,6 +108,23 @@ struct UserRollup {
 // Pure aggregation of a sample sweep, sorted by user name.
 QVector<UserRollup> rollupByUser(const QVector<ProcessSample> &samples);
 
+// Sliding-window CPU smoothing for the Overview's Top-processes card, so
+// ranks don't churn every tick. The average divides by the FULL window
+// (not samples seen): a fresh spike ramps in over the window instead of
+// instantly topping the list — only sustained load rises. Dead pids are
+// pruned each update.
+class CpuAverager {
+public:
+    explicit CpuAverager(int windowSize = 10) : window_(qMax(1, windowSize)) {}
+
+    // Record this tick and return pid -> windowed average CPU%.
+    QHash<int, double> update(const QVector<ProcessSample> &samples);
+
+private:
+    int window_;
+    QHash<int, QVector<double>> history_; // pid -> last <=window_ readings
+};
+
 // --- stateful samplers ----------------------------------------------------
 
 // Scans /proc and computes per-process CPU% from the tick delta since the
