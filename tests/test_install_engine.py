@@ -12,7 +12,7 @@ from gest.core.exec.chroot import ChrootExecutor
 from gest.core.exec.executor import FakeExecutor
 from gest.core.exec.steps import Step, StepError
 from gest.core.install.context import InstallContext, StateStore
-from gest.core.install.engine import run_install
+from gest.core.install.engine import FailureAction, run_install
 from gest.core.install.plan import Phase
 from gest.core.install.step import ArgvStep, FuncStep
 
@@ -128,3 +128,68 @@ def test_state_marks_completed_steps():
     asyncio.run(run_install(ctx, [_HostStep()]))
     assert ctx.state.done("host op")
     assert not ctx.state.done("emerge @world")
+
+
+# --- in-run recovery (on_failure): retry / skip / abort ----------------------
+
+def test_on_failure_retry_reruns_the_step_then_continues():
+    # emerge fails the first attempt, succeeds the second
+    n = {"emerge": 0}
+
+    def code_for(argv):
+        if "emerge" in argv:
+            n["emerge"] += 1
+            return 1 if n["emerge"] == 1 else 0
+        return 0
+
+    fx = FakeExecutor(code_for=code_for)
+    seen: list[bool] = []
+
+    async def on_failure(step, exc, in_chroot):
+        seen.append(in_chroot)
+        return FailureAction.RETRY
+
+    # a trailing host step must run once the retried emerge succeeds
+    _run(fx, [_HostStep(), _PrepareStep(), _ChrootStep(), _HostStep()],
+         on_failure=on_failure)
+    calls = fx.calls
+    # the emerge was attempted twice (failed, then retried to success)
+    assert sum(1 for c in calls if c[:1] == ["chroot"] and "emerge" in c) == 2
+    # the pipeline continued: both host steps ran
+    assert sum(1 for c in calls if c == ["mount", "/dev/sda3", _ROOT]) == 2
+    # on_failure was consulted once, and told the chroot was already open
+    assert seen == [True]
+
+
+def test_on_failure_skip_marks_satisfied_and_continues():
+    fx = FakeExecutor(code_for=lambda argv: 1 if "emerge" in argv else 0)
+    ctx = _ctx(fx)
+    progress: list[str] = []
+
+    async def on_failure(step, exc, in_chroot):
+        return FailureAction.SKIP
+
+    # no exception despite the always-failing emerge
+    asyncio.run(run_install(
+        ctx, [_HostStep(), _PrepareStep(), _ChrootStep(), _HostStep()],
+        on_failure=on_failure, on_progress=progress.extend))
+    # the skipped step is marked done (so a resume won't retry it)
+    assert ctx.state.done("emerge @world")
+    # the trailing host step still ran
+    assert sum(1 for c in fx.calls if c == ["mount", "/dev/sda3", _ROOT]) == 2
+    # the user was warned in the log
+    assert any("skipped" in line for line in progress)
+
+
+def test_on_failure_abort_reraises_and_tears_down():
+    fx = FakeExecutor(code_for=lambda argv: 1 if "emerge" in argv else 0)
+
+    async def on_failure(step, exc, in_chroot):
+        return FailureAction.ABORT
+
+    with pytest.raises(StepError):
+        _run(fx, [_HostStep(), _PrepareStep(), _ChrootStep(), _HostStep()],
+             on_failure=on_failure)
+    # teardown still ran on abort, and nothing after the failing step executed
+    assert any(c[:1] == ["umount"] for c in fx.calls)
+    assert sum(1 for c in fx.calls if c == ["mount", "/dev/sda3", _ROOT]) == 1
