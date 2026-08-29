@@ -512,12 +512,13 @@ void EzraWindow::refresh() {
     for (int i = 0; i < topCount; ++i) {
         const ProcessSample &p = processes.at(order.at(i));
         html += QStringLiteral(
-                    "<tr><td>%1</td><td align=\"right\">%2</td>"
+                    "<tr><td align=\"right\">%5.</td><td>%1</td><td align=\"right\">%2</td>"
                     "<td align=\"right\">%3 %</td><td align=\"right\">%4</td></tr>")
                     .arg(topFm.elidedText(p.name, Qt::ElideRight, nameBudget).toHtmlEscaped())
                     .arg(p.pid)
                     .arg(avg.value(p.pid), 0, 'f', 1)
-                    .arg(locale.formattedDataSize(qint64(p.rssBytes), 1));
+                    .arg(locale.formattedDataSize(qint64(p.rssBytes), 1))
+                    .arg(i + 1);
     }
     html += QStringLiteral("</table>");
     ovTop_->setText(html);
