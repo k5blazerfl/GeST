@@ -4,6 +4,7 @@ qt_add_library(helm-notify-lib STATIC
     toast.cpp
     notifyservice.cpp
     notifyadaptor.cpp
+    petbridge.cpp
 )
 target_include_directories(helm-notify-lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(helm-notify-lib PUBLIC Qt6::Widgets Qt6::DBus helm-common)

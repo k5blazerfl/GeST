@@ -31,6 +31,9 @@ DEPEND="
 	dev-qt/qtwayland:6
 	|| ( kde-plasma/layer-shell-qt:6 kde-frameworks/layer-shell-qt:6 )
 	dev-libs/libvterm
+	dev-libs/wayland
+	x11-libs/cairo
+	x11-libs/pango
 "
 # Runtime: the compositor HeDE drives, the default terminal helm-panel spawns,
 # GeST (the Control Center + the org.gentoo.gest.Shell read seam), and a polkit

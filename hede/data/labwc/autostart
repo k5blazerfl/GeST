@@ -21,3 +21,14 @@ command -v helm-theme >/dev/null 2>&1 && helm-theme --from-world >/dev/null 2>&1
 helm-bg &
 helm-notifyd &
 helm-panel &
+
+# Hiedi's desktop pet (helm-pet) — opt-in: she's Hiedi's on-screen body, so she
+# comes up with Hiedi, not on every desktop. Enable with `pet = true` under
+# [hiedi] in ~/.config/hede/hede.conf, or HELM_PET=1. helm-notifyd forwards
+# notifications to her regardless of whether the Hiedi brain is installed.
+if command -v helm-pet >/dev/null 2>&1; then
+    _hede_conf="${XDG_CONFIG_HOME:-$HOME/.config}/hede/hede.conf"
+    if [ "${HELM_PET:-0}" = "1" ] || grep -Eqs '^[[:space:]]*pet[[:space:]]*=[[:space:]]*true' "$_hede_conf"; then
+        helm-pet &
+    fi
+fi
