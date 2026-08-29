@@ -493,7 +493,9 @@ void EzraWindow::refresh() {
     const QHash<int, double> avg = topAverager_.update(processes);
     QVector<int> order(processes.size());
     std::iota(order.begin(), order.end(), 0);
-    const int topCount = qMin(10, order.size());
+    // 8 rows: enough for every genuinely busy process while keeping the
+    // idle 0.1 %-ers from cycling through the bottom of the card.
+    const int topCount = qMin(8, order.size());
     auto rank = [&](int index) {
         const ProcessSample &p = processes.at(index);
         return std::make_tuple(qRound(avg.value(p.pid) * 10.0), // 0.1 % buckets
