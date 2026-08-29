@@ -52,6 +52,14 @@ def test_dracut_argv_plymouth_adds_module():
         "dracut", "--force", "--add", "plymouth", "--kver", "6.6.30-gentoo"]
 
 
+def test_dracut_argv_resume_adds_module():
+    assert commands.dracut_argv(resume=True) == ["dracut", "--force", "--add", "resume"]
+    # composes with plymouth, order stable
+    assert commands.dracut_argv("6.6.30-gentoo", plymouth=True, resume=True) == [
+        "dracut", "--force", "--add", "plymouth", "--add", "resume",
+        "--kver", "6.6.30-gentoo"]
+
+
 @pytest.mark.parametrize("call", [
     lambda: commands.make_argv("oldconfig"),                       # bad target
     lambda: commands.make_argv(jobs=0),                            # jobs out of range
@@ -108,14 +116,23 @@ def test_build_steps_make_plymouth_adds_dracut_module():
     cfg = build.BuildConfig(method="make", jobs=4, initramfs=True, plymouth=True)
     initramfs = build.build_steps(cfg)[-1]
     assert initramfs.label == "build initramfs"
-    assert initramfs.argv == ["dracut", "--force", "--add", "plymouth"]
+    # resume is always added on the make path (installed systems may hibernate)
+    assert initramfs.argv == ["dracut", "--force", "--add", "plymouth", "--add", "resume"]
+
+
+def test_build_steps_make_initramfs_always_adds_resume():
+    # even without plymouth, the make-path initramfs carries the resume module
+    cfg = build.BuildConfig(method="make", jobs=4, initramfs=True)
+    initramfs = build.build_steps(cfg)[-1]
+    assert initramfs.argv == ["dracut", "--force", "--add", "resume"]
 
 
 def test_build_steps_no_plymouth_by_default():
     genk = build.build_steps(build.BuildConfig(method="genkernel"))[0]
     assert "--plymouth" not in genk.argv
     dracut = build.build_steps(build.BuildConfig(method="make", jobs=1))[-1]
-    assert "--add" not in dracut.argv
+    # resume is always added; plymouth is not, unless requested
+    assert "plymouth" not in dracut.argv
 
 
 def test_build_steps_make_without_initramfs():

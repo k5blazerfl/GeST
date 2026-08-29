@@ -66,15 +66,20 @@ def make_argv(
 
 
 def dracut_argv(kver: str = "", *, force: bool = True, plymouth: bool = False,
-                dracut: str = "dracut") -> list[str]:
-    """`dracut [--force] [--add plymouth] [--kver <version>]` — build an initramfs.
-    ``plymouth`` pulls in the Plymouth splash module (the make-path twin of
-    ``genkernel --plymouth``)."""
+                resume: bool = False, dracut: str = "dracut") -> list[str]:
+    """`dracut [--force] [--add plymouth] [--add resume] [--kver <version>]` —
+    build an initramfs. ``plymouth`` pulls in the Plymouth splash module (the
+    make-path twin of ``genkernel --plymouth``). ``resume`` forces in the
+    hibernate-resume module: dracut auto-includes it only from the *live* host's
+    resume state, which during an install is not the target's, so an installed
+    system needs it added explicitly to restore a hibernation image at boot."""
     argv = [dracut]
     if force:
         argv.append("--force")
     if plymouth:
         argv += ["--add", "plymouth"]
+    if resume:
+        argv += ["--add", "resume"]
     if kver:
         if not _KVER_RE.match(kver):
             raise ValueError(f"invalid kernel version: {kver!r}")

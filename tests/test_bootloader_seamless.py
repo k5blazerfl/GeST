@@ -96,3 +96,37 @@ def test_initramfs_regen_step_is_genkernel_initramfs_plymouth():
     assert step.argv[0] == "genkernel"
     assert "--plymouth" in step.argv
     assert step.argv[-1] == "initramfs"  # initramfs-only, no kernel recompile
+
+
+# --- hibernate resume cmdline -------------------------------------------------
+
+def test_resume_cmdline_builds_uuid_arg():
+    assert seamless.resume_cmdline("abc-123") == "resume=UUID=abc-123"
+    assert seamless.resume_cmdline("") == ""       # no swap -> nothing to resume
+
+
+def test_apply_resume_cmdline_appends_key_when_absent():
+    out = seamless.apply_resume_cmdline('GRUB_TIMEOUT="5"\n', "abc-123")
+    assert 'GRUB_CMDLINE_LINUX="resume=UUID=abc-123"' in out
+    assert 'GRUB_TIMEOUT="5"' in out               # untouched
+
+
+def test_apply_resume_cmdline_merges_into_existing_line():
+    # composes with the GPU step's GRUB_CMDLINE_LINUX (same rail), deduped
+    existing = 'GRUB_CMDLINE_LINUX="nouveau.modeset=0 nvidia_drm.modeset=1"\n'
+    out = seamless.apply_resume_cmdline(existing, "abc-123")
+    assert out.count("GRUB_CMDLINE_LINUX=") == 1   # merged in place, not duplicated
+    assert "nouveau.modeset=0" in out              # existing args preserved
+    assert "resume=UUID=abc-123" in out
+
+
+def test_apply_resume_cmdline_is_idempotent():
+    once = seamless.apply_resume_cmdline("", "abc-123")
+    twice = seamless.apply_resume_cmdline(once, "abc-123")
+    assert once == twice
+    assert twice.count("resume=UUID=abc-123") == 1
+
+
+def test_apply_resume_cmdline_noop_without_swap():
+    existing = 'GRUB_TIMEOUT="5"\n'
+    assert seamless.apply_resume_cmdline(existing, "") == existing

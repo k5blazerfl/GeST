@@ -6,6 +6,7 @@ that every chroot step's argv is ``chroot <root> …`` and the pseudo-fs mounts
 bracket them (prepare before, teardown after)."""
 
 import asyncio
+import dataclasses
 import os
 
 import pytest
@@ -20,6 +21,7 @@ from gest.core.install.context import InstallContext, StateStore
 from gest.core.install.engine import run_install
 from gest.core.install.plan import InstallPlan, Phase, UserSpec
 from gest.core.install.registry import (
+    ConfigureHibernateResume,
     CreateUser,
     EmergeWorld,
     SetHostname,
@@ -57,6 +59,7 @@ _EXPECTED_LABELS = [
     "Stage the kernel config",
     "Build the kernel",
     "Install GPU drivers & firmware",
+    "Configure hibernate resume",
     "Install the bootloader",
     "Install the m1n1 boot stub",
     "Set the root password",
@@ -83,6 +86,7 @@ _MARKER_KEYS = {
     "Stage the kernel config": "stage_kernel_config",
     "Build the kernel": "build_kernel",
     "Install GPU drivers & firmware": "install_gpu_drivers",
+    "Configure hibernate resume": "configure_hibernate_resume",
     "Install the bootloader": "install_bootloader",
     "Install the m1n1 boot stub": "install_boot_stub",
     "Configure the network": "configure_network",
@@ -193,10 +197,11 @@ def test_registry_phases_are_non_decreasing():
     assert [s.phase for s in reg[:3]] == [Phase.PREPARE_DISK] * 3
     assert [s.phase for s in reg[3:14]] == [Phase.BASE_SYSTEM] * 11  # +HeDE (x3) +repos.conf
     assert [s.phase for s in reg[14:18]] == [Phase.CONFIGURE] * 4    # +Generate the locale
-    # KERNEL_BOOT: sources, stage-config, build, gpu-drivers, bootloader, m1n1
-    assert [s.phase for s in reg[18:24]] == [Phase.KERNEL_BOOT] * 6
-    assert [s.phase for s in reg[24:28]] == [Phase.USERS_NETWORK] * 4  # +user password
-    assert [s.phase for s in reg[28:30]] == [Phase.FINISH] * 2       # HeDE session + clock
+    # KERNEL_BOOT: sources, stage-config, build, gpu-drivers, hibernate-resume,
+    # bootloader, m1n1
+    assert [s.phase for s in reg[18:25]] == [Phase.KERNEL_BOOT] * 7
+    assert [s.phase for s in reg[25:29]] == [Phase.USERS_NETWORK] * 4  # +user password
+    assert [s.phase for s in reg[29:31]] == [Phase.FINISH] * 2       # HeDE session + clock
 
 
 def test_registry_chroot_and_opens_chroot_flags():
@@ -214,8 +219,9 @@ def test_registry_marker_keys():
 
 def test_tier2_default_empty():
     # base rows + 3 HeDE desktop steps + kernel-sources + stage-kernel-config +
-    # gpu-drivers + enable-session + configure-clock + the arm64-gated m1n1 boot stub
-    assert len(build_registry(_plan())) == 30
+    # gpu-drivers + hibernate-resume + enable-session + configure-clock +
+    # the arm64-gated m1n1 boot stub
+    assert len(build_registry(_plan())) == 31
 
 
 def test_boot_stub_step_is_arm64_gated():
@@ -901,3 +907,50 @@ def test_set_user_passwords_missing_secret_raises():
     p = _plan(user=UserSpec(name="captain", set_password=True))
     with pytest.raises(ValueError, match="captain"):
         step.build(_ctx(FakeExecutor(), plan=p))
+
+
+# --- ConfigureHibernateResume ------------------------------------------------
+
+def _grub_root(tmp_path, body='GRUB_TIMEOUT="5"\n'):
+    (tmp_path / "etc/default").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "etc/default/grub").write_text(body)
+    return str(tmp_path)
+
+
+def test_configure_hibernate_resume_writes_cmdline(tmp_path):
+    root = _grub_root(tmp_path)
+    ex = FakeExecutor(lambda argv: 0)
+    ctx = _ctx(ex, root=root)
+    # the default UEFI plan has swap; supply its UUID so no lsblk is needed
+    assert ctx.plan.mount.swap, "fixture plan should have a swap device"
+    ctx.uuids = {dev: "swap-uuid-xyz" for dev in ctx.plan.mount.swap}
+    asyncio.run(ConfigureHibernateResume().run(ctx))
+    body = (tmp_path / "etc/default/grub").read_text()
+    assert 'GRUB_CMDLINE_LINUX="resume=UUID=swap-uuid-xyz"' in body
+    assert 'GRUB_TIMEOUT="5"' in body                      # existing keys untouched
+    assert ctx.state.done("configure_hibernate_resume")
+
+
+def _swapless_plan():
+    disk = provision.uefi_plan("sda", "512M", "", "ext4")   # swap_size="" -> no swap
+    return dataclasses.replace(
+        _plan(), disk=disk, mount=disk_mount.derive_mount_plan(disk, _ROOT))
+
+
+def test_configure_hibernate_resume_noop_without_swap(tmp_path):
+    root = _grub_root(tmp_path)
+    ex = FakeExecutor(lambda argv: 0)
+    plan = _swapless_plan()
+    assert not plan.mount.swap, "swapless fixture should have no swap device"
+    ctx = _ctx(ex, root=root, plan=plan)
+    asyncio.run(ConfigureHibernateResume().run(ctx))
+    body = (tmp_path / "etc/default/grub").read_text()
+    assert "resume=" not in body                           # nothing to resume from
+    assert body == 'GRUB_TIMEOUT="5"\n'                    # file untouched
+    assert ctx.state.done("configure_hibernate_resume")    # still marked done (clean skip)
+
+
+def test_configure_hibernate_resume_in_registry_before_bootloader():
+    labels = [type(s).__name__ for s in build_registry(_plan())]
+    assert "ConfigureHibernateResume" in labels
+    assert labels.index("ConfigureHibernateResume") < labels.index("InstallBootloader")

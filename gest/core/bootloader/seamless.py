@@ -77,6 +77,48 @@ def grub_default(existing: str) -> str:
     return apply_grub_default(existing, grub_settings())
 
 
+# --- hibernate resume ---------------------------------------------------------
+# The installer formats swap and writes it into fstab, but without a ``resume=``
+# on the kernel cmdline the kernel has no idea where the hibernation image lives,
+# so a hibernated system cold-boots and loses the session. resume= belongs on
+# GRUB_CMDLINE_LINUX (every entry, incl. recovery — you want to resume from any
+# of them), NOT GRUB_CMDLINE_LINUX_DEFAULT (which is quiet-splash-only). This is
+# the same GRUB_CMDLINE_LINUX rail the GPU step's cmdline uses, so the two compose.
+RESUME_CMDLINE_KEY = "GRUB_CMDLINE_LINUX"
+
+
+def resume_cmdline(swap_uuid: str) -> str:
+    """The ``resume=UUID=<swap>`` kernel arg pointing hibernate at the swap it
+    restores from — empty when there is no swap (nothing to resume)."""
+    return f"resume=UUID={swap_uuid}" if swap_uuid else ""
+
+
+def apply_resume_cmdline(existing: str, swap_uuid: str) -> str:
+    """Merge ``resume=UUID=<swap_uuid>`` into ``GRUB_CMDLINE_LINUX`` in an
+    ``/etc/default/grub`` body, appending (deduped) to any existing value and
+    rewriting the line in place; appends the key if absent. Idempotent, and a
+    no-op when ``swap_uuid`` is empty — so a swapless install adds nothing and a
+    re-run never doubles the arg."""
+    args = resume_cmdline(swap_uuid)
+    if not args:
+        return existing
+    want = args.split()
+    key_re = re.compile(rf'^\s*#?\s*{RESUME_CMDLINE_KEY}=(?:"(.*)"|(.*))\s*$')
+    lines = existing.split("\n")
+    for i, line in enumerate(lines):
+        m = key_re.match(line)
+        if m:
+            cur = (m.group(1) if m.group(1) is not None else m.group(2)).split()
+            merged = cur + [a for a in want if a not in cur]
+            lines[i] = f'{RESUME_CMDLINE_KEY}="{" ".join(merged)}"'
+            return "\n".join(lines)
+    if lines and lines[-1].strip():
+        lines.append("")
+    lines.append("# Hibernate resume — managed by GeST")
+    lines.append(f'{RESUME_CMDLINE_KEY}="{" ".join(want)}"')
+    return "\n".join(lines)
+
+
 def stage_theme_steps(*, root: str = "") -> list[Step]:
     """Argv steps that stage the theme + select Plymouth (run after the
     ``/etc/default/grub`` write, before ``grub-mkconfig``). ``root`` prefixes the
