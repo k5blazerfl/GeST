@@ -485,20 +485,23 @@ void EzraWindow::refresh() {
                            .arg(processes.size()));
 
     // Top processes over a 10 s window — the "what's eating my machine"
-    // glance without every tick reshuffling the ranks. Memory breaks ties
-    // so an idle machine's list stays put instead of shuffling 0.0%-ers.
+    // glance without every tick reshuffling the ranks. Ranking compares
+    // QUANTIZED values (0.1 % CPU buckets, whole MiB, then pid): raw double
+    // averages are never exactly equal, so without the buckets the ranks
+    // still flip every tick on 0.121-vs-0.123 noise. This way the order
+    // only moves when a digit the user can actually see changes.
     const QHash<int, double> avg = topAverager_.update(processes);
     QVector<int> order(processes.size());
     std::iota(order.begin(), order.end(), 0);
     const int topCount = qMin(10, order.size());
+    auto rank = [&](int index) {
+        const ProcessSample &p = processes.at(index);
+        return std::make_tuple(qRound(avg.value(p.pid) * 10.0), // 0.1 % buckets
+                               p.rssBytes >> 20,                // whole MiB
+                               -p.pid);
+    };
     std::partial_sort(order.begin(), order.begin() + topCount, order.end(),
-                      [&](int a, int b) {
-                          const double avgA = avg.value(processes.at(a).pid);
-                          const double avgB = avg.value(processes.at(b).pid);
-                          if (avgA != avgB)
-                              return avgA > avgB;
-                          return processes.at(a).rssBytes > processes.at(b).rssBytes;
-                      });
+                      [&](int a, int b) { return rank(a) > rank(b); });
     QString html = QStringLiteral("<table width=\"100%\" cellspacing=\"0\" cellpadding=\"3\">");
     for (int i = 0; i < topCount; ++i) {
         const ProcessSample &p = processes.at(order.at(i));
