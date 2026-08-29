@@ -51,6 +51,10 @@
     <keybind key="W-Return">
       <action name="Execute"><command>textant</command></action>
     </keybind>
+    <!-- Ctrl+Shift+Esc → task manager (EzRA), same reflex as Windows -->
+    <keybind key="C-S-Escape">
+      <action name="Execute"><command>ezra</command></action>
+    </keybind>
     <!-- Super+Q → close the focused window -->
     <keybind key="W-q">
       <action name="Close"/>

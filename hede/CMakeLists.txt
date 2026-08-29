@@ -34,6 +34,7 @@ add_subdirectory(src/hold)
 add_subdirectory(src/sefe)
 add_subdirectory(src/textant)
 add_subdirectory(src/helm-pet)
+add_subdirectory(src/ezra)
 add_subdirectory(tests)
 
 # --- data / session files ---------------------------------------------------
@@ -48,6 +49,7 @@ install(FILES data/wayland-sessions/hede.desktop
 install(FILES data/applications/sefe.desktop
               data/applications/barnacle.desktop
               data/applications/textant.desktop
+              data/applications/ezra.desktop
         DESTINATION ${CMAKE_INSTALL_PREFIX}/share/applications)
 # Textant's app icon (the finalized brand mark; see docs/design/textant.md) so
 # Icon=textant resolves in the theme. HeDE's first bespoke app icon.

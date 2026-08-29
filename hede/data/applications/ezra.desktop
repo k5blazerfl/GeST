@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=EzRA
+GenericName=Task Manager
+Comment=Monitor processes and system performance
+Exec=ezra
+Icon=utilities-system-monitor
+Terminal=false
+Categories=System;Monitor;
+StartupNotify=true
