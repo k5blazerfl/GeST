@@ -504,13 +504,17 @@ void EzraWindow::refresh() {
     };
     std::partial_sort(order.begin(), order.begin() + topCount, order.end(),
                       [&](int a, int b) { return rank(a) > rank(b); });
+    // QLabel's HTML table has no text-overflow — elide long names (kworker
+    // threads and friends) ourselves against the card's real width.
+    const QFontMetrics topFm(ovTop_->font());
+    const int nameBudget = qMax(90, ovTop_->width() * 2 / 5);
     QString html = QStringLiteral("<table width=\"100%\" cellspacing=\"0\" cellpadding=\"3\">");
     for (int i = 0; i < topCount; ++i) {
         const ProcessSample &p = processes.at(order.at(i));
         html += QStringLiteral(
                     "<tr><td>%1</td><td align=\"right\">%2</td>"
                     "<td align=\"right\">%3 %</td><td align=\"right\">%4</td></tr>")
-                    .arg(p.name.toHtmlEscaped())
+                    .arg(topFm.elidedText(p.name, Qt::ElideRight, nameBudget).toHtmlEscaped())
                     .arg(p.pid)
                     .arg(avg.value(p.pid), 0, 'f', 1)
                     .arg(locale.formattedDataSize(qint64(p.rssBytes), 1));
