@@ -58,6 +58,24 @@ QRectF paintHeaderAndFrame(QPainter &painter, const QWidget *w, const QString &t
     return plot;
 }
 
+// A Catmull-Rom spline through the sample points: the curve still passes
+// through every real sample (visual smoothing only, the data is untouched)
+// but the segment joints stop being corners.
+QPainterPath smoothLine(const QVector<QPointF> &pts) {
+    QPainterPath path;
+    if (pts.isEmpty())
+        return path;
+    path.moveTo(pts.first());
+    for (int i = 0; i + 1 < pts.size(); ++i) {
+        const QPointF p0 = pts.at(qMax(0, i - 1));
+        const QPointF p1 = pts.at(i);
+        const QPointF p2 = pts.at(i + 1);
+        const QPointF p3 = pts.at(qMin(int(pts.size()) - 1, i + 2));
+        path.cubicTo(p1 + (p2 - p0) / 6.0, p2 - (p3 - p1) / 6.0, p2);
+    }
+    return path;
+}
+
 } // namespace
 
 void HistoryGraph::paintEvent(QPaintEvent *) {
@@ -81,20 +99,17 @@ void HistoryGraph::paintEvent(QPaintEvent *) {
 
     // Newest sample pinned to the right edge, one slot per sample.
     const double dx = plot.width() / double(kSamples - 1);
-    QPainterPath line;
-    for (int i = 0; i < history_.size(); ++i) {
-        const double x = plot.right() - dx * double(history_.size() - 1 - i);
-        const double y =
-            plot.bottom() - qMin(history_.at(i), top) / top * plot.height();
-        if (i == 0)
-            line.moveTo(x, y);
-        else
-            line.lineTo(x, y);
-    }
+    QVector<QPointF> pts;
+    pts.reserve(history_.size());
+    for (int i = 0; i < history_.size(); ++i)
+        pts.append({plot.right() - dx * double(history_.size() - 1 - i),
+                    plot.bottom() - qMin(history_.at(i), top) / top * plot.height()});
+    const QPainterPath line = smoothLine(pts);
 
+    painter.setClipRect(plot); // spline overshoot stays inside the frame
     QPainterPath fill = line;
     fill.lineTo(plot.right(), plot.bottom());
-    fill.lineTo(plot.right() - dx * double(history_.size() - 1), plot.bottom());
+    fill.lineTo(pts.first().x(), plot.bottom());
     fill.closeSubpath();
     QColor fillColor = accent;
     fillColor.setAlphaF(0.18f);
@@ -102,7 +117,6 @@ void HistoryGraph::paintEvent(QPaintEvent *) {
 
     painter.setPen(QPen(accent, 1.5));
     painter.setBrush(Qt::NoBrush);
-    painter.setClipRect(plot);
     painter.drawPath(line);
 }
 
@@ -147,15 +161,21 @@ void MultiHistoryGraph::paintEvent(QPaintEvent *) {
                                         darkTheme ? 0.55f : 0.7f,
                                         darkTheme ? 0.95f : 0.62f);
         color.setAlphaF(0.75f);
-        QPainterPath line;
-        for (int i = 0; i < series.size(); ++i) {
-            const double x = plot.right() - dx * double(series.size() - 1 - i);
-            const double y = plot.bottom() - series.at(i) / 100.0 * plot.height();
-            if (i == 0)
-                line.moveTo(x, y);
-            else
-                line.lineTo(x, y);
-        }
+        QVector<QPointF> pts;
+        pts.reserve(series.size());
+        for (int i = 0; i < series.size(); ++i)
+            pts.append({plot.right() - dx * double(series.size() - 1 - i),
+                        plot.bottom() - series.at(i) / 100.0 * plot.height()});
+        const QPainterPath line = smoothLine(pts);
+        // Fill under each trace like the single-series graphs — but faint,
+        // so many overlapping cores stack into a density picture.
+        QPainterPath fill = line;
+        fill.lineTo(plot.right(), plot.bottom());
+        fill.lineTo(pts.first().x(), plot.bottom());
+        fill.closeSubpath();
+        QColor fillColor = color;
+        fillColor.setAlphaF(0.06f);
+        painter.fillPath(fill, fillColor);
         painter.setPen(QPen(color, 1.0));
         painter.drawPath(line);
     }
