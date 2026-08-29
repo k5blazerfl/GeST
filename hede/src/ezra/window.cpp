@@ -352,10 +352,11 @@ QWidget *EzraWindow::buildPerformanceTab() {
     auto *page = new QWidget(this);
     auto *grid = new QGridLayout(page);
 
-    // CPU tile: overall graph by default; right-click switches to the
-    // per-core grid (built lazily once the core count is known).
+    // CPU tile: every logical processor as a trace on one graph by default;
+    // right-click switches to the per-core grid (built lazily once the core
+    // count is known).
     cpuStack_ = new QStackedWidget(page);
-    cpuGraph_ = new HistoryGraph(tr("CPU"), HistoryGraph::Percent, page);
+    cpuGraph_ = new MultiHistoryGraph(tr("CPU"), page);
     coreGrid_ = new QWidget(page);
     new QGridLayout(coreGrid_);
     cpuStack_->addWidget(cpuGraph_);
@@ -363,8 +364,8 @@ QWidget *EzraWindow::buildPerformanceTab() {
     cpuStack_->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(cpuStack_, &QWidget::customContextMenuRequested, this, [this](const QPoint &pos) {
         QMenu menu(this);
-        QAction *overall = menu.addAction(tr("Overall utilization"));
-        QAction *perCore = menu.addAction(tr("Logical processors"));
+        QAction *overall = menu.addAction(tr("All processors, one graph"));
+        QAction *perCore = menu.addAction(tr("Logical processors, grid"));
         for (QAction *a : {overall, perCore})
             a->setCheckable(true);
         (cpuStack_->currentIndex() == 0 ? overall : perCore)->setChecked(true);
@@ -416,8 +417,10 @@ void EzraWindow::refresh() {
         if (b)
             b->push(v, caption);
     };
-    pushBoth(cpuGraph_, ovCpu_, snap.cpuPercent,
-             QString::number(snap.cpuPercent, 'f', 0) + QStringLiteral(" %"));
+    const QString cpuCaption = QString::number(snap.cpuPercent, 'f', 0) + QStringLiteral(" %");
+    cpuGraph_->push(snap.perCorePercent, cpuCaption); // one trace per core
+    if (ovCpu_)
+        ovCpu_->push(snap.cpuPercent, cpuCaption); // the glance tile stays aggregate
 
     if (coreGraphs_.isEmpty() && !snap.perCorePercent.isEmpty()) {
         auto *grid = static_cast<QGridLayout *>(coreGrid_->layout());

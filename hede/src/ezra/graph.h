@@ -35,4 +35,28 @@ private:
     QVector<double> history_; // ring, capped at kSamples
 };
 
+// All logical processors as one graph: a thin 0–100 trace per core, colors
+// stepped around the hue wheel by the golden angle so any core count stays
+// as distinct as it can be, semi-transparent so pile-ups read as density.
+class MultiHistoryGraph : public QWidget {
+    Q_OBJECT
+public:
+    explicit MultiHistoryGraph(const QString &title, QWidget *parent = nullptr,
+                               const QSize &minSize = {220, 120});
+
+    // One percent value per series; a changed series count resets history.
+    void push(const QVector<double> &values, const QString &caption);
+
+    QSize minimumSizeHint() const override { return minSize_; }
+
+protected:
+    void paintEvent(QPaintEvent *event) override;
+
+private:
+    QString title_;
+    QString caption_;
+    QSize minSize_;
+    QVector<QVector<double>> history_; // per series, each capped at kSamples
+};
+
 } // namespace ezra

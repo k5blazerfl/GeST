@@ -25,6 +25,7 @@ class QTimer;
 namespace ezra {
 
 class HistoryGraph;
+class MultiHistoryGraph;
 
 class EzraWindow : public QMainWindow {
     Q_OBJECT
@@ -75,8 +76,8 @@ private:
     QLineEdit *filter_ = nullptr;
     QTimer *timer_ = nullptr;
 
-    QStackedWidget *cpuStack_ = nullptr; // page 0: overall graph, page 1: per-core grid
-    HistoryGraph *cpuGraph_ = nullptr;
+    QStackedWidget *cpuStack_ = nullptr; // page 0: all-cores graph, page 1: per-core grid
+    MultiHistoryGraph *cpuGraph_ = nullptr; // every logical processor, one graph
     QWidget *coreGrid_ = nullptr;
     QVector<HistoryGraph *> coreGraphs_; // created lazily once the core count is known
     HistoryGraph *memGraph_ = nullptr;
