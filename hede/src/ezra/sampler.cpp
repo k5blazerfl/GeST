@@ -202,6 +202,20 @@ QString stateName(char state) {
     return QString(QChar::fromLatin1(state));
 }
 
+QString formatUptime(double seconds) {
+    const qulonglong total = qulonglong(qMax(0.0, seconds));
+    const qulonglong days = total / 86400;
+    return QStringLiteral("%1:%2:%3:%4")
+        .arg(days)
+        .arg((total / 3600) % 24, 2, 10, QLatin1Char('0'))
+        .arg((total / 60) % 60, 2, 10, QLatin1Char('0'))
+        .arg(total % 60, 2, 10, QLatin1Char('0'));
+}
+
+double readUptimeSeconds() {
+    return readAll(QStringLiteral("/proc/uptime")).split(' ').value(0).toDouble();
+}
+
 QVector<UserRollup> rollupByUser(const QVector<ProcessSample> &samples) {
     QHash<QString, UserRollup> byUser;
     for (const ProcessSample &p : samples) {

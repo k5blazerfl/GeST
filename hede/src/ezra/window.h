@@ -45,6 +45,7 @@ private:
     const ProcessSample *selectedSample() const;
     QTableView *buildProcessTable(QWidget *parent, bool details);
 
+    QWidget *buildOverviewTab();
     QWidget *buildProcessesTab();
     QWidget *buildDetailsTab();
     QWidget *buildPerformanceTab();
@@ -57,6 +58,7 @@ private:
     ProcessSampler processSampler_;
     SystemSampler systemSampler_;
     SensorSampler sensorSampler_;
+    SensorSampler::Snapshot sensorProbe_; // taken once at startup to gate tiles
     ProcessModel *model_ = nullptr;
     UserModel *userModel_ = nullptr;
     ServiceModel *serviceModel_ = nullptr;
@@ -83,6 +85,12 @@ private:
     HistoryGraph *gpuGraph_ = nullptr;
     HistoryGraph *tempGraph_ = nullptr;
     HistoryGraph *powerGraph_ = nullptr;
+    // Overview: one live view — header, compact tiles, top processes.
+    QLabel *ovHeader_ = nullptr;
+    QLabel *ovTop_ = nullptr;
+    HistoryGraph *ovCpu_ = nullptr, *ovMem_ = nullptr, *ovDisk_ = nullptr,
+                 *ovNet_ = nullptr, *ovGpu_ = nullptr, *ovTemp_ = nullptr,
+                 *ovPower_ = nullptr;
     QLabel *footer_ = nullptr;
 };
 

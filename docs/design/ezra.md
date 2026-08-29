@@ -81,10 +81,14 @@ the cockpit costs a window, not a second engine.
    by drm-client-id; `/proc/<pid>/fd` of other users needs root, so their
    share reads 0) as a GPU column in Processes/Details, and a Cgroup column
    in Details from `/proc/<pid>/cgroup` (v2 line).
-10. Still open: a Summary landing view (the Performance grid now covers
-    most of the at-a-glance case — revisit whether a separate tab earns its
-    place), a cgroup-grouped tree view, per-process journal tail, graph
-    interpolation.
+10. **Shipped:** the Overview tab — one live view, TMOG-style, and the new
+    landing tab: header (hostname, kernel, uptime, logical processors,
+    process count), compact tiles for every metric the Performance tab has
+    (same feed, pushed to both), and a Top-processes card (top 5 by CPU).
+    Graph headers now elide caption and title against each other so
+    neither evicts the other on narrow tiles.
+11. Still open: a cgroup-grouped tree view, per-process journal tail,
+    graph interpolation.
 
 Slices 6–7 are informed by TMOG (tmog.org), the cross-platform freemium
 task manager whose Linux build is Qt 6 — its Summary, Energy, and Thermals

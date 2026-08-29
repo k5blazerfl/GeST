@@ -78,6 +78,12 @@ bool parsePidStat(const QByteArray &text, qulonglong pageSize, ProcessSample *ou
 // "R" -> "Running", "Z" -> "Zombie", … for the Details Status column.
 QString stateName(char state);
 
+// The OG Performance-tab "Up time" format: D:HH:MM:SS.
+QString formatUptime(double seconds);
+
+// /proc/uptime, first field; 0 on failure.
+double readUptimeSeconds();
+
 // The cgroup2 path from /proc/<pid>/cgroup (the "0::" line).
 QString parseCgroup(const QByteArray &text);
 

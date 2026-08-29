@@ -22,7 +22,10 @@
 #include <QTimer>
 #include <QVBoxLayout>
 
+#include <QSysInfo>
+
 #include <csignal>
+#include <numeric>
 #include <sys/resource.h>
 
 namespace ezra {
@@ -41,8 +44,12 @@ EzraWindow::EzraWindow() {
 
     model_ = new ProcessModel(this);
 
-    // The OG tab order.
+    // One sensor probe up front decides which tiles exist at all.
+    sensorProbe_ = sensorSampler_.sample();
+
+    // Overview lands first (one live view, TMOG-style); then the OG order.
     tabs_ = new QTabWidget(this);
+    tabs_->addTab(buildOverviewTab(), tr("Overview"));
     tabs_->addTab(buildProcessesTab(), tr("Processes"));
     tabs_->addTab(buildPerformanceTab(), tr("Performance"));
     startupTabIndex_ = tabs_->addTab(buildStartupTab(), tr("Startup"));
@@ -77,6 +84,57 @@ void EzraWindow::selectTab(const QString &name) {
     for (int i = 0; i < tabs_->count(); ++i)
         if (tabs_->tabText(i).compare(name, Qt::CaseInsensitive) == 0)
             tabs_->setCurrentIndex(i);
+}
+
+QWidget *EzraWindow::buildOverviewTab() {
+    auto *page = new QWidget(this);
+    auto *layout = new QVBoxLayout(page);
+
+    ovHeader_ = new QLabel(page);
+    layout->addWidget(ovHeader_);
+
+    auto *row = new QHBoxLayout;
+    auto *grid = new QGridLayout;
+    grid->setSpacing(8);
+    const QSize tile(170, 96);
+    ovCpu_ = new HistoryGraph(tr("CPU"), HistoryGraph::Percent, page, tile);
+    ovMem_ = new HistoryGraph(tr("Memory"), HistoryGraph::Percent, page, tile);
+    ovDisk_ = new HistoryGraph(tr("Disk"), HistoryGraph::AutoScale, page, tile);
+    ovNet_ = new HistoryGraph(tr("Network"), HistoryGraph::AutoScale, page, tile);
+    grid->addWidget(ovCpu_, 0, 0);
+    grid->addWidget(ovMem_, 0, 1);
+    grid->addWidget(ovDisk_, 1, 0);
+    grid->addWidget(ovNet_, 1, 1);
+    int r = 2, c = 0;
+    auto place = [&](HistoryGraph *g) {
+        grid->addWidget(g, r, c);
+        if (++c == 2) {
+            c = 0;
+            ++r;
+        }
+    };
+    if (sensorProbe_.hasGpu)
+        place(ovGpu_ = new HistoryGraph(tr("GPU"), HistoryGraph::Percent, page, tile));
+    if (sensorProbe_.hasTemp)
+        place(ovTemp_ = new HistoryGraph(tr("Temperature"), HistoryGraph::Percent, page, tile));
+    if (sensorProbe_.hasPower)
+        place(ovPower_ = new HistoryGraph(tr("Power"), HistoryGraph::AutoScale, page, tile));
+    row->addLayout(grid, 3);
+
+    auto *side = new QVBoxLayout;
+    auto *topTitle = new QLabel(tr("Top processes"), page);
+    QFont bold = topTitle->font();
+    bold.setBold(true);
+    topTitle->setFont(bold);
+    ovTop_ = new QLabel(page);
+    ovTop_->setTextFormat(Qt::RichText);
+    ovTop_->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+    side->addWidget(topTitle);
+    side->addWidget(ovTop_, 1);
+    row->addLayout(side, 2);
+
+    layout->addLayout(row, 1);
+    return page;
 }
 
 QTableView *EzraWindow::buildProcessTable(QWidget *parent, bool details) {
@@ -325,7 +383,7 @@ QWidget *EzraWindow::buildPerformanceTab() {
 
     // Sensor tiles appear only where the hardware reports them: GPU busy%
     // (amdgpu sysfs), hottest temperature (hwmon), package watts (RAPL).
-    const SensorSampler::Snapshot probe = sensorSampler_.sample();
+    const SensorSampler::Snapshot &probe = sensorProbe_;
     int row = 2, col = 0;
     auto place = [&](HistoryGraph *g) {
         grid->addWidget(g, row, col);
@@ -351,8 +409,15 @@ void EzraWindow::refresh() {
         serviceManager_->refresh();
 
     const SystemSampler::Snapshot snap = systemSampler_.sample();
-    cpuGraph_->push(snap.cpuPercent,
-                    QString::number(snap.cpuPercent, 'f', 0) + QStringLiteral(" %"));
+    // The Performance and Overview tabs render the same feed.
+    auto pushBoth = [](HistoryGraph *a, HistoryGraph *b, double v, const QString &caption) {
+        if (a)
+            a->push(v, caption);
+        if (b)
+            b->push(v, caption);
+    };
+    pushBoth(cpuGraph_, ovCpu_, snap.cpuPercent,
+             QString::number(snap.cpuPercent, 'f', 0) + QStringLiteral(" %"));
 
     if (coreGraphs_.isEmpty() && !snap.perCorePercent.isEmpty()) {
         auto *grid = static_cast<QGridLayout *>(coreGrid_->layout());
@@ -375,43 +440,70 @@ void EzraWindow::refresh() {
     const double memPercent =
         snap.mem.totalKb ? 100.0 * double(usedKb) / double(snap.mem.totalKb) : 0.0;
     const QLocale locale;
-    memGraph_->push(memPercent,
-                    tr("%1 / %2").arg(locale.formattedDataSize(qint64(usedKb) * 1024, 1),
-                                      locale.formattedDataSize(qint64(snap.mem.totalKb) * 1024, 1)));
+    pushBoth(memGraph_, ovMem_, memPercent,
+             tr("%1 / %2").arg(locale.formattedDataSize(qint64(usedKb) * 1024, 1),
+                               locale.formattedDataSize(qint64(snap.mem.totalKb) * 1024, 1)));
 
-    diskGraph_->push(snap.readBytesPerSec + snap.writeBytesPerSec,
-                     tr("R %1  W %2").arg(rate(snap.readBytesPerSec), rate(snap.writeBytesPerSec)));
-    netGraph_->push(snap.rxBytesPerSec + snap.txBytesPerSec,
-                    tr("↓ %1  ↑ %2").arg(rate(snap.rxBytesPerSec), rate(snap.txBytesPerSec)));
+    pushBoth(diskGraph_, ovDisk_, snap.readBytesPerSec + snap.writeBytesPerSec,
+             tr("R %1  W %2").arg(rate(snap.readBytesPerSec), rate(snap.writeBytesPerSec)));
+    pushBoth(netGraph_, ovNet_, snap.rxBytesPerSec + snap.txBytesPerSec,
+             tr("↓ %1  ↑ %2").arg(rate(snap.rxBytesPerSec), rate(snap.txBytesPerSec)));
 
-    if (gpuGraph_ || tempGraph_ || powerGraph_) {
+    if (gpuGraph_ || tempGraph_ || powerGraph_ || ovGpu_ || ovTemp_ || ovPower_) {
         const SensorSampler::Snapshot sensors = sensorSampler_.sample();
-        if (gpuGraph_) {
+        if (gpuGraph_ || ovGpu_) {
             QString caption = QString::number(sensors.gpuBusyPercent, 'f', 0) + QStringLiteral(" %");
             if (sensors.vramTotalBytes)
                 caption += tr("  VRAM %1 / %2")
                                .arg(locale.formattedDataSize(qint64(sensors.vramUsedBytes), 1),
                                     locale.formattedDataSize(qint64(sensors.vramTotalBytes), 1));
-            gpuGraph_->push(sensors.gpuBusyPercent, caption);
+            pushBoth(gpuGraph_, ovGpu_, sensors.gpuBusyPercent, caption);
         }
-        if (tempGraph_ && sensors.hasTemp) {
+        if ((tempGraph_ || ovTemp_) && sensors.hasTemp) {
             // Skip generic "tempN" labels — the chip name is the information.
             const QString where =
                 sensors.hottest.label.startsWith(QStringLiteral("temp"))
                     ? sensors.hottest.chip
                     : sensors.hottest.chip + QLatin1Char(' ') + sensors.hottest.label;
-            tempGraph_->push(sensors.hottest.degC,
-                             tr("%1  %2 °C").arg(where).arg(sensors.hottest.degC, 0, 'f', 0));
+            pushBoth(tempGraph_, ovTemp_, sensors.hottest.degC,
+                     tr("%1  %2 °C").arg(where).arg(sensors.hottest.degC, 0, 'f', 0));
         }
-        if (powerGraph_) {
+        if (powerGraph_ || ovPower_) {
             QString caption = tr("%1 W (%2)")
                                   .arg(sensors.packageWatts, 0, 'f', 1)
                                   .arg(sensors.powerSource);
             if (sensors.batteryWatts > 0)
                 caption += tr("  battery %1 W").arg(sensors.batteryWatts, 0, 'f', 1);
-            powerGraph_->push(sensors.packageWatts, caption);
+            pushBoth(powerGraph_, ovPower_, sensors.packageWatts, caption);
         }
     }
+
+    ovHeader_->setText(tr("%1 — Linux %2    up %3    %4 logical processors    %5 processes")
+                           .arg(QSysInfo::machineHostName(), QSysInfo::kernelVersion(),
+                                formatUptime(readUptimeSeconds()))
+                           .arg(snap.perCorePercent.size())
+                           .arg(processes.size()));
+
+    // Top processes by CPU — the "what's eating my machine" glance.
+    QVector<int> order(processes.size());
+    std::iota(order.begin(), order.end(), 0);
+    std::partial_sort(order.begin(), order.begin() + qMin(5, order.size()), order.end(),
+                      [&](int a, int b) {
+                          return processes.at(a).cpuPercent > processes.at(b).cpuPercent;
+                      });
+    QString html = QStringLiteral("<table width=\"100%\" cellspacing=\"0\" cellpadding=\"3\">");
+    for (int i = 0; i < qMin(5, order.size()); ++i) {
+        const ProcessSample &p = processes.at(order.at(i));
+        html += QStringLiteral(
+                    "<tr><td>%1</td><td align=\"right\">%2</td>"
+                    "<td align=\"right\">%3 %</td><td align=\"right\">%4</td></tr>")
+                    .arg(p.name.toHtmlEscaped())
+                    .arg(p.pid)
+                    .arg(p.cpuPercent, 0, 'f', 1)
+                    .arg(locale.formattedDataSize(qint64(p.rssBytes), 1));
+    }
+    html += QStringLiteral("</table>");
+    ovTop_->setText(html);
 
     footer_->setText(tr("Processes: %1    CPU: %2 %    Memory: %3 %")
                          .arg(processes.size())

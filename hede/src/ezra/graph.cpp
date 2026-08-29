@@ -35,13 +35,16 @@ void HistoryGraph::paintEvent(QPaintEvent *) {
     const int headerH = fm.height() + 4;
     const QRectF plot = QRectF(rect()).adjusted(0.5, headerH + 0.5, -0.5, -0.5);
 
-    // Header: the caption (current value) keeps the right side; the title is
-    // elided into whatever is left so the two never collide on narrow tiles.
+    // Header: the caption (current value) keeps the right side but never the
+    // whole width — the title always keeps room for a few characters, and
+    // both elide rather than collide on narrow tiles.
     painter.setPen(pal.color(QPalette::WindowText));
-    const int captionW = fm.horizontalAdvance(caption_);
-    painter.drawText(QRectF(0, 0, width(), headerH), Qt::AlignRight | Qt::AlignVCenter, caption_);
-    const QString title =
-        fm.elidedText(title_, Qt::ElideRight, qMax(0, width() - captionW - 8));
+    const int titleMin = qMin(fm.horizontalAdvance(title_), fm.horizontalAdvance(u'M') * 4);
+    const QString caption =
+        fm.elidedText(caption_, Qt::ElideRight, qMax(0, width() - titleMin - 8));
+    painter.drawText(QRectF(0, 0, width(), headerH), Qt::AlignRight | Qt::AlignVCenter, caption);
+    const QString title = fm.elidedText(
+        title_, Qt::ElideRight, qMax(0, width() - fm.horizontalAdvance(caption) - 8));
     painter.drawText(QRectF(0, 0, width(), headerH), Qt::AlignLeft | Qt::AlignVCenter, title);
 
     // Plot frame + midline.
