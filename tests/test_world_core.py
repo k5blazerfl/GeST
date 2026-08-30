@@ -42,6 +42,26 @@ def test_deselect_argv_rejects_bad_input(atoms):
         world.deselect_argv(atoms)
 
 
+# -- unmerge (forced removal; same validation as deselect) ------------------
+
+def test_unmerge_argv_builds_emerge_command():
+    argv = world.unmerge_argv(["media-sound/pyrrha", "app-arch/innoextract"])
+    assert argv == ["emerge", "--unmerge", "--color", "n",
+                    "media-sound/pyrrha", "app-arch/innoextract"]
+
+
+def test_unmerge_argv_honours_emerge_path():
+    argv = world.unmerge_argv(["a/b"], emerge="/usr/bin/emerge")
+    assert argv[0] == "/usr/bin/emerge"
+
+
+@pytest.mark.parametrize("atoms", [[], ["--root=/etc"], ["ok/pkg", "bad atom"],
+                                   ["cat/pkg; rm -rf /"]])
+def test_unmerge_argv_rejects_bad_input(atoms):
+    with pytest.raises(ValueError):
+        world.unmerge_argv(atoms)
+
+
 # -- package sets -----------------------------------------------------------
 
 def test_read_set_file_skips_blanks_and_comments(tmp_path):

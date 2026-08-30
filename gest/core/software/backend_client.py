@@ -165,6 +165,19 @@ class SoftwareBackend:
             self._iface.on_finished(on_finished)
         return await _guard_busy(self._iface.call_depclean_multi(atoms))
 
+    async def unmerge_multi(self, atoms, on_progress=None, on_finished=None) -> bool:
+        """Forcibly remove atoms (emerge --unmerge); streams like install.
+
+        Unlike :meth:`depclean_multi` this skips the dependency safety check, so
+        it removes exactly what's named — the path for clearing repo-orphans that
+        depclean protects. Callers must confirm first. Polkit-gated (remove).
+        """
+        if on_progress is not None:
+            self._iface.on_progress(on_progress)
+        if on_finished is not None:
+            self._iface.on_finished(on_finished)
+        return await _guard_busy(self._iface.call_unmerge_multi(atoms))
+
     async def package_status(self) -> tuple[bool, str]:
         """Return ``(busy, operation)`` — whether a package operation is in
         progress in the shared root backend, and a human label for it.

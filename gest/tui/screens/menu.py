@@ -26,6 +26,7 @@ from gest.tui.screens.logs import LogsScreen
 from gest.tui.screens.makeconf import MakeconfScreen
 from gest.tui.screens.network import NetworkScreen
 from gest.tui.screens.news import NewsScreen
+from gest.tui.screens.orphans import OrphansScreen
 from gest.tui.screens.preferences import PreferencesScreen
 from gest.tui.screens.privilege import PrivilegeScreen
 from gest.tui.screens.repos import ReposScreen
@@ -85,6 +86,7 @@ CATEGORIES: list[tuple[str, list[tuple[str, str, bool]]]] = [
         ("binhost", "Binary Hosts", True),
         ("update", "System Update", True),
         ("depclean", "Clean Up Packages", True),
+        ("orphans", "Unavailable Packages", True),
         ("sync", "Sync Portage Tree", True),
         ("news", "Portage News", True),
         ("makeconf", "make.conf editor", True),
@@ -114,7 +116,7 @@ _INSTALL_CATEGORY = ("Install Gentoo", [("install", "Install Gentoo", True)])
 # single shared service, so its busy state is authoritative across sessions. The
 # read-only modules (news, licenses, prefs) stay open.
 _LOCKED_WHILE_BUSY = frozenset({
-    "software", "world", "repositories", "update", "depclean", "sync"})
+    "software", "world", "repositories", "update", "depclean", "orphans", "sync"})
 
 
 def _icon(label: str) -> urwid.Widget:
@@ -252,6 +254,8 @@ class MenuScreen(Screen):
             self.app.push(UpdateLoadingScreen(self.app))
         elif key == "depclean":
             self.app.push(CleanupLoadingScreen(self.app))
+        elif key == "orphans":
+            self.app.push(OrphansScreen(self.app))
         elif key == "sync":
             self.app.push(SyncLoadingScreen(self.app))
         elif key == "repositories":

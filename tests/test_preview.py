@@ -108,6 +108,27 @@ def test_preview_install_many_empty_is_noop():
     assert result.ok and result.output == "nothing selected"
 
 
+def test_preview_unmerge_many_argv():
+    calls = {}
+
+    def runner(argv):
+        calls["argv"] = argv
+        return 0, ">>> These are the packages that would be unmerged:"
+
+    from gest.core.software.preview import preview_unmerge_many
+    result = preview_unmerge_many(["media-sound/pyrrha"], runner=runner)
+    assert result.ok
+    assert "--unmerge" in calls["argv"]
+    assert "--pretend" in calls["argv"]
+    assert calls["argv"][-1] == "media-sound/pyrrha"
+
+
+def test_preview_unmerge_many_empty_is_noop():
+    from gest.core.software.preview import preview_unmerge_many
+    result = preview_unmerge_many([], runner=lambda argv: (99, "should not run"))
+    assert result.ok and result.output == "nothing selected"
+
+
 def test_preview_depclean_many_builds_argv():
     calls = {}
     def runner(argv):

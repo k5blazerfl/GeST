@@ -151,3 +151,19 @@ def preview_depclean_many(atoms, *, runner: Runner | None = None) -> PreviewResu
     argv = [_EMERGE, "--pretend", "--verbose", "--color", "n", "--depclean", *atoms]
     returncode, output = run(argv)
     return PreviewResult(atom=" ".join(atoms), returncode=returncode, output=output.strip())
+
+
+def preview_unmerge_many(atoms, *, runner: Runner | None = None) -> PreviewResult:
+    """Preview a forced removal: emerge --pretend --unmerge <atoms>.
+
+    Unlike ``--depclean``, ``--unmerge`` removes exactly the named packages with
+    no dependency safety net — the preview is what confirms *which* packages
+    (and only those) would go, so the UI can warn before committing.
+    """
+    atoms = list(atoms)
+    if not atoms:
+        return PreviewResult(atom="", returncode=0, output="nothing selected")
+    run = runner or _default_runner
+    argv = [_EMERGE, "--pretend", "--color", "n", "--unmerge", *atoms]
+    returncode, output = run(argv)
+    return PreviewResult(atom=" ".join(atoms), returncode=returncode, output=output.strip())
