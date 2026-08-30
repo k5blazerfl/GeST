@@ -25,11 +25,17 @@ fi
 
 : "${HELM_COMPOSITOR:=labwc}"
 
+# Run (not exec) the compositor: when it exits, stop the supervised shell
+# units so they don't outlive the session (hede-session.target is started
+# by the labwc autostart; see docs/design/hede-session-supervision.md).
 case "$HELM_COMPOSITOR" in
 wayfire)
-	exec wayfire -c "${HELM_WAYFIRE_CONFIG:-/usr/share/hede/wayfire/wayfire.ini}"
+	wayfire -c "${HELM_WAYFIRE_CONFIG:-/usr/share/hede/wayfire/wayfire.ini}"
 	;;
 *)
-	exec labwc -C "${HELM_LABWC_CONFIG:-/usr/share/hede/labwc}"
+	labwc -C "${HELM_LABWC_CONFIG:-/usr/share/hede/labwc}"
 	;;
 esac
+status=$?
+command -v systemctl >/dev/null 2>&1 && systemctl --user stop hede-session.target 2>/dev/null
+exit $status

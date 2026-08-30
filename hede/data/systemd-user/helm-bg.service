@@ -1,0 +1,8 @@
+[Unit]
+Description=HeDE helm-bg
+PartOf=hede-session.target
+
+[Service]
+ExecStart=/usr/bin/helm-bg
+Restart=on-failure
+RestartSec=1

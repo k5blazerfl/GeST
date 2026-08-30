@@ -60,6 +60,10 @@ DesktopEntry parseDesktopEntry(const QString &text, const QString &id) {
                       .split(QLatin1Char(';'), Qt::SkipEmptyParts);
     e.categories = main.value(QStringLiteral("Categories"))
                        .split(QLatin1Char(';'), Qt::SkipEmptyParts);
+    e.onlyShowIn = main.value(QStringLiteral("OnlyShowIn"))
+                       .split(QLatin1Char(';'), Qt::SkipEmptyParts);
+    e.notShowIn = main.value(QStringLiteral("NotShowIn"))
+                      .split(QLatin1Char(';'), Qt::SkipEmptyParts);
 
     const QString actions = main.value(QStringLiteral("Actions"));
     for (const QString &aid : actions.split(QLatin1Char(';'), Qt::SkipEmptyParts)) {

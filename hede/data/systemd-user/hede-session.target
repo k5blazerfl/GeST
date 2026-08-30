@@ -1,0 +1,7 @@
+# The HeDE session umbrella: started by the labwc autostart once the
+# compositor is up and the session environment is imported; stopped by
+# helm-session when the compositor exits. Components are Wants= so one
+# failed optional piece never takes the session down.
+[Unit]
+Description=HeDE session
+Wants=helm-bg.service helm-notifyd.service helm-panel.service helm-autostart.service hede-polkit-agent.service hede-idle-lock.service gest-shell.service

@@ -1,31 +1,44 @@
-# HeDE labwc autostart (Phase 1–3)
-
-# Exactly one polkit agent for the session: auth prompts for GeST's
-# polkit-gated backend when the shell triggers a privileged change (Phase 2b).
-command -v lxqt-policykit-agent >/dev/null 2>&1 && lxqt-policykit-agent &
-
-# GeST read seam (org.gentoo.gest.Shell); harmless/absent-safe.
-command -v gest-shell >/dev/null 2>&1 && gest-shell &
-
-# Idle lock (adopted swayidle + swaylock): lock after 10 min and before sleep.
-if command -v swayidle >/dev/null 2>&1 && command -v swaylock >/dev/null 2>&1; then
-    swayidle -w timeout 600 'swaylock -f' before-sleep 'swaylock -f' &
-fi
+# HeDE labwc autostart. The shell is SUPERVISED: components run as systemd
+# user units (Restart=on-failure, journald logging — see
+# docs/design/hede-session-supervision.md); this file imports the session
+# environment and starts hede-session.target. When the user manager is
+# unreachable it falls back to the legacy unsupervised spawns, so a broken
+# user session still gets a desktop.
 
 # Seed the labwc titlebar + GTK theme from the active world (respects an explicit
 # user accent); runs before the shell maps so windows come up in the world's
 # colour, and labwc --reconfigure picks up the freshly written themerc live.
 command -v helm-theme >/dev/null 2>&1 && helm-theme --from-world >/dev/null 2>&1
 
-# HeDE's own shell components.
-helm-bg &
-helm-notifyd &
-helm-panel &
+if command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
+    # Units need the compositor's environment: the display for Wayland
+    # clients, the desktop id for XDG gating, the Qt decoration choices.
+    systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP \
+        XDG_SESSION_TYPE QT_QPA_PLATFORM QT_WAYLAND_DISABLE_WINDOWDECORATION \
+        QT_WAYLAND_DECORATION 2>/dev/null
+    command -v dbus-update-activation-environment >/dev/null 2>&1 \
+        && dbus-update-activation-environment --systemd WAYLAND_DISPLAY \
+            XDG_CURRENT_DESKTOP 2>/dev/null
+    systemctl --user reset-failed 2>/dev/null
+    systemctl --user start hede-session.target
+else
+    # Legacy path: unsupervised spawns, exactly the pre-supervision shell.
+    command -v lxqt-policykit-agent >/dev/null 2>&1 && lxqt-policykit-agent &
+    command -v gest-shell >/dev/null 2>&1 && gest-shell &
+    if command -v swayidle >/dev/null 2>&1 && command -v swaylock >/dev/null 2>&1; then
+        swayidle -w timeout 600 'swaylock -f' before-sleep 'swaylock -f' &
+    fi
+    helm-bg &
+    helm-notifyd &
+    helm-panel &
+    command -v helm-autostart >/dev/null 2>&1 && helm-autostart &
+fi
 
 # Hiedi's desktop pet (helm-pet) — opt-in: she's Hiedi's on-screen body, so she
 # comes up with Hiedi, not on every desktop. Enable with `pet = true` under
 # [hiedi] in ~/.config/hede/hede.conf, or HELM_PET=1. helm-notifyd forwards
 # notifications to her regardless of whether the Hiedi brain is installed.
+# (Config-conditional, so she stays script-managed on both paths.)
 if command -v helm-pet >/dev/null 2>&1; then
     _hede_conf="${XDG_CONFIG_HOME:-$HOME/.config}/hede/hede.conf"
     if [ "${HELM_PET:-0}" = "1" ] || grep -Eqs '^[[:space:]]*pet[[:space:]]*=[[:space:]]*true' "$_hede_conf"; then

@@ -1,0 +1,8 @@
+[Unit]
+Description=HeDE helm-notifyd
+PartOf=hede-session.target
+
+[Service]
+ExecStart=/usr/bin/helm-notifyd
+Restart=on-failure
+RestartSec=1

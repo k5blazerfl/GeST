@@ -104,3 +104,11 @@ set_tests_properties(smoke-headless PROPERTIES
 qt_add_executable(test-holdcore test_holdcore.cpp)
 target_link_libraries(test-holdcore PRIVATE Qt6::Test hold-core)
 add_test(NAME holdcore COMMAND test-holdcore)
+
+qt_add_executable(test-ezra test_ezra.cpp)
+target_link_libraries(test-ezra PRIVATE Qt6::Test ezra-lib)
+add_test(NAME ezra COMMAND test-ezra)
+
+qt_add_executable(test-autostart test_autostart.cpp)
+target_link_libraries(test-autostart PRIVATE Qt6::Test helm-apps)
+add_test(NAME autostart COMMAND test-autostart)

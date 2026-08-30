@@ -1,0 +1,8 @@
+[Unit]
+Description=HeDE helm-panel
+PartOf=hede-session.target
+
+[Service]
+ExecStart=/usr/bin/helm-panel
+Restart=on-failure
+RestartSec=1

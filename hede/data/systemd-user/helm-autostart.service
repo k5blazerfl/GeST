@@ -1,0 +1,8 @@
+# XDG autostart entries (user + /etc/xdg), honoring Hidden and ShowIn.
+[Unit]
+Description=HeDE XDG autostart runner
+PartOf=hede-session.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/helm-autostart
