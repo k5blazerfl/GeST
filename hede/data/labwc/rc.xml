@@ -55,6 +55,15 @@
     <keybind key="C-S-Escape">
       <action name="Execute"><command>ezra</command></action>
     </keybind>
+    <!-- Ctrl+Alt+Del → General Quarters, the interrupt surface (Lock / Task
+         Manager / Sign out / Restart / Shut down) — the Windows relationship:
+         the chord for the menu that includes Task Manager, while C-S-Esc goes
+         straight to the tool. (Inside the session this is an ordinary
+         compositor bind — a hung compositor won't answer it; the next rungs
+         are VT switch and SysRq. docs/design/hede-session-supervision.md.) -->
+    <keybind key="C-A-Delete">
+      <action name="Execute"><command>helm-gq</command></action>
+    </keybind>
     <!-- Super+Q → close the focused window -->
     <keybind key="W-q">
       <action name="Close"/>

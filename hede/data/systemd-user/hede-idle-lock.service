@@ -1,0 +1,11 @@
+# Idle lock (adopted swayidle + swaylock): lock after 10 min and before sleep.
+[Unit]
+Description=HeDE idle lock
+PartOf=hede-session.target
+ConditionPathExists=/usr/bin/swayidle
+ConditionPathExists=/usr/bin/swaylock
+
+[Service]
+ExecStart=/usr/bin/swayidle -w timeout 600 'swaylock -f' before-sleep 'swaylock -f'
+Restart=on-failure
+RestartSec=1

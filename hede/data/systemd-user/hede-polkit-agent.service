@@ -1,0 +1,11 @@
+# Exactly one polkit agent for the session (GeST's privileged actions are
+# all auth_admin and need a running agent).
+[Unit]
+Description=HeDE polkit authentication agent
+PartOf=hede-session.target
+ConditionPathExists=/usr/bin/lxqt-policykit-agent
+
+[Service]
+ExecStart=/usr/bin/lxqt-policykit-agent
+Restart=on-failure
+RestartSec=1

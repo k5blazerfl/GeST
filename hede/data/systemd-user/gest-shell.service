@@ -1,0 +1,10 @@
+# GeST read seam (org.gentoo.gest.Shell); absent-safe.
+[Unit]
+Description=GeST shell read seam
+PartOf=hede-session.target
+ConditionPathExists=/usr/bin/gest-shell
+
+[Service]
+ExecStart=/usr/bin/gest-shell
+Restart=on-failure
+RestartSec=1
