@@ -1,5 +1,6 @@
-"""The Get Online gate's repo-mirror selection: the background auto-pick populates
+"""The Base System gate's repo-mirror selection: the background auto-pick populates
 the selections, offline skips it, and the manual 'Choose mirrors…' modal overrides.
+(Mirror selection lives on Base System — Get Online is skipped when already online.)
 Headless — the latency probe (mirrors.select_mirrors) and run_blocking are stubbed."""
 
 from __future__ import annotations
@@ -19,13 +20,16 @@ _PICK = MirrorSelection(distfiles=("https://mirrors.mit.edu/gentoo-distfiles/",
                         sync_uri="rsync://rsync.us.gentoo.org/gentoo-portage", probed=True)
 
 
-def _online_step(monkeypatch, *, online=True):
+def _base_step(monkeypatch, *, online=True):
     monkeypatch.setattr(wz, "check_connectivity", lambda: (online, "ok" if online else "no route"))
     monkeypatch.setattr(disk_reader, "list_block_devices", lambda: [])
     monkeypatch.setattr(wz.net_reader, "list_interfaces", lambda *a, **k: [])
     app = App()
+    # Base System kicks the mirror probe from setting_rows on construction; make
+    # run_async a coro-closing no-op so building the step schedules no real probe.
+    monkeypatch.setattr(app, "run_async", lambda coro: coro.close())
     sel = assemble.propose("desktop")
-    step = wz.OnlineStep(app, sel)
+    step = wz.BaseSystemStep(app, sel)
     app._stack.append(step)
     return app, step, sel
 
@@ -38,7 +42,7 @@ def _modal(app) -> Modal:
 
 
 def test_probe_populates_selections(monkeypatch):
-    app, step, sel = _online_step(monkeypatch)
+    app, step, sel = _base_step(monkeypatch)
     monkeypatch.setattr(wz.mirrors, "select_mirrors", lambda *a, **k: _PICK)
 
     async def _run_blocking(fn, *a):        # no real executor/loop in tests
@@ -51,25 +55,29 @@ def test_probe_populates_selections(monkeypatch):
 
 
 def test_ensure_skips_when_offline(monkeypatch):
-    _app, step, sel = _online_step(monkeypatch, online=False)
-    step._ensure_mirrors(False)
+    _app, step, sel = _base_step(monkeypatch, online=False)
+    step._mirror_probe_started = False              # reset from any construction-time kick
+    sel.gentoo_mirrors = ()
+    step._ensure_mirrors()                          # offline (check_connectivity stubbed False)
     assert getattr(step, "_mirror_probe_started", False) is False
     assert sel.gentoo_mirrors == ()
     assert "default rotation" in step._mirror_value()
 
 
 def test_ensure_kicks_once_when_online(monkeypatch):
-    _app, step, _sel = _online_step(monkeypatch)
+    _app, step, sel = _base_step(monkeypatch)
+    step._mirror_probe_started = False              # fresh state, ignore construction kick
+    sel.gentoo_mirrors = ()
     calls = []
     monkeypatch.setattr(step.app, "run_async", lambda coro: calls.append(coro) or coro.close())
-    step._ensure_mirrors(True)
-    step._ensure_mirrors(True)              # second call must not kick again
+    step._ensure_mirrors()
+    step._ensure_mirrors()                          # second call must not kick again
     assert len(calls) == 1
     assert step._mirror_probe_started is True
 
 
 def test_manual_choose_overrides(monkeypatch):
-    app, step, sel = _online_step(monkeypatch)
+    app, step, sel = _base_step(monkeypatch)
     step._choose_mirrors()
     modal = _modal(app)
     boxes = [w for w, _o in modal._pile.contents if isinstance(w, urwid.CheckBox)]
@@ -81,13 +89,13 @@ def test_manual_choose_overrides(monkeypatch):
 
 
 def test_repick_clears_and_reprobes(monkeypatch):
-    _app, step, sel = _online_step(monkeypatch)
+    _app, step, sel = _base_step(monkeypatch)
     sel.gentoo_mirrors = _PICK.distfiles
     step._mirror_probe_started = True
     monkeypatch.setattr(step.app, "run_async", lambda coro: coro.close())
     step._repick_mirrors()
-    assert sel.gentoo_mirrors == ()
-    assert step._mirror_probe_started is False
+    assert sel.gentoo_mirrors == ()                 # current pick cleared…
+    assert step._mirror_probe_started is True        # …and the re-render immediately re-probes
 
 
 def test_assemble_carries_mirrors():

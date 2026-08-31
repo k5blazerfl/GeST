@@ -290,6 +290,9 @@ class WizardStep(Screen):
 
     step_key = ""
     step_title = ""
+    # The forward action-button label. Gates advance with "Continue"; the license
+    # agreement sub-gates relabel it "Accept" (clicking it IS the consent).
+    continue_label = "Continue"
     # Top-bar header text. None → the default "Install Gentoo — {step_title}"; a
     # gate may set "" to show no header (the Welcome cover page does this so the
     # art stands alone).
@@ -318,14 +321,15 @@ class WizardStep(Screen):
         self._exit_to_terminal = exit_to_terminal
         back_label, back_cb = (("Exit to Terminal", self.app_quit) if exit_to_terminal
                                else ("Back", self._back))
-        self._nav_row = focusable_actions([(back_label, back_cb), ("Continue", self.advance)])
+        self._nav_row = focusable_actions([(back_label, back_cb),
+                                           (self.continue_label, self.advance)])
         body, cycle_container, cycle_positions = self._compose_body()
         header = (self.header_title if self.header_title is not None
                   else f"Install Gentoo — {self.step_title}")
         super().__init__(
             app, body, title=header,
             footer_keys=[("Enter", "Select / Edit"),
-                         ("Tab", f"{back_label} / Continue"),
+                         ("Tab", f"{back_label} / {self.continue_label}"),
                          ("Esc", back_label)],
             help_text=self.help())
         self.configure_pane_cycle(cycle_container, cycle_positions,
@@ -608,9 +612,8 @@ class OnlineStep(WizardStep):
     def help(self) -> str:
         return ("The installer downloads a stage3 and syncs Portage, so it needs a\n"
                 "network connection. Bring up a wired link or set up Wi-Fi (the GeST\n"
-                "Wi-Fi module), then re-check. Once you're online the installer also\n"
-                "auto-picks the fastest package mirrors — review or override them in\n"
-                "the Mirrors row.")
+                "Wi-Fi module), then re-check. Package mirrors are chosen later, on the\n"
+                "Base System gate (auto-picked for you the moment you're online).")
 
     def _online(self) -> bool:
         ok, _detail = check_connectivity()      # (bool, detail) — network probe
@@ -640,76 +643,12 @@ class OnlineStep(WizardStep):
             kind = "Wi-Fi" if self._is_wifi(i) else "wired"
             addr = i.addresses[0] if i.addresses else "no address"
             rows.append((f"{i.name} ({kind})", f"{i.state.lower()}, {addr}", None))
-        # Repo mirrors (Handbook "Repo Mirror Selection"): auto-pick the fastest once
-        # we're online, shown here with a re-pick + manual choose.
-        self._ensure_mirrors(online)
-        rows.append(None)
-        rows.append(("Mirrors", self._mirror_value(), self._choose_mirrors))
-        rows.append(("Re-pick fastest mirrors", None, self._repick_mirrors))
         rows.append(None)
         rows.append(("Bring up wired network (DHCP)", None, self._dhcp))
         if any(self._is_wifi(i) for i in ifaces):
             rows.append(("Set up Wi-Fi…", None, self._wifi))
         rows.append(("Re-check connectivity", None, self._render))
         return rows
-
-    # -- repo mirrors ----------------------------------------------------------
-    def _ensure_mirrors(self, online: bool) -> None:
-        """Kick the fastest-mirror probe once, in the background, when online and not
-        yet chosen. Re-render when it lands so the picked mirrors show."""
-        if getattr(self, "_mirror_probe_started", False) or self.sel.gentoo_mirrors:
-            return
-        if not online:
-            return
-        self._mirror_probe_started = True
-        self.app.run_async(self._probe_mirrors())
-
-    async def _probe_mirrors(self) -> None:
-        result = await self.app.run_blocking(mirrors.select_mirrors)
-        # Commit whatever we got (probed or the offline default) — the user is on this
-        # gate, so a concrete choice beats leaving it blank.
-        self.sel.gentoo_mirrors = result.distfiles
-        self.sel.sync_uri = result.sync_uri
-        self.sel.sync_type = result.sync_type
-        self._mirror_probed = result.probed
-        self._render()
-
-    def _mirror_value(self) -> str:
-        if not self.sel.gentoo_mirrors:
-            if getattr(self, "_mirror_probe_started", False):
-                return "picking the fastest…"
-            return "Gentoo default rotation (connect to auto-pick)"
-        host = urlsplit(self.sel.gentoo_mirrors[0]).hostname or self.sel.gentoo_mirrors[0]
-        extra = f" +{len(self.sel.gentoo_mirrors) - 1}" if len(self.sel.gentoo_mirrors) > 1 else ""
-        tag = "auto-picked" if getattr(self, "_mirror_probed", False) else "selected"
-        return f"{host}{extra}  ({tag})"
-
-    def _repick_mirrors(self) -> None:
-        self._mirror_probe_started = False
-        self.sel.gentoo_mirrors = ()
-        self._render()                              # re-render kicks _ensure_mirrors again
-
-    def _choose_mirrors(self) -> None:
-        boxes = [urwid.CheckBox(f"{m.name} — {m.region}",
-                                state=m.distfiles in self.sel.gentoo_mirrors)
-                 for m in mirrors.CATALOG]
-
-        def save():
-            chosen = [m for m, b in zip(mirrors.CATALOG, boxes, strict=True) if b.state]
-            if chosen:
-                self.sel.gentoo_mirrors = tuple(m.distfiles for m in chosen)
-                self.sel.sync_uri = chosen[0].rsync
-                self.sel.sync_type = "rsync"
-                self._mirror_probed = False
-            self.app.pop()
-            self._render()
-
-        modal = Modal(self.app, "Choose distfile mirrors",
-                      [urwid.Text(("hint", "Checked mirrors become GENTOO_MIRRORS; the "
-                                   "first is also the sync mirror.")),
-                       urwid.Divider(), *boxes],
-                      [("Save", save), ("Cancel", self.app.pop)])
-        self.app.push_modal(modal, width=("relative", 66), height=("relative", 80))
 
     def _dhcp(self):
         self.app.notify("Bringing up wired network (dhcpcd) …")
@@ -752,15 +691,6 @@ class OnlineStep(WizardStep):
             return ("Probe the network again after bringing a link up. Once this "
                     "reads 'connected', the install has everything it needs and you "
                     "can Continue.")
-        if label == "Mirrors":
-            return ("Where packages download from (GENTOO_MIRRORS) and where the "
-                    "Portage tree syncs from. Once you're online the installer times "
-                    "the official mirrors and picks the fastest few for you — no need "
-                    "to choose. 'Choose mirrors…' overrides it by hand; offline, the "
-                    "install falls back to Gentoo's default mirror rotation.")
-        if label.startswith("Re-pick"):
-            return ("Time the mirrors again and re-pick the fastest — handy if the "
-                    "network changed since the first probe.")
         return super().row_detail(label, value)
 
 
@@ -1116,10 +1046,10 @@ class DiskStep(WizardStep):
 
 
 class LicenseStep(WizardStep):
-    """Licenses gate — a dedicated consent step. Pick the ACCEPT_LICENSE rung, then
-    read + accept EACH agreement that rung entails for this machine. Every required
-    agreement is its own full-text viewer you accept individually (soft-locked), so
-    Continue genuinely means you've seen what you're agreeing to. The rung selection
+    """Licenses gate — sub-gate 1 of the consent flow: pick the ACCEPT_LICENSE rung.
+    Continue then runs you straight through one full-text agreement sub-gate per
+    license this rung entails for THIS machine (see :class:`LicenseAgreementStep`),
+    each read and Accepted in turn — no checklist to hunt through. The rung selection
     lives here, not in Base System."""
 
     step_key = "license"
@@ -1146,8 +1076,8 @@ class LicenseStep(WizardStep):
     def help(self) -> str:
         return ("The license policy sets ACCEPT_LICENSE. Full/Redistributable cover\n"
                 "binary firmware and the NVIDIA driver; Libre is free-only (no\n"
-                "proprietary GPU). Read and accept each agreement your choice entails\n"
-                "for this machine — open each row, review the full text, choose Accept.")
+                "proprietary GPU). Continue walks you through the full text of each\n"
+                "agreement your choice entails for this machine, to read and Accept.")
 
     def _nvidia_planned(self) -> bool:
         """Whether the proprietary NVIDIA driver is planned — the relevance input."""
@@ -1162,22 +1092,19 @@ class LicenseStep(WizardStep):
     def _review(self) -> licensing.LicenseReview:
         return licensing.review_licenses(self.sel.license, nvidia=self._nvidia_planned())
 
-    def _recompute_accept(self) -> None:
-        """licenses_accepted := every REQUIRED agreement is in accepted_licenses."""
-        req = {a.name for a in self._review().required}
-        self.sel.licenses_accepted = req <= self.sel.accepted_licenses
-
     def setting_rows(self):
         review = self._review()
         rows = [("License policy", self._RUNG_NAMES[self.sel.license], self._change_rung)]
         if review.blockers:
             return rows  # incompatible rung — only the policy matters until it's fixed
-        for a in review.required:
-            done = a.name in self.sel.accepted_licenses
-            val = "✓ accepted" if done else "not yet — open to read & accept"
-            rows.append((a.label, val, lambda a=a: self._open_agreement(a)))
-        if not review.required:
-            rows.append(("Agreements", "none to accept for this rung", None))
+        # A read-only preview of what Continue will walk you through: the concrete
+        # agreements this rung entails for THIS machine, each read + Accepted in its
+        # own sub-gate. Libre entails nothing, so Continue goes straight on.
+        rows.append(None)
+        if review.required:
+            rows.append(("Continue accepts", ", ".join(a.label for a in review.required), None))
+        else:
+            rows.append(("Agreements", "none for this rung — nothing to accept", None))
         return rows
 
     def row_detail(self, label, value):
@@ -1191,12 +1118,10 @@ class LicenseStep(WizardStep):
             if review.warnings:
                 tail += f"\n\n⚠ {review.warnings[0]}"
             return f"{base}\n\n{tail}"
-        for a in review.required:
-            if a.label == label:
-                state = ("Accepted." if a.name in self.sel.accepted_licenses
-                         else "Not yet accepted.")
-                return (f"{a.one_line}\n\nRequired for this machine ({a.group}). {state} "
-                        "Open this row to read the full text and accept it.")
+        if label == "Continue accepts":
+            return ("The license agreements this rung entails for your hardware. "
+                    "Continue opens each one full-text in turn so you can read and "
+                    "Accept it — you're never asked to accept anything you haven't seen.")
         return super().row_detail(label, value)
 
     def _change_rung(self):
@@ -1210,50 +1135,93 @@ class LicenseStep(WizardStep):
 
         _choice_modal(self.app, "License policy", opts, self.sel.license, apply, self._render)
 
-    def _open_agreement(self, agreement):
-        """The full-text viewer for one agreement — read, then Accept (soft-lock) or
-        Decline (back to the rung picker)."""
-        text = licensing.read_license_text(agreement.name)
-        if not text:
-            text = (f"{agreement.label}\n\n{agreement.one_line}\n\n"
-                    "(The full license text isn't available in this environment — it "
-                    f"ships in the Portage tree at {agreement.text_path}.)")
-        lines = [_row(ln) for ln in text.splitlines()] or [_row("")]
-        listbox = urwid.ListBox(urwid.SimpleFocusListWalker(lines))
-
-        def accept():
-            self.sel.accepted_licenses = self.sel.accepted_licenses | {agreement.name}
-            self._recompute_accept()
-            self.app.pop()
-            self._render()
-
-        def decline():
-            self.app.pop()
-            self._change_rung()
-
-        body = [
-            urwid.Text(("hint", f"Required for THIS machine — {agreement.one_line}")),
-            urwid.Divider(),
-            urwid.BoxAdapter(listbox, 16),
-            urwid.Divider(),
-            urwid.Text(("field",
-                        "By clicking Accept, you are agreeing to the terms above.")),
-        ]
-        modal = Modal(self.app, agreement.label, body,
-                      [("Accept", accept), ("Decline (change rung)", decline)])
-        self.app.push_modal(modal, width=("relative", 82), height=("relative", 84))
+    def advance(self):
+        """Continue → validate the rung, then flow through the agreement sub-gates
+        (carrying any Review jump-back). No agreements (e.g. Libre) → straight on."""
+        msg = self.validate()
+        if msg:
+            self._show_blocker(msg)
+            return
+        required = self._review().required
+        if required:
+            self.app.push(LicenseAgreementStep(
+                self.app, self.sel, agreements=required, index=0,
+                return_to=self._return_to))
+        else:
+            self.sel.licenses_accepted = True     # nothing entailed — acceptance is trivial
+            self.app.push(self._return_to() if self._return_to else self._next_screen())
 
     def validate(self):
+        """The POLICY sub-gate only checks the rung is known and can cover this machine
+        (the Libre-on-NVIDIA trap blocks here). Acceptance is collected downstream in
+        the agreement sub-gates; the Review gate is the final backstop on
+        licenses_accepted."""
         if self.sel.license not in LICENSE_POLICIES:
             return f"Unknown license policy: {self.sel.license}"
-        review = self._review()
-        if review.blockers:
-            return review.blockers[0]
-        self._recompute_accept()
-        if not self.sel.licenses_accepted:
-            return ("Read and accept each license agreement above before continuing — "
-                    "open each row, review the full text, and choose Accept.")
-        return None
+        blockers = self._review().blockers
+        return blockers[0] if blockers else None
+
+
+class LicenseAgreementStep(WizardStep):
+    """One applicable license agreement, shown in full — the sub-gates the Licenses
+    gate runs you through after the rung pick, one per license this machine entails.
+    The whole agreement text scrolls above; the forward button is **Accept** and
+    clicking it records consent (into ``sel.accepted_licenses``) and advances to the
+    next agreement, or to Your Account after the last. Back steps to the previous
+    sub-gate (ultimately the rung picker) to reconsider."""
+
+    step_key = "license"          # the rail keeps highlighting Licenses across the run
+    continue_label = "Accept"
+
+    def __init__(self, app, sel, *, agreements, index, return_to=None):
+        self._agreements = agreements
+        self._index = index
+        self._agreement = agreements[index]
+        # instance-shadow step_title (base reads it in __init__) — "License 1/2: NVIDIA…"
+        self.step_title = (f"License {index + 1} of {len(agreements)} — "
+                           f"{self._agreement.label}")
+        super().__init__(app, sel, return_to=return_to)
+
+    def help(self) -> str:
+        return ("The full text of a license this install requires. Read it, then choose\n"
+                "Accept to agree and move to the next — or Back to reconsider the rung.\n"
+                "You're never asked to accept a license you haven't been shown.")
+
+    def setting_rows(self):
+        return []                 # this gate renders the agreement text, not a row list
+
+    def _compose_body(self):
+        text = licensing.read_license_text(self._agreement.name) or (
+            f"{self._agreement.label}\n\n{self._agreement.one_line}\n\n"
+            "(The full license text isn't available in this environment — it ships in "
+            f"the Portage tree at {self._agreement.text_path}.)")
+        lines = [_row(ln) for ln in text.splitlines()] or [_row("")]
+        license_view = urwid.ListBox(urwid.SimpleFocusListWalker(lines))
+        accept_line = urwid.Text(
+            ("field", "By clicking Accept, you are agreeing to the terms listed above."))
+        right = urwid.Pile([
+            ("weight", 1, boxed(license_view, title=self._agreement.label)),
+            ("pack", urwid.Divider()),
+            ("pack", accept_line),
+        ])
+        cols = urwid.Columns([(20, _rail_widget(self.step_key)), right],
+                             dividechars=1, focus_column=1)
+        body = NavPile([("weight", 1, cols), ("pack", self._nav_row)])
+        return body, body, [0]
+
+    def advance(self):
+        """Accept → record consent for this agreement, then on to the next sub-gate."""
+        self.sel.accepted_licenses = self.sel.accepted_licenses | {self._agreement.name}
+        self.sel.licenses_accepted = (
+            {a.name for a in self._agreements} <= self.sel.accepted_licenses)
+        self.app.push(self._next_screen())
+
+    def _next_screen(self) -> Screen:
+        nxt = self._index + 1
+        if nxt < len(self._agreements):
+            return LicenseAgreementStep(self.app, self.sel, agreements=self._agreements,
+                                        index=nxt, return_to=self._return_to)
+        return self._return_to() if self._return_to else make_step("account", self.app, self.sel)
 
 
 class BaseSystemStep(WizardStep):
@@ -1261,11 +1229,12 @@ class BaseSystemStep(WizardStep):
     step_title = "Base System"
 
     def help(self) -> str:
-        return ("How the base system is built, licensed, and administered. Binary\n"
-                "packages are fast; compiling from source tunes to your CPU. The\n"
-                "license rung sets ACCEPT_LICENSE; Features become system-wide USE.\n"
-                "The admin model is how you become root. Your role has proposed sane\n"
-                "values for all of these — a newcomer can just Continue; tweak to taste.")
+        return ("How the base system is built, licensed, administered, and where it\n"
+                "downloads from. Binary packages are fast; compiling from source tunes\n"
+                "to your CPU. The license rung sets ACCEPT_LICENSE; Features become\n"
+                "system-wide USE. The admin model is how you become root; Mirrors are\n"
+                "auto-picked the moment you're online. Your role has proposed sane\n"
+                "values — a newcomer can just Continue; tweak to taste.")
 
     def setting_rows(self):
         build = "Binary packages (fast)" if self.sel.binary_pref else "Compile from source"
@@ -1277,6 +1246,14 @@ class BaseSystemStep(WizardStep):
         ]
         if self.sel.admin_model in ("sudo-augmented", "rootless"):
             rows.append(("Escalator", self.sel.escalator, self._edit_escalator))
+        # Repo mirrors (Handbook "Repo Mirror Selection"): auto-picked in the
+        # background once online; shown here with a re-pick + manual choose. Lives on
+        # this gate (not Get Online) so it's always reachable — Get Online is skipped
+        # when the machine boots already connected.
+        self._ensure_mirrors()
+        rows.append(None)
+        rows.append(("Mirrors", self._mirror_value(), self._choose_mirrors))
+        rows.append(("Re-pick fastest mirrors", None, self._repick_mirrors))
         return rows
 
     # Detail keyed off the *currently selected* option, so the panel explains what
@@ -1316,6 +1293,15 @@ class BaseSystemStep(WizardStep):
                     "full-featured choice everyone knows. doas (from OpenBSD) is a much "
                     "smaller, simpler alternative with an easy config and less to go "
                     "wrong — plenty for a single-admin desktop.")
+        if label == "Mirrors":
+            return ("Where packages download from (GENTOO_MIRRORS) and where the "
+                    "Portage tree syncs from. Once you're online the installer times "
+                    "the official mirrors and picks the fastest few for you — no need "
+                    "to choose. 'Choose mirrors…' overrides it by hand; offline, the "
+                    "install falls back to Gentoo's default mirror rotation.")
+        if label.startswith("Re-pick"):
+            return ("Time the mirrors again and re-pick the fastest — handy if the "
+                    "network changed since the first probe.")
         return super().row_detail(label, value)
 
     def _edit_admin(self):
@@ -1351,6 +1337,66 @@ class BaseSystemStep(WizardStep):
                        urwid.Divider(), *boxes],
                       [("Save", save), ("Cancel", self.app.pop)])
         self.app.push_modal(modal, width=("relative", 60), height=("relative", 70))
+
+    # -- repo mirrors ----------------------------------------------------------
+    def _ensure_mirrors(self) -> None:
+        """Kick the fastest-mirror probe once, in the background, when online and not
+        yet chosen. Re-render when it lands so the picked mirrors show. Connectivity is
+        probed lazily — only when a pick is actually pending, so an already-chosen set
+        (the common case, warmed up at boot) short-circuits before any network call."""
+        if getattr(self, "_mirror_probe_started", False) or self.sel.gentoo_mirrors:
+            return
+        if not check_connectivity()[0]:
+            return
+        self._mirror_probe_started = True
+        self.app.run_async(self._probe_mirrors())
+
+    async def _probe_mirrors(self) -> None:
+        result = await self.app.run_blocking(mirrors.select_mirrors)
+        # Commit whatever we got (probed or the offline default) — the user is on this
+        # gate, so a concrete choice beats leaving it blank.
+        self.sel.gentoo_mirrors = result.distfiles
+        self.sel.sync_uri = result.sync_uri
+        self.sel.sync_type = result.sync_type
+        self._mirror_probed = result.probed
+        self._render()
+
+    def _mirror_value(self) -> str:
+        if not self.sel.gentoo_mirrors:
+            if getattr(self, "_mirror_probe_started", False):
+                return "picking the fastest…"
+            return "Gentoo default rotation (connect to auto-pick)"
+        host = urlsplit(self.sel.gentoo_mirrors[0]).hostname or self.sel.gentoo_mirrors[0]
+        extra = f" +{len(self.sel.gentoo_mirrors) - 1}" if len(self.sel.gentoo_mirrors) > 1 else ""
+        tag = "auto-picked" if getattr(self, "_mirror_probed", False) else "selected"
+        return f"{host}{extra}  ({tag})"
+
+    def _repick_mirrors(self) -> None:
+        self._mirror_probe_started = False
+        self.sel.gentoo_mirrors = ()
+        self._render()                              # re-render kicks _ensure_mirrors again
+
+    def _choose_mirrors(self) -> None:
+        boxes = [urwid.CheckBox(f"{m.name} — {m.region}",
+                                state=m.distfiles in self.sel.gentoo_mirrors)
+                 for m in mirrors.CATALOG]
+
+        def save():
+            chosen = [m for m, b in zip(mirrors.CATALOG, boxes, strict=True) if b.state]
+            if chosen:
+                self.sel.gentoo_mirrors = tuple(m.distfiles for m in chosen)
+                self.sel.sync_uri = chosen[0].rsync
+                self.sel.sync_type = "rsync"
+                self._mirror_probed = False
+            self.app.pop()
+            self._render()
+
+        modal = Modal(self.app, "Choose distfile mirrors",
+                      [urwid.Text(("hint", "Checked mirrors become GENTOO_MIRRORS; the "
+                                   "first is also the sync mirror.")),
+                       urwid.Divider(), *boxes],
+                      [("Save", save), ("Cancel", self.app.pop)])
+        self.app.push_modal(modal, width=("relative", 66), height=("relative", 80))
 
 
 class AccountStep(WizardStep):

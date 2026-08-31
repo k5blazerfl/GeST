@@ -1,12 +1,10 @@
-"""The License gate — its own wizard step now. Relevance-aware validation (the
-Libre-on-NVIDIA trap blocks here), the per-agreement full-text view+accept flow
-(each agreement soft-locked into sel.accepted_licenses), and the rung-change reset.
-Headless — drive the pushed modal via its buttons; control GPU auto-detection by
-stubbing assemble.resolve_gpu."""
+"""The License gate — now a sub-gate FLOW: the rung pick (LicenseStep), then one
+full-text agreement sub-gate per license the rung entails (LicenseAgreementStep),
+run straight through. Tests the relevance-aware rung blocker (the Libre-on-NVIDIA
+trap), the flow (Continue pushes the agreement sub-gates; Accept records consent and
+advances), the always-visible consent line, and the rung-change reset. Headless."""
 
 from __future__ import annotations
-
-import urwid
 
 from gest.core.disk import reader as disk_reader
 from gest.core.install import assemble
@@ -46,94 +44,99 @@ def _modal(app) -> Modal:
     return w
 
 
-def _accept_all_required(step, sel):
-    sel.accepted_licenses = {a.name for a in step._review().required}
+# --- the rung blocker (relevance-aware); acceptance is NOT required here ------
 
-
-# --- validate: acceptance + the incompatible-rung blocker -------------------
-
-def test_validate_requires_acceptance(monkeypatch):
+def test_policy_validate_ok_without_acceptance(monkeypatch):
+    # The policy sub-gate no longer requires acceptance — that's collected downstream
+    # in the agreement sub-gates. A compatible rung validates immediately.
     _no_gpu(monkeypatch)
-    _app, step, sel = _gate(monkeypatch)            # desktop → full, not yet accepted
+    _app, step, sel = _gate(monkeypatch)             # desktop → full, compatible
     assert sel.licenses_accepted is False
-    msg = step.validate()
-    assert msg and "accept" in msg.lower()
-    _accept_all_required(step, sel)
-    assert step.validate() is None                  # every required agreement accepted
+    assert step.validate() is None
 
 
-def test_validate_blocks_libre_on_nvidia(monkeypatch):
+def test_policy_validate_blocks_libre_on_nvidia(monkeypatch):
     _nvidia_gpu(monkeypatch)
-    _app, step, sel = _gate(monkeypatch, license="libre")
-    _accept_all_required(step, sel)                 # even "accepting", the rung can't cover
+    _app, step, _sel = _gate(monkeypatch, license="libre")
     msg = step.validate()
     assert msg and "NVIDIA" in msg
 
 
-def test_validate_allows_libre_without_nvidia(monkeypatch):
+def test_policy_validate_allows_libre_without_nvidia(monkeypatch):
     _no_gpu(monkeypatch)
-    _app, step, sel = _gate(monkeypatch, license="libre")
-    _accept_all_required(step, sel)                 # libre entails nothing to accept
+    _app, step, _sel = _gate(monkeypatch, license="libre")
     assert step.validate() is None
 
 
-def test_validate_needs_every_required_agreement(monkeypatch):
-    _nvidia_gpu(monkeypatch)                        # full + nvidia → firmware AND NVIDIA
-    _app, step, sel = _gate(monkeypatch)
+# --- the sub-gate flow -------------------------------------------------------
+
+def test_continue_pushes_agreement_subgates(monkeypatch):
+    _nvidia_gpu(monkeypatch)                          # full + nvidia → firmware AND NVIDIA
+    app, step, sel = _gate(monkeypatch)
     req = step._review().required
     assert len(req) >= 2
-    sel.accepted_licenses = {a.name for a in req[:-1]}   # all but one
-    assert step.validate() is not None                   # still blocked
-    sel.accepted_licenses = {a.name for a in req}
-    assert step.validate() is None
+    step.advance()                                    # Continue from the rung pick
+    sub = app._stack[-1]
+    assert isinstance(sub, wz.LicenseAgreementStep)
+    assert sub._agreement.name == req[0].name and sub._index == 0
+    assert sel.licenses_accepted is False             # nothing accepted yet
 
 
-# --- the per-agreement view+accept flow -------------------------------------
-
-def test_open_agreement_shows_scrollable_text_and_accepts(monkeypatch):
+def test_accept_walks_every_agreement_then_advances(monkeypatch):
     _nvidia_gpu(monkeypatch)
     app, step, sel = _gate(monkeypatch)
-    agreement = step._review().required[0]
-    assert agreement.name not in sel.accepted_licenses
-    step._open_agreement(agreement)
-    modal = _modal(app)
-    assert any(isinstance(w, urwid.BoxAdapter) for w, _o in modal._pile.contents)  # scrollable
-    modal._primary()                                # the Accept button (primary)
-    assert agreement.name in sel.accepted_licenses  # soft-locked in
-    assert app._stack[-1] is step                   # modal popped, back to the gate
+    req = step._review().required
+    step.advance()
+    seen = []
+    while isinstance(app._stack[-1], wz.LicenseAgreementStep):
+        sub = app._stack[-1]
+        seen.append(sub._agreement.name)
+        sub.advance()                                 # "Accept"
+        assert sub._agreement.name in sel.accepted_licenses
+    assert set(seen) == {a.name for a in req}         # ran through every applicable license
+    assert sel.licenses_accepted is True              # all required accepted
+    assert app._stack[-1].step_key == "account"       # flowed on to Your Account
 
 
-def test_setting_rows_track_per_agreement_state(monkeypatch):
+def test_libre_flows_straight_through(monkeypatch):
+    _no_gpu(monkeypatch)
+    app, step, sel = _gate(monkeypatch, license="libre")   # entails nothing
+    step.advance()
+    assert not isinstance(app._stack[-1], wz.LicenseAgreementStep)  # no agreement sub-gate
+    assert sel.licenses_accepted is True
+    assert app._stack[-1].step_key == "account"
+
+
+def test_agreement_view_shows_the_consent_line(monkeypatch):
     _nvidia_gpu(monkeypatch)
-    _app, step, sel = _gate(monkeypatch)
-    labels = {lbl: val for lbl, val, _act in step.setting_rows()}
-    assert "License policy" in labels
-    a = step._review().required[0]
-    assert "not yet" in labels[a.label]
-    sel.accepted_licenses = {a.name}
-    labels = {lbl: val for lbl, val, _act in step.setting_rows()}
-    assert "✓ accepted" in labels[a.label]
+    app, step, sel = _gate(monkeypatch)
+    sub = wz.LicenseAgreementStep(app, sel, agreements=step._review().required, index=0)
+    app._stack.append(sub)
+    out = "\n".join(r.decode() for r in sub.render((96, 30), focus=True).text)
+    assert "By clicking Accept, you are agreeing to the terms listed above." in out
+    assert sub.continue_label == "Accept"
 
+
+# --- rung change resets acceptance -------------------------------------------
 
 def test_change_rung_resets_acceptance(monkeypatch):
     _no_gpu(monkeypatch)
     app, step, sel = _gate(monkeypatch, license="full")
-    _accept_all_required(step, sel)
-    step._recompute_accept()
-    assert sel.licenses_accepted is True
-    step._change_rung()                             # opens the rung picker on top of the gate
+    sel.accepted_licenses = {a.name for a in step._review().required}
+    sel.licenses_accepted = True
+    step._change_rung()                               # opens the rung picker on the gate
     top = app._stack[-1]
     picker = _modal(app)
-    top.keypress(_SIZE, "up")                       # full (2) → up → up → libre (0)
+    top.keypress(_SIZE, "up")                         # full (2) → up → up → libre (0)
     top.keypress(_SIZE, "up")
     picker.focus_buttons()
-    top.keypress(_SIZE, "enter")                    # Accept the staged rung
+    top.keypress(_SIZE, "enter")                      # Accept the staged rung
     assert sel.license == "libre"
     assert sel.licenses_accepted is False
     assert sel.accepted_licenses == set()
 
 
 def test_nvidia_planned_honours_explicit_choice(monkeypatch):
-    _no_gpu(monkeypatch)                             # auto-probe would say "no nvidia"
+    _no_gpu(monkeypatch)                              # auto-probe would say "no nvidia"
     _app, step, _sel = _gate(monkeypatch, gpu_auto=False, nvidia_proprietary=True)
-    assert step._nvidia_planned() is True            # explicit choice wins over the probe
+    assert step._nvidia_planned() is True             # explicit choice wins over the probe

@@ -334,6 +334,22 @@ def test_admin_model_lives_on_base_system_not_account():
     assert acct.validate() is not None                    # rootless w/o an admin account → blocks
 
 
+def test_mirrors_live_on_base_system_not_get_online():
+    # Mirror selection moved off Get Online (which is SKIPPED when the box boots already
+    # online) onto Base System, which is always shown — so mirrors stay reachable and
+    # overridable regardless of how connectivity came up.
+    sel = assemble.propose("desktop")
+    _app, base, _ = _step(wz.BaseSystemStep, sel)
+    base_out = "\n".join(r.decode() for r in base.render((96, 30), focus=True).text)
+    assert "Mirrors" in base_out
+    _app2, online, _ = _step(wz.OnlineStep, sel)
+    online_out = "\n".join(r.decode() for r in online.render((96, 30), focus=True).text)
+    assert "Mirrors" not in online_out
+    # the whole mirror machinery moved with it — Base System owns it, Get Online doesn't
+    assert hasattr(wz.BaseSystemStep, "_choose_mirrors")
+    assert not hasattr(wz.OnlineStep, "_choose_mirrors")
+
+
 def test_rootless_requires_a_user_password():
     sel = assemble.propose("desktop")                 # rootless
     sel.users = [assemble.UserDraft(name="captain", admin=True, password="")]
