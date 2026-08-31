@@ -124,12 +124,14 @@ export FSSCRIPT="${specdir}/${fsscript_file}"
 # image-mutating packages — see stage_binpkg_fixups + gest/core/install/desktop.py)
 # after stage1 fills catalyst's pkgcache, without dirtying the tracked overlay/.
 staging_overlay="${outdir}/root-overlay"
-if [ "${arch}" = "amd64" ] && [ "${flavor}" = desktop ] && [ -d "${specdir}/${overlay_dir}" ]; then
-    # desktop only: stage the quickpkg-fixup binpkgs into a copy of the overlay.
+if [ "${arch}" = "amd64" ] && [ -d "${specdir}/${overlay_dir}" ]; then
+    # amd64 (both flavors): build against a STAGING copy of the tracked overlay so the
+    # build can inject the gentoo license texts (so the installer's License gate can
+    # [View] the real firmware/NVIDIA/EULA agreements — catalyst strips the tree) and,
+    # desktop only, the quickpkg binpkg fixups — without dirtying the tracked overlay/.
     export ROOT_OVERLAY="${staging_overlay}"
 else
-    # cli (and non-amd64): the tracked overlay is used verbatim — no image-mutating
-    # desktop packages, so no binpkg fixups to stage.
+    # non-amd64: the tracked overlay is used verbatim.
     export ROOT_OVERLAY="${specdir}/${overlay_dir}"
 fi
 # Kernel .config genkernel builds from (CD-boot filesystems compiled in). Only
@@ -137,6 +139,28 @@ fi
 export KERNEL_CONFIG="${specdir}/kernel-config"
 
 mkdir -p "${outdir}"
+
+# Stage the tree's license TEXTS into the image at /var/db/repos/gentoo/licenses so
+# the installer's License gate can [View] the ACTUAL agreement (firmware, NVIDIA-r2,
+# any @EULA) — catalyst strips the portage tree from the image, so that dir is gone
+# otherwise and gest's read_license_text falls back to one-line summaries. Copied
+# fresh from the build host's synced tree (NOT committed to the repo). A minimal repo
+# identity (layout.conf + repo_name) rides along so portage sees a well-formed, if
+# licenses-only, gentoo repo in the live env — no "missing masters" nags.
+stage_license_texts() {
+    local reposrc="/var/db/repos/gentoo"
+    local repodest="${staging_overlay}/var/db/repos/gentoo"
+    if [ ! -d "${reposrc}/licenses" ]; then
+        echo "!! ${reposrc}/licenses not found on build host — the License gate [View]" >&2
+        echo "!! will fall back to one-line summaries. (Sync the gentoo tree to fix.)" >&2
+        return 0
+    fi
+    mkdir -p "${repodest}/licenses" "${repodest}/metadata" "${repodest}/profiles"
+    cp -a "${reposrc}/licenses/." "${repodest}/licenses/"
+    [ -f "${reposrc}/metadata/layout.conf" ] && cp -a "${reposrc}/metadata/layout.conf" "${repodest}/metadata/"
+    [ -f "${reposrc}/profiles/repo_name" ]   && cp -a "${reposrc}/profiles/repo_name"   "${repodest}/profiles/"
+    echo "== staged $(find "${reposrc}/licenses" -maxdepth 1 -type f | wc -l) license texts → /var/db/repos/gentoo/licenses (License gate [View] shows the real agreements) =="
+}
 
 # Build a STAGING root overlay = the tracked overlay/ + the "quickpkg fixup"
 # binpkgs. quickpkg @installed (the installer's desktop provisioning) captures each
@@ -234,11 +258,20 @@ build_log="${outdir}/catalyst-${arch}-${TIMESTAMP}.log"
 
 echo "== livecd-stage1 =="
 catalyst -f "${outdir}/livecd-stage1.spec" 2>&1 | tee -a "${build_log}"
-# Stage the real binpkg fixups into the root overlay now that stage1 has filled the
-# pkgcache, so stage2 lays them into the image. amd64 desktop image only.
-if [ "${arch}" = "amd64" ] && [ "${flavor}" = desktop ] && [ -d "${specdir}/overlay" ]; then
-    echo "== staging quickpkg-fixup binpkgs =="
-    stage_binpkg_fixups
+# Populate the STAGING root overlay now that stage1 has filled the pkgcache, so stage2
+# lays it into the image (amd64). Desktop seeds it via stage_binpkg_fixups (a copy of
+# overlay/ + the real binpkg fixups); cli seeds a plain copy of its tracked overlay.
+# Both flavors then get the gentoo license texts injected for the installer's License
+# gate ([View] the real firmware/NVIDIA/EULA agreements).
+if [ "${arch}" = "amd64" ] && [ -d "${specdir}/${overlay_dir}" ]; then
+    if [ "${flavor}" = desktop ]; then
+        echo "== staging quickpkg-fixup binpkgs =="
+        stage_binpkg_fixups
+    else
+        rm -rf "${staging_overlay}"; mkdir -p "${staging_overlay}"
+        cp -a "${specdir}/${overlay_dir}/." "${staging_overlay}/"
+    fi
+    stage_license_texts
 fi
 echo "== livecd-stage2 =="
 catalyst -f "${outdir}/livecd-stage2.spec" 2>&1 | tee -a "${build_log}"
