@@ -24,9 +24,15 @@ from pathlib import Path
 
 from gest.core.install.plan import license_accept_value
 
-#: Where the Gentoo tree ships license texts on the live medium — the source for
-#: the gate's ``[View]`` action.
+#: Where the Gentoo tree ships license texts on a real/dev system — the canonical
+#: location, and where an installed system has them.
 LICENSE_DIR = "/var/db/repos/gentoo/licenses"
+#: The live installer ISO strips the portage tree — and catalyst manages
+#: /var/db/repos during the build, so the image can't ship them there — so the
+#: installer stages a copy of the license texts it can exercise under this
+#: GeSI-owned path. ``read_license_text`` prefers it, then falls back to LICENSE_DIR.
+GEST_LICENSE_DIR = "/usr/share/gest/licenses"
+LICENSE_DIRS = (GEST_LICENSE_DIR, LICENSE_DIR)
 
 # ACCEPT_LICENSE group tokens. @BINARY-REDISTRIBUTABLE already contains @FREE, and
 # Full = "@BINARY-REDISTRIBUTABLE @EULA", so a rung "covers" a group iff the token
@@ -206,11 +212,14 @@ def plan_eula_licenses(plan) -> tuple[str, ...]:
     return ()
 
 
-def read_license_text(name: str, *, licenses_dir: str = LICENSE_DIR) -> str:
-    """The full text of a license from the tree (the ``[View]`` action), or ``""`` if
-    it isn't present — e.g. on a non-Gentoo dev host, where the caller falls back to
-    the agreement's one-line summary."""
-    try:
-        return Path(licenses_dir, name).read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return ""
+def read_license_text(name: str, *, licenses_dir: str | None = None) -> str:
+    """The full text of a license (the ``[View]`` action), or ``""`` if it isn't
+    present — e.g. on a non-Gentoo dev host, where the caller falls back to the
+    agreement's one-line summary. Without an explicit ``licenses_dir`` it tries the
+    GeSI-staged copy (present on the live ISO) then the canonical tree location."""
+    for d in (licenses_dir,) if licenses_dir is not None else LICENSE_DIRS:
+        try:
+            return Path(d, name).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+    return ""

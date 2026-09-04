@@ -140,26 +140,25 @@ export KERNEL_CONFIG="${specdir}/kernel-config"
 
 mkdir -p "${outdir}"
 
-# Stage the tree's license TEXTS into the image at /var/db/repos/gentoo/licenses so
-# the installer's License gate can [View] the ACTUAL agreement (firmware, NVIDIA-r2,
-# any @EULA) — catalyst strips the portage tree from the image, so that dir is gone
-# otherwise and gest's read_license_text falls back to one-line summaries. Copied
-# fresh from the build host's synced tree (NOT committed to the repo). A minimal repo
-# identity (layout.conf + repo_name) rides along so portage sees a well-formed, if
-# licenses-only, gentoo repo in the live env — no "missing masters" nags.
+# Stage the tree's license TEXTS into the image so the installer's License gate can
+# [View] the ACTUAL agreement (firmware, NVIDIA-r2, any @EULA) — catalyst strips the
+# portage tree from the image, so gest's read_license_text falls back to one-line
+# summaries otherwise. Staged under a GeSI-owned path (/usr/share/gest/licenses), NOT
+# /var/db/repos/gentoo: catalyst mounts the portage snapshot there during the build,
+# so a root_overlay write into that path fails (rsync exit 23). read_license_text
+# prefers /usr/share/gest/licenses on the live ISO. Copied fresh from the build host's
+# synced tree — NOT committed to the repo.
 stage_license_texts() {
-    local reposrc="/var/db/repos/gentoo"
-    local repodest="${staging_overlay}/var/db/repos/gentoo"
-    if [ ! -d "${reposrc}/licenses" ]; then
-        echo "!! ${reposrc}/licenses not found on build host — the License gate [View]" >&2
-        echo "!! will fall back to one-line summaries. (Sync the gentoo tree to fix.)" >&2
+    local src="/var/db/repos/gentoo/licenses"
+    local dest="${staging_overlay}/usr/share/gest/licenses"
+    if [ ! -d "${src}" ]; then
+        echo "!! ${src} not found on build host — the License gate [View] will fall" >&2
+        echo "!! back to one-line summaries. (Sync the gentoo tree to fix.)" >&2
         return 0
     fi
-    mkdir -p "${repodest}/licenses" "${repodest}/metadata" "${repodest}/profiles"
-    cp -a "${reposrc}/licenses/." "${repodest}/licenses/"
-    [ -f "${reposrc}/metadata/layout.conf" ] && cp -a "${reposrc}/metadata/layout.conf" "${repodest}/metadata/"
-    [ -f "${reposrc}/profiles/repo_name" ]   && cp -a "${reposrc}/profiles/repo_name"   "${repodest}/profiles/"
-    echo "== staged $(find "${reposrc}/licenses" -maxdepth 1 -type f | wc -l) license texts → /var/db/repos/gentoo/licenses (License gate [View] shows the real agreements) =="
+    mkdir -p "${dest}"
+    cp -a "${src}/." "${dest}/"
+    echo "== staged $(find "${src}" -maxdepth 1 -type f | wc -l) license texts → /usr/share/gest/licenses (License gate [View] shows the real agreements) =="
 }
 
 # Build a STAGING root overlay = the tracked overlay/ + the "quickpkg fixup"
